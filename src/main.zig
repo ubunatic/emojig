@@ -9,15 +9,42 @@ const Match = struct {
 
 var global_orig_termios: ?std.posix.termios = null;
 
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
-    _ = error_return_trace;
-    if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
-    }
-    // Disable mouse tracking, exit alternate screen, show cursor
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+fn logMemoryUsage() void {
+    const flags = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, "/proc/self/statm", flags, 0) catch return;
+    defer _ = std.posix.system.close(fd);
     
-    std.debug.defaultPanic(msg, ret_addr);
+    var buf: [128]u8 = undefined;
+    const len = std.posix.read(fd, &buf) catch return;
+    if (len == 0) return;
+    
+    var it = std.mem.splitScalar(u8, buf[0..len], ' ');
+    const virt_pages_str = it.next() orelse return;
+    const rss_pages_str = it.next() orelse return;
+    
+    const virt_pages = std.fmt.parseInt(usize, std.mem.trim(u8, virt_pages_str, " \t\r\n"), 10) catch return;
+    const rss_pages = std.fmt.parseInt(usize, std.mem.trim(u8, rss_pages_str, " \t\r\n"), 10) catch return;
+    
+    const page_size: usize = 4096; // Standard Linux page size
+    const virt_bytes = virt_pages * page_size;
+    const rss_bytes = rss_pages * page_size;
+    
+    // Open log file (/tmp/emojig.log)
+    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
+    const log_fd = std.posix.openat(std.posix.AT.FDCWD, "/tmp/emojig.log", wr_flags, 0o644) catch return;
+    defer _ = std.posix.system.close(log_fd);
+    
+    var ts = std.mem.zeroes(std.posix.system.timespec);
+    _ = std.posix.system.clock_gettime(.REALTIME, &ts);
+    
+    var log_buf: [256]u8 = undefined;
+    const log_line = std.fmt.bufPrint(&log_buf, "[{d}] Emojig closed. Memory Usage: VIRT = {d:.2} MB, RSS = {d:.2} MB\n", .{
+        ts.sec,
+        @as(f64, @floatFromInt(virt_bytes)) / (1024.0 * 1024.0),
+        @as(f64, @floatFromInt(rss_bytes)) / (1024.0 * 1024.0),
+    }) catch return;
+    
+    _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
 }
 
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
@@ -27,7 +54,19 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     }
     // Disable mouse tracking, exit alternate screen, show cursor
     _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    logMemoryUsage();
     std.process.exit(1);
+}
+
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+    _ = error_return_trace;
+    if (global_orig_termios) |orig| {
+        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+    }
+    // Disable mouse tracking, exit alternate screen, show cursor
+    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    logMemoryUsage();
+    std.debug.defaultPanic(msg, ret_addr);
 }
 
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
@@ -96,19 +135,25 @@ pub fn main(init: std.process.Init) !void {
         // Restore termios, disable mouse tracking, exit alternate screen, show cursor
         std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
         writeAll(stdout_fd, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h") catch {};
+        logMemoryUsage();
     }
     
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;
     
+    // We display a 4x3 grid of emojis (total 12 matches)
+    const cols = 4;
+    const rows = 3;
+    const total_cells = cols * rows;
+    
     var selected_idx: usize = 0;
-    var top_matches: [10]Match = undefined;
+    var top_matches: [total_cells]Match = undefined;
     var top_count: usize = 0;
     
     var should_copy_and_exit = false;
     
     // Initial search
-    search(query_buf[0..query_len], &top_matches, &top_count);
+    search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
     
     var read_buf: [32]u8 = undefined;
     
@@ -116,29 +161,48 @@ pub fn main(init: std.process.Init) !void {
         // 1. Draw screen
         try writeAll(stdout_fd, "\x1b[H"); // Cursor to 1,1
         
-        var line_buf: [512]u8 = undefined;
+        var line_buf: [1024]u8 = undefined;
         
         // Draw Header
         const search_line = try std.fmt.bufPrint(&line_buf, "🔍 Search: {s}\x1b[K\n", .{query_buf[0..query_len]});
         try writeAll(stdout_fd, search_line);
         
-        // Draw list of matches
-        var row: usize = 0;
-        while (row < 10) : (row += 1) {
-            if (row < top_count) {
-                const m = top_matches[row];
-                const entry = emojig.EmojiDb.getEntry(m.index);
-                
-                const line = if (row == selected_idx)
-                    try std.fmt.bufPrint(&line_buf, " \x1b[1;36m>\x1b[0m \x1b[1m{s}\x1b[0m  {s}\x1b[K\n", .{ entry.emoji, entry.name })
-                else
-                    try std.fmt.bufPrint(&line_buf, "   {s}  {s}\x1b[K\n", .{ entry.emoji, entry.name });
-                
-                try writeAll(stdout_fd, line);
-            } else {
-                try writeAll(stdout_fd, "\x1b[K\n");
+        // Draw 3 rows of grid cells
+        var r: usize = 0;
+        while (r < rows) : (r += 1) {
+            var cell_buffers: [4][128]u8 = undefined;
+            var cell_strings: [4][]const u8 = undefined;
+            
+            var c: usize = 0;
+            while (c < cols) : (c += 1) {
+                const idx = r * cols + c;
+                if (idx < top_count) {
+                    const m = top_matches[idx];
+                    const entry = emojig.EmojiDb.getEntry(m.index);
+                    
+                    var name_truncated: [11]u8 = undefined;
+                    const truncated = if (entry.name.len > 10) blk: {
+                        @memcpy(name_truncated[0..7], entry.name[0..7]);
+                        @memcpy(name_truncated[7..10], "...");
+                        break :blk name_truncated[0..10];
+                    } else entry.name;
+                    
+                    if (idx == selected_idx) {
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " \x1b[1;36m>\x1b[0m \x1b[1m{s}\x1b[0m {s:<10} ", .{ entry.emoji, truncated });
+                    } else {
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "   {s}  {s:<10} ", .{ entry.emoji, truncated });
+                    }
+                } else {
+                    cell_strings[c] = "                     ";
+                }
             }
+            
+            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}\x1b[K\n", .{ cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3] });
+            try writeAll(stdout_fd, line);
         }
+        
+        // Clean remaining rows of alternative screen
+        try writeAll(stdout_fd, "\x1b[K\n");
         
         if (should_copy_and_exit) {
             if (top_count > 0 and selected_idx < top_count) {
@@ -161,14 +225,33 @@ pub fn main(init: std.process.Init) !void {
                 break;
             } else if (n > 2 and bytes[1] == '[') {
                 if (bytes[2] == 'A') {
-                    // Up arrow
-                    if (selected_idx > 0) {
-                        selected_idx -= 1;
-                    } else if (top_count > 0) {
-                        selected_idx = top_count - 1;
+                    // Up arrow (moves 1 row up)
+                    if (top_count > 0) {
+                        if (selected_idx >= cols) {
+                            selected_idx -= cols;
+                        } else {
+                            // Wrap to bottom row of same column if possible
+                            const target = selected_idx + (rows - 1) * cols;
+                            if (target < top_count) {
+                                selected_idx = target;
+                            } else {
+                                selected_idx = top_count - 1;
+                            }
+                        }
                     }
                 } else if (bytes[2] == 'B') {
-                    // Down arrow
+                    // Down arrow (moves 1 row down)
+                    if (top_count > 0) {
+                        const target = selected_idx + cols;
+                        if (target < top_count) {
+                            selected_idx = target;
+                        } else {
+                            // Wrap to top row of same column
+                            selected_idx = selected_idx % cols;
+                        }
+                    }
+                } else if (bytes[2] == 'C') {
+                    // Right arrow (moves 1 cell right)
                     if (top_count > 0) {
                         if (selected_idx < top_count - 1) {
                             selected_idx += 1;
@@ -176,16 +259,24 @@ pub fn main(init: std.process.Init) !void {
                             selected_idx = 0;
                         }
                     }
+                } else if (bytes[2] == 'D') {
+                    // Left arrow (moves 1 cell left)
+                    if (top_count > 0) {
+                        if (selected_idx > 0) {
+                            selected_idx -= 1;
+                        } else {
+                            selected_idx = top_count - 1;
+                        }
+                    }
                 } else if (bytes[2] == '<') {
                     // SGR Mouse Event
-                    // Format: \x1b[<button;col;rowM or \x1b[<button;col;rowm
                     var it = std.mem.splitScalar(u8, bytes[3..], ';');
                     const button_str = it.next() orelse continue;
                     const col_str = it.next() orelse continue;
                     const rest = it.next() orelse continue;
                     
                     const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
-                    _ = col_str;
+                    const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
                     
                     if (rest.len > 0) {
                         const action_char = rest[rest.len - 1];
@@ -194,12 +285,17 @@ pub fn main(init: std.process.Init) !void {
                         
                         // Left click press
                         if (button == 0 and action_char == 'M') {
-                            // Row 1 is Search box, Row 2 is index 0
-                            if (click_row >= 2 and click_row <= 11) {
-                                const clicked_idx = @as(usize, @intCast(click_row - 2));
-                                if (clicked_idx < top_count) {
-                                    selected_idx = clicked_idx;
-                                    should_copy_and_exit = true;
+                            // Row 1 is Search box. Rows 2, 3, 4 are the 3 grid rows
+                            if (click_row >= 2 and click_row <= 4) {
+                                const grid_row = @as(usize, @intCast(click_row - 2));
+                                // Each cell is 21 chars wide
+                                const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 21;
+                                if (grid_col < cols) {
+                                    const clicked_idx = grid_row * cols + grid_col;
+                                    if (clicked_idx < top_count) {
+                                        selected_idx = clicked_idx;
+                                        should_copy_and_exit = true;
+                                    }
                                 }
                             }
                         }
@@ -211,7 +307,7 @@ pub fn main(init: std.process.Init) !void {
             if (query_len > 0) {
                 query_len -= 1;
                 selected_idx = 0;
-                search(query_buf[0..query_len], &top_matches, &top_count);
+                search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
             }
         } else if (bytes[0] == 10 or bytes[0] == 13) {
             // Enter key
@@ -226,14 +322,14 @@ pub fn main(init: std.process.Init) !void {
                     query_buf[query_len] = b;
                     query_len += 1;
                     selected_idx = 0;
-                    search(query_buf[0..query_len], &top_matches, &top_count);
+                    search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
                 }
             }
         }
     }
 }
 
-fn search(query: []const u8, top_matches: *[10]Match, top_count: *usize) void {
+fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) void {
     top_count.* = 0;
     
     var i: usize = 0;
@@ -248,13 +344,13 @@ fn search(query: []const u8, top_matches: *[10]Match, top_count: *usize) void {
                 if (m.score > top_matches[insert_pos].score) break;
             }
             
-            if (insert_pos < 10) {
-                var shift: usize = @min(top_count.*, 9);
+            if (insert_pos < limit) {
+                var shift: usize = @min(top_count.*, limit - 1);
                 while (shift > insert_pos) : (shift -= 1) {
                     top_matches[shift] = top_matches[shift - 1];
                 }
                 top_matches[insert_pos] = m;
-                if (top_count.* < 10) top_count.* += 1;
+                if (top_count.* < limit) top_count.* += 1;
             }
         }
     }
