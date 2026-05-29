@@ -20,13 +20,13 @@ const Palette = struct {
 
 const dark_palette = Palette{
     .selection_bg = "\x1b[48;5;30m",
-    .search_prompt = "🔍:",
+    .search_prompt = "🔍",
     .empty_cell = "   ",
 };
 
 const light_palette = Palette{
     .selection_bg = "\x1b[48;5;153m\x1b[38;5;235m",
-    .search_prompt = "\x1b[38;5;235m🔍:\x1b[0m",
+    .search_prompt = "\x1b[38;5;235m🔍\x1b[0m",
     .empty_cell = "   ",
 };
 
@@ -236,7 +236,10 @@ pub fn main(init: std.process.Init) !void {
         var line_buf: [1024]u8 = undefined;
         
         // Draw Header
-        const search_line = try std.fmt.bufPrint(&line_buf, "{s} {s}\x1b[K\r\n", .{ palette.search_prompt, query_buf[0..query_len] });
+        const search_line = if (theme == .light)
+            try std.fmt.bufPrint(&line_buf, "\x1b[4m\x1b[38;5;235m🔍\x1b[0m\x1b[4m {s}\x1b[24m\x1b[K\r\n", .{ query_buf[0..query_len] })
+        else
+            try std.fmt.bufPrint(&line_buf, "\x1b[4m🔍 {s}\x1b[24m\x1b[K\r\n", .{ query_buf[0..query_len] });
         try writeAll(stdout_fd, search_line);
         
         // Draw 4 rows of grid cells
@@ -286,9 +289,9 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, "\x1b[K\r\n");
         }
         
-        // Move cursor back to search input position (Row 1, Column 5 + query_len), ensure blinking, and show it
+        // Move cursor back to search input position (Row 1, Column 4 + query_len), ensure blinking, and show it
         var cursor_buf: [48]u8 = undefined;
-        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?12h\x1b[?25h", .{5 + query_len});
+        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?12h\x1b[?25h", .{4 + query_len});
         try writeAll(stdout_fd, cursor_seq);
         
         if (should_copy_and_exit) {
