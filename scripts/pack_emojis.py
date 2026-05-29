@@ -14,7 +14,6 @@ def pack_emojis():
     string_offsets = {}
 
     def get_or_add_string(s):
-        # Normalize and convert to bytes with null-terminator
         s_bytes = s.encode("utf-8") + b"\x00"
         if s_bytes in string_offsets:
             return string_offsets[s_bytes]
@@ -37,13 +36,11 @@ def pack_emojis():
 
         # Build a search string containing unique words in lowercase
         search_words = []
-        # Add words from description
         for word in description.lower().replace("-", " ").replace("_", " ").split():
             clean_word = "".join(c for c in word if c.isalnum())
             if clean_word and clean_word not in search_words:
                 search_words.append(clean_word)
         
-        # Add tags and aliases
         for tag_or_alias in tags + aliases:
             for word in tag_or_alias.lower().replace("-", " ").replace("_", " ").split():
                 clean_word = "".join(c for c in word if c.isalnum())
@@ -52,7 +49,6 @@ def pack_emojis():
 
         search_str = " ".join(search_words)
 
-        # Write to string table
         emoji_offset = get_or_add_string(emoji_char)
         name_offset = get_or_add_string(description)
         search_offset = get_or_add_string(search_str)
@@ -66,20 +62,11 @@ def pack_emojis():
     emoji_count = len(entries)
     print(f"Packed {emoji_count} emojis.")
 
-    # Format of index entry: 3 x uint32 little-endian
-    # total index size = emoji_count * 12 bytes
     index_size = emoji_count * 12
-    header_size = 16 # 4 magic + 2 version + 2 count + 4 str_offset + 4 str_len
+    header_size = 16
     
     string_table_offset = header_size + index_size
 
-    # Build binary
-    # Header:
-    # magic: 4 bytes (EMJG)
-    # version: uint16 (1)
-    # count: uint16
-    # string_table_offset: uint32
-    # string_table_len: uint32
     header = struct.pack(
         "<4sHHII",
         b"EMJG",
@@ -106,7 +93,6 @@ def pack_emojis():
 
     total_size = len(header) + len(index_data) + len(string_table)
     print(f"Binary generated at {bin_path} ({total_size / 1024:.2f} KB).")
-    print(f"String table size: {len(string_table) / 1024:.2f} KB (deduplicated).")
 
 if __name__ == "__main__":
     pack_emojis()
