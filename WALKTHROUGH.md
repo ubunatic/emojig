@@ -23,7 +23,7 @@ We successfully implemented **Option A (Floating TUI Client)** configured as a p
 Below is a visualization of the interactive 6x4 emoji grid:
 
 ```text
-🔍 Search: fire
+🔍: fire
  🧑‍🚒  🚒 █🔥█ 🎆  🧨  🧯 
  👨‍🚒  👩‍🚒  ❤️‍🔥  🇮🇪  🙄  🌓 
  🙄  🙄  🙄  🙄  🙄  🙄 

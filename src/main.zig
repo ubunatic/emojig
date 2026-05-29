@@ -164,7 +164,7 @@ pub fn main(init: std.process.Init) !void {
         var line_buf: [1024]u8 = undefined;
         
         // Draw Header
-        const search_line = try std.fmt.bufPrint(&line_buf, "🔍 Search: {s}\x1b[K\r\n", .{query_buf[0..query_len]});
+        const search_line = try std.fmt.bufPrint(&line_buf, "🔍: {s}\x1b[K\r\n", .{query_buf[0..query_len]});
         try writeAll(stdout_fd, search_line);
         
         // Draw 4 rows of grid cells
