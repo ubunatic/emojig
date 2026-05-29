@@ -6,11 +6,11 @@ This guide explains how to install, configure, and integrate the compiled **Emoj
 
 ## 1. Project Achievements & Performance
 
-We successfully implemented **Option A (Floating TUI Client)** configured as a premium **4x3 2D Icon Grid** with outstanding metrics:
+We successfully implemented **Option A (Floating TUI Client)** configured as a premium **6x4 2D Icon Grid** with outstanding metrics:
 * **Binary Size**: Only **235 KB** (compiled with `-Doptimize=ReleaseSmall`).
 * **RAM Footprint**: Under **700 KB** (RSS = 0.69 MB, Virtual = 3.46 MB) during active operation!
 * **Database Size**: The database containing 1,870 emojis is fully compressed, deduplicated, and embedded inside the binary, taking up only 82 KB of data.
-* **Layout**: A search input box on top, followed by a beautiful 4x3 2D icon grid showing the top 12 matches.
+* **Layout**: A search input box on top, followed by a beautiful, borderless 6x4 2D icon grid showing the top 24 matches.
 * **Controls**:
   * **Fuzzy Typing**: Start typing characters to search in real time.
   * **2D Navigation**: Use arrow keys (`Up`, `Down`, `Left`, `Right`) to move selection in 2D across the grid.
@@ -18,21 +18,19 @@ We successfully implemented **Option A (Floating TUI Client)** configured as a p
   * **Action**: Pressing `[Enter]` or clicking an emoji copies it directly to your clipboard using native Wayland `wl-copy` (or `xclip` fallback) and exits.
   * **Exit**: Press `[Escape]` or `[Ctrl+C]` to close without copying.
 
-### Terminal UI Demo (Interactive Mock-up)
+### Terminal UI Demo (Borderless Mock-up)
 
-Below is a visualization of the interactive 4x3 emoji grid pop-up window:
+Below is a visualization of the interactive 6x4 emoji grid:
 
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🔍 Search: fire                                                                        │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│  > 🧑‍🚒 firefig...     🚒  fire en...     🔥  fire           🎆  fireworks             │
-│    🧨  firecra...     🧯  fire ex...     👨‍🚒  man fir...     👩‍🚒  woman f...            │
-│    ❤️‍🔥  heart o...     🇮🇪  flag: I...     🙄  face wi...     🌓  first q...            │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+🔍 Search: fire
+ 🧑‍🚒  🚒 █🔥█ 🎆  🧨  🧯 
+ 👨‍🚒  👩‍🚒  ❤️‍🔥  🇮🇪  🙄  🌓 
+ 🙄  🙄  🙄  🙄  🙄  🙄 
+ 🙄  🙄  🙄  🙄  🙄  🙄 
 ```
 > [!NOTE]
-> The cyan cursor `>` indicates the currently highlighted emoji. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
+> The reverse-video block `█🔥█` indicates the currently highlighted emoji. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
 
 ---
 
@@ -57,7 +55,7 @@ To run the interactive picker as a overlay floating window, run it inside a ligh
 ### Choice 1: `foot` (Highly Recommended)
 `foot` is a Wayland-native terminal emulator that starts in under 15ms.
 ```bash
-foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=84x5 zig-out/bin/emojig
+foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 zig-out/bin/emojig
 ```
 
 ### Choice 2: `alacritty`
@@ -80,11 +78,11 @@ for_window [app_id="emojig-picker"] {
     border pixel 2
     sticky enable
     move position center
-    resize set 800 150
+    resize set 200 150
 }
 
 # Bind a global hotkey (e.g., Mod4 + Period) to launch it
-bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=84x5 /absolute/path/to/emojig
+bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 /absolute/path/to/emojig
 ```
 
 ### B. Hyprland Config
@@ -92,13 +90,13 @@ Add these lines to your `~/.config/hypr/hyprland.conf`:
 ```ini
 # Window Rules for Emojig
 windowrulev2 = float, class:^(emojig-picker)$
-windowrulev2 = size 800 150, class:^(emojig-picker)$
+windowrulev2 = size 200 150, class:^(emojig-picker)$
 windowrulev2 = center, class:^(emojig-picker)$
 windowrulev2 = pin, class:^(emojig-picker)$
 windowrulev2 = stayfocused, class:^(emojig-picker)$
 
 # Bind hotkey to toggle (Super + Dot)
-bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=84x5 /absolute/path/to/emojig
+bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 /absolute/path/to/emojig
 ```
 
 ### C. Ubuntu GNOME Wayland
@@ -108,7 +106,7 @@ GNOME doesn't natively support rule-based window filtering like tiling managers,
    * Add a new shortcut named `Emoji Picker`.
    * Set Command to:
      ```bash
-     gnome-terminal --class=emojig-picker --geometry=84x5 -- /absolute/path/to/emojig
+     gnome-terminal --class=emojig-picker --geometry=18x5 -- /absolute/path/to/emojig
      ```
    * Set your desired hotkey (e.g., `Super + .`).
 2. **Hide from Taskbar & Force Float**:

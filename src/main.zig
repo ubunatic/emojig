@@ -141,9 +141,9 @@ pub fn main(init: std.process.Init) !void {
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;
     
-    // We display a 4x3 grid of emojis (total 12 matches)
-    const cols = 4;
-    const rows = 3;
+    // We display a 6x4 grid of emojis (total 24 matches)
+    const cols = 6;
+    const rows = 4;
     const total_cells = cols * rows;
     
     var selected_idx: usize = 0;
@@ -167,11 +167,11 @@ pub fn main(init: std.process.Init) !void {
         const search_line = try std.fmt.bufPrint(&line_buf, "🔍 Search: {s}\x1b[K\n", .{query_buf[0..query_len]});
         try writeAll(stdout_fd, search_line);
         
-        // Draw 3 rows of grid cells
+        // Draw 4 rows of grid cells
         var r: usize = 0;
         while (r < rows) : (r += 1) {
-            var cell_buffers: [4][128]u8 = undefined;
-            var cell_strings: [4][]const u8 = undefined;
+            var cell_buffers: [6][64]u8 = undefined;
+            var cell_strings: [6][]const u8 = undefined;
             
             var c: usize = 0;
             while (c < cols) : (c += 1) {
@@ -180,24 +180,20 @@ pub fn main(init: std.process.Init) !void {
                     const m = top_matches[idx];
                     const entry = emojig.EmojiDb.getEntry(m.index);
                     
-                    var name_truncated: [11]u8 = undefined;
-                    const truncated = if (entry.name.len > 10) blk: {
-                        @memcpy(name_truncated[0..7], entry.name[0..7]);
-                        @memcpy(name_truncated[7..10], "...");
-                        break :blk name_truncated[0..10];
-                    } else entry.name;
-                    
                     if (idx == selected_idx) {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " \x1b[1;36m>\x1b[0m \x1b[1m{s}\x1b[0m {s:<10} ", .{ entry.emoji, truncated });
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "\x1b[7m {s} \x1b[0m", .{ entry.emoji });
                     } else {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "   {s}  {s:<10} ", .{ entry.emoji, truncated });
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
                     }
                 } else {
-                    cell_strings[c] = "                     ";
+                    cell_strings[c] = "   ";
                 }
             }
             
-            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}\x1b[K\n", .{ cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3] });
+            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}\x1b[K\n", .{
+                cell_strings[0], cell_strings[1], cell_strings[2],
+                cell_strings[3], cell_strings[4], cell_strings[5]
+            });
             try writeAll(stdout_fd, line);
         }
         
@@ -285,11 +281,11 @@ pub fn main(init: std.process.Init) !void {
                         
                         // Left click press
                         if (button == 0 and action_char == 'M') {
-                            // Row 1 is Search box. Rows 2, 3, 4 are the 3 grid rows
-                            if (click_row >= 2 and click_row <= 4) {
+                            // Row 1 is Search box. Rows 2, 3, 4, 5 are the 4 grid rows
+                            if (click_row >= 2 and click_row <= 5) {
                                 const grid_row = @as(usize, @intCast(click_row - 2));
-                                // Each cell is 21 chars wide
-                                const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 21;
+                                // Each cell is exactly 3 chars wide (" emo ")
+                                const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 3;
                                 if (grid_col < cols) {
                                     const clicked_idx = grid_row * cols + grid_col;
                                     if (clicked_idx < top_count) {
