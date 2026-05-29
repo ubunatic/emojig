@@ -34,6 +34,7 @@ To prevent leaving the user's terminal session in a broken state:
   * Emojis must be drawn directly on grid rows separated by single spaces (e.g., ` 🧑‍🚒  🚒  🔥 `).
   * Do not use box-drawing border characters (like `│` or `┌`). Double-width emojis render unpredictably in different terminals, and borders cause alignment skewing.
   * The current dimensions are configured as a **6x4 grid** (6 columns, 4 rows) displaying the top 24 matches.
+  * This custom spacing and borderless layout guarantees that all emoji icons render in perfect, clean alignment inside the `foot` terminal, avoiding double-width character skewing.
 * **Selection Highlight**:
   * Highlight only the active emoji using the POSIX `\x1b[48;5;30m` (dark cyan background) ANSI block. 
   * This color provides excellent visibility and contrast against custom dark backgrounds (like Tilix) without being blindingly bright.
