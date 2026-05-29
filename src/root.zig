@@ -1,5 +1,77 @@
-//! Emojig core library. Contains the embedded emoji database and fuzzy search engine.
+//! Emojig core library. Contains the embedded emoji database, fuzzy search engine,
+//! and top-level search function.
 const std = @import("std");
+
+pub const mru = @import("mru.zig");
+
+/// A single search result.
+pub const Match = struct {
+    index: usize,
+    score: i32,
+};
+
+/// Search for emojis matching `query` and populate `top_matches[0..top_count.*]`.
+///
+/// When query is empty, MRU emojis are placed first, then the full DB list
+/// fills remaining cells (skipping duplicates). When non-empty, standard
+/// fuzzy scoring applies.
+pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) void {
+    top_count.* = 0;
+
+    if (query.len == 0) {
+        var mru_indices: [mru.MAX_MRU]usize = undefined;
+        var mru_resolved: usize = 0;
+
+        var m: usize = 0;
+        while (m < mru.getCount() and top_count.* < limit) : (m += 1) {
+            const mru_emoji = mru.getEntry(m);
+            var db_idx: usize = 0;
+            while (db_idx < EmojiDb.count) : (db_idx += 1) {
+                const entry = EmojiDb.getEntry(db_idx);
+                if (std.mem.eql(u8, entry.emoji, mru_emoji)) {
+                    top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
+                    mru_indices[mru_resolved] = db_idx;
+                    mru_resolved += 1;
+                    top_count.* += 1;
+                    break;
+                }
+            }
+        }
+
+        var db_idx: usize = 0;
+        while (db_idx < EmojiDb.count and top_count.* < limit) : (db_idx += 1) {
+            var already_shown = false;
+            var k: usize = 0;
+            while (k < mru_resolved) : (k += 1) {
+                if (mru_indices[k] == db_idx) { already_shown = true; break; }
+            }
+            if (already_shown) continue;
+            top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
+            top_count.* += 1;
+        }
+        return;
+    }
+
+    var i: usize = 0;
+    while (i < EmojiDb.count) : (i += 1) {
+        const entry = EmojiDb.getEntry(i);
+        if (fuzzyMatch(query, entry.search)) |score| {
+            const match = Match{ .index = i, .score = score };
+            var insert_pos: usize = 0;
+            while (insert_pos < top_count.*) : (insert_pos += 1) {
+                if (match.score > top_matches[insert_pos].score) break;
+            }
+            if (insert_pos < limit) {
+                var shift: usize = @min(top_count.*, limit - 1);
+                while (shift > insert_pos) : (shift -= 1) {
+                    top_matches[shift] = top_matches[shift - 1];
+                }
+                top_matches[insert_pos] = match;
+                if (top_count.* < limit) top_count.* += 1;
+            }
+        }
+    }
+}
 
 /// Compile-time embedded emoji database.
 pub const EmojiDb = struct {

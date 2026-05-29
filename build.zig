@@ -136,27 +136,43 @@ pub fn build(b: *std.Build) void {
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
-    // Custom step to launch the emoji picker inside foot
-    const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window");
+    // Launch the emoji picker inside foot (non-blocking: backgrounds foot, returns immediately).
+    // Set EMOJIG_PICKER_TIMEOUT (seconds) to auto-kill; default 60 s.
+    // Set EMOJIG_BORDER=1 to add top/bottom border rows (adds 2 to window height).
+    const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window (non-blocking)");
     const run_picker = b.addSystemCommand(&.{
-        "sh",
-        "-c",
-        \\w=25; h=10
+        "sh", "-c",
+        \\w=40; h=8
         \\cfg="$HOME/.config/emojig/config"
         \\if [ -f "$cfg" ]; then
-        \\  v=$(sed -n 's/^width=//p' "$cfg" | tail -1); [ -n "$v" ] && w=$v
+        \\  v=$(sed -n 's/^width=//p'  "$cfg" | tail -1); [ -n "$v" ] && w=$v
         \\  v=$(sed -n 's/^height=//p' "$cfg" | tail -1); [ -n "$v" ] && h=$v
         \\fi
         \\[ -n "$EMOJIG_WIDTH" ]  && w=$EMOJIG_WIDTH
         \\[ -n "$EMOJIG_HEIGHT" ] && h=$EMOJIG_HEIGHT
-        \\exec foot --app-id=emojig-picker "--window-size-chars=${w}x${h}" \
+        \\[ "$EMOJIG_BORDER" = "1" ] && h=$((h + 2))
+        \\t=${EMOJIG_PICKER_TIMEOUT:-60}
+        \\timeout "$t" foot --app-id=emojig-picker "--window-size-chars=${w}x${h}" \
         \\  --override=font=monospace:size=14 --override=cursor.blink=yes \
-        \\  --override=pad=8x4 --override=csd.size=0 "$1"
+        \\  --override=pad=8x4 --override=csd.size=0 "$1" &
         ,
         "emojig-launcher",
     });
     run_picker.addArtifactArg(exe);
     picker_step.dependOn(&run_picker.step);
+
+    // Screenshot step: run the app in a PTY, capture the initial frame.
+    // Output goes to /tmp/emojig_frame.ansi + /tmp/emojig_frame.txt; also prints to stdout.
+    const screenshot_step = b.step("screenshot", "Capture an initial frame of emojig for agent inspection");
+    const run_screenshot = b.addSystemCommand(&.{
+        "sh", "-c",
+        \\timeout 10 go run scripts/screenshot.go "$1" || echo "screenshot failed"
+        ,
+        "emojig-screenshot",
+    });
+    run_screenshot.addArtifactArg(exe);
+    screenshot_step.dependOn(b.getInstallStep());
+    screenshot_step.dependOn(&run_screenshot.step);
 
     // Custom step to pack the emoji database
     const pack_step = b.step("pack", "Serialize and compress data/emoji.json into src/emojis.bin");
