@@ -181,7 +181,7 @@ pub fn main(init: std.process.Init) !void {
                     const entry = emojig.EmojiDb.getEntry(m.index);
                     
                     if (idx == selected_idx) {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " \x1b[48;5;239m{s}\x1b[0m ", .{ entry.emoji });
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " \x1b[48;5;30m{s}\x1b[0m ", .{ entry.emoji });
                     } else {
                         cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
                     }

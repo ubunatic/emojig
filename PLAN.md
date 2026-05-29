@@ -24,8 +24,8 @@ graph TD
 1. **Interactive Borderless Layout**:
    * **Search Box on Top**: Instantly captures keyboard input for real-time subsequence search filtering.
    * **6x4 Icon Grid**: Emojis are displayed directly next to each other separated by space (6 columns, 4 rows), aligned to uniform 3-character boundaries. No terminal box-drawing lines are used, completely avoiding double-width character skewing!
-2. **Slate-Gray Selection Highlight**:
-   * The currently highlighted emoji is wrapped inside the POSIX `\x1b[48;5;239m` (slate-gray background) character block. This draws a clean, neutral gray background block behind the emoji, which is soft on the eyes and contrasts well on both light and dark terminals.
+2. **Dark Cyan Selection Highlight**:
+   * The currently highlighted emoji is wrapped inside the POSIX `\x1b[48;5;30m` (dark cyan background) character block. This draws a clean, neutral dark cyan background block behind the emoji, which is soft on the eyes and contrasts well on both light and dark terminals (including custom dark backgrounds like Tilix).
 3. **2D Keyboard Navigation**:
    * **Left/Right Arrows**: Select next/previous emoji horizontally, wrapping around edges.
    * **Up/Down Arrows**: Select emojis on the row above/below (shifting selection by 6 indices), wrapping around edges.

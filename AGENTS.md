@@ -35,8 +35,8 @@ To prevent leaving the user's terminal session in a broken state:
   * Do not use box-drawing border characters (like `│` or `┌`). Double-width emojis render unpredictably in different terminals, and borders cause alignment skewing.
   * The current dimensions are configured as a **6x4 grid** (6 columns, 4 rows) displaying the top 24 matches.
 * **Selection Highlight**:
-  * Highlight only the active emoji using the POSIX `\x1b[48;5;239m` (slate-gray background) ANSI block. 
-  * This neutral gray color is comfortable to the eyes and avoids blinding bright white contrasts on both dark and light terminal themes.
+  * Highlight only the active emoji using the POSIX `\x1b[48;5;30m` (dark cyan background) ANSI block. 
+  * This color provides excellent visibility and contrast against custom dark backgrounds (like Tilix) without being blindingly bright.
 * **2D Grid Navigation**:
   * Support horizontal (`Left`/`Right`) and vertical (`Up`/`Down`) arrow key movement.
   * Selection wraps around boundaries (e.g., pressing `Right` on column 6 wraps to the start of the next row; pressing `Down` on the bottom row wraps to the top row).
