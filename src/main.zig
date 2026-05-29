@@ -75,8 +75,9 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     if (global_orig_termios) |orig| {
         _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
     }
-    // Disable mouse tracking, exit alternate screen, show cursor
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    // Disable mouse tracking, exit alternate screen, reset cursor style, show cursor
+    const seq = "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[0q\x1b[?25h";
+    _ = std.posix.system.write(std.posix.STDOUT_FILENO, seq, seq.len);
     logMemoryUsage();
     std.process.exit(1);
 }
@@ -86,8 +87,9 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
     if (global_orig_termios) |orig| {
         _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
     }
-    // Disable mouse tracking, exit alternate screen, show cursor
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    // Disable mouse tracking, exit alternate screen, reset cursor style, show cursor
+    const seq = "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[0q\x1b[?25h";
+    _ = std.posix.system.write(std.posix.STDOUT_FILENO, seq, seq.len);
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
 }
@@ -156,9 +158,9 @@ pub fn main(init: std.process.Init) !void {
         .light => light_palette,
     };
 
-    // Switch to alternate screen, enable mouse tracking, hide cursor
+    // Switch to alternate screen, enable mouse tracking, enable blinking cursor, hide cursor
     const stdout_fd = std.posix.STDOUT_FILENO;
-    try writeAll(stdout_fd, "\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?25l");
+    try writeAll(stdout_fd, "\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?12h\x1b[?25l");
     
     // Save and configure raw termios
     const stdin_fd = std.posix.STDIN_FILENO;
@@ -202,9 +204,9 @@ pub fn main(init: std.process.Init) !void {
     try std.posix.tcsetattr(stdin_fd, .NOW, raw);
     
     defer {
-        // Restore termios, disable mouse tracking, exit alternate screen, show cursor
+        // Restore termios, disable mouse tracking, exit alternate screen, reset cursor style, show cursor
         std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
-        writeAll(stdout_fd, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h") catch {};
+        writeAll(stdout_fd, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[0q\x1b[?25h") catch {};
         logMemoryUsage();
     }
     
@@ -284,9 +286,9 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, "\x1b[K\r\n");
         }
         
-        // Move cursor back to search input position (Row 1, Column 5 + query_len) and show it
-        var cursor_buf: [32]u8 = undefined;
-        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?25h", .{5 + query_len});
+        // Move cursor back to search input position (Row 1, Column 5 + query_len), ensure blinking, and show it
+        var cursor_buf: [48]u8 = undefined;
+        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?12h\x1b[?25h", .{5 + query_len});
         try writeAll(stdout_fd, cursor_seq);
         
         if (should_copy_and_exit) {
