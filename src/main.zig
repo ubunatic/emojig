@@ -16,19 +16,160 @@ const Palette = struct {
     selection_bg: []const u8,
     search_prompt: []const u8,
     empty_cell: []const u8,
+    search_row_bg: []const u8,   // background for the search input bar
+    search_row_fg: []const u8,   // foreground text colour for the search row
 };
 
 const dark_palette = Palette{
     .selection_bg = "\x1b[48;5;30m",
     .search_prompt = "🔍",
     .empty_cell = "   ",
+    .search_row_bg = "\x1b[48;5;236m",   // dark blue-grey input field
+    .search_row_fg = "\x1b[38;5;255m",   // near-white text
 };
 
 const light_palette = Palette{
     .selection_bg = "\x1b[48;5;153m\x1b[38;5;235m",
     .search_prompt = "\x1b[38;5;235m🔍\x1b[0m",
     .empty_cell = "   ",
+    .search_row_bg = "\x1b[48;5;189m",   // pale blue-grey input field
+    .search_row_fg = "\x1b[38;5;235m",   // dark text
 };
+
+// ---------------------------------------------------------------------------
+// MRU (Most Recently Used) emoji tracking
+// ---------------------------------------------------------------------------
+const MAX_MRU = 24;
+var mru_buf: [MAX_MRU][32]u8 = undefined; // raw UTF-8 bytes per emoji
+var mru_lens: [MAX_MRU]u8 = undefined;    // byte lengths
+var mru_count: usize = 0;
+
+/// Load MRU list from ~/.config/emojig/mru.json at startup.
+/// Silently returns if the file is missing or malformed.
+/// No heap allocations — uses only stack buffers.
+fn loadMru() void {
+    const home = std.mem.span(std.c.getenv("HOME") orelse return);
+    var path_buf: [512]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "{s}/.config/emojig/mru.json", .{home}) catch return;
+    // null-terminate for openat
+    if (path.len + 1 > path_buf.len) return;
+    path_buf[path.len] = 0;
+
+    const flags = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path_buf[0..path.len :0], flags, 0) catch return;
+    defer _ = std.posix.system.close(fd);
+
+    var file_buf: [4096]u8 = undefined;
+    const len = std.posix.read(fd, &file_buf) catch return;
+    if (len == 0) return;
+    const content = file_buf[0..len];
+
+    // Simple JSON parser: find '[', then scan "..." strings
+    var pos: usize = 0;
+    // Find opening '['
+    while (pos < content.len and content[pos] != '[') pos += 1;
+    if (pos >= content.len) return;
+    pos += 1; // skip '['
+
+    mru_count = 0;
+    while (pos < content.len and mru_count < MAX_MRU) {
+        // Skip whitespace and commas
+        while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t' or
+            content[pos] == '\r' or content[pos] == '\n' or content[pos] == ',')) {
+            pos += 1;
+        }
+        if (pos >= content.len or content[pos] == ']') break;
+        if (content[pos] != '"') { pos += 1; continue; }
+        pos += 1; // skip opening '"'
+
+        // Read until closing '"'
+        var emoji_len: usize = 0;
+        while (pos < content.len and content[pos] != '"' and emoji_len < 31) {
+            mru_buf[mru_count][emoji_len] = content[pos];
+            emoji_len += 1;
+            pos += 1;
+        }
+        if (pos < content.len and content[pos] == '"') pos += 1; // skip closing '"'
+        if (emoji_len == 0) continue;
+        mru_lens[mru_count] = @intCast(emoji_len);
+        mru_count += 1;
+    }
+}
+
+/// Save the current MRU list to ~/.config/emojig/mru.json.
+/// Prepends `emoji` to the front, deduplicates, and caps at MAX_MRU.
+/// No heap allocations — uses only stack buffers.
+fn saveMru(emoji: []const u8) void {
+    if (emoji.len == 0 or emoji.len > 31) return;
+
+    // Build new MRU: prepend emoji, remove duplicate, cap at MAX_MRU
+    var new_buf: [MAX_MRU][32]u8 = undefined;
+    var new_lens: [MAX_MRU]u8 = undefined;
+    var new_count: usize = 0;
+
+    // Copy new emoji into slot 0
+    @memcpy(new_buf[0][0..emoji.len], emoji);
+    new_lens[0] = @intCast(emoji.len);
+    new_count = 1;
+
+    // Append existing entries, skipping the duplicate
+    var i: usize = 0;
+    while (i < mru_count and new_count < MAX_MRU) : (i += 1) {
+        const existing = mru_buf[i][0..mru_lens[i]];
+        if (std.mem.eql(u8, existing, emoji)) continue; // skip duplicate
+        @memcpy(new_buf[new_count][0..mru_lens[i]], existing);
+        new_lens[new_count] = mru_lens[i];
+        new_count += 1;
+    }
+
+    // Update global state
+    @memcpy(mru_buf[0..new_count], new_buf[0..new_count]);
+    @memcpy(mru_lens[0..new_count], new_lens[0..new_count]);
+    mru_count = new_count;
+
+    // Write to file
+    const home = std.mem.span(std.c.getenv("HOME") orelse return);
+    var path_buf: [512]u8 = undefined;
+    const config_dir = std.fmt.bufPrint(&path_buf, "{s}/.config/emojig", .{home}) catch return;
+    if (config_dir.len + 1 > path_buf.len) return;
+    path_buf[config_dir.len] = 0;
+
+    // Create config directory if missing (ignore errors — both dirs may already exist)
+    var dot_config_buf: [512]u8 = undefined;
+    const dot_config = std.fmt.bufPrint(&dot_config_buf, "{s}/.config", .{home}) catch return;
+    if (dot_config.len + 1 > dot_config_buf.len) return;
+    dot_config_buf[dot_config.len] = 0;
+    _ = std.c.mkdir(dot_config_buf[0..dot_config.len :0], 0o755);
+    _ = std.c.mkdir(path_buf[0..config_dir.len :0], 0o755);
+
+    var file_path_buf: [520]u8 = undefined;
+    const file_path = std.fmt.bufPrint(&file_path_buf, "{s}/mru.json", .{config_dir}) catch return;
+    if (file_path.len + 1 > file_path_buf.len) return;
+    file_path_buf[file_path.len] = 0;
+
+    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, file_path_buf[0..file_path.len :0], wr_flags, 0o644) catch return;
+    defer _ = std.posix.system.close(fd);
+
+    // Serialise to JSON: ["e1","e2",...]
+    var json_buf: [2048]u8 = undefined;
+    var jpos: usize = 0;
+    json_buf[jpos] = '['; jpos += 1;
+    var j: usize = 0;
+    while (j < mru_count) : (j += 1) {
+        if (j > 0) { json_buf[jpos] = ','; jpos += 1; }
+        json_buf[jpos] = '"'; jpos += 1;
+        const esl = mru_lens[j];
+        @memcpy(json_buf[jpos..][0..esl], mru_buf[j][0..esl]);
+        jpos += esl;
+        json_buf[jpos] = '"'; jpos += 1;
+    }
+    json_buf[jpos] = ']'; jpos += 1;
+
+    _ = std.posix.system.write(fd, json_buf[0..jpos].ptr, jpos);
+}
+
+// ---------------------------------------------------------------------------
 
 var global_orig_termios: ?std.posix.termios = null;
 
@@ -101,7 +242,7 @@ fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
         const err = std.posix.errno(rc);
         if (err == .SUCCESS) {
             if (rc == 0) return error.Unexpected;
-            index += rc;
+            index += @intCast(rc);
         } else if (err == .INTR) {
             continue;
         } else {
@@ -153,10 +294,18 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    const term_width: usize = blk: {
+        const s = init.environ_map.get("EMOJIG_WIDTH") orelse break :blk 25;
+        break :blk std.fmt.parseInt(usize, s, 10) catch 40;
+    };
+
     const palette = switch (theme) {
         .dark => dark_palette,
         .light => light_palette,
     };
+
+    // Load MRU list from disk (startup-only allocation-free read)
+    loadMru();
 
     // Switch to alternate screen, enable mouse tracking, enable blinking cursor, hide cursor
     const stdout_fd = std.posix.STDOUT_FILENO;
@@ -223,8 +372,8 @@ pub fn main(init: std.process.Init) !void {
     var top_count: usize = 0;
     
     var should_copy_and_exit = false;
-    
-    // Initial search
+
+    // Initial search (query is empty — will show MRU first)
     search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
     
     var read_buf: [32]u8 = undefined;
@@ -232,15 +381,18 @@ pub fn main(init: std.process.Init) !void {
     while (true) {
         // 1. Draw screen
         try writeAll(stdout_fd, "\x1b[?25l\x1b[H"); // Hide cursor, cursor to 1,1
-        
+        try writeAll(stdout_fd, "\x1b[K\r\n"); // blank top padding line
+
         var line_buf: [1024]u8 = undefined;
-        
-        // Draw Header
-        const search_line = if (theme == .light)
-            try std.fmt.bufPrint(&line_buf, "\x1b[4m\x1b[38;5;235m🔍\x1b[0m\x1b[4m {s}\x1b[24m\x1b[K\r\n", .{ query_buf[0..query_len] })
-        else
-            try std.fmt.bufPrint(&line_buf, "\x1b[4m🔍 {s}\x1b[24m\x1b[K\r\n", .{ query_buf[0..query_len] });
+
+        // Draw Header — highlighted input bar, with one plain space at end to avoid BG bleed.
+        const search_line = try std.fmt.bufPrint(
+            &line_buf,
+            "🔍 {s}{s}\x1b[K\x1b[999C\x1b[0m \r\n",
+            .{ palette.search_row_bg, query_buf[0..query_len] },
+        );
         try writeAll(stdout_fd, search_line);
+        try writeAll(stdout_fd, "\x1b[K\r\n"); // blank line after search bar
         
         // Draw 4 rows of grid cells
         var r: usize = 0;
@@ -276,11 +428,16 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, line);
         }
         
-        // Draw selected emoji description at the bottom
+        // Draw selected emoji description at the bottom, truncated with ellipsis if needed
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
                 const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
-                const name_line = try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{selected.name});
+                const max_len = if (term_width > 1) term_width - 1 else 0; // 1 col for leading space
+                const name = selected.name;
+                const name_line = if (name.len > max_len and max_len >= 3)
+                    try std.fmt.bufPrint(&line_buf, " {s}...\x1b[K\r\n", .{name[0 .. max_len - 3]})
+                else
+                    try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{name});
                 try writeAll(stdout_fd, name_line);
             } else {
                 try writeAll(stdout_fd, "\x1b[K\r\n");
@@ -289,19 +446,21 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, "\x1b[K\r\n");
         }
         
-        // Move cursor back to search input position (Row 1, Column 4 + query_len), ensure blinking, and show it
+        // Move cursor back to search input position (Row 2, Column 4 + query_len), ensure blinking, and show it
         var cursor_buf: [48]u8 = undefined;
-        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?12h\x1b[?25h", .{4 + query_len});
+        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[2;{d}H\x1b[?12h\x1b[?25h", .{4 + query_len});
         try writeAll(stdout_fd, cursor_seq);
         
         if (should_copy_and_exit) {
             if (selected_idx) |sel| {
                 if (top_count > 0 and sel < top_count) {
                     const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                    saveMru(selected.emoji);
                     copyToClipboard(init, selected.emoji) catch {};
                 }
             } else if (top_count > 0) {
                 const selected = emojig.EmojiDb.getEntry(top_matches[0].index);
+                saveMru(selected.emoji);
                 copyToClipboard(init, selected.emoji) catch {};
             }
             break;
@@ -390,7 +549,7 @@ pub fn main(init: std.process.Init) !void {
                         
                         // Left click press
                         if (button == 0 and action_char == 'M') {
-                            // Row 1 is Search box. Rows 2, 3, 4, 5 are the 4 grid rows
+                            // Row 1 is blank padding. Row 2 is Search box. Rows 3-6 are the 4 grid rows
                             if (click_row >= 2 and click_row <= 5) {
                                 const grid_row = @as(usize, @intCast(click_row - 2));
                                 // Each cell is exactly 3 chars wide (" emo ")
@@ -434,19 +593,71 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
+/// Search for emojis matching `query` and populate `top_matches[0..top_count]`.
+///
+/// When query is empty, MRU emojis are placed first (by looking up their DB
+/// index), then remaining cells are filled with the full emoji list in DB
+/// order, skipping any emoji that was already shown as MRU.
+///
+/// When query is non-empty, standard fuzzy search runs as before.
 fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) void {
     top_count.* = 0;
-    
+
+    if (query.len == 0) {
+        // --- Empty query: show MRU first, then fill with full list ---
+
+        // Slot 0..mru_count-1: resolve each MRU emoji to its DB index.
+        // We do a linear scan of the DB for each MRU entry (no alloc).
+        var mru_indices: [MAX_MRU]usize = undefined;
+        var mru_resolved: usize = 0;
+
+        var m: usize = 0;
+        while (m < mru_count and top_count.* < limit) : (m += 1) {
+            const mru_emoji = mru_buf[m][0..mru_lens[m]];
+            // Linear scan to find the DB index for this emoji string
+            var db_idx: usize = 0;
+            while (db_idx < emojig.EmojiDb.count) : (db_idx += 1) {
+                const entry = emojig.EmojiDb.getEntry(db_idx);
+                if (std.mem.eql(u8, entry.emoji, mru_emoji)) {
+                    top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
+                    mru_indices[mru_resolved] = db_idx;
+                    mru_resolved += 1;
+                    top_count.* += 1;
+                    break;
+                }
+            } // silently skip MRU entries not in DB
+        }
+
+        // Fill remaining cells from full DB list, skipping MRU duplicates
+        var db_idx: usize = 0;
+        while (db_idx < emojig.EmojiDb.count and top_count.* < limit) : (db_idx += 1) {
+            // Check if this DB index is already shown as MRU
+            var already_shown = false;
+            var k: usize = 0;
+            while (k < mru_resolved) : (k += 1) {
+                if (mru_indices[k] == db_idx) {
+                    already_shown = true;
+                    break;
+                }
+            }
+            if (already_shown) continue;
+            top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
+            top_count.* += 1;
+        }
+        return;
+    }
+
+    // --- Non-empty query: standard fuzzy search (unchanged) ---
     var i: usize = 0;
     while (i < emojig.EmojiDb.count) : (i += 1) {
         const entry = emojig.EmojiDb.getEntry(i);
         if (emojig.fuzzyMatch(query, entry.search)) |score| {
-            const m = Match{ .index = i, .score = score };
+            const match = Match{ .index = i, .score = score };
             
             // Insert into sorted top_matches (descending order)
             var insert_pos: usize = 0;
             while (insert_pos < top_count.*) : (insert_pos += 1) {
-                if (m.score > top_matches[insert_pos].score) break;
+                if (match.score > top_matches[insert_pos].score) break;
             }
             
             if (insert_pos < limit) {
@@ -454,7 +665,7 @@ fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usi
                 while (shift > insert_pos) : (shift -= 1) {
                     top_matches[shift] = top_matches[shift - 1];
                 }
-                top_matches[insert_pos] = m;
+                top_matches[insert_pos] = match;
                 if (top_count.* < limit) top_count.* += 1;
             }
         }

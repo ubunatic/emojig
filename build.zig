@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
+    exe.root_module.link_libc = true;
     b.installArtifact(exe);
 
     // This creates a top level step. Top level steps have a name and can be
@@ -140,7 +141,18 @@ pub fn build(b: *std.Build) void {
     const run_picker = b.addSystemCommand(&.{
         "sh",
         "-c",
-        "foot --app-id=emojig-picker --window-size-chars=40x6 --override=font=monospace:size=14 --override=cursor.blink=yes --override=pad=8x4 --override=csd.size=0 \"$1\" || true",
+        \\w=25; h=10
+        \\cfg="$HOME/.config/emojig/config"
+        \\if [ -f "$cfg" ]; then
+        \\  v=$(sed -n 's/^width=//p' "$cfg" | tail -1); [ -n "$v" ] && w=$v
+        \\  v=$(sed -n 's/^height=//p' "$cfg" | tail -1); [ -n "$v" ] && h=$v
+        \\fi
+        \\[ -n "$EMOJIG_WIDTH" ]  && w=$EMOJIG_WIDTH
+        \\[ -n "$EMOJIG_HEIGHT" ] && h=$EMOJIG_HEIGHT
+        \\exec foot --app-id=emojig-picker "--window-size-chars=${w}x${h}" \
+        \\  --override=font=monospace:size=14 --override=cursor.blink=yes \
+        \\  --override=pad=8x4 --override=csd.size=0 "$1"
+        ,
         "emojig-launcher",
     });
     run_picker.addArtifactArg(exe);
