@@ -17,6 +17,16 @@ We successfully implemented **Option A (Floating TUI Client)** configured as a p
   * **Mouse click**: Click directly on any emoji in the grid to select it!
   * **Action**: Pressing `[Enter]` or clicking an emoji copies it directly to your clipboard using native Wayland `wl-copy` (or `xclip` fallback) and exits.
   * **Exit**: Press `[Escape]` or `[Ctrl+C]` to close without copying.
+  * **Theme Support**:
+    * Run in dark mode (default, premium dark cyan selection highlight):
+      ```bash
+      zig-out/bin/emojig --theme dark
+      ```
+    * Run in light mode (soft light blue/gray background highlight, dark text prompt):
+      ```bash
+      zig-out/bin/emojig --theme light
+      ```
+    * Environment Variable: Fall back to `EMOJIG_THEME` environment variable (e.g., `export EMOJIG_THEME=light`).
 
 ### Terminal UI Demo (Borderless Mock-up)
 
@@ -30,7 +40,7 @@ Below is a visualization of the interactive 6x4 emoji grid:
  🙄  🙄  🙄  🙄  🙄  🙄 
 ```
 > [!NOTE]
-> The dark cyan background block `█🔥█` indicates the currently highlighted emoji. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
+> The dark cyan background block `█🔥█` indicates the currently highlighted emoji in the default `dark` theme. In the `light` theme, this is drawn as a soft light blue background block with high-contrast dark text. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
 
 ---
 

@@ -7,6 +7,29 @@ const Match = struct {
     score: i32,
 };
 
+const Theme = enum {
+    dark,
+    light,
+};
+
+const Palette = struct {
+    selection_bg: []const u8,
+    search_prompt: []const u8,
+    empty_cell: []const u8,
+};
+
+const dark_palette = Palette{
+    .selection_bg = "\x1b[48;5;30m",
+    .search_prompt = "🔍:",
+    .empty_cell = "   ",
+};
+
+const light_palette = Palette{
+    .selection_bg = "\x1b[48;5;153m\x1b[38;5;235m",
+    .search_prompt = "\x1b[38;5;235m🔍:\x1b[0m",
+    .empty_cell = "   ",
+};
+
 var global_orig_termios: ?std.posix.termios = null;
 
 fn logMemoryUsage() void {
@@ -86,6 +109,53 @@ fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
+    var theme: Theme = .dark;
+
+    // Check environment variable fallback
+    if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
+        if (std.mem.eql(u8, env_val, "light")) {
+            theme = .light;
+        } else if (std.mem.eql(u8, env_val, "dark")) {
+            theme = .dark;
+        }
+    }
+
+    // Check command-line arguments (override env var)
+    var args_it = init.minimal.args.iterate();
+    _ = args_it.next(); // Skip executable name
+    while (args_it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--theme")) {
+            if (args_it.next()) |theme_val| {
+                if (std.mem.eql(u8, theme_val, "light")) {
+                    theme = .light;
+                } else if (std.mem.eql(u8, theme_val, "dark")) {
+                    theme = .dark;
+                } else {
+                    const stderr_fd = std.posix.STDERR_FILENO;
+                    try writeAll(stderr_fd, "Error: invalid theme. Supported values are 'dark' or 'light'.\n");
+                    std.process.exit(1);
+                }
+            } else {
+                const stderr_fd = std.posix.STDERR_FILENO;
+                try writeAll(stderr_fd, "Error: --theme requires an argument ('dark' or 'light').\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+            const stdout_fd = std.posix.STDOUT_FILENO;
+            try writeAll(stdout_fd, "Emojig - Premium Zero-Allocation Emoji Picker\n\n");
+            try writeAll(stdout_fd, "Usage: emojig [options]\n\n");
+            try writeAll(stdout_fd, "Options:\n");
+            try writeAll(stdout_fd, "  --theme [dark|light]  Set the UI theme (overrides EMOJIG_THEME env var)\n");
+            try writeAll(stdout_fd, "  -h, --help            Show this help message\n");
+            std.process.exit(0);
+        }
+    }
+
+    const palette = switch (theme) {
+        .dark => dark_palette,
+        .light => light_palette,
+    };
+
     // Switch to alternate screen, enable mouse tracking, hide cursor
     const stdout_fd = std.posix.STDOUT_FILENO;
     try writeAll(stdout_fd, "\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?25l");
@@ -164,7 +234,7 @@ pub fn main(init: std.process.Init) !void {
         var line_buf: [1024]u8 = undefined;
         
         // Draw Header
-        const search_line = try std.fmt.bufPrint(&line_buf, "🔍: {s}\x1b[K\r\n", .{query_buf[0..query_len]});
+        const search_line = try std.fmt.bufPrint(&line_buf, "{s} {s}\x1b[K\r\n", .{ palette.search_prompt, query_buf[0..query_len] });
         try writeAll(stdout_fd, search_line);
         
         // Draw 4 rows of grid cells
@@ -181,12 +251,12 @@ pub fn main(init: std.process.Init) !void {
                     const entry = emojig.EmojiDb.getEntry(m.index);
                     
                     if (idx == selected_idx) {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " \x1b[48;5;30m{s}\x1b[0m ", .{ entry.emoji });
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m ", .{ palette.selection_bg, entry.emoji });
                     } else {
                         cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
                     }
                 } else {
-                    cell_strings[c] = "   ";
+                    cell_strings[c] = palette.empty_cell;
                 }
             }
             
