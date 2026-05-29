@@ -1,22 +1,16 @@
-.PHONY: help build run picker test clean pack
+.PHONY: ⚙️
 
-help:
+help: ⚙️
 	@zig build --list-steps
 
-build:
+build: ⚙️
 	zig build -Doptimize=ReleaseSmall
 
-run:
-	zig build run
+run picker test: ⚙️
+	zig build $@
 
-picker:
-	zig build picker
-
-test:
-	zig build test
-
-clean:
+clean: ⚙️
 	rm -rf zig-out .zig-cache
 
-pack:
+pack: ⚙️  ## packs ...
 	go run scripts/pack_emojis.go
