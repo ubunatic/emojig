@@ -99,6 +99,15 @@ pub fn fuzzyMatch(query: []const u8, target: []const u8) ?i32 {
     return total_score;
 }
 
+test "verify all entries" {
+    var i: usize = 0;
+    while (i < EmojiDb.count) : (i += 1) {
+        const entry = EmojiDb.getEntry(i);
+        try std.testing.expect(entry.emoji.len > 0);
+        try std.testing.expect(entry.name.len > 0);
+    }
+}
+
 test "embedded database check" {
     try std.testing.expectEqualSlices(u8, "EMJG", EmojiDb.magic);
     try std.testing.expectEqual(@as(u16, 1), EmojiDb.version);

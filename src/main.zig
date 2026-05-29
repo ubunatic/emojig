@@ -262,6 +262,7 @@ fn copyToClipboard(init: std.process.Init, text: []const u8) !void {
         var child = spawned;
         try writeAll(child.stdin.?.handle, text);
         child.stdin.?.close(io);
+        child.stdin = null;
         _ = child.wait(io) catch {};
         return;
     } else |_| {
@@ -274,6 +275,7 @@ fn copyToClipboard(init: std.process.Init, text: []const u8) !void {
         });
         try writeAll(child.stdin.?.handle, text);
         child.stdin.?.close(io);
+        child.stdin = null;
         _ = try child.wait(io);
     }
 }
