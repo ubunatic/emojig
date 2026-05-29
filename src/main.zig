@@ -159,7 +159,7 @@ pub fn main(init: std.process.Init) !void {
     
     while (true) {
         // 1. Draw screen
-        try writeAll(stdout_fd, "\x1b[H"); // Cursor to 1,1
+        try writeAll(stdout_fd, "\x1b[?25l\x1b[H"); // Hide cursor, cursor to 1,1
         
         var line_buf: [1024]u8 = undefined;
         
@@ -199,6 +199,11 @@ pub fn main(init: std.process.Init) !void {
         
         // Clean remaining rows of alternative screen
         try writeAll(stdout_fd, "\x1b[K\r\n");
+        
+        // Move cursor back to search input position (Row 1, Column 5 + query_len) and show it
+        var cursor_buf: [32]u8 = undefined;
+        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[1;{d}H\x1b[?25h", .{5 + query_len});
+        try writeAll(stdout_fd, cursor_seq);
         
         if (should_copy_and_exit) {
             if (top_count > 0 and selected_idx < top_count) {
