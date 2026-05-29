@@ -164,7 +164,7 @@ pub fn main(init: std.process.Init) !void {
         var line_buf: [1024]u8 = undefined;
         
         // Draw Header
-        const search_line = try std.fmt.bufPrint(&line_buf, "🔍 Search: {s}\x1b[K\n", .{query_buf[0..query_len]});
+        const search_line = try std.fmt.bufPrint(&line_buf, "🔍 Search: {s}\x1b[K\r\n", .{query_buf[0..query_len]});
         try writeAll(stdout_fd, search_line);
         
         // Draw 4 rows of grid cells
@@ -190,7 +190,7 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
             
-            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}\x1b[K\n", .{
+            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}\x1b[K\r\n", .{
                 cell_strings[0], cell_strings[1], cell_strings[2],
                 cell_strings[3], cell_strings[4], cell_strings[5]
             });
@@ -198,7 +198,7 @@ pub fn main(init: std.process.Init) !void {
         }
         
         // Clean remaining rows of alternative screen
-        try writeAll(stdout_fd, "\x1b[K\n");
+        try writeAll(stdout_fd, "\x1b[K\r\n");
         
         if (should_copy_and_exit) {
             if (top_count > 0 and selected_idx < top_count) {
