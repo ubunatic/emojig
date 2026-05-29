@@ -216,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
     const rows = 4;
     const total_cells = cols * rows;
     
-    var selected_idx: usize = 0;
+    var selected_idx: ?usize = null;
     var top_matches: [total_cells]Match = undefined;
     var top_count: usize = 0;
     
@@ -250,8 +250,12 @@ pub fn main(init: std.process.Init) !void {
                     const m = top_matches[idx];
                     const entry = emojig.EmojiDb.getEntry(m.index);
                     
-                    if (idx == selected_idx) {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m ", .{ palette.selection_bg, entry.emoji });
+                    if (selected_idx) |sel| {
+                        if (idx == sel) {
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m ", .{ palette.selection_bg, entry.emoji });
+                        } else {
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
+                        }
                     } else {
                         cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
                     }
@@ -268,10 +272,14 @@ pub fn main(init: std.process.Init) !void {
         }
         
         // Draw selected emoji description at the bottom
-        if (top_count > 0 and selected_idx < top_count) {
-            const selected = emojig.EmojiDb.getEntry(top_matches[selected_idx].index);
-            const name_line = try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{selected.name});
-            try writeAll(stdout_fd, name_line);
+        if (selected_idx) |sel| {
+            if (top_count > 0 and sel < top_count) {
+                const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                const name_line = try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{selected.name});
+                try writeAll(stdout_fd, name_line);
+            } else {
+                try writeAll(stdout_fd, "\x1b[K\r\n");
+            }
         } else {
             try writeAll(stdout_fd, "\x1b[K\r\n");
         }
@@ -282,8 +290,13 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(stdout_fd, cursor_seq);
         
         if (should_copy_and_exit) {
-            if (top_count > 0 and selected_idx < top_count) {
-                const selected = emojig.EmojiDb.getEntry(top_matches[selected_idx].index);
+            if (selected_idx) |sel| {
+                if (top_count > 0 and sel < top_count) {
+                    const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                    copyToClipboard(init, selected.emoji) catch {};
+                }
+            } else if (top_count > 0) {
+                const selected = emojig.EmojiDb.getEntry(top_matches[0].index);
                 copyToClipboard(init, selected.emoji) catch {};
             }
             break;
@@ -301,50 +314,60 @@ pub fn main(init: std.process.Init) !void {
                 // ESC key
                 break;
             } else if (n > 2 and bytes[1] == '[') {
-                if (bytes[2] == 'A') {
-                    // Up arrow (moves 1 row up)
-                    if (top_count > 0) {
-                        if (selected_idx >= cols) {
-                            selected_idx -= cols;
-                        } else {
-                            // Wrap to bottom row of same column if possible
-                            const target = selected_idx + (rows - 1) * cols;
-                            if (target < top_count) {
-                                selected_idx = target;
+                if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
+                    if (selected_idx == null) {
+                        if (top_count > 0) {
+                            selected_idx = 0;
+                        }
+                        continue;
+                    }
+                    var sel = selected_idx.?;
+                    if (bytes[2] == 'A') {
+                        // Up arrow (moves 1 row up)
+                        if (top_count > 0) {
+                            if (sel >= cols) {
+                                sel -= cols;
                             } else {
-                                selected_idx = top_count - 1;
+                                // Wrap to bottom row of same column if possible
+                                const target = sel + (rows - 1) * cols;
+                                if (target < top_count) {
+                                    sel = target;
+                                } else {
+                                    sel = top_count - 1;
+                                }
+                            }
+                        }
+                    } else if (bytes[2] == 'B') {
+                        // Down arrow (moves 1 row down)
+                        if (top_count > 0) {
+                            const target = sel + cols;
+                            if (target < top_count) {
+                                sel = target;
+                            } else {
+                                // Wrap to top row of same column
+                                sel = sel % cols;
+                            }
+                        }
+                    } else if (bytes[2] == 'C') {
+                        // Right arrow (moves 1 cell right)
+                        if (top_count > 0) {
+                            if (sel < top_count - 1) {
+                                sel += 1;
+                            } else {
+                                sel = 0;
+                            }
+                        }
+                    } else if (bytes[2] == 'D') {
+                        // Left arrow (moves 1 cell left)
+                        if (top_count > 0) {
+                            if (sel > 0) {
+                                sel -= 1;
+                            } else {
+                                sel = top_count - 1;
                             }
                         }
                     }
-                } else if (bytes[2] == 'B') {
-                    // Down arrow (moves 1 row down)
-                    if (top_count > 0) {
-                        const target = selected_idx + cols;
-                        if (target < top_count) {
-                            selected_idx = target;
-                        } else {
-                            // Wrap to top row of same column
-                            selected_idx = selected_idx % cols;
-                        }
-                    }
-                } else if (bytes[2] == 'C') {
-                    // Right arrow (moves 1 cell right)
-                    if (top_count > 0) {
-                        if (selected_idx < top_count - 1) {
-                            selected_idx += 1;
-                        } else {
-                            selected_idx = 0;
-                        }
-                    }
-                } else if (bytes[2] == 'D') {
-                    // Left arrow (moves 1 cell left)
-                    if (top_count > 0) {
-                        if (selected_idx > 0) {
-                            selected_idx -= 1;
-                        } else {
-                            selected_idx = top_count - 1;
-                        }
-                    }
+                    selected_idx = sel;
                 } else if (bytes[2] == '<') {
                     // SGR Mouse Event
                     var it = std.mem.splitScalar(u8, bytes[3..], ';');
@@ -383,7 +406,7 @@ pub fn main(init: std.process.Init) !void {
             // Backspace
             if (query_len > 0) {
                 query_len -= 1;
-                selected_idx = 0;
+                selected_idx = if (query_len == 0) null else 0;
                 search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
             }
         } else if (bytes[0] == 10 or bytes[0] == 13) {
