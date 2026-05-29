@@ -138,11 +138,10 @@ pub fn build(b: *std.Build) void {
     // Custom step to launch the emoji picker inside foot
     const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window");
     const run_picker = b.addSystemCommand(&.{
-        "foot",
-        "--app-id=emojig-picker",
-        "--window-size-chars=40x7",
-        "--override=font=monospace:size=14",
-        "--override=pad=12x8",
+        "sh",
+        "-c",
+        "foot --app-id=emojig-picker --window-size-chars=40x7 --override=font=monospace:size=14 --override=pad=12x8 \"$1\" || true",
+        "emojig-launcher",
     });
     run_picker.addArtifactArg(exe);
     picker_step.dependOn(&run_picker.step);
