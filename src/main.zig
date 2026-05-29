@@ -9,6 +9,17 @@ const Match = struct {
 
 var global_orig_termios: ?std.posix.termios = null;
 
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+    _ = error_return_trace;
+    if (global_orig_termios) |orig| {
+        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+    }
+    // Disable mouse tracking, exit alternate screen, show cursor
+    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    
+    std.debug.defaultPanic(msg, ret_addr);
+}
+
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     if (global_orig_termios) |orig| {
