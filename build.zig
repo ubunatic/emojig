@@ -141,7 +141,7 @@ pub fn build(b: *std.Build) void {
         "foot",
         "--app-id=emojig-picker",
         "--window-size-chars=40x7",
-        "--override=font=monospace:size=18",
+        "--override=font=monospace:size=14",
         "--override=pad=12x8",
     });
     run_picker.addArtifactArg(exe);
