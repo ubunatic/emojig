@@ -135,6 +135,17 @@ pub fn build(b: *std.Build) void {
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    // Custom step to launch the emoji picker inside foot
+    const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window");
+    const run_picker = b.addSystemCommand(&.{
+        "foot",
+        "--app-id=emojig-picker",
+        "--window-size-chars=40x6",
+        "--override=pad=12x8",
+    });
+    run_picker.addArtifactArg(exe);
+    picker_step.dependOn(&run_picker.step);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.

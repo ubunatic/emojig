@@ -52,10 +52,15 @@ cat /tmp/emojig.log
 
 To run the interactive picker as a overlay floating window, run it inside a lightweight, Wayland-native terminal emulator like `foot` or `alacritty`.
 
-### Choice 1: `foot` (Highly Recommended)
-`foot` is a Wayland-native terminal emulator that starts in under 15ms.
+### Choice 1: The Native Build Helper (Highly Recommended)
+You can launch the emoji picker inside a custom-sized, floating `foot` terminal natively via the Zig build system:
 ```bash
-foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 zig-out/bin/emojig
+zig build picker
+```
+
+### Choice 2: Direct `foot` Invocation
+```bash
+foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x6 --override=pad=12x8 zig-out/bin/emojig
 ```
 
 ### Choice 2: `alacritty`
@@ -82,7 +87,7 @@ for_window [app_id="emojig-picker"] {
 }
 
 # Bind a global hotkey (e.g., Mod4 + Period) to launch it
-bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 /absolute/path/to/emojig
+bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x6 --override=pad=12x8 /absolute/path/to/emojig
 ```
 
 ### B. Hyprland Config
@@ -90,13 +95,13 @@ Add these lines to your `~/.config/hypr/hyprland.conf`:
 ```ini
 # Window Rules for Emojig
 windowrulev2 = float, class:^(emojig-picker)$
-windowrulev2 = size 200 150, class:^(emojig-picker)$
+windowrulev2 = size 450 200, class:^(emojig-picker)$
 windowrulev2 = center, class:^(emojig-picker)$
 windowrulev2 = pin, class:^(emojig-picker)$
 windowrulev2 = stayfocused, class:^(emojig-picker)$
 
 # Bind hotkey to toggle (Super + Dot)
-bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=18x5 /absolute/path/to/emojig
+bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x6 --override=pad=12x8 /absolute/path/to/emojig
 ```
 
 ### C. Ubuntu GNOME Wayland
@@ -106,7 +111,7 @@ GNOME doesn't natively support rule-based window filtering like tiling managers,
    * Add a new shortcut named `Emoji Picker`.
    * Set Command to:
      ```bash
-     gnome-terminal --class=emojig-picker --geometry=18x5 -- /absolute/path/to/emojig
+     foot --app-id=emojig-picker --window-size-chars=40x6 --override=pad=12x8 /absolute/path/to/emojig
      ```
    * Set your desired hotkey (e.g., `Super + .`).
 2. **Hide from Taskbar & Force Float**:
