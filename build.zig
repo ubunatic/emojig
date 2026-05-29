@@ -146,6 +146,15 @@ pub fn build(b: *std.Build) void {
     run_picker.addArtifactArg(exe);
     picker_step.dependOn(&run_picker.step);
 
+    // Custom step to pack the emoji database
+    const pack_step = b.step("pack", "Serialize and compress data/emoji.json into src/emojis.bin");
+    const run_packer = b.addSystemCommand(&.{
+        "go",
+        "run",
+        "scripts/pack_emojis.go",
+    });
+    pack_step.dependOn(&run_packer.step);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
