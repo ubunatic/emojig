@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
     const run_picker = b.addSystemCommand(&.{
         "foot",
         "--app-id=emojig-picker",
-        "--window-size-chars=40x6",
+        "--window-size-chars=40x7",
         "--override=pad=12x8",
     });
     run_picker.addArtifactArg(exe);

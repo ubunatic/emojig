@@ -1,4 +1,4 @@
-.PHONY: ⚙️
+.PHONY: ⚙️  # make all targets phony
 
 help: ⚙️
 	@zig build --list-steps
