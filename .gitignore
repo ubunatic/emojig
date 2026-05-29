@@ -1,0 +1,6 @@
+# Zig build directories
+.zig-cache/
+zig-out/
+
+# Downloaded raw emoji source datasets
+data/
