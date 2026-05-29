@@ -267,8 +267,14 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, line);
         }
         
-        // Clean remaining rows of alternative screen
-        try writeAll(stdout_fd, "\x1b[K\r\n");
+        // Draw selected emoji description at the bottom
+        if (top_count > 0 and selected_idx < top_count) {
+            const selected = emojig.EmojiDb.getEntry(top_matches[selected_idx].index);
+            const name_line = try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{selected.name});
+            try writeAll(stdout_fd, name_line);
+        } else {
+            try writeAll(stdout_fd, "\x1b[K\r\n");
+        }
         
         // Move cursor back to search input position (Row 1, Column 5 + query_len) and show it
         var cursor_buf: [32]u8 = undefined;
