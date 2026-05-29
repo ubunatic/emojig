@@ -60,7 +60,7 @@ zig build picker
 
 ### Choice 2: Direct `foot` Invocation
 ```bash
-foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=pad=12x8 zig-out/bin/emojig
+foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=font=monospace:size=22 --override=pad=12x8 zig-out/bin/emojig
 ```
 
 ### Choice 2: `alacritty`
@@ -87,7 +87,7 @@ for_window [app_id="emojig-picker"] {
 }
 
 # Bind a global hotkey (e.g., Mod4 + Period) to launch it
-bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=pad=12x8 /absolute/path/to/emojig
+bindsym Mod4+period exec foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=font=monospace:size=22 --override=pad=12x8 /absolute/path/to/emojig
 ```
 
 ### B. Hyprland Config
@@ -101,7 +101,7 @@ windowrulev2 = pin, class:^(emojig-picker)$
 windowrulev2 = stayfocused, class:^(emojig-picker)$
 
 # Bind hotkey to toggle (Super + Dot)
-bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=pad=12x8 /absolute/path/to/emojig
+bind = SUPER, period, exec, foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=font=monospace:size=22 --override=pad=12x8 /absolute/path/to/emojig
 ```
 
 ### C. Ubuntu GNOME Wayland
@@ -111,7 +111,7 @@ GNOME doesn't natively support rule-based window filtering like tiling managers,
    * Add a new shortcut named `Emoji Picker`.
    * Set Command to:
      ```bash
-     foot --app-id=emojig-picker --window-size-chars=40x7 --override=pad=12x8 /absolute/path/to/emojig
+     foot --app-id=emojig-picker --window-size-chars=40x7 --override=font=monospace:size=22 --override=pad=12x8 /absolute/path/to/emojig
      ```
    * Set your desired hotkey (e.g., `Super + .`).
 2. **Hide from Taskbar & Force Float**:
