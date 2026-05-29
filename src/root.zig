@@ -39,7 +39,7 @@ pub const EmojiDb = struct {
 
 /// Match a single search term against a target search string.
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
-pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
+fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
     
     var score: i32 = 0;
@@ -82,6 +82,88 @@ pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
     score -= @intCast(start_idx);
     
     return score;
+}
+
+/// Match a single search term against a target search string.
+/// Returns a score if the term is a subsequence of the target, or null otherwise.
+pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
+    if (term.len == 0) return 0;
+    if (matchTermDirect(term, target)) |score| {
+        return score;
+    }
+
+    // Fallback: Plurals (if term ends in 's' and length > 3, e.g. "cars" -> "car")
+    if (term.len > 3 and std.ascii.toLower(term[term.len - 1]) == 's') {
+        const last2 = std.ascii.toLower(term[term.len - 2]);
+        if (last2 != 's') { // avoid "glass", "grass"
+            // If it ends in "ies" and length > 5 (e.g. "cherries" -> "cherry")
+            if (term.len > 5 and term.len < 60 and last2 == 'e' and std.ascii.toLower(term[term.len - 3]) == 'i') {
+                var buf: [64]u8 = undefined;
+                for (term[0 .. term.len - 3], 0..) |c, i| {
+                    buf[i] = c;
+                }
+                buf[term.len - 3] = 'y';
+                const alternate = buf[0 .. term.len - 2];
+                if (matchTermDirect(alternate, target)) |score| {
+                    return score - 5;
+                }
+            }
+            // If it ends in "es" and length > 4 (e.g. "boxes" -> "box")
+            if (term.len > 4 and last2 == 'e') {
+                const alternate1 = term[0 .. term.len - 2]; // strip "es"
+                if (matchTermDirect(alternate1, target)) |score| {
+                    return score - 5;
+                }
+                const alternate2 = term[0 .. term.len - 1]; // strip "s" (e.g. "shoes" -> "shoe")
+                if (matchTermDirect(alternate2, target)) |score| {
+                    return score - 5;
+                }
+            }
+            // Default plural strip 's'
+            const alternate = term[0 .. term.len - 1];
+            if (matchTermDirect(alternate, target)) |score| {
+                return score - 5;
+            }
+        }
+    }
+
+    // Fallback: Word stems (if term ends in 'ing' and length > 4, e.g. "racing" -> "rac" or "race")
+    if (term.len > 4 and std.mem.eql(u8, term[term.len - 3 ..], "ing")) {
+        const stem = term[0 .. term.len - 3];
+        // try stem directly (e.g. "racing" -> "rac")
+        if (matchTermDirect(stem, target)) |score| {
+            return score - 5;
+        }
+        // try stem + "e" (e.g. "racing" -> "race")
+        var buf: [64]u8 = undefined;
+        if (stem.len < 60) {
+            for (stem, 0..) |c, i| {
+                buf[i] = c;
+            }
+            buf[stem.len] = 'e';
+            const alternate = buf[0 .. stem.len + 1];
+            if (matchTermDirect(alternate, target)) |score| {
+                return score - 5;
+            }
+        }
+        // If double consonant stem (e.g. "running" -> "run")
+        if (stem.len > 2 and stem[stem.len - 1] == stem[stem.len - 2]) {
+            const alternate = stem[0 .. stem.len - 1];
+            if (matchTermDirect(alternate, target)) |score| {
+                return score - 5;
+            }
+        }
+    }
+
+    // Fallback: Query stem (if term ends in 'e' and length > 3, e.g. "race" -> "rac")
+    if (term.len > 3 and std.ascii.toLower(term[term.len - 1]) == 'e') {
+        const alternate = term[0 .. term.len - 1];
+        if (matchTermDirect(alternate, target)) |score| {
+            return score - 5;
+        }
+    }
+
+    return null;
 }
 
 /// Matches multiple space-separated terms in the query.
@@ -138,4 +220,28 @@ test "fuzzy subsequence matching" {
     
     const score5 = fuzzyMatch("face xyz", target);
     try std.testing.expect(score5 == null);
+}
+
+test "fuzzy matching with plurals and word stems" {
+    const target = "racing car";
+
+    // 1. Plural and singular matches
+    const score_car = fuzzyMatch("car", target);
+    try std.testing.expect(score_car != null);
+
+    const score_cars = fuzzyMatch("cars", target);
+    try std.testing.expect(score_cars != null);
+
+    // 2. Word stem matches
+    const score_racing = fuzzyMatch("racing", target);
+    try std.testing.expect(score_racing != null);
+
+    const score_race = fuzzyMatch("race", target);
+    try std.testing.expect(score_race != null);
+
+    // Make sure they score highly
+    try std.testing.expect(score_car.? > 0);
+    try std.testing.expect(score_cars.? > 0);
+    try std.testing.expect(score_racing.? > 0);
+    try std.testing.expect(score_race.? > 0);
 }
