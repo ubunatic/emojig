@@ -10,30 +10,25 @@ const Match = struct {
 const Theme = enum {
     dark,
     light,
+    system,
 };
 
 const Palette = struct {
+    bg: []const u8,              // overall background + foreground for grid/description rows
     selection_bg: []const u8,
-    search_prompt: []const u8,
-    empty_cell: []const u8,
-    search_row_bg: []const u8,   // background for the search input bar
-    search_row_fg: []const u8,   // foreground text colour for the search row
+    search_row_bg: []const u8,
 };
 
 const dark_palette = Palette{
+    .bg           = "\x1b[48;5;234m\x1b[38;5;250m",
     .selection_bg = "\x1b[48;5;30m",
-    .search_prompt = "🔍",
-    .empty_cell = "   ",
-    .search_row_bg = "\x1b[48;5;236m",   // dark blue-grey input field
-    .search_row_fg = "\x1b[38;5;255m",   // near-white text
+    .search_row_bg = "\x1b[48;5;236m",
 };
 
 const light_palette = Palette{
+    .bg           = "\x1b[48;5;231m\x1b[38;5;235m",
     .selection_bg = "\x1b[48;5;153m\x1b[38;5;235m",
-    .search_prompt = "\x1b[38;5;235m🔍\x1b[0m",
-    .empty_cell = "   ",
-    .search_row_bg = "\x1b[48;5;189m",   // pale blue-grey input field
-    .search_row_fg = "\x1b[38;5;235m",   // dark text
+    .search_row_bg = "\x1b[48;5;189m",
 };
 
 // ---------------------------------------------------------------------------
@@ -235,6 +230,56 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
     std.debug.defaultPanic(msg, ret_addr);
 }
 
+fn themeIcon(t: Theme) []const u8 {
+    return switch (t) {
+        .dark   => "🌙",
+        .light  => "🌞",
+        .system => "🔆",
+    };
+}
+
+fn effectivePalette(t: Theme, sys: Theme) Palette {
+    const eff = if (t == .system) sys else t;
+    return switch (eff) {
+        .light  => light_palette,
+        .dark, .system => dark_palette,
+    };
+}
+
+/// Query the terminal background colour via OSC 11, detect dark/light.
+/// Temporarily switches to VMIN=0 VTIME=2 (200 ms timeout) for the read.
+fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
+    writeAll(stdout_fd, "\x1b]11;?\x1b\\") catch return .dark;
+    var timed = raw;
+    const sys = std.posix.system;
+    timed.cc[@intFromEnum(sys.V.MIN)]  = 0;
+    timed.cc[@intFromEnum(sys.V.TIME)] = 2; // 2 × 100 ms = 200 ms
+    std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return .dark;
+    defer std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
+    var buf: [64]u8 = undefined;
+    const n = std.posix.read(stdin_fd, &buf) catch return .dark;
+    if (n == 0) return .dark;
+    const resp = buf[0..n];
+    // Response format: \x1b]11;rgb:RRRR/GGGG/BBBB\x1b\\ (4 hex digits per channel)
+    var i: usize = 0;
+    const prefix = "rgb:";
+    while (i + prefix.len <= resp.len) : (i += 1) {
+        if (!std.mem.startsWith(u8, resp[i..], prefix)) continue;
+        i += prefix.len;
+        if (i + 4 > resp.len) break;
+        const r = std.fmt.parseInt(u16, resp[i .. i + 4], 16) catch break;
+        const g = if (i + 9 <= resp.len and resp[i + 4] == '/')
+            std.fmt.parseInt(u16, resp[i + 5 .. i + 9], 16) catch r
+        else r;
+        const b = if (i + 14 <= resp.len and resp[i + 9] == '/')
+            std.fmt.parseInt(u16, resp[i + 10 .. i + 14], 16) catch r
+        else r;
+        const luma = (@as(u32, r) * 299 + @as(u32, g) * 587 + @as(u32, b) * 114) / 1000;
+        return if (luma > 32767) .light else .dark;
+    }
+    return .dark;
+}
+
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     var index: usize = 0;
     while (index < bytes.len) {
@@ -260,6 +305,8 @@ pub fn main(init: std.process.Init) !void {
             theme = .light;
         } else if (std.mem.eql(u8, env_val, "dark")) {
             theme = .dark;
+        } else if (std.mem.eql(u8, env_val, "system")) {
+            theme = .system;
         }
     }
 
@@ -273,14 +320,16 @@ pub fn main(init: std.process.Init) !void {
                     theme = .light;
                 } else if (std.mem.eql(u8, theme_val, "dark")) {
                     theme = .dark;
+                } else if (std.mem.eql(u8, theme_val, "system")) {
+                    theme = .system;
                 } else {
                     const stderr_fd = std.posix.STDERR_FILENO;
-                    try writeAll(stderr_fd, "Error: invalid theme. Supported values are 'dark' or 'light'.\n");
+                    try writeAll(stderr_fd, "Error: invalid theme. Supported values are 'dark', 'light', or 'system'.\n");
                     std.process.exit(1);
                 }
             } else {
                 const stderr_fd = std.posix.STDERR_FILENO;
-                try writeAll(stderr_fd, "Error: --theme requires an argument ('dark' or 'light').\n");
+                try writeAll(stderr_fd, "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -288,7 +337,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, "Emojig - Premium Zero-Allocation Emoji Picker\n\n");
             try writeAll(stdout_fd, "Usage: emojig [options]\n\n");
             try writeAll(stdout_fd, "Options:\n");
-            try writeAll(stdout_fd, "  --theme [dark|light]  Set the UI theme (overrides EMOJIG_THEME env var)\n");
+            try writeAll(stdout_fd, "  --theme [dark|light|system]  Set the UI theme (overrides EMOJIG_THEME env var)\n");
             try writeAll(stdout_fd, "  -h, --help            Show this help message\n");
             std.process.exit(0);
         }
@@ -297,11 +346,6 @@ pub fn main(init: std.process.Init) !void {
     const term_width: usize = blk: {
         const s = init.environ_map.get("EMOJIG_WIDTH") orelse break :blk 25;
         break :blk std.fmt.parseInt(usize, s, 10) catch 40;
-    };
-
-    const palette = switch (theme) {
-        .dark => dark_palette,
-        .light => light_palette,
     };
 
     // Load MRU list from disk (startup-only allocation-free read)
@@ -351,7 +395,13 @@ pub fn main(init: std.process.Init) !void {
     raw.cc[@intFromEnum(system.V.TIME)] = 0;
     
     try std.posix.tcsetattr(stdin_fd, .NOW, raw);
-    
+
+    // Resolve system theme once via OSC 11 background-colour query
+    var system_theme: Theme = if (theme == .system)
+        detectSystemTheme(stdin_fd, stdout_fd, raw)
+    else
+        theme;
+
     defer {
         // Restore termios, disable mouse tracking, exit alternate screen, reset cursor style, show cursor
         std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
@@ -379,70 +429,80 @@ pub fn main(init: std.process.Init) !void {
     var read_buf: [32]u8 = undefined;
     
     while (true) {
+        // Recompute palette from current theme each frame (supports runtime toggle)
+        const palette = effectivePalette(theme, system_theme);
+
         // 1. Draw screen
         try writeAll(stdout_fd, "\x1b[?25l\x1b[H"); // Hide cursor, cursor to 1,1
-        try writeAll(stdout_fd, "\x1b[K\r\n"); // blank top padding line
+        // blank top padding line (themed bg)
+        try writeAll(stdout_fd, palette.bg);
+        try writeAll(stdout_fd, "\x1b[K\r\n");
 
         var line_buf: [1024]u8 = undefined;
 
-        // Draw Header — highlighted input bar, with one plain space at end to avoid BG bleed.
+        // Search bar: BG covers query area; last 4 cols are [space][icon][space] in plain bg.
+        const icon_col = if (term_width >= 4) term_width - 3 else 1;
         const search_line = try std.fmt.bufPrint(
             &line_buf,
-            "🔍 {s}{s}\x1b[K\x1b[999C\x1b[0m \r\n",
-            .{ palette.search_row_bg, query_buf[0..query_len] },
+            "🔍 {s}{s}\x1b[K\x1b[{d}G{s} {s} \r\n",
+            .{ palette.search_row_bg, query_buf[0..query_len], icon_col, palette.bg, themeIcon(theme) },
         );
         try writeAll(stdout_fd, search_line);
-        try writeAll(stdout_fd, "\x1b[K\r\n"); // blank line after search bar
-        
+        // blank spacer line (themed bg)
+        try writeAll(stdout_fd, palette.bg);
+        try writeAll(stdout_fd, "\x1b[K\r\n");
+
         // Draw 4 rows of grid cells
         var r: usize = 0;
         while (r < rows) : (r += 1) {
             var cell_buffers: [6][64]u8 = undefined;
             var cell_strings: [6][]const u8 = undefined;
-            
+
             var c: usize = 0;
             while (c < cols) : (c += 1) {
                 const idx = r * cols + c;
                 if (idx < top_count) {
                     const m = top_matches[idx];
                     const entry = emojig.EmojiDb.getEntry(m.index);
-                    
                     if (selected_idx) |sel| {
                         if (idx == sel) {
-                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m ", .{ palette.selection_bg, entry.emoji });
+                            // selection highlight, then restore grid bg for trailing space
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s} ", .{ palette.selection_bg, entry.emoji, palette.bg });
                         } else {
-                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{entry.emoji});
                         }
                     } else {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{ entry.emoji });
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{entry.emoji});
                     }
                 } else {
-                    cell_strings[c] = palette.empty_cell;
+                    cell_strings[c] = "   ";
                 }
             }
-            
-            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}\x1b[K\r\n", .{
+
+            const line = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}{s}\x1b[K\r\n", .{
+                palette.bg,
                 cell_strings[0], cell_strings[1], cell_strings[2],
-                cell_strings[3], cell_strings[4], cell_strings[5]
+                cell_strings[3], cell_strings[4], cell_strings[5],
             });
             try writeAll(stdout_fd, line);
         }
-        
-        // Draw selected emoji description at the bottom, truncated with ellipsis if needed
+
+        // Description line (themed bg), truncated with ellipsis if needed
+        const max_len = if (term_width > 1) term_width - 1 else 0;
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
-                const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
-                const max_len = if (term_width > 1) term_width - 1 else 0; // 1 col for leading space
-                const name = selected.name;
+                const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
                 const name_line = if (name.len > max_len and max_len >= 3)
-                    try std.fmt.bufPrint(&line_buf, " {s}...\x1b[K\r\n", .{name[0 .. max_len - 3]})
+                    try std.fmt.bufPrint(&line_buf, "{s} {s}...\x1b[K\r\n", .{ palette.bg, name[0 .. max_len - 3] })
                 else
-                    try std.fmt.bufPrint(&line_buf, " {s}\x1b[K\r\n", .{name});
+                    try std.fmt.bufPrint(&line_buf, "{s} {s}\x1b[K\r\n", .{ palette.bg, name });
                 try writeAll(stdout_fd, name_line);
             } else {
+                try writeAll(stdout_fd, palette.bg);
                 try writeAll(stdout_fd, "\x1b[K\r\n");
             }
         } else {
+            try writeAll(stdout_fd, palette.bg);
             try writeAll(stdout_fd, "\x1b[K\r\n");
         }
         
@@ -548,11 +608,20 @@ pub fn main(init: std.process.Init) !void {
                         const click_row = std.fmt.parseInt(i32, row_str, 10) catch continue;
                         
                         // Left click press
+                        // Layout: row1=padding, row2=search+icon, row3=spacer, rows4-7=grid, row8=desc
                         if (button == 0 and action_char == 'M') {
-                            // Row 1 is blank padding. Row 2 is Search box. Rows 3-6 are the 4 grid rows
-                            if (click_row >= 2 and click_row <= 5) {
-                                const grid_row = @as(usize, @intCast(click_row - 2));
-                                // Each cell is exactly 3 chars wide (" emo ")
+                            if (click_row == 2 and click_col >= @as(i32, @intCast(term_width)) - 3) {
+                                // Theme toggle button (right 2 cols of search bar)
+                                theme = switch (theme) {
+                                    .dark   => .light,
+                                    .light  => .system,
+                                    .system => .dark,
+                                };
+                                if (theme == .system)
+                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                            } else if (click_row >= 4 and click_row <= 7) {
+                                // Emoji grid
+                                const grid_row = @as(usize, @intCast(click_row - 4));
                                 const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 3;
                                 if (grid_col < cols) {
                                     const clicked_idx = grid_row * cols + grid_col;
