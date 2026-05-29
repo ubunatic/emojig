@@ -30,7 +30,7 @@ Below is a visualization of the interactive 6x4 emoji grid:
  🙄  🙄  🙄  🙄  🙄  🙄 
 ```
 > [!NOTE]
-> The reverse-video block `█🔥█` indicates the currently highlighted emoji. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
+> The gray background block `█🔥█` indicates the currently highlighted emoji. Navigating using Arrow Keys updates the selection in real-time, and clicking directly on any cell will instantly select and copy that emoji.
 
 ---
 
