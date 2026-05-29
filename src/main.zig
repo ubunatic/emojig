@@ -7,6 +7,18 @@ const Match = struct {
     score: i32,
 };
 
+var global_orig_termios: ?std.posix.termios = null;
+
+fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
+    _ = sig;
+    if (global_orig_termios) |orig| {
+        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+    }
+    // Disable mouse tracking, exit alternate screen, show cursor
+    _ = std.posix.system.write(std.posix.STDOUT_FILENO, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h", 28);
+    std.process.exit(1);
+}
+
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     var index: usize = 0;
     while (index < bytes.len) {
@@ -31,8 +43,18 @@ pub fn main(init: std.process.Init) !void {
     // Save and configure raw termios
     const stdin_fd = std.posix.STDIN_FILENO;
     const orig_termios = try std.posix.tcgetattr(stdin_fd);
-    var raw = orig_termios;
+    global_orig_termios = orig_termios;
     
+    // Register signal handlers to restore terminal on SIGINT/SIGTERM
+    var act = std.posix.Sigaction{
+        .handler = .{ .handler = sigHandler },
+        .mask = std.mem.zeroes(std.posix.sigset_t),
+        .flags = 0,
+    };
+    std.posix.sigaction(std.posix.SIG.INT, &act, null);
+    std.posix.sigaction(std.posix.SIG.TERM, &act, null);
+    
+    var raw = orig_termios;
     raw.iflag.IGNBRK = false;
     raw.iflag.BRKINT = false;
     raw.iflag.PARMRK = false;
@@ -57,11 +79,11 @@ pub fn main(init: std.process.Init) !void {
     raw.cc[@intFromEnum(system.V.MIN)] = 1;
     raw.cc[@intFromEnum(system.V.TIME)] = 0;
     
-    try std.posix.tcsetattr(stdin_fd, .FLUSH, raw);
+    try std.posix.tcsetattr(stdin_fd, .NOW, raw);
     
     defer {
         // Restore termios, disable mouse tracking, exit alternate screen, show cursor
-        std.posix.tcsetattr(stdin_fd, .FLUSH, orig_termios) catch {};
+        std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
         writeAll(stdout_fd, "\x1b[?1000l\x1b[?1006l\x1b[?1049l\x1b[?25h") catch {};
     }
     
