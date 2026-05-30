@@ -737,7 +737,7 @@ pub fn main(init: std.process.Init) !void {
                             " {s} ", .{entry.emoji});
                     }
                 } else {
-                    cell_strings[c] = "   ";
+                    cell_strings[c] = "    ";
                 }
             }
 
