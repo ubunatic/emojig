@@ -567,10 +567,10 @@ pub fn main(init: std.process.Init) !void {
         }
         run_gui = true;
     } else {
-        if (has_gui_session) {
+        if (is_stdin_tty) {
+            // run TUI in-place
+        } else if (has_gui_session) {
             run_gui = true;
-        } else if (is_stdin_tty) {
-            // run TUI
         } else {
             try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal and no GUI session was detected.\n");
             std.process.exit(1);
