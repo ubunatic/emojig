@@ -124,7 +124,7 @@ fn logMemoryUsage() void {
 // Escape sequence to disable all mouse tracking + alt screen + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well.
 const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-const RESTORE   = MOUSE_OFF ++ "\x1b[?1049l\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
+const RESTORE   = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
@@ -148,7 +148,9 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 
 /// Query the terminal background colour via OSC 11, detect dark/light.
 fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
-    writeAll(stdout_fd, "\x1b]11;?\x1b\\") catch return .dark;
+    // Reset terminal colors to default first to ensure we query the native system theme,
+    // not any custom theme background/foreground we previously applied.
+    writeAll(stdout_fd, "\x1b]111\x1b\\\x1b]110\x1b\\\x1b]11;?\x1b\\") catch return .dark;
     var timed = raw;
     const sys = std.posix.system;
     timed.cc[@intFromEnum(sys.V.MIN)]  = 0;
@@ -195,6 +197,7 @@ const Config = struct {
     width: ?usize = null,
     height: ?usize = null,
     border: ?bool = null,
+    safe: ?bool = null,
 };
 
 /// Read configuration from the config file in a single pass.
@@ -224,6 +227,8 @@ fn loadConfig() Config {
                 cfg.height = std.fmt.parseInt(usize, val, 10) catch null;
             } else if (std.mem.eql(u8, key, "border")) {
                 cfg.border = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
+            } else if (std.mem.eql(u8, key, "safe")) {
+                cfg.safe = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
             }
         }
     }
@@ -355,6 +360,7 @@ fn spawnFootWindow(
     height: usize,
     theme: Theme,
     border: bool,
+    safe: bool,
     wait: bool,
 ) !void {
     const io = init.io;
@@ -390,6 +396,9 @@ fn spawnFootWindow(
     var env_border: [64]u8 = undefined;
     const env_border_arg = try std.fmt.bufPrint(&env_border, "EMOJIG_BORDER={s}", .{if (border) "1" else "0"});
     
+    var env_safe: [64]u8 = undefined;
+    const env_safe_arg = try std.fmt.bufPrint(&env_safe, "EMOJIG_SAFE={s}", .{if (safe) "1" else "0"});
+    
     const timeout_val = init.environ_map.get("EMOJIG_PICKER_TIMEOUT") orelse "60";
     
     const argv = &.{
@@ -409,6 +418,7 @@ fn spawnFootWindow(
         env_h_arg,
         env_theme_arg,
         env_border_arg,
+        env_safe_arg,
         exe_path,
         "--tui",
     };
@@ -437,6 +447,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_width: ?usize = null;
     var opt_height: ?usize = null;
     var opt_border: ?bool = null;
+    var opt_safe = false;
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -447,6 +458,8 @@ pub fn main(init: std.process.Init) !void {
             opt_gui = true;
         } else if (std.mem.eql(u8, arg, "--wait")) {
             opt_wait = true;
+        } else if (std.mem.eql(u8, arg, "--safe")) {
+            opt_safe = true;
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
                 if (std.mem.eql(u8, v, "light"))       opt_theme = .light
@@ -505,6 +518,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --width [number]             Set the width of the picker\n" ++
                 "  --height [number]            Set the height of the picker\n" ++
                 "  --border [1|0|true|false]    Enable or disable the border\n" ++
+                "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating terminal window (spawns foot)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
@@ -550,10 +564,18 @@ pub fn main(init: std.process.Init) !void {
         break :blk null;
     };
 
+    const env_safe: ?bool = blk: {
+        if (init.environ_map.get("EMOJIG_SAFE")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk null;
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
+    const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
 
     const has_gui_session = blk: {
         const wayland = init.environ_map.get("WAYLAND_DISPLAY");
@@ -608,6 +630,7 @@ pub fn main(init: std.process.Init) !void {
             final_height,
             final_theme,
             final_border,
+            final_safe,
             opt_wait,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' and 'timeout' are installed and in your PATH (");
@@ -680,8 +703,8 @@ pub fn main(init: std.process.Init) !void {
                 const clear_seq = "\x1b[2K";
                 _ = std.posix.system.write(stdout_fd, clear_seq.ptr, clear_seq.len);
                 if (k < final_h - 1) {
-                    const nl_seq = "\n";
-                    _ = std.posix.system.write(stdout_fd, nl_seq.ptr, nl_seq.len);
+                    const down_seq = "\x1b[B\r";
+                    _ = std.posix.system.write(stdout_fd, down_seq.ptr, down_seq.len);
                 }
             }
             // Move cursor back up to the top start position so the new prompt is printed there
@@ -789,18 +812,20 @@ pub fn main(init: std.process.Init) !void {
                 if (idx < top_count) {
                     const m = top_matches[idx];
                     const entry = emojig.EmojiDb.getEntry(m.index);
+                    var strip_buf: [32]u8 = undefined;
+                    const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
                     if (selected_idx) |sel| {
                         if (idx == sel) {
                             cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
                                 " {s}{s}\x1b[0m{s}{s} ",
-                                .{ palette.selection_bg, entry.emoji, palette.bg, palette.fg });
+                                .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
                         } else {
                             cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
-                                " {s} ", .{entry.emoji});
+                                " {s} ", .{render_emoji});
                         }
                     } else {
                         cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
-                            " {s} ", .{entry.emoji});
+                            " {s} ", .{render_emoji});
                     }
                 } else {
                     cell_strings[c] = "    ";
@@ -874,12 +899,12 @@ pub fn main(init: std.process.Init) !void {
                 if (top_count > 0 and sel < top_count) {
                     const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
                     mru.save(selected.emoji);
-                    copyToClipboard(init, selected.emoji) catch {};
+                    copyToClipboard(init, selected.emoji, final_safe) catch {};
                 }
             } else if (top_count > 0) {
                 const selected = emojig.EmojiDb.getEntry(top_matches[0].index);
                 mru.save(selected.emoji);
-                copyToClipboard(init, selected.emoji) catch {};
+                copyToClipboard(init, selected.emoji, final_safe) catch {};
             }
             break;
         }
@@ -1048,8 +1073,11 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-fn copyToClipboard(init: std.process.Init, text: []const u8) !void {
+fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     const io = init.io;
+    var buf: [64]u8 = undefined;
+    const clean_text = if (safe) emojig.stripVariationSelectors(text, &buf) else text;
+
     if (std.process.spawn(io, .{
         .argv   = &.{"wl-copy"},
         .stdin  = .pipe,
@@ -1057,7 +1085,7 @@ fn copyToClipboard(init: std.process.Init, text: []const u8) !void {
         .stderr = .ignore,
     })) |spawned| {
         var child = spawned;
-        try writeAll(child.stdin.?.handle, text);
+        try writeAll(child.stdin.?.handle, clean_text);
         child.stdin.?.close(io);
         child.stdin = null;
         _ = child.wait(io) catch {};
@@ -1070,7 +1098,7 @@ fn copyToClipboard(init: std.process.Init, text: []const u8) !void {
         .stdout = .ignore,
         .stderr = .ignore,
     });
-    try writeAll(child.stdin.?.handle, text);
+    try writeAll(child.stdin.?.handle, clean_text);
     child.stdin.?.close(io);
     child.stdin = null;
     _ = try child.wait(io);

@@ -278,16 +278,36 @@ pub fn fuzzyMatch(query: []const u8, target: []const u8) ?i32 {
     return total_score;
 }
 
+pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
+    var out_idx: usize = 0;
+    var i: usize = 0;
+    while (i < emoji.len) {
+        if (i + 3 <= emoji.len and (std.mem.eql(u8, emoji[i .. i + 3], "\xef\xb8\x8f") or std.mem.eql(u8, emoji[i .. i + 3], "\xef\xb8\x8e"))) {
+            i += 3;
+        } else {
+            out_buf[out_idx] = emoji[i];
+            out_idx += 1;
+            i += 1;
+        }
+    }
+    return out_buf[0..out_idx];
+}
+
 test "verify all entries" {
     var i: usize = 0;
+    var has_vs16 = false;
     while (i < EmojiDb.count) : (i += 1) {
         const entry = EmojiDb.getEntry(i);
         try std.testing.expect(entry.emoji.len > 0);
         try std.testing.expect(entry.name.len > 0);
-        // Ensure Variation Selector 16 (U+FE0F / \xEF\xB8\x8F in UTF-8) is not present in any emoji,
-        // to prevent terminal copy/paste issues.
-        try std.testing.expect(std.mem.indexOf(u8, entry.emoji, "\xef\xb8\x8f") == null);
+        if (std.mem.indexOf(u8, entry.emoji, "\xef\xb8\x8f") != null) {
+            has_vs16 = true;
+            var buf: [64]u8 = undefined;
+            const stripped = stripVariationSelectors(entry.emoji, &buf);
+            try std.testing.expect(std.mem.indexOf(u8, stripped, "\xef\xb8\x8f") == null);
+        }
     }
+    try std.testing.expect(has_vs16);
 }
 
 test "embedded database check" {

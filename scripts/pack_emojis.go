@@ -109,8 +109,7 @@ func main() {
 
 		searchStr := strings.Join(searchWords, " ")
 
-		cleanEmoji := strings.ReplaceAll(item.Emoji, "\uFE0F", "")
-		emojiOff := getOrAddString(cleanEmoji)
+		emojiOff := getOrAddString(item.Emoji)
 		nameOff := getOrAddString(item.Description)
 		searchOff := getOrAddString(searchStr)
 
