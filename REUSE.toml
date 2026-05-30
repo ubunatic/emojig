@@ -1,0 +1,22 @@
+version = 1
+SPDX-PackageName = "emojig"
+SPDX-PackageSupplier = "uwe.jugel@gmail.com"
+SPDX-PackageDownloadLocation = "https://codeberg.org/ubunatic/emojig"
+
+[[annotations]]
+path = ["data/emoji-test.txt", "data/emoji.json", "src/emojis.bin"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2022 Unicode, Inc."
+SPDX-License-Identifier = "Unicode-DFS-2016"
+
+[[annotations]]
+path = ["**.md", "AGENTS.md", "DISTRIBUTION.md", "WALKTHROUGH.md", "plain_terminal_support_plan.md"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Uwe Jugel"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = ["build.zig.zon", ".gitignore", "Makefile"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Uwe Jugel"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
