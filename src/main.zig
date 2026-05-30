@@ -57,6 +57,8 @@ fn effectivePalette(t: Theme, sys: Theme) Palette {
 // ---------------------------------------------------------------------------
 
 var global_orig_termios: ?std.posix.termios = null;
+var global_stdin_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
+var global_stdout_fd: std.posix.fd_t = std.posix.STDOUT_FILENO;
 
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     var index: usize = 0;
@@ -120,9 +122,9 @@ const RESTORE   = MOUSE_OFF ++ "\x1b[?1049l\x1b[0q\x1b[?25h";
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+        _ = std.posix.system.tcsetattr(global_stdin_fd, .NOW, &orig);
     }
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, RESTORE, RESTORE.len);
+    _ = std.posix.system.write(global_stdout_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.process.exit(1);
 }
@@ -130,9 +132,9 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     _ = error_return_trace;
     if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+        _ = std.posix.system.tcsetattr(global_stdin_fd, .NOW, &orig);
     }
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, RESTORE, RESTORE.len);
+    _ = std.posix.system.write(global_stdout_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
 }
@@ -552,7 +554,30 @@ pub fn main(init: std.process.Init) !void {
         break :blk (wayland != null and wayland.?.len > 0) or (x11 != null and x11.?.len > 0);
     };
 
-    const is_stdin_tty = std.c.isatty(std.posix.STDIN_FILENO) != 0;
+    var stdin_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
+    var stdout_fd: std.posix.fd_t = std.posix.STDOUT_FILENO;
+    var tty_fd: ?std.posix.fd_t = null;
+    defer {
+        if (tty_fd) |fd| {
+            _ = std.posix.system.close(fd);
+        }
+    }
+
+    const initial_stdin_tty = std.c.isatty(stdin_fd) != 0;
+    const initial_stdout_tty = std.c.isatty(stdout_fd) != 0;
+
+    if (!initial_stdin_tty or !initial_stdout_tty) {
+        const tty_flags = std.posix.O{ .ACCMODE = .RDWR };
+        if (std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0)) |fd| {
+            tty_fd = fd;
+            stdin_fd = fd;
+            stdout_fd = fd;
+            global_stdin_fd = fd;
+            global_stdout_fd = fd;
+        } else |_| {}
+    }
+
+    const is_stdin_tty = std.c.isatty(stdin_fd) != 0;
 
     var run_gui = false;
     if (opt_tui) {
@@ -617,9 +642,6 @@ pub fn main(init: std.process.Init) !void {
     const row_off: i32 = if (show_border) 1 else 0;
 
     mru.load();
-
-    const stdout_fd = std.posix.STDOUT_FILENO;
-    const stdin_fd  = std.posix.STDIN_FILENO;
 
     // Enable alt screen, any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
     try writeAll(stdout_fd, "\x1b[?1049h\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
