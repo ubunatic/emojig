@@ -366,6 +366,7 @@ pub fn main(init: std.process.Init) !void {
     var top_count: usize = 0;
 
     var should_copy_and_exit = false;
+    var theme_hovered = false;
 
     emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
 
@@ -394,9 +395,10 @@ pub fn main(init: std.process.Init) !void {
 
         // Search bar — entire row uses search_bg for a clean "menu row" look.
         const icon_col = if (term_width >= 4) term_width - 3 else 1;
+        const icon_hl = if (theme_hovered) palette.selection_bg else "";
         const search_line = try std.fmt.bufPrint(&line_buf,
-            "{s}🔍 {s}\x1b[K\x1b[{d}G {s} \r\n",
-            .{ palette.search_bg, query_buf[0..query_len], icon_col, themeIcon(theme) });
+            "{s}🔍 {s}\x1b[K\x1b[{d}G{s} {s} \r\n",
+            .{ palette.search_bg, query_buf[0..query_len], icon_col, icon_hl, themeIcon(theme) });
         try writeAll(stdout_fd, search_line);
 
         // Blank spacer row.
@@ -572,7 +574,12 @@ pub fn main(init: std.process.Init) !void {
                     const btn_id    = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
 
                     if (is_motion and term_char == 'M') {
-                        // Hover: update selection to cell under cursor (no copy).
+                        // Theme button hover.
+                        const search_row_m: i32 = 2 + row_off;
+                        theme_hovered = (click_row == search_row_m and
+                            click_col >= @as(i32, @intCast(term_width)) - 3);
+
+                        // Grid hover: update selection to cell under cursor (no copy).
                         // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
                         const grid_first_row: i32 = 4 + row_off;
                         const grid_last_row:  i32 = 7 + row_off;
