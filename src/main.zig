@@ -517,7 +517,12 @@ pub fn main(init: std.process.Init) !void {
                 // ESC key
                 break;
             } else if (n > 2 and bytes[1] == '[') {
-                if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
+                // Alt+F4: \x1b[1;3S (XTerm mod=3) or \x1b[1;9S (kitty mod=9)
+                if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
+                    (bytes[4] == '3' or bytes[4] == '9'))
+                {
+                    break;
+                } else if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
                     // Arrow keys
                     if (selected_idx == null) {
                         if (top_count > 0) selected_idx = 0;
@@ -633,8 +638,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (bytes[0] == 10 or bytes[0] == 13) {
             // Enter
             should_copy_and_exit = true;
-        } else if (bytes[0] == 3 or bytes[0] == 4) {
-            // Ctrl-C / Ctrl-D
+        } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
+            // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
             break;
         } else {
             for (bytes) |b| {
