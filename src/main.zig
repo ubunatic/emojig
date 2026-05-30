@@ -669,10 +669,8 @@ pub fn main(init: std.process.Init) !void {
     defer {
         std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
         if (!is_first_render) {
-            // Move cursor to top of our TUI region from the search bar line where we are
-            var move_buf: [32]u8 = undefined;
-            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off }) catch "";
-            _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
+            // Restore cursor to the saved position
+            _ = std.posix.system.write(stdout_fd, "\x1b[u", 3);
             
             // Clear each of the final_h lines
             var k: usize = 0;
@@ -684,17 +682,16 @@ pub fn main(init: std.process.Init) !void {
                     _ = std.posix.system.write(stdout_fd, nl_seq.ptr, nl_seq.len);
                 }
             }
-            // Move cursor back up to the top start position
-            if (final_h > 1) {
-                const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ final_h - 1 }) catch "";
-                _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
-            }
+            // Restore cursor back to the saved position so the new prompt is printed there
+            _ = std.posix.system.write(stdout_fd, "\x1b[u", 3);
         }
         writeAll(stdout_fd, RESTORE) catch {};
         logMemoryUsage();
     }
 
     applyTerminalColors(stdout_fd, theme, system_theme);
+    // Save cursor position before rendering TUI
+    writeAll(stdout_fd, "\x1b[s") catch {};
 
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;
@@ -722,14 +719,8 @@ pub fn main(init: std.process.Init) !void {
         // ----------------------------------------------------------------
         // Render
         // ----------------------------------------------------------------
-        try writeAll(stdout_fd, "\x1b[?25l");
-        if (!is_first_render) {
-            var move_buf: [32]u8 = undefined;
-            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off });
-            try writeAll(stdout_fd, move_seq);
-        } else {
-            is_first_render = false;
-        }
+        try writeAll(stdout_fd, "\x1b[?25l\x1b[u");
+        is_first_render = false;
 
         var line_buf: [1024]u8 = undefined;
 
