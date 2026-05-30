@@ -1,0 +1,19 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: emojig
+Upstream-Contact: uwe.jugel@gmail.com
+Source: https://codeberg.org/ubunatic/emojig
+
+# Unicode emoji data — Unicode Data Files and Software License
+Files: data/emoji-test.txt data/emoji.json src/emojis.bin
+Copyright: 2022 Unicode, Inc.
+License: Unicode-DFS-2016
+
+# Documentation and planning files
+Files: *.md AGENTS.md DISTRIBUTION.md WALKTHROUGH.md plain_terminal_support_plan.md
+Copyright: 2026 Uwe Jugel
+License: AGPL-3.0-or-later
+
+# Build and config files with no comment syntax
+Files: build.zig.zon .gitignore Makefile
+Copyright: 2026 Uwe Jugel
+License: AGPL-3.0-or-later

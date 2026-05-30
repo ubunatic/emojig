@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Uwe Jugel
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // screenshot.go — capture an initial rendered frame of emojig in a PTY.
 // Outputs a plain-text (ANSI-stripped) frame to stdout and saves the raw
 // ANSI frame to /tmp/emojig_frame.ansi for agent inspection.

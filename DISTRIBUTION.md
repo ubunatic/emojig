@@ -80,8 +80,10 @@ These must land before the first tag.
 
 ### 2.1 Code tasks (done in this repo)
 
-- [ ] `LICENSE` — AGPL-3.0-or-later full text
-- [ ] SPDX headers (`// SPDX-License-Identifier: AGPL-3.0-or-later`) in `src/*.zig`
+- [x] License compliance via **`reuse`** (FSFE REUSE spec):
+      `LICENSES/AGPL-3.0-or-later.txt`, `LICENSES/Unicode-DFS-2016.txt`,
+      SPDX headers in all source files, `.reuse/dep5` for binary/data files.
+      Add `reuse lint` to CI as a gate. Install: `pip install reuse`.
 - [ ] `README.md` — one-liner, screenshot/asciinema, install matrix, `--theme`/`EMOJIG_THEME`, runtime deps
 - [ ] Version bump `0.0.0` → `0.1.0` in `build.zig.zon`
 - [ ] `--version` / `-v` flag (injects version at build time via `build_options`)

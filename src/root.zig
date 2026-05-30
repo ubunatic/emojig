@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Uwe Jugel
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Emojig core library. Contains the embedded emoji database, fuzzy search engine,
 //! and top-level search function.
 const std = @import("std");
@@ -18,6 +21,21 @@ pub const Match = struct {
 pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) void {
     top_count.* = 0;
 
+    const disable_zwj = blk: {
+        if (std.c.getenv("EMOJIG_DISABLE_ZWJ")) |env_val| {
+            const val = std.mem.sliceTo(env_val, 0);
+            if (std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true")) {
+                break :blk true;
+            } else if (std.mem.eql(u8, val, "0") or std.mem.eql(u8, val, "false")) {
+                break :blk false;
+            }
+        }
+        if (std.c.getenv("TILIX_ID") != null or std.c.getenv("VTE_VERSION") != null) {
+            break :blk true;
+        }
+        break :blk false;
+    };
+
     if (query.len == 0) {
         var mru_indices: [mru.MAX_MRU]usize = undefined;
         var mru_resolved: usize = 0;
@@ -25,6 +43,8 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         var m: usize = 0;
         while (m < mru.getCount() and top_count.* < limit) : (m += 1) {
             const mru_emoji = mru.getEntry(m);
+            if (disable_zwj and std.mem.indexOf(u8, mru_emoji, "\xe2\x80\x8d") != null) continue;
+
             var db_idx: usize = 0;
             while (db_idx < EmojiDb.count) : (db_idx += 1) {
                 const entry = EmojiDb.getEntry(db_idx);
@@ -40,6 +60,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
 
         var db_idx: usize = 0;
         while (db_idx < EmojiDb.count and top_count.* < limit) : (db_idx += 1) {
+            const entry = EmojiDb.getEntry(db_idx);
+            if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+
             var already_shown = false;
             var k: usize = 0;
             while (k < mru_resolved) : (k += 1) {
@@ -55,6 +78,8 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
     var i: usize = 0;
     while (i < EmojiDb.count) : (i += 1) {
         const entry = EmojiDb.getEntry(i);
+        if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+
         if (fuzzyMatch(query, entry.search)) |score| {
             const match = Match{ .index = i, .score = score };
             var insert_pos: usize = 0;
