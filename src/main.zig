@@ -677,6 +677,7 @@ pub fn main(init: std.process.Init) !void {
 
     var read_buf: [64]u8 = undefined;
     const spaces = " " ** 512;
+    const content_width = if (term_width > 1) term_width - 1 else 0;
 
     while (true) {
         const palette = effectivePalette(theme, system_theme);
@@ -692,7 +693,7 @@ pub fn main(init: std.process.Init) !void {
         if (show_border) {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
             try writeAll(stdout_fd, "\x1b[0m\r\n");
         }
 
@@ -700,16 +701,16 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(stdout_fd, " ");
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+        try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
         try writeAll(stdout_fd, "\x1b[0m\r\n");
 
         // Search bar — entire row uses search_bg for a clean "menu row" look.
         const prefix_cols = 3;
         const icon_cols = 4;
-        const max_query_cols = if (term_width > prefix_cols + icon_cols) term_width - prefix_cols - icon_cols else 0;
+        const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
         const display_query_len = @min(query_len, max_query_cols);
-        const pad_len = if (term_width > prefix_cols + icon_cols)
-            term_width - prefix_cols - icon_cols - display_query_len
+        const pad_len = if (content_width > prefix_cols + icon_cols)
+            content_width - prefix_cols - icon_cols - display_query_len
         else
             0;
 
@@ -727,7 +728,7 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(stdout_fd, " ");
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+        try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
         try writeAll(stdout_fd, "\x1b[0m\r\n");
 
         // Grid rows.
@@ -760,7 +761,7 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
 
-            const grid_rem = if (term_width > 24) term_width - 24 else 0;
+            const grid_rem = if (content_width > 24) content_width - 24 else 0;
             const grid_line = try std.fmt.bufPrint(&line_buf,
                 " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\r\n",
                 .{ palette.bg, palette.fg,
@@ -772,32 +773,32 @@ pub fn main(init: std.process.Init) !void {
 
         // Description row.
         const desc_nl = if (show_border) "\r\n" else "";
-        const max_len = if (term_width > 1) term_width - 1 else 0;
+        const max_len = if (content_width > 1) content_width - 1 else 0;
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
                 const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
                 if (name.len > max_len and max_len >= 3) {
                     const display_name = name[0 .. max_len - 3];
                     const printed_cols = 1 + display_name.len + 3;
-                    const pad_len_desc = if (term_width > printed_cols) term_width - printed_cols else 0;
+                    const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}",
                         .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_nl });
                     try writeAll(stdout_fd, name_line);
                 } else {
                     const printed_cols = 1 + name.len;
-                    const pad_len_desc = if (term_width > printed_cols) term_width - printed_cols else 0;
+                    const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}",
                         .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_nl });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
-                const pad_len_desc = term_width;
+                const pad_len_desc = content_width;
                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
                     .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
                 try writeAll(stdout_fd, name_line);
             }
         } else {
-            const pad_len_desc = term_width;
+            const pad_len_desc = content_width;
             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
                 .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
             try writeAll(stdout_fd, name_line);
@@ -807,7 +808,7 @@ pub fn main(init: std.process.Init) !void {
         if (show_border) {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
             try writeAll(stdout_fd, "\x1b[0m");
         }
 
@@ -915,7 +916,7 @@ pub fn main(init: std.process.Init) !void {
                         // Theme button hover.
                         const search_row_m: i32 = 2 + row_off;
                         theme_hovered = (click_row == search_row_m and
-                            local_col >= @as(i32, @intCast(term_width)) - 3);
+                            local_col >= @as(i32, @intCast(content_width)) - 4);
 
                         // Grid hover: update selection to cell under cursor (no copy).
                         // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
@@ -936,7 +937,7 @@ pub fn main(init: std.process.Init) !void {
                         const grid_last_row:  i32 = 7 + row_off;
 
                         if (click_row == search_row and
-                            local_col >= @as(i32, @intCast(term_width)) - 3)
+                            local_col >= @as(i32, @intCast(content_width)) - 4)
                         {
                             // Theme toggle icon — cycle and persist to config.
                             theme = switch (theme) {
