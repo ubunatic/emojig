@@ -167,11 +167,101 @@ fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: s
 }
 
 // ---------------------------------------------------------------------------
+// Config file  (~/.config/emojig/config)
+// ---------------------------------------------------------------------------
+
+fn configPath(buf: []u8) ?[:0]const u8 {
+    const home = std.mem.span(std.c.getenv("HOME") orelse return null);
+    const path = std.fmt.bufPrint(buf, "{s}/.config/emojig/config", .{home}) catch return null;
+    if (path.len + 1 > buf.len) return null;
+    buf[path.len] = 0;
+    return buf[0..path.len :0];
+}
+
+/// Read theme= from the config file. Returns null if absent or unreadable.
+fn loadThemeFromConfig() ?Theme {
+    var path_buf: [512]u8 = undefined;
+    const path = configPath(&path_buf) orelse return null;
+    const flags = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, flags, 0) catch return null;
+    defer _ = std.posix.system.close(fd);
+    var file_buf: [1024]u8 = undefined;
+    const len = std.posix.read(fd, &file_buf) catch return null;
+    var it = std.mem.splitScalar(u8, file_buf[0..len], '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, "theme=")) continue;
+        const val = line["theme=".len..];
+        if (std.mem.eql(u8, val, "light"))  return .light;
+        if (std.mem.eql(u8, val, "dark"))   return .dark;
+        if (std.mem.eql(u8, val, "system")) return .system;
+    }
+    return null;
+}
+
+/// Rewrite the config file with an updated theme= line, preserving other keys.
+fn saveThemeToConfig(t: Theme) void {
+    const theme_str: []const u8 = switch (t) {
+        .dark => "dark", .light => "light", .system => "system",
+    };
+    const home = std.mem.span(std.c.getenv("HOME") orelse return);
+
+    // Ensure ~/.config/emojig/ exists.
+    var dir_buf: [512]u8 = undefined;
+    const dot_config = std.fmt.bufPrint(&dir_buf, "{s}/.config", .{home}) catch return;
+    if (dot_config.len + 1 > dir_buf.len) return;
+    dir_buf[dot_config.len] = 0;
+    _ = std.c.mkdir(dir_buf[0..dot_config.len :0], 0o755);
+    var cfg_dir_buf: [512]u8 = undefined;
+    const cfg_dir = std.fmt.bufPrint(&cfg_dir_buf, "{s}/.config/emojig", .{home}) catch return;
+    if (cfg_dir.len + 1 > cfg_dir_buf.len) return;
+    cfg_dir_buf[cfg_dir.len] = 0;
+    _ = std.c.mkdir(cfg_dir_buf[0..cfg_dir.len :0], 0o755);
+
+    var path_buf: [512]u8 = undefined;
+    const path = configPath(&path_buf) orelse return;
+
+    // Read existing content to preserve non-theme lines.
+    var old_buf: [1024]u8 = undefined;
+    var old_len: usize = 0;
+    {
+        const rf = std.posix.O{ .ACCMODE = .RDONLY };
+        if (std.posix.openat(std.posix.AT.FDCWD, path, rf, 0)) |rfd| {
+            old_len = std.posix.read(rfd, &old_buf) catch 0;
+            _ = std.posix.system.close(rfd);
+        } else |_| {}
+    }
+
+    // Rebuild: every non-theme, non-blank line, then the updated theme line.
+    var out: [2048]u8 = undefined;
+    var pos: usize = 0;
+    var lines = std.mem.splitScalar(u8, old_buf[0..old_len], '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0) continue;
+        if (std.mem.startsWith(u8, line, "theme=")) continue;
+        if (pos + line.len + 1 >= out.len) break;
+        @memcpy(out[pos..][0..line.len], line);
+        pos += line.len;
+        out[pos] = '\n';
+        pos += 1;
+    }
+    const new_line = std.fmt.bufPrint(out[pos..], "theme={s}\n", .{theme_str}) catch return;
+    pos += new_line.len;
+
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o644) catch return;
+    defer _ = std.posix.system.close(fd);
+    _ = std.posix.system.write(fd, out[0..pos].ptr, pos);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
-    var theme: Theme = .dark;
+    // Priority: config file < EMOJIG_THEME env var < --theme CLI arg.
+    var theme: Theme = loadThemeFromConfig() orelse .dark;
 
     if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
         if (std.mem.eql(u8, env_val, "light"))       theme = .light
@@ -503,12 +593,13 @@ pub fn main(init: std.process.Init) !void {
                         if (click_row == search_row and
                             click_col >= @as(i32, @intCast(term_width)) - 3)
                         {
-                            // Theme toggle icon.
+                            // Theme toggle icon — cycle and persist to config.
                             theme = switch (theme) {
                                 .dark   => .light,
                                 .light  => .system,
                                 .system => .dark,
                             };
+                            saveThemeToConfig(theme);
                             if (theme == .system)
                                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                         } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
