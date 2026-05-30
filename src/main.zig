@@ -361,7 +361,7 @@ fn spawnFootWindow(
     const final_h = if (border) height + 2 else height;
     
     var size_buf: [64]u8 = undefined;
-    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width, final_h });
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width + 2, final_h });
     
     var bg_buf: [64]u8 = undefined;
     const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
@@ -677,7 +677,7 @@ pub fn main(init: std.process.Init) !void {
 
     var read_buf: [64]u8 = undefined;
     const spaces = " " ** 512;
-    const content_width = if (term_width > 1) term_width - 1 else 0;
+    const content_width = term_width;
 
     while (true) {
         const palette = effectivePalette(theme, system_theme);
@@ -694,7 +694,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
             try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m\r\n");
+            try writeAll(stdout_fd, "\x1b[0m \r\n");
         }
 
         // Blank top padding row.
@@ -702,7 +702,7 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
         try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-        try writeAll(stdout_fd, "\x1b[0m\r\n");
+        try writeAll(stdout_fd, "\x1b[0m \r\n");
 
         // Search bar — entire row uses search_bg for a clean "menu row" look.
         const prefix_cols = 3;
@@ -722,14 +722,14 @@ pub fn main(init: std.process.Init) !void {
         const icon_hl = if (theme_hovered) palette.selection_bg else "";
         const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
         try writeAll(stdout_fd, icon_buf);
-        try writeAll(stdout_fd, "\x1b[0m\r\n");
+        try writeAll(stdout_fd, "\x1b[0m \r\n");
 
         // Blank spacer row.
         try writeAll(stdout_fd, " ");
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
         try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-        try writeAll(stdout_fd, "\x1b[0m\r\n");
+        try writeAll(stdout_fd, "\x1b[0m \r\n");
 
         // Grid rows.
         var r: usize = 0;
@@ -763,7 +763,7 @@ pub fn main(init: std.process.Init) !void {
 
             const grid_rem = if (content_width > 24) content_width - 24 else 0;
             const grid_line = try std.fmt.bufPrint(&line_buf,
-                " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\r\n",
+                " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n",
                 .{ palette.bg, palette.fg,
                    cell_strings[0], cell_strings[1], cell_strings[2],
                    cell_strings[3], cell_strings[4], cell_strings[5],
@@ -772,7 +772,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         // Description row.
-        const desc_nl = if (show_border) "\r\n" else "";
+        const desc_suffix = if (show_border) " \r\n" else " ";
         const max_len = if (content_width > 1) content_width - 1 else 0;
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
@@ -782,25 +782,25 @@ pub fn main(init: std.process.Init) !void {
                     const printed_cols = 1 + display_name.len + 3;
                     const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}",
-                        .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_nl });
+                        .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 } else {
                     const printed_cols = 1 + name.len;
                     const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}",
-                        .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_nl });
+                        .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
                 const pad_len_desc = content_width;
                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
-                    .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
+                    .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
                 try writeAll(stdout_fd, name_line);
             }
         } else {
             const pad_len_desc = content_width;
             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
-                .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
+                .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
             try writeAll(stdout_fd, name_line);
         }
 
@@ -809,7 +809,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
             try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m");
+            try writeAll(stdout_fd, "\x1b[0m ");
         }
 
         // Reposition cursor to search bar input (row 2 + row_off, col 5 + query_len).
