@@ -353,30 +353,38 @@ pub fn main(init: std.process.Init) !void {
         }
 
         // Description row.
+        // When show_border is true the bottom border row follows, so we keep \r\n.
+        // When show_border is false this IS the last rendered line; omit \r\n to
+        // prevent the terminal scrolling when window-height == content-height — a
+        // scroll shifts every row up by one, breaking both cursor placement and
+        // hover/click row calculations.
+        const desc_nl = if (show_border) "\r\n" else "";
         const max_len = if (term_width > 1) term_width - 1 else 0;
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
                 const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
                 const name_line = if (name.len > max_len and max_len >= 3)
-                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}...\x1b[K\r\n",
-                        .{ palette.bg, palette.fg, name[0 .. max_len - 3] })
+                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}...\x1b[K{s}",
+                        .{ palette.bg, palette.fg, name[0 .. max_len - 3], desc_nl })
                 else
-                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}\x1b[K\r\n",
-                        .{ palette.bg, palette.fg, name });
+                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}\x1b[K{s}",
+                        .{ palette.bg, palette.fg, name, desc_nl });
                 try writeAll(stdout_fd, name_line);
             } else {
                 try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, "\x1b[K\r\n");
+                try writeAll(stdout_fd, "\x1b[K");
+                try writeAll(stdout_fd, desc_nl);
             }
         } else {
             try writeAll(stdout_fd, palette.bg);
-            try writeAll(stdout_fd, "\x1b[K\r\n");
+            try writeAll(stdout_fd, "\x1b[K");
+            try writeAll(stdout_fd, desc_nl);
         }
 
-        // Optional bottom border row.
+        // Optional bottom border row — last line, no trailing \r\n for same reason.
         if (show_border) {
             try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, "\x1b[K\r\n");
+            try writeAll(stdout_fd, "\x1b[K");
         }
 
         // Reposition cursor to search bar input (row 2 + row_off, col 4 + query_len).

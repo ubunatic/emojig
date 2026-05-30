@@ -53,8 +53,10 @@ func main() {
 	defer slave.Close()
 
 	// Set PTY window size to match the picker window (40 cols × 8 rows).
+	// Use 8 rows (not 10) so the test catches scroll bugs that only occur
+	// when window-height == content-height.
 	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
-	ws := winsize{Row: 10, Col: 40}
+	ws := winsize{Row: 8, Col: 40}
 	syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
 
 	cmd := exec.Command(binaryPath)
