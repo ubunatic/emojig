@@ -630,8 +630,8 @@ pub fn main(init: std.process.Init) !void {
     const stdout_fd = std.posix.STDOUT_FILENO;
     const stdin_fd  = std.posix.STDIN_FILENO;
 
-    // Enable alt screen, any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
-    try writeAll(stdout_fd, "\x1b[?1049h\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+    // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+    try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
 
     const orig_termios = try std.posix.tcgetattr(stdin_fd);
     global_orig_termios = orig_termios;
@@ -662,8 +662,34 @@ pub fn main(init: std.process.Init) !void {
     else
         theme;
 
+    const content_rows: usize = 8;
+    const final_h = if (show_border) content_rows + 2 else content_rows;
+    var is_first_render = true;
+
     defer {
         std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
+        if (!is_first_render) {
+            // Move cursor to top of our TUI region from the search bar line where we are
+            var move_buf: [32]u8 = undefined;
+            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off }) catch "";
+            _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
+            
+            // Clear each of the final_h lines
+            var k: usize = 0;
+            while (k < final_h) : (k += 1) {
+                const clear_seq = "\x1b[2K";
+                _ = std.posix.system.write(stdout_fd, clear_seq.ptr, clear_seq.len);
+                if (k < final_h - 1) {
+                    const nl_seq = "\n";
+                    _ = std.posix.system.write(stdout_fd, nl_seq.ptr, nl_seq.len);
+                }
+            }
+            // Move cursor back up to the top start position
+            if (final_h > 1) {
+                const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ final_h - 1 }) catch "";
+                _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
+            }
+        }
         writeAll(stdout_fd, RESTORE) catch {};
         logMemoryUsage();
     }
@@ -696,7 +722,14 @@ pub fn main(init: std.process.Init) !void {
         // ----------------------------------------------------------------
         // Render
         // ----------------------------------------------------------------
-        try writeAll(stdout_fd, "\x1b[?25l\x1b[H");
+        try writeAll(stdout_fd, "\x1b[?25l");
+        if (!is_first_render) {
+            var move_buf: [32]u8 = undefined;
+            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off });
+            try writeAll(stdout_fd, move_seq);
+        } else {
+            is_first_render = false;
+        }
 
         var line_buf: [1024]u8 = undefined;
 
@@ -823,11 +856,12 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, "\x1b[0m ");
         }
 
-        // Reposition cursor to search bar input (row 2 + row_off, col 5 + query_len).
+        // Reposition cursor to search bar input (relative up, horizontal absolute column).
         var cursor_buf: [48]u8 = undefined;
+        const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
         const cursor_seq = try std.fmt.bufPrint(&cursor_buf,
-            "\x1b[{d};{d}H\x1b[?12h\x1b[?25h",
-            .{ 2 + row_off, 5 + query_len });
+            "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h",
+            .{ cursor_up, 5 + query_len });
         try writeAll(stdout_fd, cursor_seq);
 
         // ----------------------------------------------------------------
