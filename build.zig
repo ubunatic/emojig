@@ -142,20 +142,28 @@ pub fn build(b: *std.Build) void {
     const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window (non-blocking)");
     const run_picker = b.addSystemCommand(&.{
         "sh", "-c",
-        \\w=25; h=8
+        \\w=25; h=8; theme=dark
         \\cfg="$HOME/.config/emojig/config"
         \\if [ -f "$cfg" ]; then
         \\  v=$(sed -n 's/^width=//p'  "$cfg" | tail -1); [ -n "$v" ] && w=$v
         \\  v=$(sed -n 's/^height=//p' "$cfg" | tail -1); [ -n "$v" ] && h=$v
+        \\  v=$(sed -n 's/^theme=//p'  "$cfg" | tail -1); [ -n "$v" ] && theme=$v
         \\fi
         \\[ -n "$EMOJIG_WIDTH" ]  && w=$EMOJIG_WIDTH
         \\[ -n "$EMOJIG_HEIGHT" ] && h=$EMOJIG_HEIGHT
+        \\[ -n "$EMOJIG_THEME" ]  && theme=$EMOJIG_THEME
         \\[ "$EMOJIG_BORDER" = "1" ] && h=$((h + 2))
+        \\case "$theme" in
+        \\  light) foot_bg=eeeeee; foot_fg=444444 ;;
+        \\  *)     foot_bg=1c1c1c; foot_fg=a8a8a8 ;;
+        \\esac
         \\t=${EMOJIG_PICKER_TIMEOUT:-60}
         \\timeout "$t" foot --app-id=emojig-picker "--window-size-chars=${w}x${h}" \
         \\  --override=font=monospace:size=14 --override=cursor.blink=yes \
         \\  --override=pad=8x4 --override=csd.size=0 \
-        \\  env "EMOJIG_WIDTH=$w" "EMOJIG_HEIGHT=$h" "$1" &
+        \\  "--override=colors.background=$foot_bg" \
+        \\  "--override=colors.foreground=$foot_fg" \
+        \\  env "EMOJIG_WIDTH=$w" "EMOJIG_HEIGHT=$h" "EMOJIG_THEME=$theme" "$1" &
         ,
         "emojig-launcher",
     });
