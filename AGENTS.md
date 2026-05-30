@@ -121,3 +121,13 @@ All diagnostics, simulations, and unit tests must reside in-tree:
   * Launches foot in the background (fire-and-forget). Returns in under 100 ms.
   * Auto-kills after `EMOJIG_PICKER_TIMEOUT` seconds (default 60) via `timeout(1)`.
   * To kill after inspecting: `pkill -f emojig-picker`.
+
+---
+
+## 8. Standalone Architecture Constraint
+
+* **No Background Daemon or IPC**:
+  * The application must remain a zero-allocation, self-contained standalone executable.
+  * Do not implement local Unix domain sockets, TCP services, or background daemons.
+  * State management (such as the MRU list and theme selection) must continue to be handled via direct, zero-allocation POSIX file writes to the disk at startup/shutdown, rather than caching state in a background service.
+
