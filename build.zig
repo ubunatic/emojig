@@ -142,7 +142,7 @@ pub fn build(b: *std.Build) void {
     const picker_step = b.step("picker", "Launch the emoji picker in a floating foot window (non-blocking)");
     const run_picker = b.addSystemCommand(&.{
         "sh", "-c",
-        \\w=40; h=8
+        \\w=25; h=8
         \\cfg="$HOME/.config/emojig/config"
         \\if [ -f "$cfg" ]; then
         \\  v=$(sed -n 's/^width=//p'  "$cfg" | tail -1); [ -n "$v" ] && w=$v
@@ -154,7 +154,8 @@ pub fn build(b: *std.Build) void {
         \\t=${EMOJIG_PICKER_TIMEOUT:-60}
         \\timeout "$t" foot --app-id=emojig-picker "--window-size-chars=${w}x${h}" \
         \\  --override=font=monospace:size=14 --override=cursor.blink=yes \
-        \\  --override=pad=8x4 --override=csd.size=0 "$1" &
+        \\  --override=pad=8x4 --override=csd.size=0 \
+        \\  env "EMOJIG_WIDTH=$w" "EMOJIG_HEIGHT=$h" "$1" &
         ,
         "emojig-launcher",
     });

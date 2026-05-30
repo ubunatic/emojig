@@ -475,11 +475,12 @@ pub fn main(init: std.process.Init) !void {
 
                     if (is_motion and term_char == 'M') {
                         // Hover: update selection to cell under cursor (no copy).
+                        // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
                         const grid_first_row: i32 = 4 + row_off;
                         const grid_last_row:  i32 = 7 + row_off;
                         if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 3;
+                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 4;
                             if (grid_col < cols) {
                                 const hovered = grid_row * cols + grid_col;
                                 if (hovered < top_count) selected_idx = hovered;
@@ -504,7 +505,7 @@ pub fn main(init: std.process.Init) !void {
                                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                         } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 3;
+                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 4;
                             if (grid_col < cols) {
                                 const clicked_idx = grid_row * cols + grid_col;
                                 if (clicked_idx < top_count) {
