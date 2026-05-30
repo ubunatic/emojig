@@ -52,6 +52,15 @@ fn effectivePalette(t: Theme, sys: Theme) Palette {
     };
 }
 
+fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
+    const eff = if (t == .system) sys else t;
+    const bg = if (eff == .light) "#eeeeee" else "#1c1c1c";
+    const fg = if (eff == .light) "#444444" else "#a8a8a8";
+    var osc_buf: [64]u8 = undefined;
+    const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]11;{s}\x1b\\\x1b]10;{s}\x1b\\", .{ bg, fg }) catch return;
+    writeAll(stdout_fd, osc_seq) catch {};
+}
+
 // ---------------------------------------------------------------------------
 // Terminal helpers
 // ---------------------------------------------------------------------------
@@ -115,7 +124,7 @@ fn logMemoryUsage() void {
 // Escape sequence to disable all mouse tracking + alt screen + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well.
 const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-const RESTORE   = MOUSE_OFF ++ "\x1b[?1049l\x1b[0q\x1b[?25h";
+const RESTORE   = MOUSE_OFF ++ "\x1b[?1049l\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
@@ -659,6 +668,8 @@ pub fn main(init: std.process.Init) !void {
         logMemoryUsage();
     }
 
+    applyTerminalColors(stdout_fd, theme, system_theme);
+
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;
 
@@ -948,6 +959,7 @@ pub fn main(init: std.process.Init) !void {
                             saveThemeToConfig(theme);
                             if (theme == .system)
                                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                            applyTerminalColors(stdout_fd, theme, system_theme);
                         } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                             const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
@@ -983,6 +995,7 @@ pub fn main(init: std.process.Init) !void {
             if (theme == .system) {
                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
             }
+            applyTerminalColors(stdout_fd, theme, system_theme);
         } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
             // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
             break;
