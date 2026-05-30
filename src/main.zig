@@ -21,19 +21,19 @@ const Palette = struct {
 };
 
 const dark_palette = Palette{
-    .bg           = "\x1b[48;5;234m",
+    .bg           = "",
     .fg           = "\x1b[38;5;248m",
     .selection_bg = "\x1b[48;5;24m\x1b[38;5;255m",
     .search_bg    = "\x1b[48;5;238m\x1b[38;5;255m",
-    .border_bg    = "\x1b[48;5;236m",
+    .border_bg    = "",
 };
 
 const light_palette = Palette{
-    .bg           = "\x1b[48;5;255m",
+    .bg           = "",
     .fg           = "\x1b[38;5;238m",
     .selection_bg = "\x1b[48;5;111m\x1b[38;5;232m",
     .search_bg    = "\x1b[48;5;251m\x1b[38;5;232m",
-    .border_bg    = "\x1b[48;5;252m",
+    .border_bg    = "",
 };
 
 fn themeIcon(t: Theme) []const u8 {
@@ -676,6 +676,7 @@ pub fn main(init: std.process.Init) !void {
     emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
 
     var read_buf: [64]u8 = undefined;
+    const spaces = " " ** 512;
 
     while (true) {
         const palette = effectivePalette(theme, system_theme);
@@ -689,27 +690,45 @@ pub fn main(init: std.process.Init) !void {
 
         // Optional top border row.
         if (show_border) {
+            try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, "\x1b[K\r\n");
+            try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+            try writeAll(stdout_fd, "\x1b[0m\r\n");
         }
 
         // Blank top padding row.
+        try writeAll(stdout_fd, " ");
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, "\x1b[K\r\n");
+        try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+        try writeAll(stdout_fd, "\x1b[0m\r\n");
 
         // Search bar — entire row uses search_bg for a clean "menu row" look.
-        const icon_col = if (term_width >= 4) term_width - 3 else 1;
+        const prefix_cols = 3;
+        const icon_cols = 4;
+        const max_query_cols = if (term_width > prefix_cols + icon_cols) term_width - prefix_cols - icon_cols else 0;
+        const display_query_len = @min(query_len, max_query_cols);
+        const pad_len = if (term_width > prefix_cols + icon_cols)
+            term_width - prefix_cols - icon_cols - display_query_len
+        else
+            0;
+
+        try writeAll(stdout_fd, " ");
+        try writeAll(stdout_fd, palette.search_bg);
+        try writeAll(stdout_fd, "🔍 ");
+        try writeAll(stdout_fd, query_buf[0..display_query_len]);
+        try writeAll(stdout_fd, spaces[0..pad_len]);
         const icon_hl = if (theme_hovered) palette.selection_bg else "";
-        const search_line = try std.fmt.bufPrint(&line_buf,
-            "{s}🔍 {s}\x1b[K\x1b[{d}G{s} {s} \r\n",
-            .{ palette.search_bg, query_buf[0..query_len], icon_col, icon_hl, themeIcon(theme) });
-        try writeAll(stdout_fd, search_line);
+        const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
+        try writeAll(stdout_fd, icon_buf);
+        try writeAll(stdout_fd, "\x1b[0m\r\n");
 
         // Blank spacer row.
+        try writeAll(stdout_fd, " ");
         try writeAll(stdout_fd, palette.bg);
         try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, "\x1b[K\r\n");
+        try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+        try writeAll(stdout_fd, "\x1b[0m\r\n");
 
         // Grid rows.
         var r: usize = 0;
@@ -741,54 +760,62 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
 
+            const grid_rem = if (term_width > 24) term_width - 24 else 0;
             const grid_line = try std.fmt.bufPrint(&line_buf,
-                "{s}{s}{s}{s}{s}{s}{s}{s}\x1b[K\r\n",
+                " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\r\n",
                 .{ palette.bg, palette.fg,
                    cell_strings[0], cell_strings[1], cell_strings[2],
-                   cell_strings[3], cell_strings[4], cell_strings[5] });
+                   cell_strings[3], cell_strings[4], cell_strings[5],
+                   spaces[0..grid_rem] });
             try writeAll(stdout_fd, grid_line);
         }
 
         // Description row.
-        // When show_border is true the bottom border row follows, so we keep \r\n.
-        // When show_border is false this IS the last rendered line; omit \r\n to
-        // prevent the terminal scrolling when window-height == content-height — a
-        // scroll shifts every row up by one, breaking both cursor placement and
-        // hover/click row calculations.
         const desc_nl = if (show_border) "\r\n" else "";
         const max_len = if (term_width > 1) term_width - 1 else 0;
         if (selected_idx) |sel| {
             if (top_count > 0 and sel < top_count) {
                 const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                const name_line = if (name.len > max_len and max_len >= 3)
-                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}...\x1b[K{s}",
-                        .{ palette.bg, palette.fg, name[0 .. max_len - 3], desc_nl })
-                else
-                    try std.fmt.bufPrint(&line_buf, "{s}{s} {s}\x1b[K{s}",
-                        .{ palette.bg, palette.fg, name, desc_nl });
-                try writeAll(stdout_fd, name_line);
+                if (name.len > max_len and max_len >= 3) {
+                    const display_name = name[0 .. max_len - 3];
+                    const printed_cols = 1 + display_name.len + 3;
+                    const pad_len_desc = if (term_width > printed_cols) term_width - printed_cols else 0;
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}",
+                        .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_nl });
+                    try writeAll(stdout_fd, name_line);
+                } else {
+                    const printed_cols = 1 + name.len;
+                    const pad_len_desc = if (term_width > printed_cols) term_width - printed_cols else 0;
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}",
+                        .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_nl });
+                    try writeAll(stdout_fd, name_line);
+                }
             } else {
-                try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, "\x1b[K");
-                try writeAll(stdout_fd, desc_nl);
+                const pad_len_desc = term_width;
+                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
+                    .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
+                try writeAll(stdout_fd, name_line);
             }
         } else {
-            try writeAll(stdout_fd, palette.bg);
-            try writeAll(stdout_fd, "\x1b[K");
-            try writeAll(stdout_fd, desc_nl);
+            const pad_len_desc = term_width;
+            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
+                .{ palette.bg, spaces[0..pad_len_desc], desc_nl });
+            try writeAll(stdout_fd, name_line);
         }
 
-        // Optional bottom border row — last line, no trailing \r\n for same reason.
+        // Optional bottom border row.
         if (show_border) {
+            try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, "\x1b[K");
+            try writeAll(stdout_fd, spaces[0..@min(term_width, spaces.len)]);
+            try writeAll(stdout_fd, "\x1b[0m");
         }
 
-        // Reposition cursor to search bar input (row 2 + row_off, col 4 + query_len).
+        // Reposition cursor to search bar input (row 2 + row_off, col 5 + query_len).
         var cursor_buf: [48]u8 = undefined;
         const cursor_seq = try std.fmt.bufPrint(&cursor_buf,
             "\x1b[{d};{d}H\x1b[?12h\x1b[?25h",
-            .{ 2 + row_off, 4 + query_len });
+            .{ 2 + row_off, 5 + query_len });
         try writeAll(stdout_fd, cursor_seq);
 
         // ----------------------------------------------------------------
@@ -879,6 +906,7 @@ pub fn main(init: std.process.Init) !void {
                     const button    = std.fmt.parseInt(i32, button_str, 10) catch continue;
                     const click_col = std.fmt.parseInt(i32, col_str,    10) catch continue;
                     const click_row = std.fmt.parseInt(i32, row_str,    10) catch continue;
+                    const local_col = click_col - 1;
 
                     const is_motion = (button & 32) != 0;
                     const btn_id    = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
@@ -887,7 +915,7 @@ pub fn main(init: std.process.Init) !void {
                         // Theme button hover.
                         const search_row_m: i32 = 2 + row_off;
                         theme_hovered = (click_row == search_row_m and
-                            click_col >= @as(i32, @intCast(term_width)) - 3);
+                            local_col >= @as(i32, @intCast(term_width)) - 3);
 
                         // Grid hover: update selection to cell under cursor (no copy).
                         // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
@@ -895,7 +923,7 @@ pub fn main(init: std.process.Init) !void {
                         const grid_last_row:  i32 = 7 + row_off;
                         if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 4;
+                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                             if (grid_col < cols) {
                                 const hovered = grid_row * cols + grid_col;
                                 if (hovered < top_count) selected_idx = hovered;
@@ -908,7 +936,7 @@ pub fn main(init: std.process.Init) !void {
                         const grid_last_row:  i32 = 7 + row_off;
 
                         if (click_row == search_row and
-                            click_col >= @as(i32, @intCast(term_width)) - 3)
+                            local_col >= @as(i32, @intCast(term_width)) - 3)
                         {
                             // Theme toggle icon — cycle and persist to config.
                             theme = switch (theme) {
@@ -921,7 +949,7 @@ pub fn main(init: std.process.Init) !void {
                                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                         } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, click_col - 1))) / 4;
+                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                             if (grid_col < cols) {
                                 const clicked_idx = grid_row * cols + grid_col;
                                 if (clicked_idx < top_count) {
@@ -943,6 +971,17 @@ pub fn main(init: std.process.Init) !void {
         } else if (bytes[0] == 10 or bytes[0] == 13) {
             // Enter
             should_copy_and_exit = true;
+        } else if (bytes[0] == 9) {
+            // Tab: Cycle theme
+            theme = switch (theme) {
+                .dark => .light,
+                .light => .system,
+                .system => .dark,
+            };
+            saveThemeToConfig(theme);
+            if (theme == .system) {
+                system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+            }
         } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
             // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
             break;
