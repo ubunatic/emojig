@@ -178,25 +178,44 @@ fn configPath(buf: []u8) ?[:0]const u8 {
     return buf[0..path.len :0];
 }
 
-/// Read theme= from the config file. Returns null if absent or unreadable.
-fn loadThemeFromConfig() ?Theme {
+const Config = struct {
+    theme: ?Theme = null,
+    width: ?usize = null,
+    height: ?usize = null,
+    border: ?bool = null,
+};
+
+/// Read configuration from the config file in a single pass.
+fn loadConfig() Config {
+    var cfg = Config{};
     var path_buf: [512]u8 = undefined;
-    const path = configPath(&path_buf) orelse return null;
+    const path = configPath(&path_buf) orelse return cfg;
     const flags = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, flags, 0) catch return null;
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, flags, 0) catch return cfg;
     defer _ = std.posix.system.close(fd);
     var file_buf: [1024]u8 = undefined;
-    const len = std.posix.read(fd, &file_buf) catch return null;
+    const len = std.posix.read(fd, &file_buf) catch return cfg;
     var it = std.mem.splitScalar(u8, file_buf[0..len], '\n');
     while (it.next()) |raw_line| {
         const line = std.mem.trim(u8, raw_line, " \t\r");
-        if (!std.mem.startsWith(u8, line, "theme=")) continue;
-        const val = line["theme=".len..];
-        if (std.mem.eql(u8, val, "light"))  return .light;
-        if (std.mem.eql(u8, val, "dark"))   return .dark;
-        if (std.mem.eql(u8, val, "system")) return .system;
+        if (line.len == 0 or line[0] == '#') continue;
+        if (std.mem.indexOfScalar(u8, line, '=')) |eq_idx| {
+            const key = line[0..eq_idx];
+            const val = line[eq_idx + 1..];
+            if (std.mem.eql(u8, key, "theme")) {
+                if (std.mem.eql(u8, val, "light"))       cfg.theme = .light
+                else if (std.mem.eql(u8, val, "dark"))   cfg.theme = .dark
+                else if (std.mem.eql(u8, val, "system")) cfg.theme = .system;
+            } else if (std.mem.eql(u8, key, "width")) {
+                cfg.width = std.fmt.parseInt(usize, val, 10) catch null;
+            } else if (std.mem.eql(u8, key, "height")) {
+                cfg.height = std.fmt.parseInt(usize, val, 10) catch null;
+            } else if (std.mem.eql(u8, key, "border")) {
+                cfg.border = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
+            }
+        }
     }
-    return null;
+    return cfg;
 }
 
 /// Rewrite the config file with an updated theme= line, preserving other keys.
@@ -255,28 +274,172 @@ fn saveThemeToConfig(t: Theme) void {
     _ = std.posix.system.write(fd, out[0..pos].ptr, pos);
 }
 
+fn ensureDirExists(home: []const u8, sub_path: []const u8) void {
+    var path_buf: [512]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, sub_path }) catch return;
+    if (path.len + 1 > path_buf.len) return;
+    path_buf[path.len] = 0;
+    _ = std.c.mkdir(path_buf[0..path.len :0], 0o755);
+}
+
+fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
+    ensureDirExists(home, ".local");
+    ensureDirExists(home, ".local/share");
+    ensureDirExists(home, ".local/share/applications");
+    ensureDirExists(home, ".local/share/icons");
+    ensureDirExists(home, ".local/share/icons/hicolor");
+    ensureDirExists(home, ".local/share/icons/hicolor/scalable");
+    ensureDirExists(home, ".local/share/icons/hicolor/scalable/apps");
+    
+    // Write .desktop entry
+    var desktop_path_buf: [512]u8 = undefined;
+    const desktop_path = std.fmt.bufPrint(&desktop_path_buf, "{s}/.local/share/applications/emojig-picker.desktop", .{home}) catch return;
+    var desktop_content: [2048]u8 = undefined;
+    const desktop_text = std.fmt.bufPrint(&desktop_content,
+        \\[Desktop Entry]
+        \\Type=Application
+        \\Name=Emojig Picker
+        \\Comment=Interactive emoji picker
+        \\Exec={s} --gui
+        \\Icon=emojig-picker
+        \\Terminal=false
+        \\Categories=Utility;
+        \\StartupWMClass=emojig-picker
+        \\
+    , .{exe_path}) catch return;
+    
+    if (desktop_path.len + 1 <= desktop_path_buf.len) {
+        desktop_path_buf[desktop_path.len] = 0;
+        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+        if (std.posix.openat(std.posix.AT.FDCWD, desktop_path_buf[0..desktop_path.len :0], wf, 0o644)) |fd| {
+            defer _ = std.posix.system.close(fd);
+            _ = std.posix.system.write(fd, desktop_text.ptr, desktop_text.len);
+        } else |_| {}
+    }
+    
+    // Write SVG icon
+    var svg_path_buf: [512]u8 = undefined;
+    const svg_path = std.fmt.bufPrint(&svg_path_buf, "{s}/.local/share/icons/hicolor/scalable/apps/emojig-picker.svg", .{home}) catch return;
+    const svg_text =
+        \\<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        \\  <text y="0.9em" font-size="80">😀</text>
+        \\</svg>
+        \\
+    ;
+    if (svg_path.len + 1 <= svg_path_buf.len) {
+        svg_path_buf[svg_path.len] = 0;
+        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+        if (std.posix.openat(std.posix.AT.FDCWD, svg_path_buf[0..svg_path.len :0], wf, 0o644)) |fd| {
+            defer _ = std.posix.system.close(fd);
+            _ = std.posix.system.write(fd, svg_text.ptr, svg_text.len);
+        } else |_| {}
+    }
+}
+
+fn spawnFootWindow(
+    init: std.process.Init,
+    exe_path: []const u8,
+    width: usize,
+    height: usize,
+    theme: Theme,
+    border: bool,
+    wait: bool,
+) !void {
+    const io = init.io;
+    const theme_str: []const u8 = switch (theme) {
+        .dark => "dark",
+        .light => "light",
+        .system => "system",
+    };
+    
+    const foot_bg = if (theme == .light) "eeeeee" else "1c1c1c";
+    const foot_fg = if (theme == .light) "444444" else "a8a8a8";
+    
+    const final_h = if (border) height + 2 else height;
+    
+    var size_buf: [64]u8 = undefined;
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width, final_h });
+    
+    var bg_buf: [64]u8 = undefined;
+    const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
+    
+    var fg_buf: [64]u8 = undefined;
+    const fg_arg = try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg});
+    
+    var env_w: [64]u8 = undefined;
+    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{width});
+    
+    var env_h: [64]u8 = undefined;
+    const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{height});
+    
+    var env_theme: [64]u8 = undefined;
+    const env_theme_arg = try std.fmt.bufPrint(&env_theme, "EMOJIG_THEME={s}", .{theme_str});
+    
+    var env_border: [64]u8 = undefined;
+    const env_border_arg = try std.fmt.bufPrint(&env_border, "EMOJIG_BORDER={s}", .{if (border) "1" else "0"});
+    
+    const timeout_val = init.environ_map.get("EMOJIG_PICKER_TIMEOUT") orelse "60";
+    
+    const argv = &.{
+        "timeout",
+        timeout_val,
+        "foot",
+        "--app-id=emojig-picker",
+        size_arg,
+        "--override=font=monospace:size=14",
+        "--override=cursor.blink=yes",
+        "--override=pad=8x4",
+        "--override=csd.size=0",
+        bg_arg,
+        fg_arg,
+        "env",
+        env_w_arg,
+        env_h_arg,
+        env_theme_arg,
+        env_border_arg,
+        exe_path,
+        "--tui",
+    };
+    
+    var child = try std.process.spawn(io, .{
+        .argv = argv,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    
+    if (wait) {
+        _ = try child.wait(io);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
-    // Priority: config file < EMOJIG_THEME env var < --theme CLI arg.
-    var theme: Theme = loadThemeFromConfig() orelse .dark;
-
-    if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
-        if (std.mem.eql(u8, env_val, "light"))       theme = .light
-        else if (std.mem.eql(u8, env_val, "dark"))   theme = .dark
-        else if (std.mem.eql(u8, env_val, "system")) theme = .system;
-    }
+    var opt_tui = false;
+    var opt_gui = false;
+    var opt_wait = false;
+    var opt_theme: ?Theme = null;
+    var opt_width: ?usize = null;
+    var opt_height: ?usize = null;
+    var opt_border: ?bool = null;
 
     var args_it = init.minimal.args.iterate();
-    _ = args_it.next();
+    _ = args_it.next(); // Skip executable path
     while (args_it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--theme")) {
+        if (std.mem.eql(u8, arg, "--tui")) {
+            opt_tui = true;
+        } else if (std.mem.eql(u8, arg, "--gui")) {
+            opt_gui = true;
+        } else if (std.mem.eql(u8, arg, "--wait")) {
+            opt_wait = true;
+        } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
-                if (std.mem.eql(u8, v, "light"))       theme = .light
-                else if (std.mem.eql(u8, v, "dark"))   theme = .dark
-                else if (std.mem.eql(u8, v, "system")) theme = .system
+                if (std.mem.eql(u8, v, "light"))       opt_theme = .light
+                else if (std.mem.eql(u8, v, "dark"))   opt_theme = .dark
+                else if (std.mem.eql(u8, v, "system")) opt_theme = .system
                 else {
                     try writeAll(std.posix.STDERR_FILENO,
                         "Error: invalid theme. Supported values are 'dark', 'light', or 'system'.\n");
@@ -287,26 +450,165 @@ pub fn main(init: std.process.Init) !void {
                     "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
                 std.process.exit(1);
             }
+        } else if (std.mem.eql(u8, arg, "--width")) {
+            if (args_it.next()) |v| {
+                opt_width = std.fmt.parseInt(usize, v, 10) catch {
+                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid width. Must be an integer.\n");
+                    std.process.exit(1);
+                };
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --width requires an argument.\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.eql(u8, arg, "--height")) {
+            if (args_it.next()) |v| {
+                opt_height = std.fmt.parseInt(usize, v, 10) catch {
+                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid height. Must be an integer.\n");
+                    std.process.exit(1);
+                };
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --height requires an argument.\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.eql(u8, arg, "--border")) {
+            if (args_it.next()) |v| {
+                if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) {
+                    opt_border = true;
+                } else if (std.mem.eql(u8, v, "0") or std.mem.eql(u8, v, "false")) {
+                    opt_border = false;
+                } else {
+                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid border. Must be 1/0 or true/false.\n");
+                    std.process.exit(1);
+                }
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --border requires an argument.\n");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             try writeAll(std.posix.STDOUT_FILENO,
                 "Emojig - Premium Zero-Allocation Emoji Picker\n\n" ++
                 "Usage: emojig [options]\n\n" ++
                 "Options:\n" ++
                 "  --theme [dark|light|system]  Set the UI theme\n" ++
+                "  --width [number]             Set the width of the picker\n" ++
+                "  --height [number]            Set the height of the picker\n" ++
+                "  --border [1|0|true|false]    Enable or disable the border\n" ++
+                "  --tui                        Force local interactive TUI session\n" ++
+                "  --gui                        Force floating terminal window (spawns foot)\n" ++
+                "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  -h, --help                   Show this help message\n");
             std.process.exit(0);
+        } else {
+            try writeAll(std.posix.STDERR_FILENO, "Error: unknown argument '");
+            try writeAll(std.posix.STDERR_FILENO, arg);
+            try writeAll(std.posix.STDERR_FILENO, "'. Use -h or --help for usage.\n");
+            std.process.exit(1);
         }
     }
 
-    const term_width: usize = blk: {
-        const s = init.environ_map.get("EMOJIG_WIDTH") orelse break :blk 25;
-        break :blk std.fmt.parseInt(usize, s, 10) catch 40;
+    const cfg = loadConfig();
+
+    const env_theme: ?Theme = blk: {
+        if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
+            if (std.mem.eql(u8, env_val, "light"))       break :blk .light
+            else if (std.mem.eql(u8, env_val, "dark"))   break :blk .dark
+            else if (std.mem.eql(u8, env_val, "system")) break :blk .system;
+        }
+        break :blk null;
     };
 
-    const show_border: bool = blk: {
-        const s = init.environ_map.get("EMOJIG_BORDER") orelse break :blk false;
-        break :blk std.mem.eql(u8, s, "1") or std.mem.eql(u8, s, "true");
+    const env_width: ?usize = blk: {
+        if (init.environ_map.get("EMOJIG_WIDTH")) |env_val| {
+            break :blk std.fmt.parseInt(usize, env_val, 10) catch null;
+        }
+        break :blk null;
     };
+
+    const env_height: ?usize = blk: {
+        if (init.environ_map.get("EMOJIG_HEIGHT")) |env_val| {
+            break :blk std.fmt.parseInt(usize, env_val, 10) catch null;
+        }
+        break :blk null;
+    };
+
+    const env_border: ?bool = blk: {
+        if (init.environ_map.get("EMOJIG_BORDER")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk null;
+    };
+
+    const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
+    const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
+    const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
+    const final_border = opt_border orelse env_border orelse cfg.border orelse false;
+
+    const has_gui_session = blk: {
+        const wayland = init.environ_map.get("WAYLAND_DISPLAY");
+        const x11 = init.environ_map.get("DISPLAY");
+        break :blk (wayland != null and wayland.?.len > 0) or (x11 != null and x11.?.len > 0);
+    };
+
+    const is_stdin_tty = std.c.isatty(std.posix.STDIN_FILENO) != 0;
+
+    var run_gui = false;
+    if (opt_tui) {
+        if (!is_stdin_tty) {
+            try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal.\n");
+            std.process.exit(1);
+        }
+    } else if (opt_gui) {
+        if (!has_gui_session) {
+            try writeAll(std.posix.STDERR_FILENO, "Error: No graphical (GUI) session detected.\n");
+            std.process.exit(1);
+        }
+        run_gui = true;
+    } else {
+        if (has_gui_session) {
+            run_gui = true;
+        } else if (is_stdin_tty) {
+            // run TUI
+        } else {
+            try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal and no GUI session was detected.\n");
+            std.process.exit(1);
+        }
+    }
+
+    if (run_gui) {
+        var exe_path_buf: [1024]u8 = undefined;
+        const exe_path_len = std.process.executablePath(init.io, &exe_path_buf) catch |err| {
+            try writeAll(std.posix.STDERR_FILENO, "Error: failed to resolve own executable path: ");
+            try writeAll(std.posix.STDERR_FILENO, @errorName(err));
+            try writeAll(std.posix.STDERR_FILENO, "\n");
+            std.process.exit(1);
+        };
+        const exe_path = exe_path_buf[0..exe_path_len];
+
+        if (std.c.getenv("HOME")) |home_c| {
+            const home = std.mem.span(home_c);
+            ensureDesktopIntegration(home, exe_path);
+        }
+
+        spawnFootWindow(
+            init,
+            exe_path,
+            final_width,
+            final_height,
+            final_theme,
+            final_border,
+            opt_wait,
+        ) catch |err| {
+            try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' and 'timeout' are installed and in your PATH (");
+            try writeAll(std.posix.STDERR_FILENO, @errorName(err));
+            try writeAll(std.posix.STDERR_FILENO, ").\n");
+            std.process.exit(1);
+        };
+        std.process.exit(0);
+    }
+
+    var theme = final_theme;
+    const term_width = final_width;
+    const show_border = final_border;
 
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;

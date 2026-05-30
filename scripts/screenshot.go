@@ -59,7 +59,7 @@ func main() {
 	ws := winsize{Row: 8, Col: 40}
 	syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
 
-	cmd := exec.Command(binaryPath)
+	cmd := exec.Command(binaryPath, "--tui")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave

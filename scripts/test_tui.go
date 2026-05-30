@@ -51,7 +51,7 @@ func main() {
 	defer slave.Close()
 
 	// 4. Start the command with PTY as stdin, stdout, stderr
-	cmd := exec.Command(binaryPath)
+	cmd := exec.Command(binaryPath, "--tui")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave

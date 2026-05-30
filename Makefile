@@ -9,5 +9,11 @@ build: ⚙️
 run picker test pack: ⚙️
 	zig build $@
 
+tui: ⚙️
+	./zig-out/bin/emojig --tui
+
+gui: ⚙️
+	./zig-out/bin/emojig --gui
+
 clean: ⚙️
 	rm -rf zig-out .zig-cache
