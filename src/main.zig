@@ -696,18 +696,7 @@ pub fn main(init: std.process.Init) !void {
 
     applyTerminalColors(stdout_fd, theme, system_theme);
     
-    // Ensure there is enough space below the cursor to draw final_h lines without scrolling
-    {
-        var k: usize = 0;
-        while (k < final_h - 1) : (k += 1) {
-            writeAll(stdout_fd, "\r\n") catch {};
-        }
-        if (final_h > 1) {
-            var move_buf: [32]u8 = undefined;
-            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ final_h - 1 }) catch "";
-            writeAll(stdout_fd, move_seq) catch {};
-        }
-    }
+
 
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;

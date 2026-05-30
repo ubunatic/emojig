@@ -284,6 +284,9 @@ test "verify all entries" {
         const entry = EmojiDb.getEntry(i);
         try std.testing.expect(entry.emoji.len > 0);
         try std.testing.expect(entry.name.len > 0);
+        // Ensure Variation Selector 16 (U+FE0F / \xEF\xB8\x8F in UTF-8) is not present in any emoji,
+        // to prevent terminal copy/paste issues.
+        try std.testing.expect(std.mem.indexOf(u8, entry.emoji, "\xef\xb8\x8f") == null);
     }
 }
 
