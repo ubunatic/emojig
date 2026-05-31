@@ -18,5 +18,8 @@ tui: ⚙️
 gui: ⚙️
 	./zig-out/bin/emojig --gui
 
+install: build ⚙️
+	cp zig-out/bin/emojig ~/.local/bin/emojig
+
 clean: ⚙️
 	rm -rf zig-out .zig-cache

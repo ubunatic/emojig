@@ -585,6 +585,26 @@ pub fn main(init: std.process.Init) !void {
 
     const is_stdin_tty = std.c.isatty(std.posix.STDIN_FILENO) != 0;
 
+    const is_linux_vt = blk: {
+        const term = init.environ_map.get("TERM");
+        break :blk term != null and std.mem.eql(u8, term.?, "linux");
+    };
+
+    if (is_linux_vt and !opt_gui) {
+        try writeAll(std.posix.STDERR_FILENO,
+            \\emojig: Linux virtual console detected (TERM=linux).
+            \\Emoji glyphs cannot render in the kernel console font.
+            \\
+            \\Options:
+            \\  * Install fbterm:  sudo apt install fbterm
+            \\    Then run:        fbterm -- emojig
+            \\  * Or switch to a terminal emulator (foot, alacritty, kitty, ...)
+            \\  * Or connect via SSH from a machine with a terminal emulator
+            \\
+        );
+        std.process.exit(1);
+    }
+
     var run_gui = false;
     if (opt_tui) {
         if (!is_stdin_tty) {
