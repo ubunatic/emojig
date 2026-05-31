@@ -66,7 +66,10 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             var already_shown = false;
             var k: usize = 0;
             while (k < mru_resolved) : (k += 1) {
-                if (mru_indices[k] == db_idx) { already_shown = true; break; }
+                if (mru_indices[k] == db_idx) {
+                    already_shown = true;
+                    break;
+                }
             }
             if (already_shown) continue;
             top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
@@ -121,8 +124,8 @@ pub const EmojiDb = struct {
         if (index >= count) @panic("index out of bounds");
         const entry_offset = 16 + index * 12;
         const emoji_off = std.mem.readInt(u32, data[entry_offset..][0..4], .little);
-        const name_off = std.mem.readInt(u32, data[entry_offset+4..][0..4], .little);
-        const search_off = std.mem.readInt(u32, data[entry_offset+8..][0..4], .little);
+        const name_off = std.mem.readInt(u32, data[entry_offset + 4 ..][0..4], .little);
+        const search_off = std.mem.readInt(u32, data[entry_offset + 8 ..][0..4], .little);
 
         const str_table = data[string_table_offset..][0..string_table_len];
 
@@ -138,31 +141,31 @@ pub const EmojiDb = struct {
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
 fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
-    
+
     var score: i32 = 0;
     var target_idx: usize = 0;
     var term_idx: usize = 0;
     var consecutive: i32 = 0;
-    
+
     while (term_idx < term.len) {
         if (target_idx >= target.len) return null; // Not a subsequence
-        
+
         const term_char = std.ascii.toLower(term[term_idx]);
         const target_char = std.ascii.toLower(target[target_idx]);
-        
+
         if (term_char == target_char) {
             var char_score: i32 = 10;
-            
+
             // Bonus for matching at the start of a word
             if (target_idx == 0 or target[target_idx - 1] == ' ') {
                 char_score += 40;
             }
-            
+
             // Compounding bonus for consecutive matches
             if (consecutive > 0) {
                 char_score += 20 * consecutive;
             }
-            
+
             score += char_score;
             consecutive += 1;
             term_idx += 1;
@@ -173,11 +176,11 @@ fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
         }
         target_idx += 1;
     }
-    
+
     // Penalty for starting late in the target string
     const start_idx = target_idx - term.len;
     score -= @intCast(start_idx);
-    
+
     return score;
 }
 
@@ -316,7 +319,7 @@ test "embedded database check" {
     try std.testing.expect(EmojiDb.count > 0);
 
     const first = EmojiDb.getEntry(0);
-    std.debug.print("\nFirst Emoji: {s} | {s} | {s}\n", .{ first.emoji, first.name, first.search });
+    // std.debug.print("\nFirst Emoji: {s} | {s} | {s}\n", .{ first.emoji, first.name, first.search });
     try std.testing.expect(first.emoji.len > 0);
     try std.testing.expect(first.name.len > 0);
 }
@@ -324,20 +327,20 @@ test "embedded database check" {
 test "fuzzy subsequence matching" {
     // Exact match vs partial subsequence matches
     const target = "grinning face smile happy";
-    
+
     const score1 = fuzzyMatch("smile", target);
     try std.testing.expect(score1 != null);
-    
+
     const score2 = fuzzyMatch("grn", target);
     try std.testing.expect(score2 != null);
-    
+
     const score3 = fuzzyMatch("xyz", target);
     try std.testing.expect(score3 == null);
-    
+
     // Multiple terms: both must match
     const score4 = fuzzyMatch("face smile", target);
     try std.testing.expect(score4 != null);
-    
+
     const score5 = fuzzyMatch("face xyz", target);
     try std.testing.expect(score5 == null);
 }

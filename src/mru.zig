@@ -41,11 +41,15 @@ pub fn load() void {
     mru_count = 0;
     while (pos < content.len and mru_count < MAX_MRU) {
         while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t' or
-            content[pos] == '\r' or content[pos] == '\n' or content[pos] == ',')) {
+            content[pos] == '\r' or content[pos] == '\n' or content[pos] == ','))
+        {
             pos += 1;
         }
         if (pos >= content.len or content[pos] == ']') break;
-        if (content[pos] != '"') { pos += 1; continue; }
+        if (content[pos] != '"') {
+            pos += 1;
+            continue;
+        }
         pos += 1;
 
         var emoji_len: usize = 0;
@@ -109,17 +113,24 @@ pub fn save(emoji: []const u8) void {
 
     var json_buf: [2048]u8 = undefined;
     var jpos: usize = 0;
-    json_buf[jpos] = '['; jpos += 1;
+    json_buf[jpos] = '[';
+    jpos += 1;
     var j: usize = 0;
     while (j < mru_count) : (j += 1) {
-        if (j > 0) { json_buf[jpos] = ','; jpos += 1; }
-        json_buf[jpos] = '"'; jpos += 1;
+        if (j > 0) {
+            json_buf[jpos] = ',';
+            jpos += 1;
+        }
+        json_buf[jpos] = '"';
+        jpos += 1;
         const esl = mru_lens[j];
         @memcpy(json_buf[jpos..][0..esl], mru_buf[j][0..esl]);
         jpos += esl;
-        json_buf[jpos] = '"'; jpos += 1;
+        json_buf[jpos] = '"';
+        jpos += 1;
     }
-    json_buf[jpos] = ']'; jpos += 1;
+    json_buf[jpos] = ']';
+    jpos += 1;
 
     _ = std.posix.system.write(fd, json_buf[0..jpos].ptr, jpos);
 }

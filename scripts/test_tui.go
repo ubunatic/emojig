@@ -60,6 +60,8 @@ func main() {
 	cmd.Stderr = slave
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
 	}
 
 	if err := cmd.Start(); err != nil {

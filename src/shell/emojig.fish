@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # emojig fish integration — source this from ~/.config/fish/config.fish
 # Ctrl+E inserts the selected emoji at the cursor position.
 

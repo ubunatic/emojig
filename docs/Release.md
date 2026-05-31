@@ -29,7 +29,7 @@ make release
 ```
 
 Produces `dist/` with tarballs, `.deb`, `.rpm`, and `SHA256SUMS`. Signing is
-skipped locally — it requires `MINISIGN_KEY_FILE` which is a CI-only secret.
+skipped because `--snapshot` builds are not real releases.
 
 ---
 
@@ -97,6 +97,27 @@ the repo from the git remote automatically.
 
 Open the Codeberg release, verify the artifact list and changelog, then click
 **Publish**.
+
+---
+
+## Quick release runbook
+
+```sh
+# 1. pre-flight checks
+make preflight
+
+# 2. bump version in build.zig.zon, update CHANGELOG.md, then commit
+git commit -am "release: v0.X.Y"
+
+# 3. tag and push
+git tag -a v0.X.Y -m "emojig v0.X.Y"
+git push origin main v0.X.Y
+
+# 4. build, sign, and create draft release
+make release-fj
+
+# 5. open Codeberg, review the draft, and click Publish
+```
 
 ---
 

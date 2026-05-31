@@ -11,7 +11,7 @@ const mru = emojig.mru;
 // Embedded shell integration scripts
 // ---------------------------------------------------------------------------
 
-const shell_zsh  = @embedFile("shell/emojig.zsh");
+const shell_zsh = @embedFile("shell/emojig.zsh");
 const shell_bash = @embedFile("shell/emojig.bash");
 const shell_fish = @embedFile("shell/emojig.fish");
 
@@ -22,33 +22,33 @@ const shell_fish = @embedFile("shell/emojig.fish");
 const Theme = enum { dark, light, system };
 
 const Palette = struct {
-    bg: []const u8,           // grid rows + description row
-    fg: []const u8,           // text color for grid rows (reset after selection)
+    bg: []const u8, // grid rows + description row
+    fg: []const u8, // text color for grid rows (reset after selection)
     selection_bg: []const u8,
-    search_bg: []const u8,    // entire search-bar row
-    border_bg: []const u8,    // optional border rows
+    search_bg: []const u8, // entire search-bar row
+    border_bg: []const u8, // optional border rows
 };
 
 const dark_palette = Palette{
-    .bg           = "",
-    .fg           = "\x1b[38;5;248m",
+    .bg = "",
+    .fg = "\x1b[38;5;248m",
     .selection_bg = "\x1b[48;5;24m\x1b[38;5;255m",
-    .search_bg    = "\x1b[48;5;238m\x1b[38;5;255m",
-    .border_bg    = "",
+    .search_bg = "\x1b[48;5;238m\x1b[38;5;255m",
+    .border_bg = "",
 };
 
 const light_palette = Palette{
-    .bg           = "",
-    .fg           = "\x1b[38;5;238m",
+    .bg = "",
+    .fg = "\x1b[38;5;238m",
     .selection_bg = "\x1b[48;5;111m\x1b[38;5;232m",
-    .search_bg    = "\x1b[48;5;251m\x1b[38;5;232m",
-    .border_bg    = "",
+    .search_bg = "\x1b[48;5;251m\x1b[38;5;232m",
+    .border_bg = "",
 };
 
 fn themeIcon(t: Theme) []const u8 {
     return switch (t) {
-        .dark   => "🌙",
-        .light  => "🌞",
+        .dark => "🌙",
+        .light => "🌞",
         .system => "🔆",
     };
 }
@@ -56,7 +56,7 @@ fn themeIcon(t: Theme) []const u8 {
 fn effectivePalette(t: Theme, sys: Theme) Palette {
     const eff = if (t == .system) sys else t;
     return switch (eff) {
-        .light         => light_palette,
+        .light => light_palette,
         .dark, .system => dark_palette,
     };
 }
@@ -104,14 +104,14 @@ fn logMemoryUsage() void {
 
     var it = std.mem.splitScalar(u8, buf[0..len], ' ');
     const virt_pages_str = it.next() orelse return;
-    const rss_pages_str  = it.next() orelse return;
+    const rss_pages_str = it.next() orelse return;
 
     const virt_pages = std.fmt.parseInt(usize, std.mem.trim(u8, virt_pages_str, " \t\r\n"), 10) catch return;
-    const rss_pages  = std.fmt.parseInt(usize, std.mem.trim(u8, rss_pages_str,  " \t\r\n"), 10) catch return;
+    const rss_pages = std.fmt.parseInt(usize, std.mem.trim(u8, rss_pages_str, " \t\r\n"), 10) catch return;
 
     const page_size: usize = 4096;
     const virt_bytes = virt_pages * page_size;
-    const rss_bytes  = rss_pages  * page_size;
+    const rss_bytes = rss_pages * page_size;
 
     const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
     const log_fd = std.posix.openat(std.posix.AT.FDCWD, "/tmp/emojig.log", wr_flags, 0o644) catch return;
@@ -121,11 +121,10 @@ fn logMemoryUsage() void {
     _ = std.posix.system.clock_gettime(.REALTIME, &ts);
 
     var log_buf: [256]u8 = undefined;
-    const log_line = std.fmt.bufPrint(&log_buf,
-        "[{d}] Emojig closed. Memory Usage: VIRT = {d:.2} MB, RSS = {d:.2} MB\n", .{
+    const log_line = std.fmt.bufPrint(&log_buf, "[{d}] Emojig closed. Memory Usage: VIRT = {d:.2} MB, RSS = {d:.2} MB\n", .{
         ts.sec,
         @as(f64, @floatFromInt(virt_bytes)) / (1024.0 * 1024.0),
-        @as(f64, @floatFromInt(rss_bytes))  / (1024.0 * 1024.0),
+        @as(f64, @floatFromInt(rss_bytes)) / (1024.0 * 1024.0),
     }) catch return;
 
     _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
@@ -134,7 +133,7 @@ fn logMemoryUsage() void {
 // Escape sequence to disable all mouse tracking + alt screen + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well.
 const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-const RESTORE   = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
+const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
@@ -163,7 +162,7 @@ fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: s
     writeAll(stdout_fd, "\x1b]111\x1b\\\x1b]110\x1b\\\x1b]11;?\x1b\\") catch return .dark;
     var timed = raw;
     const sys = std.posix.system;
-    timed.cc[@intFromEnum(sys.V.MIN)]  = 0;
+    timed.cc[@intFromEnum(sys.V.MIN)] = 0;
     timed.cc[@intFromEnum(sys.V.TIME)] = 2;
     std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return .dark;
     defer std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
@@ -180,10 +179,12 @@ fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: s
         const r = std.fmt.parseInt(u16, resp[i .. i + 4], 16) catch break;
         const g = if (i + 9 <= resp.len and resp[i + 4] == '/')
             std.fmt.parseInt(u16, resp[i + 5 .. i + 9], 16) catch r
-        else r;
+        else
+            r;
         const b = if (i + 14 <= resp.len and resp[i + 9] == '/')
             std.fmt.parseInt(u16, resp[i + 10 .. i + 14], 16) catch r
-        else r;
+        else
+            r;
         const luma = (@as(u32, r) * 299 + @as(u32, g) * 587 + @as(u32, b) * 114) / 1000;
         return if (luma > 32767) .light else .dark;
     }
@@ -226,11 +227,9 @@ fn loadConfig() Config {
         if (line.len == 0 or line[0] == '#') continue;
         if (std.mem.indexOfScalar(u8, line, '=')) |eq_idx| {
             const key = line[0..eq_idx];
-            const val = line[eq_idx + 1..];
+            const val = line[eq_idx + 1 ..];
             if (std.mem.eql(u8, key, "theme")) {
-                if (std.mem.eql(u8, val, "light"))       cfg.theme = .light
-                else if (std.mem.eql(u8, val, "dark"))   cfg.theme = .dark
-                else if (std.mem.eql(u8, val, "system")) cfg.theme = .system;
+                if (std.mem.eql(u8, val, "light")) cfg.theme = .light else if (std.mem.eql(u8, val, "dark")) cfg.theme = .dark else if (std.mem.eql(u8, val, "system")) cfg.theme = .system;
             } else if (std.mem.eql(u8, key, "width")) {
                 cfg.width = std.fmt.parseInt(usize, val, 10) catch null;
             } else if (std.mem.eql(u8, key, "height")) {
@@ -248,7 +247,9 @@ fn loadConfig() Config {
 /// Rewrite the config file with an updated theme= line, preserving other keys.
 fn saveThemeToConfig(t: Theme) void {
     const theme_str: []const u8 = switch (t) {
-        .dark => "dark", .light => "light", .system => "system",
+        .dark => "dark",
+        .light => "light",
+        .system => "system",
     };
     const home = std.mem.span(std.c.getenv("HOME") orelse return);
 
@@ -317,7 +318,7 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
     ensureDirExists(home, ".local/share/icons/hicolor");
     ensureDirExists(home, ".local/share/icons/hicolor/scalable");
     ensureDirExists(home, ".local/share/icons/hicolor/scalable/apps");
-    
+
     // Write .desktop entry
     var desktop_path_buf: [512]u8 = undefined;
     const desktop_path = std.fmt.bufPrint(&desktop_path_buf, "{s}/.local/share/applications/emojig-picker.desktop", .{home}) catch return;
@@ -334,7 +335,7 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
         \\StartupWMClass=emojig-picker
         \\
     , .{exe_path}) catch return;
-    
+
     if (desktop_path.len + 1 <= desktop_path_buf.len) {
         desktop_path_buf[desktop_path.len] = 0;
         const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
@@ -343,7 +344,7 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
             _ = std.posix.system.write(fd, desktop_text.ptr, desktop_text.len);
         } else |_| {}
     }
-    
+
     // Write SVG icon
     var svg_path_buf: [512]u8 = undefined;
     const svg_path = std.fmt.bufPrint(&svg_path_buf, "{s}/.local/share/icons/hicolor/scalable/apps/emojig-picker.svg", .{home}) catch return;
@@ -379,38 +380,38 @@ fn spawnFootWindow(
         .light => "light",
         .system => "system",
     };
-    
+
     const foot_bg = if (theme == .light) "eeeeee" else "1c1c1c";
     const foot_fg = if (theme == .light) "444444" else "a8a8a8";
-    
+
     const final_h = if (border) height + 2 else height;
-    
+
     var size_buf: [64]u8 = undefined;
     const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width + 2, final_h });
-    
+
     var bg_buf: [64]u8 = undefined;
     const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
-    
+
     var fg_buf: [64]u8 = undefined;
     const fg_arg = try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg});
-    
+
     var env_w: [64]u8 = undefined;
     const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{width});
-    
+
     var env_h: [64]u8 = undefined;
     const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{height});
-    
+
     var env_theme: [64]u8 = undefined;
     const env_theme_arg = try std.fmt.bufPrint(&env_theme, "EMOJIG_THEME={s}", .{theme_str});
-    
+
     var env_border: [64]u8 = undefined;
     const env_border_arg = try std.fmt.bufPrint(&env_border, "EMOJIG_BORDER={s}", .{if (border) "1" else "0"});
-    
+
     var env_safe: [64]u8 = undefined;
     const env_safe_arg = try std.fmt.bufPrint(&env_safe, "EMOJIG_SAFE={s}", .{if (safe) "1" else "0"});
-    
+
     const timeout_val = init.environ_map.get("EMOJIG_PICKER_TIMEOUT") orelse "60";
-    
+
     const argv = &.{
         "timeout",
         timeout_val,
@@ -432,14 +433,14 @@ fn spawnFootWindow(
         exe_path,
         "--tui",
     };
-    
+
     var child = try std.process.spawn(io, .{
         .argv = argv,
         .stdin = .ignore,
         .stdout = .ignore,
         .stderr = .ignore,
     });
-    
+
     if (wait) {
         _ = try child.wait(io);
     }
@@ -502,8 +503,8 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
 
     var buf: [512]u8 = undefined;
 
-    const zsh_path  = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.zsh",  .{home}) catch return;
-    _ = writeFile(&buf, zsh_path,  shell_zsh);
+    const zsh_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.zsh", .{home}) catch return;
+    _ = writeFile(&buf, zsh_path, shell_zsh);
 
     const bash_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.bash", .{home}) catch return;
     _ = writeFile(&buf, bash_path, shell_bash);
@@ -517,8 +518,7 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
         writeAll(std.posix.STDOUT_FILENO, "Warning: could not copy binary to ~/.local/bin/emojig\n") catch {};
     }
 
-    writeAll(std.posix.STDOUT_FILENO,
-        "Installed shell integration to ~/.local/share/emojig/shell/\n\n" ++
+    writeAll(std.posix.STDOUT_FILENO, "Installed shell integration to ~/.local/share/emojig/shell/\n\n" ++
         "Add one line to your shell rc file:\n\n" ++
         "  zsh  (~/.zshrc):\n" ++
         "    source ~/.local/share/emojig/shell/emojig.zsh\n\n" ++
@@ -526,8 +526,7 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
         "    source ~/.local/share/emojig/shell/emojig.bash\n\n" ++
         "  fish (~/.config/fish/config.fish):\n" ++
         "    source ~/.local/share/emojig/shell/emojig.fish\n\n" ++
-        "Then reload your shell and press Ctrl+E at any prompt.\n"
-    ) catch {};
+        "Then reload your shell and press Ctrl+E at any prompt.\n") catch {};
 }
 
 // ---------------------------------------------------------------------------
@@ -560,17 +559,12 @@ pub fn main(init: std.process.Init) !void {
             opt_safe = true;
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
-                if (std.mem.eql(u8, v, "light"))       opt_theme = .light
-                else if (std.mem.eql(u8, v, "dark"))   opt_theme = .dark
-                else if (std.mem.eql(u8, v, "system")) opt_theme = .system
-                else {
-                    try writeAll(std.posix.STDERR_FILENO,
-                        "Error: invalid theme. Supported values are 'dark', 'light', or 'system'.\n");
+                if (std.mem.eql(u8, v, "light")) opt_theme = .light else if (std.mem.eql(u8, v, "dark")) opt_theme = .dark else if (std.mem.eql(u8, v, "system")) opt_theme = .system else {
+                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid theme. Supported values are 'dark', 'light', or 'system'.\n");
                     std.process.exit(1);
                 }
             } else {
-                try writeAll(std.posix.STDERR_FILENO,
-                    "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
+                try writeAll(std.posix.STDERR_FILENO, "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
                 std.process.exit(1);
             }
         } else if (std.mem.eql(u8, arg, "--width")) {
@@ -611,8 +605,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(std.posix.STDOUT_FILENO, "emojig " ++ build_options.version ++ "\n");
             std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            try writeAll(std.posix.STDOUT_FILENO,
-                "Emojig - Premium Zero-Allocation Emoji Picker\n\n" ++
+            try writeAll(std.posix.STDOUT_FILENO, "Emojig - Premium Zero-Allocation Emoji Picker\n\n" ++
                 "Usage: emojig [options]\n\n" ++
                 "Options:\n" ++
                 "  --theme [dark|light|system]  Set the UI theme\n" ++
@@ -648,9 +641,7 @@ pub fn main(init: std.process.Init) !void {
 
     const env_theme: ?Theme = blk: {
         if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
-            if (std.mem.eql(u8, env_val, "light"))       break :blk .light
-            else if (std.mem.eql(u8, env_val, "dark"))   break :blk .dark
-            else if (std.mem.eql(u8, env_val, "system")) break :blk .system;
+            if (std.mem.eql(u8, env_val, "light")) break :blk .light else if (std.mem.eql(u8, env_val, "dark")) break :blk .dark else if (std.mem.eql(u8, env_val, "system")) break :blk .system;
         }
         break :blk null;
     };
@@ -793,7 +784,7 @@ pub fn main(init: std.process.Init) !void {
     defer _ = std.posix.system.close(tty_fd);
     global_tty_fd = tty_fd;
     const stdout_fd = tty_fd;
-    const stdin_fd  = tty_fd;
+    const stdin_fd = tty_fd;
 
     // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
     try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
@@ -806,19 +797,28 @@ pub fn main(init: std.process.Init) !void {
         .mask = std.mem.zeroes(std.posix.sigset_t),
         .flags = 0,
     };
-    std.posix.sigaction(std.posix.SIG.INT,  &act, null);
+    std.posix.sigaction(std.posix.SIG.INT, &act, null);
     std.posix.sigaction(std.posix.SIG.TERM, &act, null);
 
     var raw = orig_termios;
-    raw.iflag.IGNBRK = false; raw.iflag.BRKINT = false; raw.iflag.PARMRK = false;
-    raw.iflag.ISTRIP = false; raw.iflag.INLCR  = false; raw.iflag.IGNCR  = false;
-    raw.iflag.ICRNL  = false; raw.iflag.IXON   = false;
-    raw.oflag.OPOST  = false;
-    raw.lflag.ECHO   = false; raw.lflag.ECHONL = false; raw.lflag.ICANON = false;
-    raw.lflag.ISIG   = false; raw.lflag.IEXTEN = false;
-    raw.cflag.CSIZE  = .CS8;  raw.cflag.PARENB = false;
+    raw.iflag.IGNBRK = false;
+    raw.iflag.BRKINT = false;
+    raw.iflag.PARMRK = false;
+    raw.iflag.ISTRIP = false;
+    raw.iflag.INLCR = false;
+    raw.iflag.IGNCR = false;
+    raw.iflag.ICRNL = false;
+    raw.iflag.IXON = false;
+    raw.oflag.OPOST = false;
+    raw.lflag.ECHO = false;
+    raw.lflag.ECHONL = false;
+    raw.lflag.ICANON = false;
+    raw.lflag.ISIG = false;
+    raw.lflag.IEXTEN = false;
+    raw.cflag.CSIZE = .CS8;
+    raw.cflag.PARENB = false;
     const system = std.posix.system;
-    raw.cc[@intFromEnum(system.V.MIN)]  = 1;
+    raw.cc[@intFromEnum(system.V.MIN)] = 1;
     raw.cc[@intFromEnum(system.V.TIME)] = 0;
     try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
@@ -836,9 +836,9 @@ pub fn main(init: std.process.Init) !void {
         if (!is_first_render) {
             // Move cursor to top of our TUI region from the search bar line where we are
             var move_buf: [32]u8 = undefined;
-            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off }) catch "";
+            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off}) catch "";
             _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
-            
+
             // Clear each of the final_h lines
             var k: usize = 0;
             while (k < final_h) : (k += 1) {
@@ -851,7 +851,7 @@ pub fn main(init: std.process.Init) !void {
             }
             // Move cursor back up to the top start position so the new prompt is printed there
             if (final_h > 1) {
-                const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ final_h - 1 }) catch "";
+                const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{final_h - 1}) catch "";
                 _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
             }
         }
@@ -860,8 +860,6 @@ pub fn main(init: std.process.Init) !void {
     }
 
     applyTerminalColors(stdout_fd, theme, system_theme);
-    
-
 
     var query_buf: [64]u8 = undefined;
     var query_len: usize = 0;
@@ -894,7 +892,7 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(stdout_fd, "\x1b[?25l");
         if (!is_first_render) {
             var move_buf: [32]u8 = undefined;
-            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{ 1 + row_off });
+            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
             try writeAll(stdout_fd, move_seq);
         } else {
             is_first_render = false;
@@ -960,16 +958,12 @@ pub fn main(init: std.process.Init) !void {
                     const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
                     if (selected_idx) |sel| {
                         if (idx == sel) {
-                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
-                                " {s}{s}\x1b[0m{s}{s} ",
-                                .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
                         } else {
-                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
-                                " {s} ", .{render_emoji});
+                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                         }
                     } else {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c],
-                            " {s} ", .{render_emoji});
+                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                     }
                 } else {
                     cell_strings[c] = "    ";
@@ -977,12 +971,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             const grid_rem = if (content_width > 24) content_width - 24 else 0;
-            const grid_line = try std.fmt.bufPrint(&line_buf,
-                " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n",
-                .{ palette.bg, palette.fg,
-                   cell_strings[0], cell_strings[1], cell_strings[2],
-                   cell_strings[3], cell_strings[4], cell_strings[5],
-                   spaces[0..grid_rem] });
+            const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..grid_rem] });
             try writeAll(stdout_fd, grid_line);
         }
 
@@ -996,26 +985,22 @@ pub fn main(init: std.process.Init) !void {
                     const display_name = name[0 .. max_len - 3];
                     const printed_cols = 1 + display_name.len + 3;
                     const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}",
-                        .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 } else {
                     const printed_cols = 1 + name.len;
                     const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}",
-                        .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
                 const pad_len_desc = content_width;
-                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
-                    .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
+                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
                 try writeAll(stdout_fd, name_line);
             }
         } else {
             const pad_len_desc = content_width;
-            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}",
-                .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
+            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
             try writeAll(stdout_fd, name_line);
         }
 
@@ -1030,9 +1015,7 @@ pub fn main(init: std.process.Init) !void {
         // Reposition cursor to search bar input (relative up, horizontal absolute column).
         var cursor_buf: [48]u8 = undefined;
         const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
-        const cursor_seq = try std.fmt.bufPrint(&cursor_buf,
-            "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h",
-            .{ cursor_up, 5 + query_len });
+        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
         try writeAll(stdout_fd, cursor_seq);
 
         // ----------------------------------------------------------------
@@ -1071,7 +1054,7 @@ pub fn main(init: std.process.Init) !void {
         // bytes can arrive in separate reads.
         if (n == 1 and read_buf[0] == 27) {
             var timed = raw;
-            timed.cc[@intFromEnum(system.V.MIN)]  = 0;
+            timed.cc[@intFromEnum(system.V.MIN)] = 0;
             timed.cc[@intFromEnum(system.V.TIME)] = 1; // 100 ms
             std.posix.tcsetattr(stdin_fd, .NOW, timed) catch {};
             const n_rest = std.posix.read(stdin_fd, read_buf[1..]) catch 0;
@@ -1137,16 +1120,16 @@ pub fn main(init: std.process.Init) !void {
 
                     var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
                     const button_str = it.next() orelse continue;
-                    const col_str   = it.next() orelse continue;
-                    const row_str   = it.next() orelse continue;
+                    const col_str = it.next() orelse continue;
+                    const row_str = it.next() orelse continue;
 
-                    const button    = std.fmt.parseInt(i32, button_str, 10) catch continue;
-                    const click_col = std.fmt.parseInt(i32, col_str,    10) catch continue;
-                    const click_row = std.fmt.parseInt(i32, row_str,    10) catch continue;
+                    const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
+                    const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
+                    const click_row = std.fmt.parseInt(i32, row_str, 10) catch continue;
                     const local_col = click_col - 1;
 
                     const is_motion = (button & 32) != 0;
-                    const btn_id    = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
+                    const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
 
                     if (is_motion and term_char == 'M') {
                         // Theme button hover.
@@ -1157,7 +1140,7 @@ pub fn main(init: std.process.Init) !void {
                         // Grid hover: update selection to cell under cursor (no copy).
                         // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
                         const grid_first_row: i32 = 4 + row_off;
-                        const grid_last_row:  i32 = 7 + row_off;
+                        const grid_last_row: i32 = 7 + row_off;
                         if (click_row >= grid_first_row and click_row <= grid_last_row) {
                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                             const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
@@ -1170,15 +1153,15 @@ pub fn main(init: std.process.Init) !void {
                         // Left click press.
                         const search_row: i32 = 2 + row_off;
                         const grid_first_row: i32 = 4 + row_off;
-                        const grid_last_row:  i32 = 7 + row_off;
+                        const grid_last_row: i32 = 7 + row_off;
 
                         if (click_row == search_row and
                             local_col >= @as(i32, @intCast(content_width)) - 4)
                         {
                             // Theme toggle icon — cycle and persist to config.
                             theme = switch (theme) {
-                                .dark   => .light,
-                                .light  => .system,
+                                .dark => .light,
+                                .light => .system,
                                 .system => .dark,
                             };
                             saveThemeToConfig(theme);
@@ -1282,8 +1265,8 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     const clean_text = if (safe) emojig.stripVariationSelectors(text, &buf) else text;
 
     if (std.process.spawn(io, .{
-        .argv   = &.{"wl-copy"},
-        .stdin  = .pipe,
+        .argv = &.{"wl-copy"},
+        .stdin = .pipe,
         .stdout = .ignore,
         .stderr = .ignore,
     })) |spawned| {
@@ -1296,8 +1279,8 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     } else |_| {}
 
     var child = try std.process.spawn(io, .{
-        .argv   = &.{ "xclip", "-selection", "clipboard" },
-        .stdin  = .pipe,
+        .argv = &.{ "xclip", "-selection", "clipboard" },
+        .stdin = .pipe,
         .stdout = .ignore,
         .stderr = .ignore,
     });

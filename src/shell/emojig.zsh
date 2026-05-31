@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # emojig zsh integration — source this from ~/.zshrc
 # Ctrl+E inserts the selected emoji at the cursor position.
 

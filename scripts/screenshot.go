@@ -67,7 +67,11 @@ func main() {
 	cmd.Stdout = slave
 	cmd.Stderr = slave
 	cmd.Env = append(os.Environ(), "EMOJIG_WIDTH=40", "TERM=xterm-256color")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "start: %v\n", err)

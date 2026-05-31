@@ -2,14 +2,7 @@
 
 Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free GUI+TUI emoji picker on all your Linux systems.
 
-## The TUI is the GUI
-The *GUI* mode (currently) requires [`foot`](https://codeberg.org/dnkl/foot) -- the world's fastest terminal -- to serve the emoji *TUI* in a borderless window.
-
 ![emojig dark theme](docs/emojig-dark-200px.png) ![emojig light theme](docs/emojig-light-200px.png)
-
-**💻**  Bind a desktop key to run `emojig --gui` \
-`>_`  Run `emojig --tui` inline in the terminal \
-✨  Or just `emojig` — it picks GUI or inline TUI automatically
 
 ## Features
 **🏎️** Fast and low-memory (278 KB static binary, < 700 KB RAM) \
@@ -20,8 +13,11 @@ The *GUI* mode (currently) requires [`foot`](https://codeberg.org/dnkl/foot) -- 
 
 ## Install
 
+> [!Important]
+> GUI mode is Wayland-only for now and requires `foot` and `wl-copy`.
+> Install with `brew`, `cargo`, `apt`, or a package manager of your choice.
+
 ```sh
-# GUI mode requires 'foot': brew/apt install foot
 curl -L https://codeberg.org/ubunatic/emojig/releases/latest/download/emojig -o ~/Downloads/emojig
 chmod +x ~/Downloads/emojig
 ./emojig --install
@@ -29,6 +25,15 @@ chmod +x ~/Downloads/emojig
 
 `--install` copies the binary to `~/.local/bin/emojig` and writes shell integration
 scripts to `~/.local/share/emojig/shell/`.
+
+## The TUI-GUI
+The *GUI* mode currently requires the [`foot`](https://codeberg.org/dnkl/foot) terminal to serve the emoji *TUI* in a borderless window.
+
+I chose `foot` since it lauches instantly, uses minimal resources, and has all the features needed for a great TUI.
+
+**💻**  Bind a desktop key to run `emojig --gui` \
+`>_`  Run `emojig --tui` inline in the terminal \
+✨  Or just `emojig` — it picks GUI or inline TUI automatically
 
 ## Shell integration (Ctrl+E)
 
