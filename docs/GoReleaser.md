@@ -119,11 +119,11 @@ mkdir -p dist
 
 # build — one prefix per target to avoid overwriting during parallel builds
 zig build -Doptimize=ReleaseSmall -Dtarget=x86_64-linux-musl  -Dversion=$VERSION --prefix dist/build-amd64
-zig build -Doptimize=ReleaseSmall -Dtarget=aarch64-linux-musl -Dversion=$VERSION --prefix dist/build-arm64
+zig build -Doptimize=ReleaseSmall -Dtarget=aarch64-linux-musl -Dversion=$VERSION --prefix dist/build-aarch64
 
 # tarballs
 tar -czf dist/emojig-$VERSION-x86_64-linux-musl.tar.gz  -C dist/build-amd64/bin emojig
-tar -czf dist/emojig-$VERSION-aarch64-linux-musl.tar.gz -C dist/build-arm64/bin emojig
+tar -czf dist/emojig-$VERSION-aarch64-linux-musl.tar.gz -C dist/build-aarch64/bin emojig
 
 # deb / rpm
 nfpm package -f nfpm.yaml -p deb --target dist/

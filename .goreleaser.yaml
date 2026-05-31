@@ -20,11 +20,15 @@ archives:
   - id: default
     formats:
       - tar.gz
-      - binary
     name_template: "emojig-{{ .Version }}-{{ .Target }}"
     files:
       - LICENSES/*
       - README.md
+
+  - id: binary
+    formats:
+      - binary
+    name_template: "emojig-{{ .Target }}"
 
 checksum:
   name_template: SHA256SUMS
@@ -61,6 +65,9 @@ nfpms:
     suggests:
       - xclip
       - foot
+    file_name_template: >-
+      {{ .PackageName }}_{{ .Version }}_linux_
+      {{- if eq .Arch "arm64" }}aarch64{{- else }}{{ .Arch }}{{- end }}
 
 # Publishing is handled by fj (forgejo-cli) — run with --skip=publish.
 

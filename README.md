@@ -20,7 +20,9 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 To download the latest static binary and install it to `~/.local/`:
 
 ```sh
-sh -c 'TAG=$(curl -sSf https://codeberg.org/api/v1/repos/ubunatic/emojig/releases/latest | grep -o "\"tag_name\": *\"[^\"]*\"" | cut -d"\"" -f4) && curl -L "https://codeberg.org/ubunatic/emojig/releases/download/${TAG}/emojig-${TAG#v}-$(uname -m | sed s/arm64/aarch64/)-linux-musl" -o /tmp/emojig && chmod +x /tmp/emojig && /tmp/emojig --install'
+cd ~/Downloads
+curl -o emojig -L "https://codeberg.org/ubunatic/emojig/releases/download/latest/emojig-$(uname -m)-linux-musl"
+chmod +x emojig && ./emojig --install
 ```
 
 `--install` copies the binary to `~/.local/bin/emojig` and writes shell integration

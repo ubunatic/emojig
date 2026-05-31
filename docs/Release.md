@@ -126,11 +126,11 @@ make release-publish
 | File | Description |
 |------|-------------|
 | `emojig-vX.Y.Z-x86_64-linux-musl.tar.gz` | Static binary + licenses (x86-64) |
-| `emojig-vX.Y.Z-aarch64-linux-musl.tar.gz` | Static binary + licenses (arm64) |
+| `emojig-vX.Y.Z-aarch64-linux-musl.tar.gz` | Static binary + licenses (aarch64) |
 | `emojig_vX.Y.Z_linux_amd64.deb` | Debian/Ubuntu package |
-| `emojig_vX.Y.Z_linux_arm64.deb` | Debian/Ubuntu package (arm64) |
+| `emojig_vX.Y.Z_linux_aarch64.deb` | Debian/Ubuntu package (aarch64) |
 | `emojig_vX.Y.Z_linux_amd64.rpm` | RPM package |
-| `emojig_vX.Y.Z_linux_arm64.rpm` | RPM package (arm64) |
+| `emojig_vX.Y.Z_linux_aarch64.rpm` | RPM package (aarch64) |
 | `SHA256SUMS` | Checksums for all artifacts |
 | `SHA256SUMS.minisig` | minisign signature over `SHA256SUMS` |
 

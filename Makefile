@@ -25,10 +25,10 @@ preflight: ⚙️
 
 release-build: ⚙️
 	MINISIGN_KEY_FILE=~/.minisign/minisign.key goreleaser release --clean --skip=publish --skip=sign
-	cp dist/emojig-linux_x86_64-linux-musl/emojig dist/emojig-$(VERSION)-x86_64-linux-musl
-	cp dist/emojig-linux_aarch64-linux-musl/emojig dist/emojig-$(VERSION)-aarch64-linux-musl
+	cp dist/emojig-linux_x86_64-linux-musl/emojig dist/emojig-x86_64-linux-musl
+	cp dist/emojig-linux_aarch64-linux-musl/emojig dist/emojig-aarch64-linux-musl
 
 release-publish: release-build ⚙️
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
 	fj release create "emojig v$(VERSION)" --tag "v$(VERSION)" --draft \
-	  $(addprefix --attach ,$(wildcard dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS dist/SHA256SUMS.minisig dist/emojig-$(VERSION)-x86_64-linux-musl dist/emojig-$(VERSION)-aarch64-linux-musl))
+	  $(addprefix --attach ,$(wildcard dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS dist/SHA256SUMS.minisig dist/emojig-x86_64-linux-musl dist/emojig-aarch64-linux-musl))
