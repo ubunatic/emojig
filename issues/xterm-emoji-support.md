@@ -33,7 +33,7 @@ can cause cell misalignment even if the glyph itself renders.
 | Detection | `TERM=linux` is reliable | `XTERM_VERSION` env var; `TERM=xterm*` alone is too broad |
 | emojig blocks? | Yes (unless `--tui` passed) | No — xterm *can* work with the right font |
 
-## Fix
+## Partial fix
 
 Launch xterm with a FreeType font:
 
@@ -41,16 +41,40 @@ Launch xterm with a FreeType font:
 xterm -fa "monospace" -fs 11
 ```
 
-That's it. `-fa` switches xterm from X11 core font rendering to FreeType.
-fontconfig's monospace stack includes emoji fallback (NotoColorEmoji or similar)
-automatically on most modern Linux systems — **color emoji render correctly**
-without any additional flags.
+`-fa` switches xterm from X11 core font rendering to FreeType. Most emoji
+render correctly in color — but see the limitation below.
 
-`+emoji_width` (VS15/VS16 variation selector width handling) was not needed in
-testing; omit it unless you see cell alignment issues with specific emoji.
+`+emoji_width` (VS15/VS16 variation selector width handling) does **not** fix
+color rendering; it only affects cell-width accounting. Omit it.
 
-The font name is a fontconfig pattern, so any font discoverable by `fc-list`
-works. `monospace` is the safest default.
+## Limitation: BMP emoji render monochrome
+
+fontconfig selects fonts by codepoint coverage. For emoji in the Supplementary
+Multilingual Plane (U+1F000+), no monospace font has coverage so fontconfig
+falls back to NotoColorEmoji → **color** ✓.
+
+For BMP emoji with text-presentation default (e.g. ⚙ U+2699, ☎ U+260E), DejaVu
+Sans Mono already has a monochrome glyph for those codepoints, so fontconfig
+stops there and never reaches NotoColorEmoji → **monochrome** ✗.
+
+Verified with `fc-match`:
+
+```sh
+fc-match "monospace:charset=2699"   # ⚙  → DejaVu Sans Mono (monochrome)
+fc-match "monospace:charset=1f525"  # 🔥 → NotoColorEmoji  (color)
+```
+
+VS16 (`U+FE0F`) in the byte stream is a presentation hint to the renderer but
+fontconfig's charset-based font selection ignores it — it picks the first font
+that covers the base codepoint.
+
+The fix requires configuring fontconfig to prefer NotoColorEmoji for emoji
+codepoints over DejaVu. This is a system-level fontconfig change, not something
+emojig or xterm can control from the command line.
+
+**Practical conclusion**: xterm with `-fa "monospace"` is a partial improvement
+over default xterm (most emoji render in color) but not equivalent to foot/kitty/
+alacritty which handle font fallback for emoji presentation correctly.
 
 ## Detection and emojig behaviour
 
