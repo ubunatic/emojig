@@ -154,7 +154,7 @@ pub fn build(b: *std.Build) void {
     // Output goes to /tmp/emojig_frame.ansi + /tmp/emojig_frame.txt; also prints to stdout.
     const screenshot_step = b.step("screenshot", "Capture an initial frame of emojig for agent inspection");
     const run_screenshot = b.addSystemCommand(&.{
-        "sh", "-c",
+        "sh",                "-c",
         \\timeout 10 go run scripts/screenshot.go "$1" || echo "screenshot failed"
         ,
         "emojig-screenshot",
@@ -207,11 +207,11 @@ pub fn build(b: *std.Build) void {
     const test_minisign_step = b.step("test-minisign", "Verify minisign keypair against minisign.pub in the repo");
     const run_test_minisign = b.addSystemCommand(&.{
         "sh", "-c",
-        \\printf 'emojig minisign test' > /tmp/emojig-minisign-test.txt
-        \\&& minisign -S -s "${MINISIGN_KEY_FILE:-$HOME/.minisign/minisign.key}" -m /tmp/emojig-minisign-test.txt
-        \\&& minisign -V -p minisign.pub -m /tmp/emojig-minisign-test.txt
-        \\&& rm -f /tmp/emojig-minisign-test.txt /tmp/emojig-minisign-test.txt.minisig
-        \\&& echo "minisign keypair OK"
+        \\printf 'emojig minisign test' > /tmp/emojig-minisign-test.txt &&
+        \\minisign -S -s "${MINISIGN_KEY_FILE:-$HOME/.minisign/minisign.key}" -m /tmp/emojig-minisign-test.txt &&
+        \\minisign -V -p minisign.pub -m /tmp/emojig-minisign-test.txt &&
+        \\rm -f /tmp/emojig-minisign-test.txt /tmp/emojig-minisign-test.txt.minisig &&
+        \\echo "minisign keypair OK"
     });
     test_minisign_step.dependOn(&run_test_minisign.step);
 

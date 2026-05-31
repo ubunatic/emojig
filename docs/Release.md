@@ -114,7 +114,7 @@ git tag -a v0.X.Y -m "emojig v0.X.Y"
 git push origin main v0.X.Y
 
 # 4. build, sign, and create draft release
-make release-fj
+make release-publish
 
 # 5. open Codeberg, review the draft, and click Publish
 ```
