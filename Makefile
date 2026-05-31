@@ -19,7 +19,7 @@ gui: build ⚙️
 	./zig-out/bin/emojig --gui
 
 install: build ⚙️
-	cp zig-out/bin/emojig ~/.local/bin/emojig
+	./zig-out/bin/emojig --install
 
 clean: ⚙️
 	rm -rf zig-out .zig-cache
