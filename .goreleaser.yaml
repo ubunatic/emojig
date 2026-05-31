@@ -7,29 +7,22 @@ project_name: emojig
 
 builds:
   - id: emojig-linux
-    builder: custom
+    builder: zig
     targets:
-      - linux_amd64
-      - linux_arm64
-    hooks:
-      pre:
-        - cmd: >-
-            zig build
-            -Doptimize=ReleaseSmall
-            -Dtarget={{ if eq .Arch "amd64" }}x86_64{{ else }}aarch64{{ end }}-linux-musl
-            -Dversion={{ .Version }}
-            --prefix /tmp/emojig-{{ .Arch }}
-      post:
-        - cmd: cp /tmp/emojig-{{ .Arch }}/bin/emojig {{ .Path }}
+      - x86_64-linux-musl
+      - aarch64-linux-musl
     binary: emojig
+    flags:
+      - -Doptimize=ReleaseSmall
+      - -Dversion={{ .Version }}
 
 archives:
   - id: default
     formats:
       - tar.gz
-    name_template: "emojig-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    name_template: "emojig-{{ .Version }}-{{ .Target }}"
     files:
-      - LICENSE
+      - LICENSES/*
       - README.md
 
 checksum:
@@ -52,6 +45,7 @@ signs:
 nfpms:
   - package_name: emojig
     vendor: Uwe Jugel
+    maintainer: Uwe Jugel <uwe.jugel@gmail.com>
     homepage: https://codeberg.org/ubunatic/emojig
     description: Zero-allocation emoji picker for Wayland/X11
     license: AGPL-3.0-or-later
@@ -64,17 +58,7 @@ nfpms:
       - xclip
       - foot
 
-gitea_urls:
-  api: https://codeberg.org/api/v1/
-  download: https://codeberg.org
-  skip_tls_verify: false
-
-release:
-  gitea:
-    owner: ubunatic
-    name: emojig
-  draft: false
-  prerelease: auto
+# Publishing is handled by fj (forgejo-cli) — run with --skip=publish.
 
 changelog:
   sort: asc

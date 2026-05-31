@@ -1,6 +1,7 @@
 # Zig build directories
 .zig-cache/
 zig-out/
+dist/
 
 # Downloaded raw emoji source datasets
 data/
@@ -10,3 +11,4 @@ data/
 
 # gthumb files
 .comments
+

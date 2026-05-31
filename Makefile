@@ -6,23 +6,10 @@ help: ⚙️
 build: ⚙️
 	zig build -Doptimize=ReleaseSmall
 
-run picker screenshot test pack: build ⚙️
+run picker screenshot pack test tui gui reuse deps test-minisign release clean: ⚙️
 	zig build $@
 
-reuse: ⚙️
-	reuse lint
+install: ⚙️  # silent install for testing during development
+	@zig build shell-install >/dev/null && echo "✅ emojig installed" || \
+	 zig build shell-install  # fallback to non-silent on error
 
-tui: build ⚙️
-	./zig-out/bin/emojig --tui
-
-gui: build ⚙️
-	./zig-out/bin/emojig --gui
-
-install: build ⚙️
-	./zig-out/bin/emojig --install >/dev/null
-
-install-verbose: build ⚙️
-	./zig-out/bin/emojig --install
-
-clean: ⚙️
-	rm -rf zig-out .zig-cache
