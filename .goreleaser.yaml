@@ -20,6 +20,7 @@ archives:
   - id: default
     formats:
       - tar.gz
+      - binary
     name_template: "emojig-{{ .Version }}-{{ .Target }}"
     files:
       - LICENSES/*
