@@ -35,20 +35,22 @@ can cause cell misalignment even if the glyph itself renders.
 
 ## Fix
 
-Launch xterm with a FreeType font that has emoji coverage:
+Launch xterm with a FreeType font:
 
 ```sh
-xterm -fa "monospace" -fs 14 +emoji_width
+xterm -fa "monospace" -fs 11
 ```
 
-Or explicitly name a font with good emoji fallback (system-dependent):
+That's it. `-fa` switches xterm from X11 core font rendering to FreeType.
+fontconfig's monospace stack includes emoji fallback (NotoColorEmoji or similar)
+automatically on most modern Linux systems — **color emoji render correctly**
+without any additional flags.
 
-```sh
-xterm -fa "Noto Color Emoji" -fs 14 +emoji_width
-```
+`+emoji_width` (VS15/VS16 variation selector width handling) was not needed in
+testing; omit it unless you see cell alignment issues with specific emoji.
 
-Note: `-fa` switches xterm from X11 core font rendering to FreeType. The font
-name is a fontconfig pattern, so any font discoverable by `fc-list` works.
+The font name is a fontconfig pattern, so any font discoverable by `fc-list`
+works. `monospace` is the safest default.
 
 ## Detection and emojig behaviour
 
