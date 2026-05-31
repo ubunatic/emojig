@@ -26,44 +26,83 @@ check this unambiguously identifies the Linux console.
 A secondary check — stdin/stdout pointing to `/dev/ttyN` rather than `/dev/pts/N`
 — can confirm, but `TERM=linux` alone is sufficient in practice.
 
-## Options
+## Current behaviour (implemented)
 
-### Option A — Detect and warn (recommended, implement now)
+On `TERM=linux`, emojig prints a diagnostic to stderr and exits 1 before
+entering raw mode, unless `--tui` or `--gui` is passed explicitly:
 
-In the TUI entry path, check `TERM == "linux"`. If true, print a short
-diagnostic to stderr and exit with a non-zero code before entering raw mode:
+- `emojig` → exits with the warning below
+- `emojig --tui` → bypasses the guard and runs anyway (user accepts degraded rendering)
+- `emojig --gui` → bypasses the guard and spawns foot (requires a GUI session)
 
 ```
 emojig: Linux virtual console detected (TERM=linux).
 Emoji glyphs cannot render in the kernel console font.
 
 Options:
-  • Install fbterm:  sudo apt install fbterm
+  * Install fbterm:  sudo apt install fbterm
     Then run:        fbterm -- emojig
-  • Or switch to a terminal emulator (foot, alacritty, kitty, …)
-  • Or connect via SSH from a machine with a terminal emulator
+  * Or switch to a terminal emulator (foot, alacritty, kitty, ...)
+  * Or connect via SSH from a machine with a terminal emulator
 ```
 
-**Effort**: ~5 lines of Zig — one env var check before `tcsetattr`.
-**Trade-off**: user must act; emojig does not fix it automatically.
+## Getting emojis to work on a VT
+
+The only practical path is a framebuffer terminal that uses FreeType for glyph
+rendering, bypassing the kernel PSF font entirely.
+
+### fbterm
+
+`fbterm` (Ubuntu/Debian: `sudo apt install fbterm`) renders to `/dev/fb0` via
+FreeType/fontconfig. It supports the full Unicode range, so emoji codepoints
+render — but **monochrome only**: NotoColorEmoji renders as black-and-white
+outlines; color is lost.
+
+**Permission requirement**: fbterm needs read/write access to `/dev/fb0`.
+Running as root works but breaks stdin tty detection (`stdin isn't a interactive
+tty!`). The correct fix is to add your user to the `video` group:
+
+```sh
+sudo usermod -aG video $USER
+# log out and back in for the group change to take effect
+```
+
+Then run from a real VT (Ctrl+Alt+F3):
+
+```sh
+fbterm -- emojig --tui
+```
+
+**Important**: fbterm only works on a bare VT. It cannot run inside a Wayland
+or X11 session — the compositor owns the display via KMS/DRM and `/dev/fb0`
+is inaccessible or invisible behind the compositor. In a graphical session,
+use a terminal emulator (foot, kitty, alacritty) that already supports color
+emoji natively.
+
+### kmscon
+
+`kmscon` is a userspace VT replacement using KMS/DRM + Pango. It supports full
+Unicode including color emoji and is more capable than fbterm, but is less
+commonly packaged and heavier. `sudo apt install kmscon` on Ubuntu.
+
+## Options for emojig
+
+### Option A — Detect and warn ✓ done
+
+Implemented. See "Current behaviour" above.
 
 ### Option B — Auto-launch fbterm (mirrors --gui/foot pattern)
 
-`fbterm` (available in Ubuntu/Debian apt universe) uses fontconfig + freetype
-and supports Unicode. Like `--gui` spawns `foot`, a `--fb` flag (or
-auto-detect when `TERM=linux` and `/dev/fb0` exists) could spawn:
+When `TERM=linux` and `/dev/fb0` is accessible and `fbterm` is in PATH, auto-
+spawn `fbterm -- emojig --tui` rather than printing the warning. Same subprocess-
+spawn pattern already used for `--gui`/foot.
 
-```
-fbterm -s 14 -- emojig --tui
-```
+**Caveat**: monochrome emoji only. Requires user to be in the `video` group —
+if `/dev/fb0` is not accessible the fallback is the existing warning.
 
-**Caveat**: fbterm renders glyphs via freetype but does NOT support color emoji
-(NotoColorEmoji renders monochrome). The UX improves (glyphs appear) but
-color is lost. fbterm also requires the user to be in the `video` group or run
-as root for `/dev/fb0` access.
-
-**Effort**: medium — same subprocess-spawn pattern already used for foot.
-**Trade-off**: silent degradation to monochrome; group membership friction.
+**Effort**: medium.
+**Trade-off**: silent degradation to monochrome; group membership is a one-time
+setup step the user must do regardless.
 
 ### Option C — `emojig --setup` mode (longer term)
 
@@ -76,18 +115,13 @@ emojig --setup fb       # virtual console: check fbterm, font, group membership
 emojig --setup gui      # Wayland/X11: ensure foot, .desktop, icon
 ```
 
-This fits naturally into the existing auto-install pattern (the binary already
-writes `.desktop` and SVG icon files on first run). Scripts in `scripts/` are
-a dev-repo stepping stone toward this.
-
 **Effort**: large — new subcommand, interactive prompts, privilege checks.
 **Trade-off**: best long-term UX; overkill until there is user demand.
 
 ## Recommended plan
 
-1. **Now**: implement Option A (the `TERM=linux` check + error message).
-2. **Soon**: add `scripts/setup-fbterm.sh` as a dev-repo helper for anyone
-   who genuinely needs virtual console use.
-3. **Later**: revisit Option B or C if virtual console usage becomes a real
-   user need — the `--setup` shape from Option C generalises well and
-   aligns with the existing desktop-integration auto-install behaviour.
+1. **Done**: Option A — `TERM=linux` guard with diagnostic message; `--tui`
+   bypasses for users who know what they're doing (e.g. `fbterm -- emojig --tui`).
+2. **Next**: Option B — auto-detect `/dev/fb0` accessible + fbterm in PATH and
+   spawn fbterm automatically, falling back to the warning if unavailable.
+3. **Later**: Option C if virtual console usage becomes a real user need.
