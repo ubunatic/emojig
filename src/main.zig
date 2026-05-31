@@ -458,11 +458,46 @@ fn writeFile(path_buf: []u8, path: []const u8, content: []const u8) bool {
     return true;
 }
 
-fn installShellIntegration(home: []const u8) void {
+fn copyBinary(io: std.Io, home: []const u8) bool {
+    var src_buf: [1024]u8 = undefined;
+    const src_len = std.process.executablePath(io, &src_buf) catch return false;
+    const src_path = src_buf[0..src_len];
+
+    var dst_buf: [1024]u8 = undefined;
+    const dst_path = std.fmt.bufPrint(&dst_buf, "{s}/.local/bin/emojig", .{home}) catch return false;
+
+    // Skip copy if already running from the destination.
+    if (std.mem.eql(u8, src_path, dst_path)) return true;
+
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    if (src_path.len + 1 > src_buf.len) return false;
+    src_buf[src_len] = 0;
+    const src_fd = std.posix.openat(std.posix.AT.FDCWD, src_buf[0..src_len :0], rf, 0) catch return false;
+    defer _ = std.posix.system.close(src_fd);
+
+    if (dst_path.len + 1 > dst_buf.len) return false;
+    dst_buf[dst_path.len] = 0;
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const dst_fd = std.posix.openat(std.posix.AT.FDCWD, dst_buf[0..dst_path.len :0], wf, 0o755) catch return false;
+    defer _ = std.posix.system.close(dst_fd);
+
+    var copy_buf: [65536]u8 = undefined;
+    while (true) {
+        const n = std.posix.read(src_fd, &copy_buf) catch break;
+        if (n == 0) break;
+        _ = std.posix.system.write(dst_fd, copy_buf[0..n].ptr, n);
+    }
+    return true;
+}
+
+fn installShellIntegration(io: std.Io, home: []const u8) void {
     ensureDirExists(home, ".local");
+    ensureDirExists(home, ".local/bin");
     ensureDirExists(home, ".local/share");
     ensureDirExists(home, ".local/share/emojig");
     ensureDirExists(home, ".local/share/emojig/shell");
+
+    const bin_ok = copyBinary(io, home);
 
     var buf: [512]u8 = undefined;
 
@@ -474,6 +509,12 @@ fn installShellIntegration(home: []const u8) void {
 
     const fish_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.fish", .{home}) catch return;
     _ = writeFile(&buf, fish_path, shell_fish);
+
+    if (bin_ok) {
+        writeAll(std.posix.STDOUT_FILENO, "Installed binary to ~/.local/bin/emojig\n") catch {};
+    } else {
+        writeAll(std.posix.STDOUT_FILENO, "Warning: could not copy binary to ~/.local/bin/emojig\n") catch {};
+    }
 
     writeAll(std.posix.STDOUT_FILENO,
         "Installed shell integration to ~/.local/share/emojig/shell/\n\n" ++
@@ -594,7 +635,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(std.posix.STDERR_FILENO, "Error: HOME not set.\n");
             std.process.exit(1);
         });
-        installShellIntegration(home);
+        installShellIntegration(init.io, home);
         std.process.exit(0);
     }
 
