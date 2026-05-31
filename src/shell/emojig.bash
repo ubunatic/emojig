@@ -10,4 +10,10 @@ _emojig_widget() {
     READLINE_POINT=$(( READLINE_POINT + ${#emoji} ))
   fi
 }
-bind -x "\"${EMOJIG_KEY:-\\C-e}\": _emojig_widget"
+_emojig_key="${EMOJIG_KEY:-\\C-e}"
+case "$_emojig_key" in
+  *'"'*|*':'*|*$'\n'*) echo "emojig: unsafe EMOJIG_KEY value ignored, using default" >&2
+    _emojig_key="\\C-e" ;;
+esac
+bind -x "\"${_emojig_key}\": _emojig_widget"
+unset _emojig_key

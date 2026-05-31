@@ -9,4 +9,4 @@ _emojig_widget() {
   zle reset-prompt
 }
 zle -N _emojig_widget
-bindkey "${EMOJIG_KEY:-^E}" _emojig_widget
+bindkey -- "${EMOJIG_KEY:-^E}" _emojig_widget

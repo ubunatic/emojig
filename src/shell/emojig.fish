@@ -8,4 +8,4 @@ function _emojig_widget
     end
 end
 set -q EMOJIG_KEY || set EMOJIG_KEY \ce
-bind $EMOJIG_KEY _emojig_widget
+bind -- $EMOJIG_KEY _emojig_widget
