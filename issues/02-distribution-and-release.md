@@ -1,5 +1,8 @@
 # Emojig: Distribution & Release Plan
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Outlines the cross-compiled static binary distribution and release strategy for **Emojig v0.1.0**.
+
 How to ship `emojig` to many machines through many package managers, and how to
 cut a clean release every time.
 

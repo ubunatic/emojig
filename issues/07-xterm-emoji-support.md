@@ -1,5 +1,8 @@
 # Issue: Emoji rendering fails in xterm
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Investigates xterm core font configurations and FreeType/emoji width runtime parameters for **Emojig v0.1.0**.
+
 ## Problem
 
 When `emojig` is run in xterm with default settings, emoji cells are blank —

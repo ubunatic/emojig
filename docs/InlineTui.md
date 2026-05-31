@@ -1,5 +1,8 @@
 # Design Guide: Inline Terminal UIs (TUI) & Clean Viewport Management
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Matches the inline viewport management and TUI drawing routines of **Emojig v0.1.0**.
+
 How emojig renders an inline TUI that does not hijack the screen or alternate buffer,
 preserves scrollback history, and cleans up after itself on exit.
 

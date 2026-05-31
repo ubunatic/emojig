@@ -1,5 +1,8 @@
 # Issue: Copy/paste and output delivery in VT and non-GUI environments
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Details stdout delivery, clipboard shims, and shell widgets for non-graphical terminal setups in **Emojig v0.1.0**.
+
 ## What we learned
 
 ### VT has no OS clipboard

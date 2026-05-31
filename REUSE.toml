@@ -10,7 +10,7 @@ SPDX-FileCopyrightText = "2022 Unicode, Inc."
 SPDX-License-Identifier = "Unicode-DFS-2016"
 
 [[annotations]]
-path = ["**.md", "AGENTS.md", "DISTRIBUTION.md", "WALKTHROUGH.md", "plain_terminal_support_plan.md"]
+path = ["**.md", "AGENTS.md", "DISTRIBUTION.md", "Walkthrough.md", "plain_terminal_support_plan.md"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

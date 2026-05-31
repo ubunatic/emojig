@@ -1,5 +1,8 @@
 # Issue: Emoji rendering fails in Linux virtual console (VT)
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Evaluates console font limitations and rendering workarounds in the Linux kernel virtual terminal (VT) for **Emojig v0.1.0**.
+
 ## Problem
 
 When `emojig` is run in a Linux virtual console (e.g. Ctrl+Alt+F3, no desktop

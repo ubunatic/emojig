@@ -1,5 +1,8 @@
 # Emojig: Walkthrough & Integration Guide
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Matches the controls, performance metrics, and configuration options of **Emojig v0.1.0**.
+
 How to install, run, and integrate emojig in your terminal environment.
 
 ---

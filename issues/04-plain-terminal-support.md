@@ -1,5 +1,8 @@
 # Implementation Plan: Plain Terminal & Self-Sustained Window Management
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Outlines the standalone binary architecture, no-GUI fallback, and terminal detection for **Emojig v0.1.0**.
+
 This plan outlines the architecture and steps to make `emojig` a completely self-sustained binary that handles terminal window management, fallback TUI execution, and GUI desktop integrations natively without external shell wrappers.
 
 ---

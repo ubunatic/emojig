@@ -1,5 +1,8 @@
 # Shell Integration: fzf-style Stdout Mode
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Matches the shell widget integrations and stdout capture behavior of **Emojig v0.1.0**.
+
 How emojig integrates with shells via stdout capture, and the technical details
 discovered during implementation.
 
@@ -147,4 +150,4 @@ Reload your shell (`exec zsh` / `exec bash`) then press **Ctrl+E** at any prompt
 
 The "inside another TUI" case would require either the host app to integrate with
 an external picker API (like vim's fzf plugin), or emojig to run as a PTY wrapper
-(mc-style) — a much larger scope discussed in `issues/vt-copy-paste-and-output-modes.md`.
+(mc-style) — a much larger scope discussed in `issues/06-vt-copy-paste-and-output-modes.md`.

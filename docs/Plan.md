@@ -1,5 +1,8 @@
 # Emojig: Zero-Allocation Emoji Picker
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Matches the active architecture, features, and design goals of **Emojig v0.1.0**.
+
 A high-performance, low-memory emoji picker in Zig. Runs as an inline TUI in any terminal,
 as a floating GUI window on Wayland/X11, or as a shell widget (fzf-style) that inserts the
 selected emoji at the cursor via stdout capture.
@@ -112,7 +115,7 @@ keys inside ZLE widgets where zsh activates `smkx`.
 - SSH: stdout mode works natively (no clipboard needed). Needs docs.
 
 ### Phase 11 — Release infrastructure (pending)
-See `issues/distribution-and-release.md` for the full plan.
+See `issues/02-distribution-and-release.md` for the full plan.
 Short list: README, `--version`, GoReleaser config, Woodpecker + GitHub Actions CI,
 Codeberg + GitHub remotes, minisign keypair, AUR/Nix/Homebrew packages.
 

@@ -1,5 +1,8 @@
 # Issue: Mouse tracking enabled before raw-mode setup is complete
 
+> [!NOTE]
+> **Currency Status:** Current as of May 31, 2026. Analyzes terminal sequence ordering during raw mode initialization and teardown in **Emojig v0.1.0**.
+
 ## Problem
 
 In `src/main.zig` around line 677, the TUI entry path sends the mouse-tracking
