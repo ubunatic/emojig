@@ -33,19 +33,40 @@ can cause cell misalignment even if the glyph itself renders.
 | Detection | `TERM=linux` is reliable | `XTERM_VERSION` env var; `TERM=xterm*` alone is too broad |
 | emojig blocks? | Yes (unless `--tui` passed) | No — xterm *can* work with the right font |
 
-## Partial fix
+## Best achievable fix
 
-Launch xterm with a FreeType font:
+Two steps required:
 
-```sh
-xterm -fa "monospace" -fs 11
+**1. fontconfig rule** — prepend NotoColorEmoji to the monospace fallback chain
+so BMP emoji codepoints resolve to the color font instead of DejaVu:
+
+`~/.config/fontconfig/conf.d/01-emoji.conf`:
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <match target="pattern">
+    <test name="family">
+      <string>monospace</string>
+    </test>
+    <edit name="family" mode="prepend">
+      <string>Noto Color Emoji</string>
+    </edit>
+  </match>
+</fontconfig>
 ```
 
-`-fa` switches xterm from X11 core font rendering to FreeType. Most emoji
-render correctly in color — but see the limitation below.
+Then rebuild the cache: `fc-cache -f`
 
-`+emoji_width` (VS15/VS16 variation selector width handling) does **not** fix
-color rendering; it only affects cell-width accounting. Omit it.
+**2. Launch xterm with FreeType + emoji width flag:**
+
+```sh
+xterm -fa "monospace" -fs 11 +emoji_width
+```
+
+`+emoji_width` handles cell-width accounting for VS15/VS16 variation sequences.
+It does **not** fix color rendering (that's the fontconfig rule's job), but both
+flags are needed together for best results.
 
 ## Limitation: BMP emoji render monochrome
 
@@ -72,9 +93,13 @@ The fix requires configuring fontconfig to prefer NotoColorEmoji for emoji
 codepoints over DejaVu. This is a system-level fontconfig change, not something
 emojig or xterm can control from the command line.
 
-**Practical conclusion**: xterm with `-fa "monospace"` is a partial improvement
-over default xterm (most emoji render in color) but not equivalent to foot/kitty/
-alacritty which handle font fallback for emoji presentation correctly.
+**Practical conclusion**: xterm with `-fa "monospace"` + the fontconfig rule is
+a significant improvement — most emoji render in color — but individual glyph
+rendering glitches (overflow, cutoff) are expected for some emoji. NotoColorEmoji
+glyph metrics don't always align with the cell grid xterm derives from the
+monospace font. foot/kitty/alacritty have dedicated emoji rendering paths that
+handle this correctly; xterm does not. xterm is not a reliable drop-in for an
+emoji picker.
 
 ## Detection and emojig behaviour
 
