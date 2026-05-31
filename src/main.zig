@@ -7,6 +7,14 @@ const emojig = @import("emojig");
 const mru = emojig.mru;
 
 // ---------------------------------------------------------------------------
+// Embedded shell integration scripts
+// ---------------------------------------------------------------------------
+
+const shell_zsh  = @embedFile("shell/emojig.zsh");
+const shell_bash = @embedFile("shell/emojig.bash");
+const shell_fish = @embedFile("shell/emojig.fish");
+
+// ---------------------------------------------------------------------------
 // Theme & Palette
 // ---------------------------------------------------------------------------
 
@@ -437,6 +445,50 @@ fn spawnFootWindow(
 }
 
 // ---------------------------------------------------------------------------
+// Shell integration install
+// ---------------------------------------------------------------------------
+
+fn writeFile(path_buf: []u8, path: []const u8, content: []const u8) bool {
+    if (path.len + 1 > path_buf.len) return false;
+    path_buf[path.len] = 0;
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path_buf[0..path.len :0], wf, 0o644) catch return false;
+    defer _ = std.posix.system.close(fd);
+    _ = std.posix.system.write(fd, content.ptr, content.len);
+    return true;
+}
+
+fn installShellIntegration(home: []const u8) void {
+    ensureDirExists(home, ".local");
+    ensureDirExists(home, ".local/share");
+    ensureDirExists(home, ".local/share/emojig");
+    ensureDirExists(home, ".local/share/emojig/shell");
+
+    var buf: [512]u8 = undefined;
+
+    const zsh_path  = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.zsh",  .{home}) catch return;
+    _ = writeFile(&buf, zsh_path,  shell_zsh);
+
+    const bash_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.bash", .{home}) catch return;
+    _ = writeFile(&buf, bash_path, shell_bash);
+
+    const fish_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.fish", .{home}) catch return;
+    _ = writeFile(&buf, fish_path, shell_fish);
+
+    writeAll(std.posix.STDOUT_FILENO,
+        "Installed shell integration to ~/.local/share/emojig/shell/\n\n" ++
+        "Add one line to your shell rc file:\n\n" ++
+        "  zsh  (~/.zshrc):\n" ++
+        "    source ~/.local/share/emojig/shell/emojig.zsh\n\n" ++
+        "  bash (~/.bashrc):\n" ++
+        "    source ~/.local/share/emojig/shell/emojig.bash\n\n" ++
+        "  fish (~/.config/fish/config.fish):\n" ++
+        "    source ~/.local/share/emojig/shell/emojig.fish\n\n" ++
+        "Then reload your shell and press Ctrl+E at any prompt.\n"
+    ) catch {};
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -444,6 +496,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_tui = false;
     var opt_gui = false;
     var opt_wait = false;
+    var opt_install = false;
     var opt_theme: ?Theme = null;
     var opt_width: ?usize = null;
     var opt_height: ?usize = null;
@@ -455,6 +508,8 @@ pub fn main(init: std.process.Init) !void {
     while (args_it.next()) |arg| {
         if (std.mem.eql(u8, arg, "--tui")) {
             opt_tui = true;
+        } else if (std.mem.eql(u8, arg, "--install")) {
+            opt_install = true;
         } else if (std.mem.eql(u8, arg, "--gui")) {
             opt_gui = true;
         } else if (std.mem.eql(u8, arg, "--wait")) {
@@ -523,6 +578,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating terminal window (spawns foot)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
+                "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
                 "  -h, --help                   Show this help message\n");
             std.process.exit(0);
         } else {
@@ -531,6 +587,15 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(std.posix.STDERR_FILENO, "'. Use -h or --help for usage.\n");
             std.process.exit(1);
         }
+    }
+
+    if (opt_install) {
+        const home = std.mem.span(std.c.getenv("HOME") orelse {
+            try writeAll(std.posix.STDERR_FILENO, "Error: HOME not set.\n");
+            std.process.exit(1);
+        });
+        installShellIntegration(home);
+        std.process.exit(0);
     }
 
     const cfg = loadConfig();
@@ -933,11 +998,16 @@ pub fn main(init: std.process.Init) !void {
                 if (sel < top_count) {
                     const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
                     mru.save(selected.emoji);
-                    copyToClipboard(init, selected.emoji, final_safe) catch {};
-                    result_emoji = if (final_safe)
-                        emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
-                    else
-                        selected.emoji;
+                    if (std.c.isatty(std.posix.STDOUT_FILENO) != 0) {
+                        // Standalone: stdout is the terminal — copy to clipboard.
+                        copyToClipboard(init, selected.emoji, final_safe) catch {};
+                    } else {
+                        // Piped/captured: print emoji to stdout for shell widget or script.
+                        result_emoji = if (final_safe)
+                            emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
+                        else
+                            selected.emoji;
+                    }
                 }
             }
             break;
