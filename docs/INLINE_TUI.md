@@ -56,7 +56,7 @@ drwxr-xr-x 22 user user 4096 May 30 17:50 ..
 -rw-r--r--  1 user user  120 May 30 18:00 Makefile
 drwxr-xr-x  3 user user 4096 May 30 18:00 src
 user@host:~$ emojig --tui
- 🔍 fir█                               🔆
+ 🔍 fir█              🔆
  
   🚒  🔥  🎆  🧨  🧯  🇮🇪
   ⚙️  ⛸️  😝  🎭  😚  😍

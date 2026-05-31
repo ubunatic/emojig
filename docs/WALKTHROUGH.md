@@ -77,7 +77,7 @@ This launches `foot` with the correct geometry, font size, padding, and cursor b
 foot --app-id=emojig-picker --title="Emoji Picker" --window-size-chars=40x7 --override=font=monospace:size=14 --override=cursor.blink=yes --override=pad=12x8 --override=csd.size=0 zig-out/bin/emojig
 ```
 
-### Choice 3: `alacritty`
+### Choice 3: `alacritty` (untested)
 ```bash
 alacritty --class emojig-picker --title "Emoji Picker" --command zig-out/bin/emojig
 ```
@@ -131,3 +131,11 @@ GNOME doesn't natively support rule-based window filtering like tiling managers,
 2. **Hide from Taskbar & Force Float**:
    * Install the popular GNOME Shell Extension: **[Auto Move Windows](https://extensions.gnome.org/extension/16/auto-move-windows/)** or **[Window Rules](https://extensions.gnome.org/extension/4736/window-rules/)**.
    * Configure a rule targeting the class `emojig-picker` to set it as a **Utility / Floating Dialog** and enable `skip-taskbar`.
+
+### D. Let `emojig` deciced
+Currently `emojig` decides how to run and assumes `foot` to be present.
+`foot` is super lightweight and is/was the best choice to have an interactive windowless pane.
+The GUI version is implemented using a TUI to have cosnstency across all platforms.
+
+## Disclaimer
+This document may be outdated as `emojig` evolves to new ways of opening windows on as many platforms as possible.
