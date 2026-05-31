@@ -28,5 +28,5 @@ release-build: ⚙️
 
 release-publish: release-build ⚙️
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
-	echo fj release create "emojig v$(VERSION)" --tag "v$(VERSION)" --draft \
+	fj release create "emojig v$(VERSION)" --tag "v$(VERSION)" --draft \
 	  $(addprefix --attach ,$(wildcard dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS dist/SHA256SUMS.minisig))
