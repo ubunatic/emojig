@@ -4,6 +4,7 @@
 const std = @import("std");
 const Io = std.Io;
 const emojig = @import("emojig");
+const build_options = @import("build_options");
 const mru = emojig.mru;
 
 // ---------------------------------------------------------------------------
@@ -606,6 +607,9 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(std.posix.STDERR_FILENO, "Error: --border requires an argument.\n");
                 std.process.exit(1);
             }
+        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--version")) {
+            try writeAll(std.posix.STDOUT_FILENO, "emojig " ++ build_options.version ++ "\n");
+            std.process.exit(0);
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             try writeAll(std.posix.STDOUT_FILENO,
                 "Emojig - Premium Zero-Allocation Emoji Picker\n\n" ++
@@ -620,6 +624,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --gui                        Force floating terminal window (spawns foot)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
+                "  -v, --version                Show version and exit\n" ++
                 "  -h, --help                   Show this help message\n");
             std.process.exit(0);
         } else {

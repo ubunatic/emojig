@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+version: 2
+
+project_name: emojig
+
+builds:
+  - id: emojig-linux
+    builder: custom
+    targets:
+      - linux_amd64
+      - linux_arm64
+    hooks:
+      pre:
+        - cmd: >-
+            zig build
+            -Doptimize=ReleaseSmall
+            -Dtarget={{ if eq .Arch "amd64" }}x86_64{{ else }}aarch64{{ end }}-linux-musl
+            -Dversion={{ .Version }}
+            --prefix /tmp/emojig-{{ .Arch }}
+      post:
+        - cmd: cp /tmp/emojig-{{ .Arch }}/bin/emojig {{ .Path }}
+    binary: emojig
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "emojig-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+signs:
+  - cmd: sh
+    args:
+      - -c
+      - >-
+        minisign -S
+        -s "${MINISIGN_KEY_FILE}"
+        -m "${artifact}"
+        -t "emojig {{ .Version }}"
+    artifacts: checksum
+    env:
+      - MINISIGN_KEY_FILE
+
+nfpms:
+  - package_name: emojig
+    vendor: Uwe Jugel
+    homepage: https://codeberg.org/ubunatic/emojig
+    description: Zero-allocation emoji picker for Wayland/X11
+    license: AGPL-3.0-or-later
+    formats:
+      - deb
+      - rpm
+    recommends:
+      - wl-clipboard
+    suggests:
+      - xclip
+      - foot
+
+gitea_urls:
+  api: https://codeberg.org/api/v1/
+  download: https://codeberg.org
+  skip_tls_verify: false
+
+release:
+  gitea:
+    owner: ubunatic
+    name: emojig
+  draft: false
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

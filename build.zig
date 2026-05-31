@@ -90,6 +90,11 @@ pub fn build(b: *std.Build) void {
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
+    const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", version);
+    exe.root_module.addOptions("build_options", options);
+
     exe.root_module.link_libc = true;
     b.installArtifact(exe);
 
