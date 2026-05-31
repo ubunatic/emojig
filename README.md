@@ -3,27 +3,9 @@
 A fast, low-memory emoji picker for the terminal. Fuzzy search across 1,870 emojis,
 pick with arrow keys or mouse, get the emoji in your clipboard or shell prompt.
 
-```
- 🔍                          🔆
-                                
-  🚒  😇  ⚙️   😍  ⛸️   😝       
-  🎭  😚  😗  🏎️   😃  😀       
-  😄  😁  😆  😅  🤣  😂       
-  🙂  🙃  🫠  😉  😊  🥰       
-                                
-```
-
-Type to filter:
-
-```
- 🔍 fire                     🔆
-                                
-  🚒  🔥  🎆  🧨  🧯  🇮🇪       
-  🙄  🌓  🌛  🇷🇪  😩  🇮🇶       
-  🇮🇷  😪  🇩🇴  🇮🇱  🇨🇿  🇨🇫       
-  🤨  🇦🇪  🎞️   📽️   🇪🇷  🇷🇺       
-  fire engine                   
-```
+| Dark | Light |
+|------|-------|
+| ![emojig dark theme](docs/emojig-dark.png) | ![emojig light theme](docs/emojig-light.png) |
 
 ## Install
 
