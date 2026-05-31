@@ -1040,14 +1040,15 @@ pub fn main(init: std.process.Init) !void {
                     const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
                     mru.save(selected.emoji);
                     if (std.c.isatty(std.posix.STDOUT_FILENO) != 0) {
-                        // Standalone: stdout is the terminal — copy to clipboard.
+                        // Standalone: stdout is the terminal — copy to clipboard only.
                         copyToClipboard(init, selected.emoji, final_safe) catch {};
                     } else {
-                        // Piped/captured: print emoji to stdout for shell widget or script.
+                        // Piped/captured: print to stdout for shell widget, also try clipboard.
                         result_emoji = if (final_safe)
                             emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
                         else
                             selected.emoji;
+                        copyToClipboard(init, selected.emoji, final_safe) catch {};
                     }
                 }
             }
