@@ -7,4 +7,5 @@ function _emojig_widget
         commandline --insert $emoji
     end
 end
-bind \ce _emojig_widget
+set -q EMOJIG_KEY || set EMOJIG_KEY \ce
+bind $EMOJIG_KEY _emojig_widget

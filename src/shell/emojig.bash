@@ -10,4 +10,4 @@ _emojig_widget() {
     READLINE_POINT=$(( READLINE_POINT + ${#emoji} ))
   fi
 }
-bind -x '"\C-e": _emojig_widget'
+bind -x "\"${EMOJIG_KEY:-\\C-e}\": _emojig_widget"
