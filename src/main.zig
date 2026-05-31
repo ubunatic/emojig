@@ -590,7 +590,7 @@ pub fn main(init: std.process.Init) !void {
         break :blk term != null and std.mem.eql(u8, term.?, "linux");
     };
 
-    if (is_linux_vt and !opt_gui) {
+    if (is_linux_vt and !opt_gui and !opt_tui) {
         try writeAll(std.posix.STDERR_FILENO,
             \\emojig: Linux virtual console detected (TERM=linux).
             \\Emoji glyphs cannot render in the kernel console font.
