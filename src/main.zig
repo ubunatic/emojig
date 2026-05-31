@@ -66,6 +66,7 @@ fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
 // ---------------------------------------------------------------------------
 
 var global_orig_termios: ?std.posix.termios = null;
+var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     var index: usize = 0;
@@ -129,9 +130,9 @@ const RESTORE   = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+        _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
     }
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, RESTORE, RESTORE.len);
+    _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.process.exit(1);
 }
@@ -139,9 +140,9 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     _ = error_return_trace;
     if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(std.posix.STDIN_FILENO, .NOW, &orig);
+        _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
     }
-    _ = std.posix.system.write(std.posix.STDOUT_FILENO, RESTORE, RESTORE.len);
+    _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
 }
@@ -583,7 +584,13 @@ pub fn main(init: std.process.Init) !void {
         break :blk (wayland != null and wayland.?.len > 0) or (x11 != null and x11.?.len > 0);
     };
 
-    const is_stdin_tty = std.c.isatty(std.posix.STDIN_FILENO) != 0;
+    const can_use_tty = blk: {
+        const flags = std.posix.O{ .ACCMODE = .RDWR };
+        if (std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", flags, 0)) |fd| {
+            _ = std.posix.system.close(fd);
+            break :blk true;
+        } else |_| break :blk false;
+    };
 
     const is_linux_vt = blk: {
         const term = init.environ_map.get("TERM");
@@ -607,7 +614,7 @@ pub fn main(init: std.process.Init) !void {
 
     var run_gui = false;
     if (opt_tui) {
-        if (!is_stdin_tty) {
+        if (!can_use_tty) {
             try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal.\n");
             std.process.exit(1);
         }
@@ -618,7 +625,7 @@ pub fn main(init: std.process.Init) !void {
         }
         run_gui = true;
     } else {
-        if (is_stdin_tty) {
+        if (can_use_tty) {
             // run TUI in-place
         } else if (has_gui_session) {
             run_gui = true;
@@ -670,8 +677,12 @@ pub fn main(init: std.process.Init) !void {
 
     mru.load();
 
-    const stdout_fd = std.posix.STDOUT_FILENO;
-    const stdin_fd  = std.posix.STDIN_FILENO;
+    const tty_flags = std.posix.O{ .ACCMODE = .RDWR };
+    const tty_fd = try std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0);
+    defer _ = std.posix.system.close(tty_fd);
+    global_tty_fd = tty_fd;
+    const stdout_fd = tty_fd;
+    const stdin_fd  = tty_fd;
 
     // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
     try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
@@ -753,6 +764,8 @@ pub fn main(init: std.process.Init) !void {
     var top_count: usize = 0;
 
     var should_copy_and_exit = false;
+    var result_emoji: ?[]const u8 = null;
+    var result_safe_buf: [64]u8 = undefined;
     var theme_hovered = false;
 
     emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
@@ -915,16 +928,17 @@ pub fn main(init: std.process.Init) !void {
         // Copy & exit deferred action (rendered one frame first)
         // ----------------------------------------------------------------
         if (should_copy_and_exit) {
-            if (selected_idx) |sel| {
-                if (top_count > 0 and sel < top_count) {
+            const sel_idx = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
+            if (sel_idx) |sel| {
+                if (sel < top_count) {
                     const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
                     mru.save(selected.emoji);
                     copyToClipboard(init, selected.emoji, final_safe) catch {};
+                    result_emoji = if (final_safe)
+                        emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
+                    else
+                        selected.emoji;
                 }
-            } else if (top_count > 0) {
-                const selected = emojig.EmojiDb.getEntry(top_matches[0].index);
-                mru.save(selected.emoji);
-                copyToClipboard(init, selected.emoji, final_safe) catch {};
             }
             break;
         }
@@ -932,8 +946,21 @@ pub fn main(init: std.process.Init) !void {
         // ----------------------------------------------------------------
         // Read input
         // ----------------------------------------------------------------
-        const n = try std.posix.read(stdin_fd, &read_buf);
+        var n = try std.posix.read(stdin_fd, &read_buf);
         if (n == 0) break;
+
+        // If we got a lone ESC, wait briefly for the rest of an escape sequence.
+        // Arrow keys send ESC [ A/B/C/D; in some contexts (e.g. ZLE widgets) the
+        // bytes can arrive in separate reads.
+        if (n == 1 and read_buf[0] == 27) {
+            var timed = raw;
+            timed.cc[@intFromEnum(system.V.MIN)]  = 0;
+            timed.cc[@intFromEnum(system.V.TIME)] = 1; // 100 ms
+            std.posix.tcsetattr(stdin_fd, .NOW, timed) catch {};
+            const n_rest = std.posix.read(stdin_fd, read_buf[1..]) catch 0;
+            std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
+            n += n_rest;
+        }
 
         const bytes = read_buf[0..n];
 
@@ -948,7 +975,7 @@ pub fn main(init: std.process.Init) !void {
                 {
                     break;
                 } else if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
-                    // Arrow keys
+                    // Arrow keys — normal cursor key mode (\x1b[A/B/C/D)
                     if (selected_idx == null) {
                         if (top_count > 0) selected_idx = 0;
                         continue;
@@ -1054,6 +1081,40 @@ pub fn main(init: std.process.Init) !void {
                         }
                     }
                 }
+            } else if (n > 2 and bytes[1] == 'O') {
+                // Arrow keys — application cursor key mode (\x1bOA/B/C/D)
+                // ZLE keeps the terminal in smkx (application mode) during widget execution.
+                if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
+                    if (selected_idx == null) {
+                        if (top_count > 0) selected_idx = 0;
+                        continue;
+                    }
+                    var sel = selected_idx.?;
+                    if (bytes[2] == 'A') {
+                        if (top_count > 0) {
+                            if (sel >= cols) {
+                                sel -= cols;
+                            } else {
+                                const target = sel + (rows - 1) * cols;
+                                sel = if (target < top_count) target else top_count - 1;
+                            }
+                        }
+                    } else if (bytes[2] == 'B') {
+                        if (top_count > 0) {
+                            const target = sel + cols;
+                            sel = if (target < top_count) target else sel % cols;
+                        }
+                    } else if (bytes[2] == 'C') {
+                        if (top_count > 0) {
+                            sel = if (sel < top_count - 1) sel + 1 else 0;
+                        }
+                    } else if (bytes[2] == 'D') {
+                        if (top_count > 0) {
+                            sel = if (sel > 0) sel - 1 else top_count - 1;
+                        }
+                    }
+                    selected_idx = sel;
+                }
             }
         } else if (bytes[0] == 127 or bytes[0] == 8) {
             // Backspace
@@ -1090,6 +1151,11 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
         }
+    }
+
+    if (result_emoji) |emoji| {
+        writeAll(std.posix.STDOUT_FILENO, emoji) catch {};
+        writeAll(std.posix.STDOUT_FILENO, "\n") catch {};
     }
 }
 

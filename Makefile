@@ -6,16 +6,16 @@ help: ⚙️
 build: ⚙️
 	zig build -Doptimize=ReleaseSmall
 
-run picker screenshot test pack: ⚙️
+run picker screenshot test pack: build ⚙️
 	zig build $@
 
 reuse: ⚙️
 	reuse lint
 
-tui: ⚙️
+tui: build ⚙️
 	./zig-out/bin/emojig --tui
 
-gui: ⚙️
+gui: build ⚙️
 	./zig-out/bin/emojig --gui
 
 install: build ⚙️
