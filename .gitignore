@@ -7,3 +7,6 @@ data/
 
 # Log files
 *.log
+
+# gthumb files
+.comments

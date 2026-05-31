@@ -19,6 +19,9 @@ gui: build ⚙️
 	./zig-out/bin/emojig --gui
 
 install: build ⚙️
+	./zig-out/bin/emojig --install >/dev/null
+
+install-verbose: build ⚙️
 	./zig-out/bin/emojig --install
 
 clean: ⚙️

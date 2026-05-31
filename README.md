@@ -1,17 +1,29 @@
-# emojig
+# emojig - *all your emoji are belong to us!*
 
-A fast, low-memory emoji picker for the terminal. Fuzzy search across 1,870 emojis,
-pick with arrow keys or mouse, get the emoji in your clipboard or shell prompt.
+Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free GUI+TUI emoji picker on all your Linux systems.
 
-| Dark | Light |
-|------|-------|
-| ![emojig dark theme](docs/emojig-dark.png) | ![emojig light theme](docs/emojig-light.png) |
+## The TUI is the GUI
+The *GUI* mode (currently) requires [`foot`](https://codeberg.org/dnkl/foot) -- the world's fastest terminal -- to serve the emoji *TUI* in a borderless window.
+
+![emojig dark theme](docs/emojig-dark-200px.png) ![emojig light theme](docs/emojig-light-200px.png)
+
+**💻**  Bind a desktop key to run `emojig --gui` \
+`>_`  Run `emojig --tui` inline in the terminal \
+✨  Or just `emojig` — it picks GUI or inline TUI automatically
+
+## Features
+**🏎️** Fast and low-memory (278 KB static binary, < 700 KB RAM) \
+**😀** Works in the terminal and as a floating desktop window \
+**🔍** Fuzzy search across 1,870 emojis \
+**↔️** Navigate with arrow keys or mouse \
+**📋** Sends the emoji to your clipboard or shell prompt
 
 ## Install
 
 ```sh
-curl -L https://codeberg.org/ubunatic/emojig/releases/latest/download/emojig -o emojig
-chmod +x emojig
+# GUI mode requires 'foot': brew/apt install foot
+curl -L https://codeberg.org/ubunatic/emojig/releases/latest/download/emojig -o ~/Downloads/emojig
+chmod +x ~/Downloads/emojig
 ./emojig --install
 ```
 
@@ -22,17 +34,17 @@ scripts to `~/.local/share/emojig/shell/`.
 
 Add one line to your shell rc file:
 
-```zsh
+```sh
 # zsh — ~/.zshrc
 source ~/.local/share/emojig/shell/emojig.zsh
 ```
 
-```bash
+```sh
 # bash — ~/.bashrc
 source ~/.local/share/emojig/shell/emojig.bash
 ```
 
-```fish
+```sh
 # fish — ~/.config/fish/config.fish
 source ~/.local/share/emojig/shell/emojig.fish
 ```
@@ -89,7 +101,7 @@ saves your choice to `~/.config/emojig/config`. Override with `--theme` or
 ## Performance
 
 - Binary: **278 KB** (static, no runtime deps)
-- RAM: **< 700 KB RSS** during operation, 0 when idle
+- RAM: **< 700 KB RSS** during operation, 0 when idle (excl. `foot` memory usage)
 - Database: 1,870 emojis embedded at compile time — no data files
 
 ## License
