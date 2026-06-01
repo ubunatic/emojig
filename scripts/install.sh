@@ -45,8 +45,10 @@ fi
 
 info "Resolved latest release: $TAG"
 
+VERSION=$(echo "$TAG" | sed 's/^v//')
+
 # ── 3. Download & Verify Release Archive ───────────────────────────────────────
-ASSET_NAME="emojig-${TAG}-${TARGET_ARCH}-linux-musl.tar.gz"
+ASSET_NAME="emojig-${VERSION}-${TARGET_ARCH}-linux-musl.tar.gz"
 DOWNLOAD_URL="https://codeberg.org/ubunatic/emojig/releases/download/${TAG}/${ASSET_NAME}"
 TMP_DIR=$(mktemp -d -t emojig-install-XXXXXX)
 defer_cleanup() { rm -rf "$TMP_DIR"; }
@@ -83,3 +85,4 @@ ok "To activate Ctrl+E shortcut, add this line to your shell configuration:"
 ok "  zsh:  source ~/.local/share/emojig/shell/emojig.zsh"
 ok "  bash: source ~/.local/share/emojig/shell/emojig.bash"
 ok "  fish: source ~/.local/share/emojig/shell/emojig.fish"
+
