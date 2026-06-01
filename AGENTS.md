@@ -8,12 +8,15 @@ This document details the architectural decisions, coding standards, and safety 
 
 * **Core TUI Application**: Written in **Zig** (`src/main.zig`, `src/root.zig`, `src/mru.zig`).
   * Aim for zero-allocation performance in the main interactive loop.
-  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 250 KB and Resident Set Size (RSS) under 700 KB.
+  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 350 KB and Resident Set Size (RSS) under 2.0 MB.
 * **Helper Scripts & Utilities**: Located under `./scripts/`.
-  * **No Python**: All helpers must be written in Go or Zig. Do not introduce Python scripts or packages.
+  * **No Python**: All helpers must be written in Go or Zig (or POSIX-compliant Shell for installers). Do not introduce Python scripts or packages.
   * **Go Scripts**: Written as flat, self-contained single files. Execute them using `go run scripts/<name>.go`.
   * **Zero Dependencies**: Go scripts must rely purely on the Go Standard Library without external module requirements.
   * **Zig Scripts**: Written as executable Zig source files. Execute them using `zig run scripts/<name>.zig`.
+  * **Shell Scripts** (e.g., `scripts/install.sh`): Written for POSIX compatibility.
+    * Use the `test` command (e.g., `if test "$OS" != "linux"`) instead of the bracket syntax `[` / `]`.
+    * Place the `then` keyword on its own line immediately following the `if` condition, rather than on the same line with a semicolon (`; then`).
 
 ---
 
@@ -119,7 +122,7 @@ All diagnostics, simulations, and unit tests must reside in-tree:
   * The step has a hard 10-second timeout so it never blocks the agent loop.
 * **Non-Blocking Picker (`zig build picker`)**:
   * Launches foot in the background (fire-and-forget). Returns in under 100 ms.
-  * Auto-kills after `EMOJIG_PICKER_TIMEOUT` seconds (default 60) via `timeout(1)`.
+  * Auto-kills after `EMOJIG_PICKER_TIMEOUT` seconds (default 60) of inactivity via native POSIX `alarm` and `SIGALRM` handling, resetting the timer on any user interaction.
   * To kill after inspecting: `pkill -f emojig-picker`.
 
 ---

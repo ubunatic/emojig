@@ -27,7 +27,7 @@ GUI mode spawns a temporary floating terminal window to serve the picker as a de
 
 *   **Requirements**:
     *   An active Wayland or X11 graphical session (detected via `WAYLAND_DISPLAY` or `DISPLAY` environment variables).
-    *   The `foot` terminal emulator and the `timeout` utility installed in the system `PATH`.
+    *   The `foot` terminal emulator installed in the system `PATH`.
     *   `wl-copy` (for Wayland sessions) or `xclip` (for X11 sessions) to enable clipboard pasting.
 *   **Limitations**:
     *   **Hardcoded Terminal Spawning**: The GUI picker launcher (`spawnFootWindow` in `src/main.zig`) specifically spawns `foot`.

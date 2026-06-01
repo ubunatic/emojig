@@ -9,8 +9,8 @@ How to install, run, and integrate emojig in your terminal environment.
 
 ## 1. Performance
 
-- **Binary size**: ~235 KB (`-Doptimize=ReleaseSmall`)
-- **RAM footprint**: < 700 KB RSS during active operation; 0 KB when idle
+- **Binary size**: ~340 KB (`-Doptimize=ReleaseSmall`)
+- **RAM footprint**: < 2.0 MB RSS during active operation; 0 KB when idle
 - **Database**: 1,870 emojis in an 82 KB embedded binary — no data files to install
 
 ---

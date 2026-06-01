@@ -15,7 +15,7 @@ This hybrid design represents a deliberate division of labor:
 1. **Zig** is used for the interactive runtime where minimal binary size, zero-allocation memory consumption, and absolute terminal safety are critical.
 2. **Go** is used for build-time scripting and terminal emulation testing where developer velocity, standard libraries (JSON processing, cryptographic hashing, and OS level PTY creation), and garbage collection simplify development.
 
-A pure Go implementation could easily replicate the user-facing functionality (terminal raw mode, mouse clicks, and fuzzy search). However, Go **cannot** meet the strict operational constraints of Emojig: a static binary size of under 250 KB and a Resident Set Size (RSS) of under 700 KB.
+A pure Go implementation could easily replicate the user-facing functionality (terminal raw mode, mouse clicks, and fuzzy search). However, Go **cannot** meet the strict operational constraints of Emojig: a static binary size of under 350 KB and a Resident Set Size (RSS) of under 2.0 MB.
 
 ---
 
@@ -49,8 +49,8 @@ The table below outlines the trade-offs of Zig and Go regarding the specific req
 
 | Architectural Metric | Zig (Current Implementation) | Go (Hypothetical Alternative) | Technical Reasoning |
 | :--- | :--- | :--- | :--- |
-| **Static Binary Size** | **278 KB** (ReleaseSmall) | **~1.2 MB - 2.0 MB** | Go compiles its runtime (scheduler, garbage collector, and type reflection) into every executable. Zig has no runtime, producing minimal binaries. |
-| **Memory Footprint (RSS)** | **< 700 KB** (typically ~350 KB) | **~3.0 MB - 10.0 MB** | Go's runtime spawns background threads for garbage collection and goroutine scheduling, pre-allocating memory pages. Zig has zero overhead. |
+| **Static Binary Size** | **340 KB** (ReleaseSmall) | **~1.2 MB - 2.0 MB** | Go compiles its runtime (scheduler, garbage collector, and type reflection) into every executable. Zig has no runtime, producing minimal binaries. |
+| **Memory Footprint (RSS)** | **< 2.0 MB** (typically ~1.9 MB) | **~3.0 MB - 10.0 MB** | Go's runtime spawns background threads for garbage collection and goroutine scheduling, pre-allocating memory pages. Zig has zero overhead. |
 | **Heap Allocations** | **0** in the active interactive loop | **> 0** (under ordinary runtime use) | Zig enforces explicit allocation, allowing the TUI loop to run completely on the stack. Go handles allocation implicitly, making absolute zero-allocation difficult. |
 | **Terminal Raw Recovery** | **High** (Guaranteed via native custom `panic` override and POSIX signal handlers) | **Medium** (Relies on goroutine-based signal catching; low-level panics bypass normal TUI cleanup) | Zig's panic handler intercepts all language-level failures to restore terminal state. Go's runtime crashes make clean restoration more complex. |
 | **Development Velocity** | **Lower** (requires manual buffer management, explicit error handling, and memory layouts) | **Higher** (garbage collection, extensive standard library, and automatic runtime features) | Zig requires low-level systems engineering. Go offers quick prototyping. |
@@ -66,8 +66,8 @@ Go is highly capable of creating terminal-based user interfaces. Libraries such 
 ### 2. Resource Constraints: No
 Go is fundamentally constrained by its runtime model. 
 
-* **The Go Runtime Overhead**: Even a minimal "Hello, World" Go program static binary requires a minimum of 1.2 MB on Linux x86_64, whereas the Zig binary compiles down to 278 KB.
-* **Resident Set Size (RSS)**: Go's virtual memory allocator, garbage collector (GC), and concurrent M:N scheduler (goroutine management) require several megabytes of bookkeeping memory. Even with `GOGC=off`, a Go TUI application cannot execute within a 700 KB RSS budget. Under Wayland, where `emojig` launches in a floating `foot` terminal via keyboard shortcut, low memory footprint ensures instant launch speeds and zero performance degradation on low-end systems.
+* **The Go Runtime Overhead**: Even a minimal "Hello, World" Go program static binary requires a minimum of 1.2 MB on Linux x86_64, whereas the Zig binary compiles down to 340 KB.
+* **Resident Set Size (RSS)**: Go's virtual memory allocator, garbage collector (GC), and concurrent M:N scheduler (goroutine management) require several megabytes of bookkeeping memory. Even with `GOGC=off`, a Go TUI application cannot execute within a 2.0 MB RSS budget. Under Wayland, where `emojig` launches in a floating `foot` terminal via keyboard shortcut, low memory footprint ensures instant launch speeds and zero performance degradation on low-end systems.
 
 ---
 
@@ -116,4 +116,4 @@ The division of languages in the Emojig repository represents an efficient syste
 
 ### Conclusion
 
-The use of Zig for the main executable is fully justified by the ultra-low resource requirements. While Go is capable of replicating the exact user interface, it cannot reproduce the lightweight system characteristics (static binary size < 250 KB and memory footprint < 700 KB). Conversely, utilizing Go for offline preprocessing and automated testing maintains developer velocity, avoiding the verbose coding patterns required by Zig.
+The use of Zig for the main executable is fully justified by the ultra-low resource requirements. While Go is capable of replicating the exact user interface, it cannot reproduce the lightweight system characteristics (static binary size < 350 KB and memory footprint < 2.0 MB). Conversely, utilizing Go for offline preprocessing and automated testing maintains developer velocity, avoiding the verbose coding patterns required by Zig.

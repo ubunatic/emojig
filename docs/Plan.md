@@ -54,7 +54,7 @@ This is the same approach used by fzf.
 On close (normal exit, signal, or panic) emojig reads `/proc/self/statm` via zero-
 allocation POSIX calls and appends a timestamped entry to `/tmp/emojig.log`.
 
-Observed RSS: under **700 KB** during standard operation.
+Observed RSS: under **2.0 MB** during standard operation.
 
 ---
 
@@ -124,7 +124,7 @@ Codeberg + GitHub remotes, minisign keypair, AUR/Nix/Homebrew packages.
 ## 5. Architectural Decisions
 
 ### Standalone binary (not daemon)
-Rejected daemon/socket model: binary starts in < 2 ms, RSS < 700 KB during operation,
+Rejected daemon/socket model: binary starts in < 2 ms, RSS < 2.0 MB during operation,
 0 KB when idle. No Unix socket, no systemd unit, no lock files.
 
 ### Stdout + /dev/tty (not TIOCSTI)

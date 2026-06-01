@@ -5,7 +5,7 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 ![emojig dark theme](docs/emojig-dark-200px.png) ![emojig light theme](docs/emojig-light-200px.png)
 
 ## Features
-**🏎️** Fast and low-memory (278 KB static binary, < 700 KB RAM) \
+**🏎️** Fast and low-memory (340 KB static binary, < 2.0 MB RAM) \
 **😀** Works in the terminal and as a floating desktop window \
 **🔍** Fuzzy search across 1,870 emojis \
 **↔️** Navigate with arrow keys or mouse \
@@ -107,8 +107,8 @@ saves your choice to `~/.config/emojig/config`. Override with `--theme` or
 
 ## Performance
 
-- Binary: **278 KB** (static, no runtime deps)
-- RAM: **< 700 KB RSS** during operation, 0 when idle (excl. `foot` memory usage)
+- Binary: **340 KB** (static, no runtime deps)
+- RAM: **< 2.0 MB RSS** during operation, 0 when idle (excl. launcher/foot memory usage, which adds ~16 MB for foot)
 - Database: 1,870 emojis embedded at compile time — no data files
 
 ## License

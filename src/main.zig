@@ -77,6 +77,8 @@ fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 
+extern fn alarm(seconds: c_uint) callconv(.c) c_uint;
+
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     var index: usize = 0;
     while (index < bytes.len) {
@@ -411,9 +413,10 @@ fn spawnFootWindow(
 
     const timeout_val = init.environ_map.get("EMOJIG_PICKER_TIMEOUT") orelse "60";
 
+    var env_timeout: [64]u8 = undefined;
+    const env_timeout_arg = try std.fmt.bufPrint(&env_timeout, "EMOJIG_PICKER_TIMEOUT={s}", .{timeout_val});
+
     const argv = &.{
-        "timeout",
-        timeout_val,
         "foot",
         "--app-id=emojig-picker",
         size_arg,
@@ -429,6 +432,7 @@ fn spawnFootWindow(
         env_theme_arg,
         env_border_arg,
         env_safe_arg,
+        env_timeout_arg,
         exe_path,
         "--tui",
     };
@@ -762,7 +766,7 @@ pub fn main(init: std.process.Init) !void {
             final_safe,
             opt_wait,
         ) catch |err| {
-            try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' and 'timeout' are installed and in your PATH (");
+            try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' is installed and in your PATH (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
             try writeAll(std.posix.STDERR_FILENO, ").\n");
             std.process.exit(1);
@@ -800,6 +804,17 @@ pub fn main(init: std.process.Init) !void {
         };
         std.posix.sigaction(std.posix.SIG.INT, &act, null);
         std.posix.sigaction(std.posix.SIG.TERM, &act, null);
+        std.posix.sigaction(std.posix.SIG.ALRM, &act, null);
+
+        var active_timeout: ?c_uint = null;
+        if (init.environ_map.get("EMOJIG_PICKER_TIMEOUT")) |timeout_str| {
+            if (std.fmt.parseInt(c_uint, timeout_str, 10)) |timeout_val| {
+                if (timeout_val > 0) {
+                    active_timeout = timeout_val;
+                    _ = alarm(timeout_val);
+                }
+            } else |_| {}
+        }
 
         var raw = orig_termios;
         raw.iflag.IGNBRK = false;
@@ -1057,6 +1072,10 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             var n = try std.posix.read(stdin_fd, &read_buf);
             if (n == 0) break;
+
+            if (active_timeout) |t| {
+                _ = alarm(t);
+            }
 
             // If we got a lone ESC, wait briefly for the rest of an escape sequence.
             // Arrow keys send ESC [ A/B/C/D; in some contexts (e.g. ZLE widgets) the
