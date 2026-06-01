@@ -619,8 +619,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     // When the TUI top would be pushed into the terminal scrollback buffer during
-    // vertical resize, hide the grid and description and show only the search bar
-    // as a single-row UI. Restores the full TUI when the terminal grows back.
+    // vertical resize, hide the TUI. Restores the full TUI when the terminal grows back.
     // Set EMOJIG_HIDE_OVERFLOW=0 to disable (allow the TUI to enter scrollback).
     const final_hide_overflow: bool = blk: {
         if (init.environ_map.get("EMOJIG_HIDE_OVERFLOW")) |env_val| {
@@ -629,35 +628,25 @@ pub fn main(init: std.process.Init) !void {
         break :blk true; // enabled by default
     };
 
-    // Signed bias for the hide threshold.  The TUI hides when tui_top <= hide_bias.
-    // Default 0: hide exactly when the TUI top would enter scrollback (tui_top <= 0).
-    // Positive (e.g. 2): hide earlier, keeping N rows of margin before scrollback.
-    const final_hide_bias: i32 = blk: {
-        if (init.environ_map.get("EMOJIG_HIDE_BIAS")) |env_val| {
+    // Row threshold at which hiding triggers.  The TUI hides when tui_top <= EMOJIG_HIDE_AT.
+    // Default 0: hide exactly when the TUI top row would enter scrollback.
+    // Positive (e.g. 2): hide earlier, keeping N extra rows of margin.
+    // Restore always requires tui_top > EMOJIG_HIDE_AT + 1 (1-step hysteresis built in).
+    const final_hide_at: i32 = blk: {
+        if (init.environ_map.get("EMOJIG_HIDE_AT")) |env_val| {
             break :blk std.fmt.parseInt(i32, env_val, 10) catch 0;
         }
         break :blk 0;
     };
 
-    // Signed bias for the restore threshold.  The TUI shows again when tui_top > show_bias.
-    // Default: hide_bias + 1 — requires one extra row of clearance before restoring,
-    // preventing oscillation at the boundary (hysteresis gap).
-    // Increase (e.g. EMOJIG_SHOW_BIAS=3) to require more room before the full TUI reappears.
-    const final_show_bias: i32 = blk: {
-        if (init.environ_map.get("EMOJIG_SHOW_BIAS")) |env_val| {
-            break :blk std.fmt.parseInt(i32, env_val, 10) catch final_hide_bias + 1;
-        }
-        break :blk final_hide_bias + 1;
-    };
-
     // Freeze mode: in hidden state, erase the line and hide the cursor completely
-    // instead of drawing a 1-row search-bar stub.
-    // Set EMOJIG_HIDE_FREEZE=1 to enable.  Default: off (show search bar stub).
+    // so the terminal shows a blank line with no blinking cursor.
+    // Default: on.  Set EMOJIG_HIDE_FREEZE=0 to fall back to the 1-row search-bar stub.
     const final_hide_freeze: bool = blk: {
         if (init.environ_map.get("EMOJIG_HIDE_FREEZE")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+            break :blk !(std.mem.eql(u8, env_val, "0") or std.mem.eql(u8, env_val, "false"));
         }
-        break :blk false;
+        break :blk true; // freeze on by default
     };
 
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
@@ -977,12 +966,11 @@ pub fn main(init: std.process.Init) !void {
                         const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
                         const tui_top = actual_cursor - @as(i32, @intCast(1 + row_off));
 
-                        // Decide hide/show.  Two separate thresholds give hysteresis:
-                        //   enter hidden when tui_top <= hide_bias  (default 0)
-                        //   exit  hidden when tui_top >  show_bias  (default hide_bias+1)
-                        // The gap prevents bouncing at the boundary.
-                        const should_hide = final_hide_overflow and (tui_top <= final_hide_bias);
-                        const should_show = !final_hide_overflow or (tui_top > final_show_bias);
+                        // Decide hide/show.  Single threshold with 1-step hysteresis:
+                        //   hide  when tui_top <= final_hide_at      (default 0)
+                        //   show  when tui_top >  final_hide_at + 1  (built-in gap)
+                        const should_hide = final_hide_overflow and (tui_top <= final_hide_at);
+                        const should_show = !final_hide_overflow or (tui_top > final_hide_at + 1);
 
                         if (should_hide and !is_tui_hidden) {
                             // Entering hidden mode: erase everything visible from our TUI.
@@ -996,7 +984,7 @@ pub fn main(init: std.process.Init) !void {
                                     try writeAll(stdout_fd, "\r\x1b[J\x1b[?25l");
                                 }
                             } else {
-                                // Normal hide: erase TUI, will draw 1-row search bar.
+                                // Stub: erase TUI, will draw 1-row search bar.
                                 if (rows_above > 0) {
                                     const up = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{rows_above});
                                     try writeAll(stdout_fd, up);
@@ -1006,7 +994,7 @@ pub fn main(init: std.process.Init) !void {
                             }
                             is_tui_hidden = true;
                         } else if (should_show and is_tui_hidden) {
-                            // Exiting hidden mode: erase stub/blank, redraw full TUI.
+                            // Exiting hidden mode: erase stub/blank, restore cursor, redraw full TUI.
                             try writeAll(stdout_fd, "\r\x1b[J\x1b[?25h");
                             is_tui_hidden = false;
                         } else if (is_tui_hidden) {
@@ -1019,7 +1007,7 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, "\r\x1b[J");
                             }
                         } else {
-                            // Not hidden, not entering hidden: erase from TUI top (clamped).
+                            // Not hidden: erase from TUI top (clamped to screen top).
                             const rows_above = actual_cursor - 1;
                             const ideal_up = @as(i32, @intCast(1 + row_off));
                             const clamped_up = @min(ideal_up, rows_above);
