@@ -917,7 +917,8 @@ pub fn main(init: std.process.Init) !void {
                 break :blk h;
             };
 
-            const resized = (current_w != last_w or current_h != last_h);
+            const height_changed = (current_h != last_h);
+            const resized = (current_w != last_w or height_changed);
 
             if (!is_first_render) {
                 var move_buf: [48]u8 = undefined;
@@ -925,7 +926,29 @@ pub fn main(init: std.process.Init) !void {
                     if (final_alt_screen) {
                         const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
                         try writeAll(stdout_fd, move_seq);
+                    } else if (height_changed) {
+                        // Height changed: the TUI may have been partially pushed into scrollback.
+                        // Query the actual cursor row so we know how far we can safely move up
+                        // without overshooting into the scrollback buffer (which would create ghost frames).
+                        const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
+                        // Cursor is at the search bar (row 2 of TUI = 1+row_off rows below TUI top).
+                        // We want to move up to the TUI top, but cap at row 1 of the screen.
+                        const rows_above_cursor = actual_cursor - 1; // how many rows exist above cursor
+                        const ideal_up = @as(i32, @intCast(1 + row_off));
+                        const clamped_up = @min(ideal_up, rows_above_cursor);
+                        if (clamped_up > 0) {
+                            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{clamped_up});
+                            try writeAll(stdout_fd, move_seq);
+                        } else {
+                            // Cursor is already at row 1; just erase down from here.
+                            try writeAll(stdout_fd, "\r\x1b[J");
+                        }
+                        // Update tui_start_row immediately so mouse mapping stays correct.
+                        global_tui_start_row = actual_cursor - @as(i32, @intCast(1 + row_off));
+                        last_h = current_h;
+                        last_w = current_w;
                     } else {
+                        // Width-only change: safe to use the fixed relative move.
                         const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
                         try writeAll(stdout_fd, move_seq);
                     }
@@ -1099,7 +1122,8 @@ pub fn main(init: std.process.Init) !void {
                 try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
             try writeAll(stdout_fd, cursor_seq);
 
-            if (resized) {
+            if (resized and !height_changed) {
+                // Width-only resize: update tracking vars and re-sync cursor row.
                 last_w = current_w;
                 last_h = current_h;
                 if (!final_alt_screen) {
@@ -1107,6 +1131,9 @@ pub fn main(init: std.process.Init) !void {
                         global_tui_start_row = cursor_row - @as(i32, @intCast(1 + row_off));
                     }
                 }
+            } else if (resized) {
+                // Height-changed: last_w/last_h and global_tui_start_row were already
+                // updated before the render. Nothing more to do.
             }
 
             // ----------------------------------------------------------------
