@@ -56,9 +56,9 @@ func main() {
 	defer slave.Close()
 
 	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
-	rowSize := uint16(8)
+	rowSize := uint16(10)
 	if os.Getenv("EMOJIG_DEBUG") == "1" || os.Getenv("EMOJIG_DEBUG") == "true" {
-		rowSize = 10
+		rowSize = 12
 	}
 	ws := winsize{Row: rowSize, Col: 40}
 	syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))

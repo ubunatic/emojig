@@ -17,6 +17,9 @@ const shell_zsh = @embedFile("shell/emojig.zsh");
 const shell_bash = @embedFile("shell/emojig.bash");
 const shell_fish = @embedFile("shell/emojig.fish");
 
+// Desktop/launcher icon — edit src/assets/emojig-icon.svg to change it.
+const icon_svg = @embedFile("assets/emojig-icon.svg");
+
 // ---------------------------------------------------------------------------
 // Theme, Palette & Terminal Wrappers
 // ---------------------------------------------------------------------------
@@ -200,9 +203,21 @@ fn saveThemeToConfig(io: std.Io, t: Theme) void {
     const new_line = std.fmt.bufPrint(out[pos..], "theme={s}\n", .{theme_str}) catch return;
     pos += new_line.len;
 
-    const wfile = std.Io.Dir.createFileAbsolute(io, path, .{}) catch return;
-    defer wfile.close(io);
-    wfile.writePositionalAll(io, out[0..pos], 0) catch {};
+    var tmp_path_buf: [520]u8 = undefined;
+    const tmp_path = std.fmt.bufPrint(&tmp_path_buf, "{s}.tmp", .{path}) catch return;
+    if (tmp_path.len + 1 > tmp_path_buf.len) return;
+    tmp_path_buf[tmp_path.len] = 0;
+
+    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, tmp_path_buf[0..tmp_path.len :0], wr_flags, 0o644) catch return;
+    const write_len = std.posix.system.write(fd, out[0..pos].ptr, pos);
+    if (write_len == pos) {
+        _ = std.posix.system.fsync(fd);
+    }
+    _ = std.posix.system.close(fd);
+
+    _ = std.posix.system.rename(tmp_path_buf[0..tmp_path.len :0], path);
+    _ = std.posix.system.unlink(tmp_path_buf[0..tmp_path.len :0]);
 }
 
 fn ensureDirExists(home: []const u8, sub_path: []const u8) void {
@@ -251,12 +266,7 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
     // Write SVG icon
     var svg_path_buf: [512]u8 = undefined;
     const svg_path = std.fmt.bufPrint(&svg_path_buf, "{s}/.local/share/icons/hicolor/scalable/apps/emojig-picker.svg", .{home}) catch return;
-    const svg_text =
-        \\<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-        \\  <text y="0.9em" font-size="80">😀</text>
-        \\</svg>
-        \\
-    ;
+    const svg_text = icon_svg;
     if (svg_path.len + 1 <= svg_path_buf.len) {
         svg_path_buf[svg_path.len] = 0;
         const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
@@ -614,7 +624,7 @@ pub fn main(init: std.process.Init) !void {
 
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
-    const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
+    const final_height = opt_height orelse env_height orelse cfg.height orelse 10;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
@@ -783,7 +793,7 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
-        const content_rows: usize = 8;
+        const content_rows: usize = 10;
         var final_h = if (show_border) content_rows + 2 else content_rows;
         if (final_debug) final_h += 2;
 
@@ -911,7 +921,7 @@ pub fn main(init: std.process.Init) !void {
         var should_copy_and_exit = false;
         var theme_hovered = false;
 
-        emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+        var total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
 
         var read_buf: [64]u8 = undefined;
         const spaces = " " ** 512;
@@ -957,7 +967,9 @@ pub fn main(init: std.process.Init) !void {
                 current_total_rows += 1; // Search bar
                 current_total_rows += 1; // Spacer
                 current_total_rows += 4; // Grid rows
+                current_total_rows += 1; // Spacer between grid and description
                 current_total_rows += 1; // Description
+                current_total_rows += 1; // Status bar
                 if (show_bottom_border) current_total_rows += 1;
                 if (show_debug) current_total_rows += 2;
             } else {
@@ -1106,7 +1118,7 @@ pub fn main(init: std.process.Init) !void {
                                 const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
                                 if (selected_idx) |sel| {
                                     if (idx == sel) {
-                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
                                     } else {
                                         cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                                     }
@@ -1124,6 +1136,14 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try rw.endRow();
                 }
+
+                // Spacer row between grid and description.
+                try writeAll(stdout_fd, "\x1b[2K\r");
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.bg);
+                try writeAll(stdout_fd, palette.fg);
+                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                try rw.endRow();
 
                 // Description row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
@@ -1153,6 +1173,34 @@ pub fn main(init: std.process.Init) !void {
                     const pad_len_desc = max_w;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                     try writeAll(stdout_fd, name_line);
+                }
+                try rw.endRow();
+
+                // Status bar row.
+                try writeAll(stdout_fd, "\x1b[2K\r");
+                if (is_too_small) {
+                    try writeAll(stdout_fd, " ");
+                    try writeAll(stdout_fd, palette.search_bg);
+                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                } else {
+                    try writeAll(stdout_fd, " ");
+                    try writeAll(stdout_fd, palette.search_bg);
+
+                    var status_text_buf: [128]u8 = undefined;
+                    const status_text = try std.fmt.bufPrint(&status_text_buf, " {d}  ↑↓←→  Tab  ^C", .{total_matches});
+
+                    var digits: usize = 1;
+                    var temp = total_matches;
+                    while (temp >= 10) {
+                        digits += 1;
+                        temp /= 10;
+                    }
+                    const text_cols = 16 + digits;
+
+                    try writeAll(stdout_fd, status_text);
+
+                    const pad_len_status = if (content_width > text_cols) content_width - text_cols else 0;
+                    try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
                 }
                 try rw.endRow();
 
@@ -1433,7 +1481,7 @@ pub fn main(init: std.process.Init) !void {
                 if (query_len > 0) {
                     query_len -= 1;
                     selected_idx = if (query_len == 0) null else 0;
-                    emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                    total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
                 }
             } else if (bytes[0] == 10 or bytes[0] == 13) {
                 // Enter
@@ -1459,7 +1507,7 @@ pub fn main(init: std.process.Init) !void {
                         query_buf[query_len] = b;
                         query_len += 1;
                         selected_idx = 0;
-                        emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                        total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
                     }
                 }
             }

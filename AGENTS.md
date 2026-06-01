@@ -52,16 +52,19 @@ To prevent leaving the user's terminal session in a broken state:
   * Row 2 (/ 3): search bar — `🔍` prompt + query; theme-toggle icon on the right; entire row uses `search_bg` for a clean menu-row look; blinking cursor positioned at col `4 + query_len`
   * Row 3 (/ 4): blank spacer row
   * Rows 4–7 (/ 5–8): 6×4 emoji grid
-  * Row 8 (/ 9): description row (shows selected emoji name; blank when nothing selected)
-  * Row 9 (/ 10): bottom border row (border on only)
+  * Row 8 (/ 9): blank spacer row between grid and description
+  * Row 9 (/ 10): description row (shows selected emoji name; blank when nothing selected)
+  * Row 10 (/ 11): status bar — dense information row displaying matches count, arrows navigation hint, Tab theme shortcut, and Ctrl-C exit cue; uses `search_bg` for clean top/bottom visual consistency
+  * Row 11 (/ 12): bottom border row (border on only)
 * **Startup State**:
-  * On launch, **no emoji is preselected** (`selected_idx` starts as `null`) and the bottom name row is empty.
+  * On launch, **no emoji is preselected** (`selected_idx` starts as `null`) and the bottom name/description row is empty.
   * The first arrow key press or first typed character initialises the selection to index 0.
 * **Selection Highlight & Theming**:
   * Emojig supports high-performance, zero-allocation dark and light theme palettes.
   * Theme selection is determined by `--theme [dark|light|system]`, then `EMOJIG_THEME` env var, defaulting to `dark`.
   * `system` theme queries the terminal background via OSC 11 and auto-selects dark or light.
-  * Palette fields: `bg` (grid/desc row background), `fg` (grid/desc text colour), `selection_bg` (selected cell), `search_bg` (entire search-bar row), `border_bg` (optional border rows).
+  * Selection highlight uses highlighted brackets `[emoji]` (with `selection_bg` spanning the brackets and glyph) for maximum clarity while matching cell width columns perfectly.
+  * Palette fields: `bg` (grid/desc row background), `fg` (grid/desc text colour), `selection_bg` (selected cell), `search_bg` (entire search-bar and status-bar rows), `border_bg` (optional border rows).
   * **Dark Theme**: bg=234, fg=248, selection=24+white, search=238+white, border=236.
   * **Light Theme**: bg=255, fg=238, selection=111+black, search=251+black, border=252.
 * **Mouse Tracking**:

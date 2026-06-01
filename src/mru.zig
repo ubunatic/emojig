@@ -107,9 +107,13 @@ pub fn save(emoji: []const u8) void {
     if (file_path.len + 1 > file_path_buf.len) return;
     file_path_buf[file_path.len] = 0;
 
+    var tmp_path_buf: [530]u8 = undefined;
+    const tmp_path = std.fmt.bufPrint(&tmp_path_buf, "{s}/mru.json.tmp", .{config_dir}) catch return;
+    if (tmp_path.len + 1 > tmp_path_buf.len) return;
+    tmp_path_buf[tmp_path.len] = 0;
+
     const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, file_path_buf[0..file_path.len :0], wr_flags, 0o644) catch return;
-    defer _ = std.posix.system.close(fd);
+    const fd = std.posix.openat(std.posix.AT.FDCWD, tmp_path_buf[0..tmp_path.len :0], wr_flags, 0o644) catch return;
 
     var json_buf: [2048]u8 = undefined;
     var jpos: usize = 0;
@@ -132,5 +136,12 @@ pub fn save(emoji: []const u8) void {
     json_buf[jpos] = ']';
     jpos += 1;
 
-    _ = std.posix.system.write(fd, json_buf[0..jpos].ptr, jpos);
+    const write_len = std.posix.system.write(fd, json_buf[0..jpos].ptr, jpos);
+    if (write_len == jpos) {
+        _ = std.posix.system.fsync(fd);
+    }
+    _ = std.posix.system.close(fd);
+
+    _ = std.posix.system.rename(tmp_path_buf[0..tmp_path.len :0], file_path_buf[0..file_path.len :0]);
+    _ = std.posix.system.unlink(tmp_path_buf[0..tmp_path.len :0]);
 }

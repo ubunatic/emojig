@@ -18,7 +18,7 @@ pub const Match = struct {
 /// When query is empty, MRU emojis are placed first, then the full DB list
 /// fills remaining cells (skipping duplicates). When non-empty, standard
 /// fuzzy scoring applies.
-pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) void {
+pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) usize {
     top_count.* = 0;
 
     const disable_zwj = blk: {
@@ -75,15 +75,25 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
             top_count.* += 1;
         }
-        return;
+
+        var total: usize = 0;
+        var count_idx: usize = 0;
+        while (count_idx < EmojiDb.count) : (count_idx += 1) {
+            const entry = EmojiDb.getEntry(count_idx);
+            if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+            total += 1;
+        }
+        return total;
     }
 
+    var total: usize = 0;
     var i: usize = 0;
     while (i < EmojiDb.count) : (i += 1) {
         const entry = EmojiDb.getEntry(i);
         if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
 
         if (fuzzyMatch(query, entry.search)) |score| {
+            total += 1;
             const match = Match{ .index = i, .score = score };
             var insert_pos: usize = 0;
             while (insert_pos < top_count.*) : (insert_pos += 1) {
@@ -99,6 +109,7 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             }
         }
     }
+    return total;
 }
 
 /// Compile-time embedded emoji database.
