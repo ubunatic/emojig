@@ -6,6 +6,7 @@ const Io = std.Io;
 const emojig = @import("emojig");
 const build_options = @import("build_options");
 const mru = emojig.mru;
+const term_lib = @import("term.zig");
 
 // ---------------------------------------------------------------------------
 // Embedded shell integration scripts
@@ -16,158 +17,46 @@ const shell_bash = @embedFile("shell/emojig.bash");
 const shell_fish = @embedFile("shell/emojig.fish");
 
 // ---------------------------------------------------------------------------
-// Theme & Palette
+// Theme, Palette & Terminal Wrappers
 // ---------------------------------------------------------------------------
 
-const Theme = enum { dark, light, system };
-
-const Palette = struct {
-    bg: []const u8, // grid rows + description row
-    fg: []const u8, // text color for grid rows (reset after selection)
-    selection_bg: []const u8,
-    search_bg: []const u8, // entire search-bar row
-    border_bg: []const u8, // optional border rows
-};
-
-const dark_palette = Palette{
-    .bg = "",
-    .fg = "\x1b[38;5;248m",
-    .selection_bg = "\x1b[48;5;24m\x1b[38;5;255m",
-    .search_bg = "\x1b[48;5;238m\x1b[38;5;255m",
-    .border_bg = "",
-};
-
-const light_palette = Palette{
-    .bg = "",
-    .fg = "\x1b[38;5;238m",
-    .selection_bg = "\x1b[48;5;111m\x1b[38;5;232m",
-    .search_bg = "\x1b[48;5;251m\x1b[38;5;232m",
-    .border_bg = "",
-};
-
-fn themeIcon(t: Theme) []const u8 {
-    return switch (t) {
-        .dark => "🌙",
-        .light => "🌞",
-        .system => "🔆",
-    };
-}
-
-fn effectivePalette(t: Theme, sys: Theme) Palette {
-    const eff = if (t == .system) sys else t;
-    return switch (eff) {
-        .light => light_palette,
-        .dark, .system => dark_palette,
-    };
-}
-
-fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
-    const eff = if (t == .system) sys else t;
-    const bg = if (eff == .light) "#eeeeee" else "#1c1c1c";
-    const fg = if (eff == .light) "#444444" else "#a8a8a8";
-    var osc_buf: [64]u8 = undefined;
-    const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]11;{s}\x1b\\\x1b]10;{s}\x1b\\", .{ bg, fg }) catch return;
-    writeAll(stdout_fd, osc_seq) catch {};
-}
-
-// ---------------------------------------------------------------------------
-// Terminal helpers
-// ---------------------------------------------------------------------------
+const Theme = term_lib.Theme;
+const Palette = term_lib.Palette;
+const RESTORE = term_lib.RESTORE;
 
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 var global_tui_start_row: ?i32 = null;
 
-fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
-    writeAll(stdout_fd, "\x1b[6n") catch return null;
+inline fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
+    try term_lib.writeAll(fd, bytes);
+}
 
-    var timed = raw;
-    const sys = std.posix.system;
-    timed.cc[@intFromEnum(sys.V.MIN)] = 0;
-    timed.cc[@intFromEnum(sys.V.TIME)] = 2; // 200 ms timeout
-    std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return null;
-    defer std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
+inline fn logMemoryUsage() void {
+    term_lib.logMemoryUsage();
+}
 
-    var buf: [32]u8 = undefined;
-    const n = std.posix.read(stdin_fd, &buf) catch return null;
-    if (n == 0) return null;
+inline fn themeIcon(t: Theme) []const u8 {
+    return term_lib.themeIcon(t);
+}
 
-    const resp = buf[0..n];
-    var i: usize = 0;
-    while (i + 2 < resp.len) : (i += 1) {
-        if (resp[i] == '\x1b' and resp[i + 1] == '[') {
-            i += 2;
-            var r: i32 = 0;
-            while (i < resp.len and resp[i] >= '0' and resp[i] <= '9') : (i += 1) {
-                r = r * 10 + @as(i32, @intCast(resp[i] - '0'));
-            }
-            if (i < resp.len and resp[i] == ';') {
-                return r;
-            }
-        }
-    }
-    return null;
+inline fn effectivePalette(t: Theme, sys: Theme) Palette {
+    return term_lib.effectivePalette(t, sys);
+}
+
+inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
+    term_lib.applyTerminalColors(stdout_fd, t, sys);
+}
+
+inline fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
+    return term_lib.queryCursorRow(stdin_fd, stdout_fd, raw);
 }
 
 extern fn alarm(seconds: c_uint) callconv(.c) c_uint;
 
-fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
-    var index: usize = 0;
-    while (index < bytes.len) {
-        const rc = std.posix.system.write(fd, bytes[index..].ptr, bytes.len - index);
-        const err = std.posix.errno(rc);
-        if (err == .SUCCESS) {
-            if (rc == 0) return error.Unexpected;
-            index += @intCast(rc);
-        } else if (err == .INTR) {
-            continue;
-        } else {
-            return error.SystemResources;
-        }
-    }
+inline fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
+    return term_lib.detectSystemTheme(stdin_fd, stdout_fd, raw);
 }
-
-fn logMemoryUsage() void {
-    const flags = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, "/proc/self/statm", flags, 0) catch return;
-    defer _ = std.posix.system.close(fd);
-
-    var buf: [128]u8 = undefined;
-    const len = std.posix.read(fd, &buf) catch return;
-    if (len == 0) return;
-
-    var it = std.mem.splitScalar(u8, buf[0..len], ' ');
-    const virt_pages_str = it.next() orelse return;
-    const rss_pages_str = it.next() orelse return;
-
-    const virt_pages = std.fmt.parseInt(usize, std.mem.trim(u8, virt_pages_str, " \t\r\n"), 10) catch return;
-    const rss_pages = std.fmt.parseInt(usize, std.mem.trim(u8, rss_pages_str, " \t\r\n"), 10) catch return;
-
-    const page_size: usize = 4096;
-    const virt_bytes = virt_pages * page_size;
-    const rss_bytes = rss_pages * page_size;
-
-    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
-    const log_fd = std.posix.openat(std.posix.AT.FDCWD, "/tmp/emojig.log", wr_flags, 0o644) catch return;
-    defer _ = std.posix.system.close(log_fd);
-
-    var ts = std.mem.zeroes(std.posix.system.timespec);
-    _ = std.posix.system.clock_gettime(.REALTIME, &ts);
-
-    var log_buf: [256]u8 = undefined;
-    const log_line = std.fmt.bufPrint(&log_buf, "[{d}] Emojig closed. Memory Usage: VIRT = {d:.2} MB, RSS = {d:.2} MB\n", .{
-        ts.sec,
-        @as(f64, @floatFromInt(virt_bytes)) / (1024.0 * 1024.0),
-        @as(f64, @floatFromInt(rss_bytes)) / (1024.0 * 1024.0),
-    }) catch return;
-
-    _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
-}
-
-// Escape sequence to disable all mouse tracking + alt screen + cursor restore.
-// Uses 1003l (any-motion off) which covers 1000 as well.
-const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
@@ -208,42 +97,6 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
     _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
-}
-
-/// Query the terminal background colour via OSC 11, detect dark/light.
-fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
-    // Reset terminal colors to default first to ensure we query the native system theme,
-    // not any custom theme background/foreground we previously applied.
-    writeAll(stdout_fd, "\x1b]111\x1b\\\x1b]110\x1b\\\x1b]11;?\x1b\\") catch return .dark;
-    var timed = raw;
-    const sys = std.posix.system;
-    timed.cc[@intFromEnum(sys.V.MIN)] = 0;
-    timed.cc[@intFromEnum(sys.V.TIME)] = 2;
-    std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return .dark;
-    defer std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
-    var buf: [64]u8 = undefined;
-    const n = std.posix.read(stdin_fd, &buf) catch return .dark;
-    if (n == 0) return .dark;
-    const resp = buf[0..n];
-    var i: usize = 0;
-    const prefix = "rgb:";
-    while (i + prefix.len <= resp.len) : (i += 1) {
-        if (!std.mem.startsWith(u8, resp[i..], prefix)) continue;
-        i += prefix.len;
-        if (i + 4 > resp.len) break;
-        const r = std.fmt.parseInt(u16, resp[i .. i + 4], 16) catch break;
-        const g = if (i + 9 <= resp.len and resp[i + 4] == '/')
-            std.fmt.parseInt(u16, resp[i + 5 .. i + 9], 16) catch r
-        else
-            r;
-        const b = if (i + 14 <= resp.len and resp[i + 9] == '/')
-            std.fmt.parseInt(u16, resp[i + 10 .. i + 14], 16) catch r
-        else
-            r;
-        const luma = (@as(u32, r) * 299 + @as(u32, g) * 587 + @as(u32, b) * 114) / 1000;
-        return if (luma > 32767) .light else .dark;
-    }
-    return .dark;
 }
 
 // ---------------------------------------------------------------------------
@@ -1297,21 +1150,7 @@ pub fn main(init: std.process.Init) !void {
                         const local_col = click_col - 1;
 
                         // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
-                        var click_row = click_row_raw;
-                        if (global_tui_start_row) |start_row| {
-                            var ws_mouse = std.mem.zeroes(std.posix.winsize);
-                            const rc_mouse = std.posix.system.ioctl(global_tty_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_mouse));
-                            if (rc_mouse == 0 and ws_mouse.row > 0) {
-                                const actual_h = @as(i32, @intCast(ws_mouse.row));
-                                const tui_h = @as(i32, @intCast(final_h));
-                                const scroll_amount = if (start_row + tui_h - 1 > actual_h)
-                                    (start_row + tui_h - 1) - actual_h
-                                else
-                                    0;
-                                const y_start = start_row - scroll_amount;
-                                click_row = click_row_raw - y_start + 1;
-                            }
-                        }
+                        const click_row = term_lib.mapSgrRow(click_row_raw, global_tui_start_row, global_tty_fd, final_h);
 
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
