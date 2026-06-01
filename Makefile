@@ -96,16 +96,25 @@ _dist_files = $(wildcard \
 	dist/emojig-aarch64-linux-musl)
 
 _url_latest = https://codeberg.org/api/v1/repos/ubunatic/emojig/releases/latest
+_url_tags = https://codeberg.org/api/v1/repos/ubunatic/emojig/tags
+
 VERSION_PUBLISHED = $(shell \
 	curl -sSfL $(_url_latest) | \
 	grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || \
 	echo "(failed to fetch latest release)" >/dev/stderr)
 
+VERSION_TAGGED = $(shell \
+	curl -sSfL $(_url_tags) | \
+	grep -o '"name":"[^"]*"' | head -n 1 | cut -d'"' -f4 || \
+	echo "(failed to fetch latest tag)" >/dev/stderr)
+
 info: ⚙️  # show detailed info about release files and related vars
 	# VERSION: $(VERSION)
-	# VERSION_PUBLISHED: $(VERSION_PUBLISHED)
+	# VERSION_PUBLISHED (latest public release): $(VERSION_PUBLISHED)
+	# VERSION_TAGGED (latest tag / draft): $(VERSION_TAGGED)
 	# codeberg release page: https://codeberg.org/ubunatic/emojig/releases
-	# latest release url: $(_url_latest)
+	# latest release API url: $(_url_latest)
+	# latest tag API url: $(_url_tags)
 	# MINISIGN_KEY_FILE: $(MINISIGN_KEY_FILE)
 	# MAKE: $(MAKE)
 	# _dist_files: $(_dist_files)
