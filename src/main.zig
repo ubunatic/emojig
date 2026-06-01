@@ -942,15 +942,22 @@ pub fn main(init: std.process.Init) !void {
             const is_too_small = (current_w < 27);
             const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
-            const current_frame_h = blk: {
-                // In hidden mode the TUI collapses to a single search-bar row.
-                if (is_tui_hidden) break :blk @as(usize, 1);
+            // Full TUI frame height (ignoring hidden collapse).
+            const full_frame_h: usize = blk: {
                 var h: usize = if (show_border) 10 else 8;
-                if (final_debug and !is_too_small) {
-                    h += 2;
-                }
+                if (final_debug and !is_too_small) h += 2;
                 break :blk h;
             };
+
+            // Effective render height: 1 row (frozen/stub) when hidden, full otherwise.
+            const current_frame_h: usize = if (is_tui_hidden) 1 else full_frame_h;
+
+            // Hide/show decision uses terminal height directly — no CPR round-trip needed.
+            // hide  when current_h < full_frame_h + hide_at      (default: terminal too small)
+            // show  when current_h >= full_frame_h + hide_at + 1 (1-step hysteresis)
+            const hide_h_thresh = @as(i32, @intCast(full_frame_h)) + final_hide_at;
+            const should_hide_now = final_hide_overflow and (@as(i32, @intCast(current_h)) < hide_h_thresh);
+            const should_show_now = !final_hide_overflow or (@as(i32, @intCast(current_h)) >= hide_h_thresh + 1);
 
             const height_changed = (current_h != last_h);
             const resized = (current_w != last_w or height_changed);
@@ -962,21 +969,12 @@ pub fn main(init: std.process.Init) !void {
                         const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
                         try writeAll(stdout_fd, move_seq);
                     } else if (height_changed) {
-                        // Height changed: query actual cursor row to know where we really are.
-                        const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
-                        const tui_top = actual_cursor - @as(i32, @intCast(1 + row_off));
-
-                        // Decide hide/show.  Single threshold with 1-step hysteresis:
-                        //   hide  when tui_top <= final_hide_at      (default 0)
-                        //   show  when tui_top >  final_hide_at + 1  (built-in gap)
-                        const should_hide = final_hide_overflow and (tui_top <= final_hide_at);
-                        const should_show = !final_hide_overflow or (tui_top > final_hide_at + 1);
-
-                        if (should_hide and !is_tui_hidden) {
-                            // Entering hidden mode: erase everything visible from our TUI.
+                        if (should_hide_now and !is_tui_hidden) {
+                            // Entering hidden mode: query CPR to know how far to erase upward.
+                            const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
                             const rows_above = actual_cursor - 1;
                             if (final_hide_freeze) {
-                                // Freeze: go up, erase line, hide cursor — blank slate.
+                                // Freeze: go up, erase, hide cursor — blank slate.
                                 if (rows_above > 0) {
                                     const up = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J\x1b[?25l", .{rows_above});
                                     try writeAll(stdout_fd, up);
@@ -984,7 +982,7 @@ pub fn main(init: std.process.Init) !void {
                                     try writeAll(stdout_fd, "\r\x1b[J\x1b[?25l");
                                 }
                             } else {
-                                // Stub: erase TUI, will draw 1-row search bar.
+                                // Stub: erase TUI, search bar will be drawn below.
                                 if (rows_above > 0) {
                                     const up = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{rows_above});
                                     try writeAll(stdout_fd, up);
@@ -993,21 +991,20 @@ pub fn main(init: std.process.Init) !void {
                                 }
                             }
                             is_tui_hidden = true;
-                        } else if (should_show and is_tui_hidden) {
+                        } else if (should_show_now and is_tui_hidden) {
                             // Exiting hidden mode: erase stub/blank, restore cursor, redraw full TUI.
                             try writeAll(stdout_fd, "\r\x1b[J\x1b[?25h");
                             is_tui_hidden = false;
                         } else if (is_tui_hidden) {
                             // Still hidden: refresh in-place.
                             if (final_hide_freeze) {
-                                // Keep line blank and cursor hidden.
                                 try writeAll(stdout_fd, "\r\x1b[2K\x1b[?25l");
                             } else {
-                                // Erase and let the search-bar render below draw the stub.
                                 try writeAll(stdout_fd, "\r\x1b[J");
                             }
                         } else {
-                            // Not hidden: erase from TUI top (clamped to screen top).
+                            // Not hidden: query CPR to clamp the upward erase.
+                            const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
                             const rows_above = actual_cursor - 1;
                             const ideal_up = @as(i32, @intCast(1 + row_off));
                             const clamped_up = @min(ideal_up, rows_above);
@@ -1017,9 +1014,9 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 try writeAll(stdout_fd, "\r\x1b[J");
                             }
+                            const tui_top = actual_cursor - @as(i32, @intCast(1 + row_off));
+                            global_tui_start_row = tui_top;
                         }
-
-                        global_tui_start_row = tui_top;
                         last_h = current_h;
                         last_w = current_w;
                     } else {
@@ -1214,20 +1211,32 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, "\x1b[K");
             }
 
-            // Reposition cursor to search bar input (relative up, horizontal absolute column).
-            // In hidden mode current_frame_h == 1, so cursor_up == 0 — cursor is already
-            // at the search bar row after rendering it (no newline was emitted).
-            // In freeze mode skip cursor repo entirely — cursor is hidden at col 1.
+            // Reposition cursor to the search bar column.
+            // Freeze mode: skip entirely — cursor is already hidden at col 1.
+            // Stub/normal mode: skip the \x1b[{N}A up-move when cursor_up == 0, because
+            // ANSI treats the parameter 0 as 1 (“move up 1\u201d), which would drift the cursor.
             if (!(is_tui_hidden and final_hide_freeze)) {
-                var cursor_buf: [48]u8 = undefined;
+                var cursor_buf: [64]u8 = undefined;
                 const cursor_up = if (current_frame_h >= @as(usize, @intCast(2 + row_off)))
                     current_frame_h - @as(usize, @intCast(2 + row_off))
                 else
                     @as(usize, 0);
-                const cursor_seq = if (is_too_small or is_tui_hidden)
-                    try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + query_len })
-                else
-                    try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
+
+                const cursor_seq: []const u8 = if (is_too_small) blk: {
+                    // Terminal too small: hide cursor, park at col 1.
+                    if (cursor_up > 0) {
+                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
+                    } else {
+                        break :blk "\x1b[1G\x1b[?25l";
+                    }
+                } else if (is_tui_hidden) blk: {
+                    // Stub hidden mode: cursor_up == 0 always (frame_h == 1).
+                    // Show blinking cursor at the query position in the search bar.
+                    break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{5 + query_len});
+                } else blk: {
+                    // Normal full TUI: move up, position cursor, enable blink.
+                    break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
+                };
                 try writeAll(stdout_fd, cursor_seq);
             }
 
