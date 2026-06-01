@@ -95,11 +95,19 @@ _dist_files = $(wildcard \
 	dist/emojig-x86_64-linux-musl \
 	dist/emojig-aarch64-linux-musl)
 
+_url_latest = https://codeberg.org/api/v1/repos/ubunatic/emojig/releases/latest
+VERSION_PUBLISHED = $(shell \
+	curl -sSfL $(_url_latest) | \
+	grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4 || \
+	echo "(failed to fetch latest release)" >/dev/stderr)
+
 info: ⚙️  # show detailed info about release files and related vars
 	# VERSION: $(VERSION)
+	# VERSION_PUBLISHED: $(VERSION_PUBLISHED)
 	# MINISIGN_KEY_FILE: $(MINISIGN_KEY_FILE)
 	# MAKE: $(MAKE)
 	# _dist_files: $(_dist_files)
+	# _url_latest: $(_url_latest)
 	# git status:
 	@git status --short | sed 's/^/#  /g'
 	# git diff:
@@ -141,8 +149,7 @@ bump-major: ⚙️  # bump major version in build.zig.zon
 	@go run scripts/bump_version.go major
 
 tag: ⚙️  # commit version/changelog changes and tag the release
-	git commit -am "release: v$(VERSION)"
+	git commit -am "release: v$(VERSION)" --allow-empty
 	git tag -a v$(VERSION) -m "emojig v$(VERSION)"
 	@echo "✅ Committed and tagged v$(VERSION)"
-
 
