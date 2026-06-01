@@ -911,9 +911,7 @@ pub fn main(init: std.process.Init) !void {
                         const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
                         try writeAll(stdout_fd, move_seq);
                     } else {
-                        const diff = @as(i32, @intCast(last_h)) - @as(i32, @intCast(current_h));
-                        const d = @max(0, @as(i32, @intCast(1 + row_off)) + diff);
-                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{d});
+                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
                         try writeAll(stdout_fd, move_seq);
                     }
                 } else {
