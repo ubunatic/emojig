@@ -26,6 +26,18 @@ curl -fsSL https://ubunatic.com/emojig/install.sh | sh
 `--install` copies the binary to `~/.local/bin/emojig` and writes shell integration
 scripts to `~/.local/share/emojig/shell/`.
 
+### Fonts
+
+emojig only uses standard Unicode emoji — no Nerd Fonts or special symbols needed.
+If emojis appear as boxes, install a color emoji font:
+
+```sh
+sudo apt install fonts-noto-color-emoji      # Debian / Ubuntu / Mint
+sudo pacman -S noto-fonts-emoji              # Arch / Manjaro
+sudo dnf install google-noto-emoji-color-fonts  # Fedora
+sudo zypper install noto-coloremoji-fonts    # openSUSE
+```
+
 ## The TUI-GUI
 The *GUI* mode currently requires the [`foot`](https://codeberg.org/dnkl/foot) terminal to serve the emoji *TUI* in a borderless window.
 
