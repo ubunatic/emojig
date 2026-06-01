@@ -17,6 +17,9 @@ This document details the architectural decisions, coding standards, and safety 
   * **Shell Scripts** (e.g., `scripts/install.sh`): Written for POSIX compatibility.
     * Use the `test` command (e.g., `if test "$OS" != "linux"`) instead of the bracket syntax `[` / `]`.
     * Place the `then` keyword on its own line immediately following the `if` condition, rather than on the same line with a semicolon (`; then`).
+* **Licensing & Compliance**:
+  * Every source file, helper script, utility, and shell script must include compliant SPDX copyright and licensing headers (e.g., `SPDX-FileCopyrightText` and `SPDX-License-Identifier`).
+  * Ensure that the `make preflight` task (which validates REUSE compliance via `reuse lint` and checks formatting via `zig fmt`) passes successfully before finalizing any modifications.
 
 ---
 
