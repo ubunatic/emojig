@@ -118,6 +118,8 @@ release-publish: release-build ⚙️  # sign SHA256SUMS and publish draft relea
 	@echo "✅ SHA256SUMS signed"
 	fj release create "emojig v$(VERSION)" --tag "v$(VERSION)" --draft $(addprefix --attach ,$(_dist_files))
 	@echo "✅ dist/ files published for version $(VERSION)"
+	@echo
+	@echo "Visit https://codeberg.org/ubunatic/emojig/releases to manage releases."
 
 release: preflight ⚙️  # interactive fully automated release flow (commit, tag, push, build, sign, and publish draft)
 	@echo "==============================================="
