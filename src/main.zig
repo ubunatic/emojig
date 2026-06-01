@@ -18,7 +18,9 @@ const shell_bash = @embedFile("shell/emojig.bash");
 const shell_fish = @embedFile("shell/emojig.fish");
 
 // Desktop/launcher icon — edit src/assets/emojig-icon.svg to change it.
-const icon_svg = @embedFile("assets/emojig-icon.svg");
+// The web-compatible (plain SVG) variant is embedded; regenerate it with
+// scripts/web_logo.sh whenever the source icon changes.
+const icon_svg = @embedFile("assets/emojig-icon.web.svg");
 
 // ---------------------------------------------------------------------------
 // Theme, Palette & Terminal Wrappers
