@@ -104,15 +104,16 @@ VERSION_PUBLISHED = $(shell \
 info: ⚙️  # show detailed info about release files and related vars
 	# VERSION: $(VERSION)
 	# VERSION_PUBLISHED: $(VERSION_PUBLISHED)
+	# codeberg release page: https://codeberg.org/ubunatic/emojig/releases
+	# latest release url: $(_url_latest)
 	# MINISIGN_KEY_FILE: $(MINISIGN_KEY_FILE)
 	# MAKE: $(MAKE)
 	# _dist_files: $(_dist_files)
-	# _url_latest: $(_url_latest)
 	# git status:
 	@git status --short | sed 's/^/#  /g'
 	# git diff:
 	@git diff --numstat | sed 's/^/#   /g'
-
+	
 release-publish: release-build ⚙️  # sign SHA256SUMS and publish draft release to Codeberg
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
 	@echo "✅ SHA256SUMS signed"
