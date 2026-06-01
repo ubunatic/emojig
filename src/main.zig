@@ -766,14 +766,39 @@ pub fn main(init: std.process.Init) !void {
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
         global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
 
+        const content_rows: usize = 8;
+        var final_h = if (show_border) content_rows + 2 else content_rows;
+        if (final_debug) final_h += 2;
+
+        {
+            var ws_start = std.mem.zeroes(std.posix.winsize);
+            const ws_start_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_start));
+            const start_h = if (ws_start_rc == 0 and ws_start.row > 0) ws_start.row else 24;
+            const space_needed = final_h - 1 - @as(usize, @intCast(1 + row_off));
+            const start_row_val = global_tui_start_row orelse 1;
+            const overflow = if (start_row_val + @as(i32, @intCast(space_needed)) > @as(i32, @intCast(start_h)))
+                (start_row_val + @as(i32, @intCast(space_needed))) - @as(i32, @intCast(start_h))
+            else
+                0;
+            if (overflow > 0) {
+                var k: usize = 0;
+                while (k < overflow) : (k += 1) {
+                    try writeAll(stdout_fd, "\n");
+                }
+                var up_buf: [32]u8 = undefined;
+                const up_seq = try std.fmt.bufPrint(&up_buf, "\x1b[{d}A\r", .{overflow});
+                try writeAll(stdout_fd, up_seq);
+                if (global_tui_start_row) |*r| {
+                    r.* -= overflow;
+                }
+            }
+        }
+
         var system_theme: Theme = if (theme == .system)
             detectSystemTheme(stdin_fd, stdout_fd, raw)
         else
             theme;
 
-        const content_rows: usize = 8;
-        var final_h = if (show_border) content_rows + 2 else content_rows;
-        if (final_debug) final_h += 2;
         var is_first_render = true;
 
         defer {
@@ -861,8 +886,7 @@ pub fn main(init: std.process.Init) !void {
             if (!is_first_render) {
                 var move_buf: [48]u8 = undefined;
                 if (resized) {
-                    const start_row = if (current_h >= current_frame_h) current_h - current_frame_h + 1 else 1;
-                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[{d};1H", .{start_row});
+                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
                     try writeAll(stdout_fd, move_seq);
                 } else {
                     const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
@@ -1037,7 +1061,7 @@ pub fn main(init: std.process.Init) !void {
             if (resized) {
                 last_w = current_w;
                 last_h = current_h;
-                global_tui_start_row = @as(i32, @intCast(if (current_h >= current_frame_h) current_h - current_frame_h + 1 else 1));
+                global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
             }
 
             // ----------------------------------------------------------------
