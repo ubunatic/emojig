@@ -149,7 +149,7 @@ pub fn logMemoryUsage() void {
 // Escape sequence to disable all mouse tracking + alt screen + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well.
 pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-pub const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b]111\x1b\\\x1b]110\x1b\\";
+pub const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b[7h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 /// Query the terminal background colour via OSC 11, detect dark/light.
 pub fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {

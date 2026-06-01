@@ -829,9 +829,9 @@ pub fn main(init: std.process.Init) !void {
             logMemoryUsage();
         }
 
-        // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
-        // Must come after defer is registered so RESTORE is guaranteed to disable tracking.
-        try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+        // Disable line wrap (7l), enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+        // Must come after defer is registered so RESTORE is guaranteed to disable tracking and restore wrap.
+        try writeAll(stdout_fd, "\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
 
         applyTerminalColors(stdout_fd, theme, system_theme);
 
