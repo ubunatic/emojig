@@ -826,12 +826,11 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             try writeAll(stdout_fd, "\x1b[?25l");
 
-            const is_too_small = blk: {
-                var ws = std.mem.zeroes(std.posix.winsize);
-                const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
-                const current_w = if (size_rc == 0 and ws.col > 0) ws.col else 27;
-                break :blk (current_w < 27);
-            };
+            var ws_size = std.mem.zeroes(std.posix.winsize);
+            const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_size));
+            const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else 27;
+            const is_too_small = (current_w < 27);
+            const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
             if (!is_first_render) {
                 var move_buf: [32]u8 = undefined;
@@ -847,7 +846,7 @@ pub fn main(init: std.process.Init) !void {
             if (show_border) {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
-                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m \r\n");
             }
 
@@ -855,7 +854,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.bg);
             try writeAll(stdout_fd, palette.fg);
-            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+            try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
             try writeAll(stdout_fd, "\x1b[0m \r\n");
 
             // Search bar — entire row uses search_bg for a clean "menu row" look.
@@ -871,9 +870,10 @@ pub fn main(init: std.process.Init) !void {
             if (is_too_small) {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.search_bg);
-                const warn_text = "⚠️ Width < 27";
-                try writeAll(stdout_fd, warn_text);
-                const warn_pad = if (content_width > 13) content_width - 13 else 0;
+                const warn_text = "Too small";
+                const display_warn = if (warn_text.len > max_w) warn_text[0..max_w] else warn_text;
+                try writeAll(stdout_fd, display_warn);
+                const warn_pad = if (max_w > display_warn.len) max_w - display_warn.len else 0;
                 try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m \r\n");
             } else {
@@ -892,14 +892,14 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, " ");
             try writeAll(stdout_fd, palette.bg);
             try writeAll(stdout_fd, palette.fg);
-            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+            try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
             try writeAll(stdout_fd, "\x1b[0m \r\n");
 
             // Grid rows.
             var r: usize = 0;
             while (r < rows) : (r += 1) {
                 if (is_too_small) {
-                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m \r\n", .{ palette.bg, spaces[0..@min(content_width, spaces.len)] });
+                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m \r\n", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
                     try writeAll(stdout_fd, grid_line);
                 } else {
                     var cell_buffers: [6][64]u8 = undefined;
@@ -953,12 +953,12 @@ pub fn main(init: std.process.Init) !void {
                         try writeAll(stdout_fd, name_line);
                     }
                 } else {
-                    const pad_len_desc = content_width;
+                    const pad_len_desc = max_w;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
-                const pad_len_desc = content_width;
+                const pad_len_desc = max_w;
                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                 try writeAll(stdout_fd, name_line);
             }
@@ -967,11 +967,11 @@ pub fn main(init: std.process.Init) !void {
             if (show_border) {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
-                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m ");
             }
 
-            if (final_debug) {
+            if (final_debug and !is_too_small) {
                 try writeAll(stdout_fd, "\r\n");
 
                 var ws_dbg = std.mem.zeroes(std.posix.winsize);
