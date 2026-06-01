@@ -58,6 +58,18 @@ inline fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t,
     return term_lib.detectSystemTheme(stdin_fd, stdout_fd, raw);
 }
 
+inline fn readStdin(fd: std.posix.fd_t, buf: []u8) !usize {
+    const rc = std.posix.system.read(fd, buf.ptr, buf.len);
+    const err = std.posix.errno(rc);
+    if (err == .SUCCESS) {
+        return @intCast(rc);
+    } else if (err == .INTR) {
+        return error.Interrupted;
+    } else {
+        return error.SystemResources;
+    }
+}
+
 fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = sig;
     if (global_orig_termios) |orig| {
@@ -818,6 +830,9 @@ pub fn main(init: std.process.Init) !void {
         const spaces = " " ** 512;
         const content_width = term_width;
 
+        var last_w: usize = term_width;
+        var last_h: usize = final_h;
+
         while (true) {
             const palette = effectivePalette(theme, system_theme);
 
@@ -829,13 +844,21 @@ pub fn main(init: std.process.Init) !void {
             var ws_size = std.mem.zeroes(std.posix.winsize);
             const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_size));
             const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else 27;
+            const current_h = if (size_rc == 0 and ws_size.row > 0) ws_size.row else 10;
             const is_too_small = (current_w < 27);
             const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
+            const resized = (current_w != last_w or current_h != last_h);
+
             if (!is_first_render) {
                 var move_buf: [32]u8 = undefined;
-                const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
-                try writeAll(stdout_fd, move_seq);
+                if (resized) {
+                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
+                    try writeAll(stdout_fd, move_seq);
+                } else {
+                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
+                    try writeAll(stdout_fd, move_seq);
+                }
             } else {
                 is_first_render = false;
             }
@@ -847,7 +870,7 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                try writeAll(stdout_fd, "\x1b[0m \r\n");
+                try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
             }
 
             // Blank top padding row.
@@ -855,7 +878,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, palette.bg);
             try writeAll(stdout_fd, palette.fg);
             try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m \r\n");
+            try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
 
             // Search bar — entire row uses search_bg for a clean "menu row" look.
             const prefix_cols = 3;
@@ -875,7 +898,7 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, display_warn);
                 const warn_pad = if (max_w > display_warn.len) max_w - display_warn.len else 0;
                 try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
-                try writeAll(stdout_fd, "\x1b[0m \r\n");
+                try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
             } else {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.search_bg);
@@ -885,7 +908,7 @@ pub fn main(init: std.process.Init) !void {
                 const icon_hl = if (theme_hovered) palette.selection_bg else "";
                 const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
                 try writeAll(stdout_fd, icon_buf);
-                try writeAll(stdout_fd, "\x1b[0m \r\n");
+                try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
             }
 
             // Blank spacer row.
@@ -893,13 +916,13 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, palette.bg);
             try writeAll(stdout_fd, palette.fg);
             try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m \r\n");
+            try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
 
             // Grid rows.
             var r: usize = 0;
             while (r < rows) : (r += 1) {
                 if (is_too_small) {
-                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m \r\n", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
+                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
                     try writeAll(stdout_fd, grid_line);
                 } else {
                     var cell_buffers: [6][64]u8 = undefined;
@@ -928,13 +951,13 @@ pub fn main(init: std.process.Init) !void {
                     }
 
                     const grid_rem = if (content_width > 24) content_width - 24 else 0;
-                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
+                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
                     try writeAll(stdout_fd, grid_line);
                 }
             }
 
             // Description row.
-            const desc_suffix = if (show_border) " \r\n" else " ";
+            const desc_suffix = if (show_border) "\x1b[K\r\n" else "\x1b[K";
             const max_len = if (content_width > 1) content_width - 1 else 0;
             if (selected_idx != null and !is_too_small) {
                 const sel = selected_idx.?;
@@ -968,11 +991,11 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                try writeAll(stdout_fd, "\x1b[0m ");
+                try writeAll(stdout_fd, "\x1b[0m\x1b[K");
             }
 
             if (final_debug and !is_too_small) {
-                try writeAll(stdout_fd, "\r\n");
+                try writeAll(stdout_fd, "\x1b[K\r\n");
 
                 var ws_dbg = std.mem.zeroes(std.posix.winsize);
                 const rc_dbg = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_dbg));
@@ -983,23 +1006,37 @@ pub fn main(init: std.process.Init) !void {
                 const pad1 = if (actual_w >= 16) actual_w - 16 else 0;
                 try writeAll(stdout_fd, line1);
                 try writeAll(stdout_fd, spaces[0..@min(pad1, spaces.len)]);
-                try writeAll(stdout_fd, "\r\n");
+                try writeAll(stdout_fd, "\x1b[K\r\n");
 
                 var dbg_buf: [128]u8 = undefined;
                 const line2 = try std.fmt.bufPrint(&dbg_buf, "    Size: W={d} H={d}", .{ actual_w, actual_h });
                 const pad2 = if (actual_w > line2.len + 1) actual_w - 1 - line2.len else 0;
                 try writeAll(stdout_fd, line2);
                 try writeAll(stdout_fd, spaces[0..@min(pad2, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[K");
             }
 
             // Reposition cursor to search bar input (relative up, horizontal absolute column).
+            const current_frame_h = blk: {
+                var h: usize = if (show_border) 10 else 8;
+                if (final_debug and !is_too_small) {
+                    h += 2;
+                }
+                break :blk h;
+            };
+
             var cursor_buf: [48]u8 = undefined;
-            const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
+            const cursor_up = current_frame_h - @as(usize, @intCast(2 + row_off));
             const cursor_seq = if (is_too_small)
                 try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up})
             else
                 try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
             try writeAll(stdout_fd, cursor_seq);
+
+            if (resized) {
+                last_w = current_w;
+                last_h = current_h;
+            }
 
             // ----------------------------------------------------------------
             // Copy & exit deferred action (rendered one frame first)
@@ -1035,8 +1072,8 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             // Read input
             // ----------------------------------------------------------------
-            var n = std.posix.read(stdin_fd, &read_buf) catch |err| {
-                if (err == error.SystemResources) continue;
+            var n = readStdin(stdin_fd, &read_buf) catch |err| {
+                if (err == error.SystemResources or err == error.Interrupted) continue;
                 return err;
             };
             if (n == 0) break;
