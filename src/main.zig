@@ -618,6 +618,17 @@ pub fn main(init: std.process.Init) !void {
         break :blk 0;
     };
 
+    // When the TUI top would be pushed into the terminal scrollback buffer during
+    // vertical resize, hide the grid and description and show only the search bar
+    // as a single-row UI. Restores the full TUI when the terminal grows back.
+    // Set EMOJIG_HIDE_OVERFLOW=0 to disable (allow the TUI to enter scrollback).
+    const final_hide_overflow: bool = blk: {
+        if (init.environ_map.get("EMOJIG_HIDE_OVERFLOW")) |env_val| {
+            break :blk !(std.mem.eql(u8, env_val, "0") or std.mem.eql(u8, env_val, "false"));
+        }
+        break :blk true; // enabled by default
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
@@ -893,6 +904,8 @@ pub fn main(init: std.process.Init) !void {
 
         var last_w: usize = term_width;
         var last_h: usize = final_h;
+        // True while the TUI is hidden to prevent content entering the scrollback buffer.
+        var is_tui_hidden: bool = false;
 
         while (true) {
             const palette = effectivePalette(theme, system_theme);
@@ -910,6 +923,8 @@ pub fn main(init: std.process.Init) !void {
             const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
             const current_frame_h = blk: {
+                // In hidden mode the TUI collapses to a single search-bar row.
+                if (is_tui_hidden) break :blk @as(usize, 1);
                 var h: usize = if (show_border) 10 else 8;
                 if (final_debug and !is_too_small) {
                     h += 2;
@@ -927,34 +942,67 @@ pub fn main(init: std.process.Init) !void {
                         const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
                         try writeAll(stdout_fd, move_seq);
                     } else if (height_changed) {
-                        // Height changed: the TUI may have been partially pushed into scrollback.
-                        // Query the actual cursor row so we know how far we can safely move up
-                        // without overshooting into the scrollback buffer (which would create ghost frames).
+                        // Height changed: query actual cursor row to know where we really are.
                         const actual_cursor = queryCursorRow(stdin_fd, stdout_fd, raw) orelse @as(i32, @intCast(1 + row_off)) + 1;
-                        // Cursor is at the search bar (row 2 of TUI = 1+row_off rows below TUI top).
-                        // We want to move up to the TUI top, but cap at row 1 of the screen.
-                        const rows_above_cursor = actual_cursor - 1; // how many rows exist above cursor
-                        const ideal_up = @as(i32, @intCast(1 + row_off));
-                        const clamped_up = @min(ideal_up, rows_above_cursor);
-                        if (clamped_up > 0) {
-                            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{clamped_up});
-                            try writeAll(stdout_fd, move_seq);
-                        } else {
-                            // Cursor is already at row 1; just erase down from here.
+                        const tui_top = actual_cursor - @as(i32, @intCast(1 + row_off));
+
+                        // Decide hide/show based on whether the TUI top is still on-screen.
+                        // tui_top <= 0 means the TUI header row would be in scrollback.
+                        const should_hide = final_hide_overflow and (tui_top <= 0);
+
+                        if (should_hide and !is_tui_hidden) {
+                            // Entering hidden mode: erase everything visible from our TUI and
+                            // collapse to a 1-row search bar so nothing bleeds into scrollback.
+                            const rows_above = actual_cursor - 1;
+                            if (rows_above > 0) {
+                                const up = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{rows_above});
+                                try writeAll(stdout_fd, up);
+                            } else {
+                                try writeAll(stdout_fd, "\r\x1b[J");
+                            }
+                            is_tui_hidden = true;
+                        } else if (!should_hide and is_tui_hidden) {
+                            // Exiting hidden mode: erase the 1-row stub and redraw the full TUI.
                             try writeAll(stdout_fd, "\r\x1b[J");
+                            is_tui_hidden = false;
+                        } else if (is_tui_hidden) {
+                            // Still hidden: just redraw the 1-row search bar in place.
+                            try writeAll(stdout_fd, "\r\x1b[J");
+                        } else {
+                            // Not hidden, not entering hidden: erase from TUI top (clamped).
+                            const rows_above = actual_cursor - 1;
+                            const ideal_up = @as(i32, @intCast(1 + row_off));
+                            const clamped_up = @min(ideal_up, rows_above);
+                            if (clamped_up > 0) {
+                                const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{clamped_up});
+                                try writeAll(stdout_fd, move_seq);
+                            } else {
+                                try writeAll(stdout_fd, "\r\x1b[J");
+                            }
                         }
-                        // Update tui_start_row immediately so mouse mapping stays correct.
-                        global_tui_start_row = actual_cursor - @as(i32, @intCast(1 + row_off));
+
+                        global_tui_start_row = tui_top;
                         last_h = current_h;
                         last_w = current_w;
                     } else {
                         // Width-only change: safe to use the fixed relative move.
-                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
-                        try writeAll(stdout_fd, move_seq);
+                        const prev_up: usize = if (is_tui_hidden) 0 else @as(usize, @intCast(1 + row_off));
+                        if (prev_up > 0) {
+                            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{prev_up});
+                            try writeAll(stdout_fd, move_seq);
+                        } else {
+                            try writeAll(stdout_fd, "\r\x1b[J");
+                        }
                     }
                 } else {
-                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
-                    try writeAll(stdout_fd, move_seq);
+                    // Normal redraw: move up to TUI top (or stay in place when hidden).
+                    const prev_up: usize = if (is_tui_hidden) 0 else @as(usize, @intCast(1 + row_off));
+                    if (prev_up > 0) {
+                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{prev_up});
+                        try writeAll(stdout_fd, move_seq);
+                    } else {
+                        try writeAll(stdout_fd, "\r");
+                    }
                 }
             } else {
                 is_first_render = false;
@@ -962,20 +1010,23 @@ pub fn main(init: std.process.Init) !void {
 
             var line_buf: [1024]u8 = undefined;
 
+            // In hidden mode, skip everything except the search bar below.
             // Optional top border row.
-            if (show_border) {
+            if (!is_tui_hidden and show_border) {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
             }
 
-            // Blank top padding row.
-            try writeAll(stdout_fd, " ");
-            try writeAll(stdout_fd, palette.bg);
-            try writeAll(stdout_fd, palette.fg);
-            try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
+            // Blank top padding row (hidden mode: skip).
+            if (!is_tui_hidden) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.bg);
+                try writeAll(stdout_fd, palette.fg);
+                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
+            }
 
             // Search bar — entire row uses search_bg for a clean "menu row" look.
             const prefix_cols = 3;
@@ -995,7 +1046,8 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, display_warn);
                 const warn_pad = if (max_w > display_warn.len) max_w - display_warn.len else 0;
                 try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
-                try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
+                // In hidden mode end without newline so cursor stays on this line.
+                try writeAll(stdout_fd, if (is_tui_hidden) "\x1b[0m\x1b[K" else "\x1b[0m\x1b[K\r\n");
             } else {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.search_bg);
@@ -1005,71 +1057,82 @@ pub fn main(init: std.process.Init) !void {
                 const icon_hl = if (theme_hovered) palette.selection_bg else "";
                 const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
                 try writeAll(stdout_fd, icon_buf);
+                // In hidden mode end without newline so cursor stays on this line.
+                try writeAll(stdout_fd, if (is_tui_hidden) "\x1b[0m\x1b[K" else "\x1b[0m\x1b[K\r\n");
+            }
+
+            // Blank spacer row (hidden mode: skip).
+            if (!is_tui_hidden) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.bg);
+                try writeAll(stdout_fd, palette.fg);
+                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
             }
 
-            // Blank spacer row.
-            try writeAll(stdout_fd, " ");
-            try writeAll(stdout_fd, palette.bg);
-            try writeAll(stdout_fd, palette.fg);
-            try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m\x1b[K\r\n");
+            // Grid rows (hidden mode: skip).
+            if (!is_tui_hidden) {
+                var r: usize = 0;
+                while (r < rows) : (r += 1) {
+                    if (is_too_small) {
+                        const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
+                        try writeAll(stdout_fd, grid_line);
+                    } else {
+                        var cell_buffers: [6][64]u8 = undefined;
+                        var cell_strings: [6][]const u8 = undefined;
 
-            // Grid rows.
-            var r: usize = 0;
-            while (r < rows) : (r += 1) {
-                if (is_too_small) {
-                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
-                    try writeAll(stdout_fd, grid_line);
-                } else {
-                    var cell_buffers: [6][64]u8 = undefined;
-                    var cell_strings: [6][]const u8 = undefined;
-
-                    var c: usize = 0;
-                    while (c < cols) : (c += 1) {
-                        const idx = r * cols + c;
-                        if (idx < top_count) {
-                            const m = top_matches[idx];
-                            const entry = emojig.EmojiDb.getEntry(m.index);
-                            var strip_buf: [32]u8 = undefined;
-                            const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                            if (selected_idx) |sel| {
-                                if (idx == sel) {
-                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                        var c: usize = 0;
+                        while (c < cols) : (c += 1) {
+                            const idx = r * cols + c;
+                            if (idx < top_count) {
+                                const m = top_matches[idx];
+                                const entry = emojig.EmojiDb.getEntry(m.index);
+                                var strip_buf: [32]u8 = undefined;
+                                const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
+                                if (selected_idx) |sel| {
+                                    if (idx == sel) {
+                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                                    } else {
+                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                    }
                                 } else {
                                     cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                                 }
                             } else {
-                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                cell_strings[c] = "    ";
                             }
-                        } else {
-                            cell_strings[c] = "    ";
                         }
-                    }
 
-                    const grid_rem = if (content_width > 24) content_width - 24 else 0;
-                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
-                    try writeAll(stdout_fd, grid_line);
+                        const grid_rem = if (content_width > 24) content_width - 24 else 0;
+                        const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m\x1b[K\r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
+                        try writeAll(stdout_fd, grid_line);
+                    }
                 }
             }
 
-            // Description row.
-            const desc_suffix = if (show_border) "\x1b[K\r\n" else "\x1b[K";
-            const max_len = if (content_width > 1) content_width - 1 else 0;
-            if (selected_idx != null and !is_too_small) {
-                const sel = selected_idx.?;
-                if (top_count > 0 and sel < top_count) {
-                    const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                    if (name.len > max_len and max_len >= 3) {
-                        const display_name = name[0 .. max_len - 3];
-                        const printed_cols = 1 + display_name.len + 3;
-                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
-                        try writeAll(stdout_fd, name_line);
+            // Description row (hidden mode: skip).
+            if (!is_tui_hidden) {
+                const desc_suffix = if (show_border) "\x1b[K\r\n" else "\x1b[K";
+                const max_len = if (content_width > 1) content_width - 1 else 0;
+                if (selected_idx != null and !is_too_small) {
+                    const sel = selected_idx.?;
+                    if (top_count > 0 and sel < top_count) {
+                        const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
+                        if (name.len > max_len and max_len >= 3) {
+                            const display_name = name[0 .. max_len - 3];
+                            const printed_cols = 1 + display_name.len + 3;
+                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                            try writeAll(stdout_fd, name_line);
+                        } else {
+                            const printed_cols = 1 + name.len;
+                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                            try writeAll(stdout_fd, name_line);
+                        }
                     } else {
-                        const printed_cols = 1 + name.len;
-                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                        const pad_len_desc = max_w;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                         try writeAll(stdout_fd, name_line);
                     }
                 } else {
@@ -1077,21 +1140,18 @@ pub fn main(init: std.process.Init) !void {
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
-            } else {
-                const pad_len_desc = max_w;
-                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
-                try writeAll(stdout_fd, name_line);
             }
 
-            // Optional bottom border row.
-            if (show_border) {
+            // Optional bottom border row (hidden mode: skip).
+            if (!is_tui_hidden and show_border) {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m\x1b[K");
             }
 
-            if (final_debug and !is_too_small) {
+            // Debug info rows (hidden mode: skip).
+            if (!is_tui_hidden and final_debug and !is_too_small) {
                 try writeAll(stdout_fd, "\x1b[K\r\n");
 
                 var ws_dbg = std.mem.zeroes(std.posix.winsize);
@@ -1114,10 +1174,15 @@ pub fn main(init: std.process.Init) !void {
             }
 
             // Reposition cursor to search bar input (relative up, horizontal absolute column).
+            // In hidden mode current_frame_h == 1, so cursor_up == 0 — cursor is already
+            // at the search bar row after rendering it (no newline was emitted).
             var cursor_buf: [48]u8 = undefined;
-            const cursor_up = current_frame_h - @as(usize, @intCast(2 + row_off));
-            const cursor_seq = if (is_too_small)
-                try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up})
+            const cursor_up = if (current_frame_h >= @as(usize, @intCast(2 + row_off)))
+                current_frame_h - @as(usize, @intCast(2 + row_off))
+            else
+                @as(usize, 0);
+            const cursor_seq = if (is_too_small or is_tui_hidden)
+                try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + query_len })
             else
                 try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
             try writeAll(stdout_fd, cursor_seq);
