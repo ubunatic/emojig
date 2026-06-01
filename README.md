@@ -2,7 +2,9 @@
 
 Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free GUI+TUI emoji picker on all your Linux systems.
 
-![emojig dark theme](docs/emojig-dark-200px.png) ![emojig light theme](docs/emojig-light-200px.png)
+<img src="docs/emojig-screen-gui-editor-light-v0.1.4.png" height="300"/>
+<img src="docs/emojig-screen-tui-tilix-dark-v0.1.4.png" height="300"/>
+
 
 ## Features
 **🏎️** Fast and low-memory (340 KB static binary, < 2.0 MB RAM) \
