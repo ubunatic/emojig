@@ -224,6 +224,42 @@ if (!is_tui_hidden) { /* draw border, padding, grid, description */ }
 try writeAll(stdout_fd, if (is_tui_hidden) "\x1b[0m\x1b[K" else "\x1b[0m\x1b[K\r\n");
 ```
 
+### 4.5 Alternative strategy — "eat lines above" (scrollback sacrifice)
+
+A simpler approach that entirely avoids the hide/CPR complexity: instead of
+collapsing the TUI when the terminal shrinks, **let the terminal eat whatever
+scrollback lines sit above the TUI**.
+
+When the terminal shrinks vertically, the emulator scrolls content upward. The
+TUI stays on screen because it sits at the bottom of the viewport; the lines
+that disappear are whatever was above it (shell history / prior output). The
+TUI frame itself never enters scrollback. On the next `SIGWINCH` the app just
+re-reads `TIOCGWINSZ` and redraws in place — no CPR query, no hide state machine.
+
+**Tradeoff summary**
+
+| | Hide/freeze (emojig default) | Eat-lines-above |
+|---|---|---|
+| TUI lines in scrollback | Never | Never |
+| Scrollback consumed on shrink | None | Yes — rows above TUI lost |
+| Implementation complexity | High (CPR, state machine) | Low (SIGWINCH + TIOCGWINSZ) |
+| User experience | TUI disappears when too small | TUI always visible |
+
+**When it is acceptable:** The user has explicitly invoked the TUI (it is not a
+background widget). Losing a few lines of prior shell output when they drag the
+window smaller is a reasonable tradeoff for keeping the TUI interactive.
+
+**When to prefer hide/freeze:** The TUI is auto-launched (e.g. shell integration),
+or preserving scrollback history is a hard requirement.
+
+**Reference implementation:** `scripts/inline_tui.go` — a minimal Go testbed that
+demonstrates this strategy. It draws a 5-row inline TUI with a blinking cursor,
+listens for `SIGWINCH`, and redraws in place. No CPR, no hide mode. Run with:
+
+```sh
+go run scripts/inline_tui.go
+```
+
 ---
 
 ## 5. SGR Mouse Coordinates & Viewport Warping
@@ -271,9 +307,9 @@ queries its own starting position and compensates for scrolling:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `EMOJIG_HIDE_OVERFLOW` | `1` | Hide TUI to 1-row mode when its top row would enter terminal scrollback. Set `0` to allow the old behavior. |
+| `EMOJIG_RESIZE_MODE` | `freeze` | Resize strategy: `freeze` (collapse to blank, hide cursor), `hide` (collapse to search-bar stub), `eat` (sacrifice scrollback above, always visible), `altscreen` (alternate screen buffer — no scrollback interaction). See `src/resize.zig` for full descriptions. |
+| `EMOJIG_ALT_SCREEN` | — | Legacy alias: `EMOJIG_ALT_SCREEN=1` is equivalent to `EMOJIG_RESIZE_MODE=altscreen`. Set automatically by foot GUI mode. |
 | `EMOJIG_SCROLL_BIAS` | `0` | Signed integer added to the startup scroll reservation (`space_needed`). Positive = emit more newlines before first draw; negative = fewer. |
-| `EMOJIG_ALT_SCREEN` | `0` | Use the alternate screen buffer (`\x1b[?1049h`). Eliminates all scrollback/resize artifacts; set automatically by `zig build picker` (foot GUI mode). |
 | `EMOJIG_BORDER` | `0` | Draw a coloured background row above and below the TUI. Adds 2 rows to window height and shifts row offsets by 1. |
 | `EMOJIG_DEBUG` | `0` | Add 2 debug rows showing live terminal dimensions. |
 | `EMOJIG_THEME` | `dark` | `dark`, `light`, or `system` (auto-detect via OSC 11). |
@@ -332,3 +368,23 @@ Treat them separately:
   is safe and fast. No CPR needed.
 - **Height change**: the terminal may have scrolled; CPR is required to determine
   the actual cursor row and whether the TUI top is still on-screen.
+
+---
+
+## 8. Current Knowns, Unknowns, and Baselines
+
+As of June 1, 2026, here is the verified status of what works, what remains problematic or unknown, and how diagnostic scripts are used.
+
+### 8.1 What is 100% Known & Working
+
+1. **Width-Only Resizes**: Erasing with `\x1b[K` at the end of each line completely prevents horizontal ghosting without needing cursor repositioning or CPR queries.
+2. **"Eat Lines Above" Strategy**: The minimal Go implementation at [inline_tui.go](file:///home/uwe/projects/emojig/scripts/inline_tui.go) confirms that sacrificing preceding terminal lines to scrollback is highly robust and avoids all CPR query complexity. It simply tracks `TIOCGWINSZ` and lets the terminal handle reflow naturally.
+3. **Cursor Drift Prevention**: Using `\x1b[0A` to move the cursor up by 0 lines causes a drift upwards in many ANSI-compliant terminals (since they treat `0` as `1`). In 1-row stub/hidden mode, cursor repositioning must bypass `\x1b[0A` completely and position with absolute columns or direct `\r` carriage returns.
+4. **PTY Testing Baseline**: The test harness at [test_tui.go](file:///home/uwe/projects/emojig/scripts/test_tui.go) reliably spawns the application inside a programmatic PTY, sends simulated user keystrokes, and captures raw ANSI frame output for validation, proving that the basic input/output loop operates correctly in standard terminal environments.
+
+### 8.2 What is Unknown / Under Investigation
+
+1. **Scrollback Restoration Ghosting**: When recovering the TUI from a collapsed/hidden state after a vertical window resize, terminal emulators pull in varying amounts of old TUI lines from the scrollback buffer. Attempts to programmatically compute and erase this history (via calculated line offsets and CPR queries) are inconsistent across different shell environments and multiplexers (e.g., `tmux` vs raw terminal emulator).
+2. **Terminal Reflow Timing**: During interactive manual resizing, terminal reflow events trigger rapid, successive height changes. The timing of `ioctl` updates, `SIGWINCH` signal delivery, and standard input reads sometimes mismatch, leading to race conditions where the drawing math uses outdated viewport dimensions.
+3. **Alternate Mode Transition in GUIs**: Under certain Wayland/X11 foot configurations, the automatic switch between inline `--tui` and floating `--gui` mode leaves terminal handles in a raw state if terminated abruptly.
+
