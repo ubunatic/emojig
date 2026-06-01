@@ -848,12 +848,21 @@ pub fn main(init: std.process.Init) !void {
             const is_too_small = (current_w < 27);
             const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
+            const current_frame_h = blk: {
+                var h: usize = if (show_border) 10 else 8;
+                if (final_debug and !is_too_small) {
+                    h += 2;
+                }
+                break :blk h;
+            };
+
             const resized = (current_w != last_w or current_h != last_h);
 
             if (!is_first_render) {
-                var move_buf: [32]u8 = undefined;
+                var move_buf: [48]u8 = undefined;
                 if (resized) {
-                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
+                    const start_row = if (current_h >= current_frame_h) current_h - current_frame_h + 1 else 1;
+                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[{d};1H", .{start_row});
                     try writeAll(stdout_fd, move_seq);
                 } else {
                     const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
@@ -1017,14 +1026,6 @@ pub fn main(init: std.process.Init) !void {
             }
 
             // Reposition cursor to search bar input (relative up, horizontal absolute column).
-            const current_frame_h = blk: {
-                var h: usize = if (show_border) 10 else 8;
-                if (final_debug and !is_too_small) {
-                    h += 2;
-                }
-                break :blk h;
-            };
-
             var cursor_buf: [48]u8 = undefined;
             const cursor_up = current_frame_h - @as(usize, @intCast(2 + row_off));
             const cursor_seq = if (is_too_small)
@@ -1036,6 +1037,7 @@ pub fn main(init: std.process.Init) !void {
             if (resized) {
                 last_w = current_w;
                 last_h = current_h;
+                global_tui_start_row = @as(i32, @intCast(if (current_h >= current_frame_h) current_h - current_frame_h + 1 else 1));
             }
 
             // ----------------------------------------------------------------
