@@ -150,27 +150,7 @@ pub fn build(b: *std.Build) void {
     run_picker.addArg("--gui");
     picker_step.dependOn(&run_picker.step);
 
-    // Screenshot step: run the app in a PTY, capture the initial frame.
-    // Output goes to /tmp/emojig_frame.ansi + /tmp/emojig_frame.txt; also prints to stdout.
-    const screenshot_step = b.step("screenshot", "Capture an initial frame of emojig for agent inspection");
-    const run_screenshot = b.addSystemCommand(&.{
-        "sh",                "-c",
-        \\timeout 10 go run scripts/screenshot.go "$1" || echo "screenshot failed"
-        ,
-        "emojig-screenshot",
-    });
-    run_screenshot.addArtifactArg(exe);
-    screenshot_step.dependOn(b.getInstallStep());
-    screenshot_step.dependOn(&run_screenshot.step);
 
-    // Custom step to pack the emoji database
-    const pack_step = b.step("pack", "Serialize and compress data/emoji.json into src/emojis.bin");
-    const run_packer = b.addSystemCommand(&.{
-        "go",
-        "run",
-        "scripts/pack_emojis.go",
-    });
-    pack_step.dependOn(&run_packer.step);
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
@@ -192,34 +172,4 @@ pub fn build(b: *std.Build) void {
     run_shell_install.addArg("--install");
     shell_install_step.dependOn(&run_shell_install.step);
 
-    const reuse_step = b.step("reuse", "Check REUSE licence compliance");
-    const run_reuse = b.addSystemCommand(&.{ "reuse", "lint" });
-    reuse_step.dependOn(&run_reuse.step);
-
-    const deps_step = b.step("deps", "Install build and release dependencies (apt + go install)");
-    const run_apt = b.addSystemCommand(&.{ "sudo", "apt-get", "install", "-y", "foot", "minisign", "reuse" });
-    const run_goreleaser_install = b.addSystemCommand(&.{ "go", "install", "github.com/goreleaser/goreleaser/v2@latest" });
-    const run_fj_install = b.addSystemCommand(&.{ "go", "install", "codeberg.org/forgejo-contrib/forgejo-cli@latest" });
-    run_goreleaser_install.step.dependOn(&run_apt.step);
-    run_fj_install.step.dependOn(&run_goreleaser_install.step);
-    deps_step.dependOn(&run_fj_install.step);
-
-    const test_minisign_step = b.step("test-minisign", "Verify minisign keypair against minisign.pub in the repo");
-    const run_test_minisign = b.addSystemCommand(&.{
-        "sh", "-c",
-        \\printf 'emojig minisign test' > /tmp/emojig-minisign-test.txt &&
-        \\minisign -S -s "${MINISIGN_KEY_FILE:-$HOME/.minisign/minisign.key}" -m /tmp/emojig-minisign-test.txt &&
-        \\minisign -V -p minisign.pub -m /tmp/emojig-minisign-test.txt &&
-        \\rm -f /tmp/emojig-minisign-test.txt /tmp/emojig-minisign-test.txt.minisig &&
-        \\echo "minisign keypair OK"
-    });
-    test_minisign_step.dependOn(&run_test_minisign.step);
-
-    const release_step = b.step("release", "Build snapshot release artifacts via goreleaser (no publish, no sign)");
-    const run_goreleaser = b.addSystemCommand(&.{ "goreleaser", "release", "--snapshot", "--clean", "--skip=sign" });
-    release_step.dependOn(&run_goreleaser.step);
-
-    const clean_step = b.step("clean", "Remove build artifacts (zig-out, .zig-cache, dist)");
-    const run_clean = b.addSystemCommand(&.{ "rm", "-rf", "zig-out", ".zig-cache", "dist" });
-    clean_step.dependOn(&run_clean.step);
 }

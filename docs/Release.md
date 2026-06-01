@@ -25,7 +25,7 @@ You also need:
 ## Local snapshot build (no tag, no publish)
 
 ```sh
-make release
+make release-snapshot
 ```
 
 Produces `dist/` with tarballs, `.deb`, `.rpm`, and `SHA256SUMS`. Signing is
@@ -104,22 +104,20 @@ Open the Codeberg release, verify the artifact list and changelog, then click
 
 ## Quick release runbook
 
+Instead of running steps manually, you can execute the entire release pipeline using a single interactive command:
+
 ```sh
-# 1. pre-flight checks
-make preflight
+# 1. Bump the version (e.g., patch, minor, major)
+make bump-patch
 
-# 2. bump version in build.zig.zon, update CHANGELOG.md, then commit
-git commit -am "release: v0.X.Y"
+# 2. Add release notes detailing your changes to CHANGELOG.md
 
-# 3. tag and push
-git tag -a v0.X.Y -m "emojig v0.X.Y"
-git push origin main v0.X.Y
-
-# 4. build, sign, and create draft release
-make release-publish
-
-# 5. open Codeberg, review the draft, and click Publish
+# 3. Run the fully interactive automated release pipeline
+make release
 ```
+
+The pipeline will run preflight verification tests, show you the target version, prompt for confirmation, and automatically handle all commit, tag, push, build, minisign, and Codeberg draft creation tasks.
+
 
 ---
 
