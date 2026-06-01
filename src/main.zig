@@ -76,6 +76,38 @@ fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
 
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
+var global_tui_start_row: ?i32 = null;
+
+fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
+    writeAll(stdout_fd, "\x1b[6n") catch return null;
+
+    var timed = raw;
+    const sys = std.posix.system;
+    timed.cc[@intFromEnum(sys.V.MIN)] = 0;
+    timed.cc[@intFromEnum(sys.V.TIME)] = 2; // 200 ms timeout
+    std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return null;
+    defer std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
+
+    var buf: [32]u8 = undefined;
+    const n = std.posix.read(stdin_fd, &buf) catch return null;
+    if (n == 0) return null;
+
+    const resp = buf[0..n];
+    var i: usize = 0;
+    while (i + 2 < resp.len) : (i += 1) {
+        if (resp[i] == '\x1b' and resp[i + 1] == '[') {
+            i += 2;
+            var r: i32 = 0;
+            while (i < resp.len and resp[i] >= '0' and resp[i] <= '9') : (i += 1) {
+                r = r * 10 + @as(i32, @intCast(resp[i] - '0'));
+            }
+            if (i < resp.len and resp[i] == ';') {
+                return r;
+            }
+        }
+    }
+    return null;
+}
 
 extern fn alarm(seconds: c_uint) callconv(.c) c_uint;
 
@@ -145,6 +177,27 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
     logMemoryUsage();
     std.process.exit(1);
+}
+
+fn sigWinchHandler(sig: std.posix.SIG) callconv(.c) void {
+    _ = sig;
+    var ws = std.mem.zeroes(std.posix.winsize);
+    const rc = std.posix.system.ioctl(global_tty_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
+    if (rc == 0 and ws.col > 0 and ws.col <= 26) {
+        if (global_orig_termios) |orig| {
+            _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
+        }
+        _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
+        _ = std.posix.system.write(global_tty_fd, "\x1b[2J\x1b[1;1H", 10);
+        _ = std.posix.system.write(global_tty_fd, "Error: Terminal width is too small (", 36);
+        var val_buf: [16]u8 = undefined;
+        if (std.fmt.bufPrint(&val_buf, "{d}", .{ws.col})) |val_str| {
+            _ = std.posix.system.write(global_tty_fd, val_str.ptr, val_str.len);
+        } else |_| {}
+        _ = std.posix.system.write(global_tty_fd, "). Must be greater than 26.\n", 28);
+        logMemoryUsage();
+        std.process.exit(0);
+    }
 }
 
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
@@ -373,6 +426,7 @@ fn spawnFootWindow(
     theme: Theme,
     border: bool,
     safe: bool,
+    debug: bool,
     wait: bool,
 ) !void {
     const io = init.io;
@@ -385,7 +439,8 @@ fn spawnFootWindow(
     const foot_bg = if (theme == .light) "eeeeee" else "1c1c1c";
     const foot_fg = if (theme == .light) "444444" else "a8a8a8";
 
-    const final_h = if (border) height + 2 else height;
+    var final_h = if (border) height + 2 else height;
+    if (debug) final_h += 2;
 
     var size_buf: [64]u8 = undefined;
     const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width + 2, final_h });
@@ -411,6 +466,9 @@ fn spawnFootWindow(
     var env_safe: [64]u8 = undefined;
     const env_safe_arg = try std.fmt.bufPrint(&env_safe, "EMOJIG_SAFE={s}", .{if (safe) "1" else "0"});
 
+    var env_debug: [64]u8 = undefined;
+    const env_debug_arg = try std.fmt.bufPrint(&env_debug, "EMOJIG_DEBUG={s}", .{if (debug) "1" else "0"});
+
     const timeout_val = init.environ_map.get("EMOJIG_PICKER_TIMEOUT") orelse "60";
 
     var env_timeout: [64]u8 = undefined;
@@ -432,6 +490,7 @@ fn spawnFootWindow(
         env_theme_arg,
         env_border_arg,
         env_safe_arg,
+        env_debug_arg,
         env_timeout_arg,
         exe_path,
         "--tui",
@@ -546,6 +605,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_height: ?usize = null;
     var opt_border: ?bool = null;
     var opt_safe = false;
+    var opt_debug = false;
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -560,6 +620,8 @@ pub fn main(init: std.process.Init) !void {
             opt_wait = true;
         } else if (std.mem.eql(u8, arg, "--safe")) {
             opt_safe = true;
+        } else if (std.mem.eql(u8, arg, "--debug")) {
+            opt_debug = true;
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
                 if (std.mem.eql(u8, v, "light")) opt_theme = .light else if (std.mem.eql(u8, v, "dark")) opt_theme = .dark else if (std.mem.eql(u8, v, "system")) opt_theme = .system else {
@@ -616,6 +678,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --height [number]            Set the height of the picker\n" ++
                 "  --border [1|0|true|false]    Enable or disable the border\n" ++
                 "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
+                "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating terminal window (spawns foot)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
@@ -677,11 +740,19 @@ pub fn main(init: std.process.Init) !void {
         break :blk null;
     };
 
+    const env_debug: ?bool = blk: {
+        if (init.environ_map.get("EMOJIG_DEBUG")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk null;
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
+    const final_debug = opt_debug or (env_debug orelse false);
 
     const has_gui_session = blk: {
         const wayland = init.environ_map.get("WAYLAND_DISPLAY");
@@ -764,6 +835,7 @@ pub fn main(init: std.process.Init) !void {
             final_theme,
             final_border,
             final_safe,
+            final_debug,
             opt_wait,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' is installed and in your PATH (");
@@ -792,6 +864,20 @@ pub fn main(init: std.process.Init) !void {
     const stdin_fd = tty_fd;
 
     {
+        var ws = std.mem.zeroes(std.posix.winsize);
+        const rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
+        if (rc == 0 and ws.col > 0 and ws.col <= 26) {
+            try writeAll(stdout_fd, "\x1b[2J\x1b[1;1H");
+            try writeAll(stdout_fd, "Error: Terminal width is too small (");
+            var val_buf: [16]u8 = undefined;
+            const val_str = try std.fmt.bufPrint(&val_buf, "{d}", .{ws.col});
+            try writeAll(stdout_fd, val_str);
+            try writeAll(stdout_fd, "). Must be greater than 26.\n");
+            std.process.exit(0);
+        }
+    }
+
+    {
         mru.load();
 
         const orig_termios = try std.posix.tcgetattr(stdin_fd);
@@ -805,6 +891,13 @@ pub fn main(init: std.process.Init) !void {
         std.posix.sigaction(std.posix.SIG.INT, &act, null);
         std.posix.sigaction(std.posix.SIG.TERM, &act, null);
         std.posix.sigaction(std.posix.SIG.ALRM, &act, null);
+
+        var winch_act = std.posix.Sigaction{
+            .handler = .{ .handler = sigWinchHandler },
+            .mask = std.mem.zeroes(std.posix.sigset_t),
+            .flags = 0,
+        };
+        std.posix.sigaction(std.posix.SIG.WINCH, &winch_act, null);
 
         var active_timeout: ?c_uint = null;
         if (init.environ_map.get("EMOJIG_PICKER_TIMEOUT")) |timeout_str| {
@@ -837,6 +930,7 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.MIN)] = 1;
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
+        global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
 
         var system_theme: Theme = if (theme == .system)
             detectSystemTheme(stdin_fd, stdout_fd, raw)
@@ -844,7 +938,8 @@ pub fn main(init: std.process.Init) !void {
             theme;
 
         const content_rows: usize = 8;
-        const final_h = if (show_border) content_rows + 2 else content_rows;
+        var final_h = if (show_border) content_rows + 2 else content_rows;
+        if (final_debug) final_h += 2;
         var is_first_render = true;
 
         defer {
@@ -908,6 +1003,27 @@ pub fn main(init: std.process.Init) !void {
             // Render
             // ----------------------------------------------------------------
             try writeAll(stdout_fd, "\x1b[?25l");
+
+            {
+                var ws = std.mem.zeroes(std.posix.winsize);
+                const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
+                const current_w = if (size_rc == 0 and ws.col > 0) ws.col else 27;
+                if (current_w <= 26) {
+                    if (global_orig_termios) |orig| {
+                        _ = std.posix.system.tcsetattr(stdout_fd, .NOW, &orig);
+                    }
+                    _ = std.posix.system.write(stdout_fd, RESTORE, RESTORE.len);
+                    _ = std.posix.system.write(stdout_fd, "\x1b[2J\x1b[1;1H", 10);
+                    _ = std.posix.system.write(stdout_fd, "Error: Terminal width is too small (", 36);
+                    var val_buf: [16]u8 = undefined;
+                    if (std.fmt.bufPrint(&val_buf, "{d}", .{current_w})) |val_str| {
+                        _ = std.posix.system.write(stdout_fd, val_str.ptr, val_str.len);
+                    } else |_| {}
+                    _ = std.posix.system.write(stdout_fd, "). Must be greater than 26.\n", 28);
+                    logMemoryUsage();
+                    std.process.exit(0);
+                }
+            }
             if (!is_first_render) {
                 var move_buf: [32]u8 = undefined;
                 const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
@@ -947,7 +1063,7 @@ pub fn main(init: std.process.Init) !void {
             try writeAll(stdout_fd, palette.search_bg);
             try writeAll(stdout_fd, "🔍 ");
             try writeAll(stdout_fd, query_buf[0..display_query_len]);
-            try writeAll(stdout_fd, spaces[0..pad_len]);
+            try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
             const icon_hl = if (theme_hovered) palette.selection_bg else "";
             const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
             try writeAll(stdout_fd, icon_buf);
@@ -989,7 +1105,7 @@ pub fn main(init: std.process.Init) !void {
                 }
 
                 const grid_rem = if (content_width > 24) content_width - 24 else 0;
-                const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..grid_rem] });
+                const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
                 try writeAll(stdout_fd, grid_line);
             }
 
@@ -1003,22 +1119,22 @@ pub fn main(init: std.process.Init) !void {
                         const display_name = name[0 .. max_len - 3];
                         const printed_cols = 1 + display_name.len + 3;
                         const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                         try writeAll(stdout_fd, name_line);
                     } else {
                         const printed_cols = 1 + name.len;
                         const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                         try writeAll(stdout_fd, name_line);
                     }
                 } else {
                     const pad_len_desc = content_width;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
                 const pad_len_desc = content_width;
-                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
+                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                 try writeAll(stdout_fd, name_line);
             }
 
@@ -1028,6 +1144,27 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m ");
+            }
+
+            if (final_debug) {
+                try writeAll(stdout_fd, "\r\n");
+
+                var ws_dbg = std.mem.zeroes(std.posix.winsize);
+                const rc_dbg = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_dbg));
+                const actual_w = if (rc_dbg == 0 and ws_dbg.col > 0) ws_dbg.col else 27;
+                const actual_h = if (rc_dbg == 0 and ws_dbg.row > 0) ws_dbg.row else 10;
+
+                const line1 = " 🐞 Debug Info:";
+                const pad1 = if (actual_w >= 16) actual_w - 16 else 0;
+                try writeAll(stdout_fd, line1);
+                try writeAll(stdout_fd, spaces[0..@min(pad1, spaces.len)]);
+                try writeAll(stdout_fd, "\r\n");
+
+                var dbg_buf: [128]u8 = undefined;
+                const line2 = try std.fmt.bufPrint(&dbg_buf, "    Size: W={d} H={d}", .{ actual_w, actual_h });
+                const pad2 = if (actual_w > line2.len + 1) actual_w - 1 - line2.len else 0;
+                try writeAll(stdout_fd, line2);
+                try writeAll(stdout_fd, spaces[0..@min(pad2, spaces.len)]);
             }
 
             // Reposition cursor to search bar input (relative up, horizontal absolute column).
@@ -1070,7 +1207,10 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             // Read input
             // ----------------------------------------------------------------
-            var n = try std.posix.read(stdin_fd, &read_buf);
+            var n = std.posix.read(stdin_fd, &read_buf) catch |err| {
+                if (err == error.SystemResources) continue;
+                return err;
+            };
             if (n == 0) break;
 
             if (active_timeout) |t| {
@@ -1153,8 +1293,25 @@ pub fn main(init: std.process.Init) !void {
 
                         const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
                         const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
-                        const click_row = std.fmt.parseInt(i32, row_str, 10) catch continue;
+                        const click_row_raw = std.fmt.parseInt(i32, row_str, 10) catch continue;
                         const local_col = click_col - 1;
+
+                        // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
+                        var click_row = click_row_raw;
+                        if (global_tui_start_row) |start_row| {
+                            var ws_mouse = std.mem.zeroes(std.posix.winsize);
+                            const rc_mouse = std.posix.system.ioctl(global_tty_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_mouse));
+                            if (rc_mouse == 0 and ws_mouse.row > 0) {
+                                const actual_h = @as(i32, @intCast(ws_mouse.row));
+                                const tui_h = @as(i32, @intCast(final_h));
+                                const scroll_amount = if (start_row + tui_h - 1 > actual_h)
+                                    (start_row + tui_h - 1) - actual_h
+                                else
+                                    0;
+                                const y_start = start_row - scroll_amount;
+                                click_row = click_row_raw - y_start + 1;
+                            }
+                        }
 
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button

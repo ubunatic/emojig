@@ -134,3 +134,27 @@ math. Use `\x1b[B\r` (cursor down + carriage return) instead.
 
 Ensure rendered lines never exceed the terminal width. Overflow causes the terminal
 to wrap onto a new line, creating an implicit scroll and corrupting the layout.
+
+### SGR Mouse Coordinates & Viewport Warping
+
+Terminal mouse tracking (SGR standard `\x1b[<...M`) reports mouse coordinates relative to the absolute top row of the visible terminal viewport, not relative to the TUI's internal drawing region. 
+
+* **The GUI / Full-screen Case:** If the TUI runs in a dedicated terminal window sized exactly to the TUI height (`ws.row == final_h`), the viewport and TUI align perfectly (`y_start = 1`).
+* **The Inline TUI / Scrollback Case:** If the TUI runs inline inside a larger terminal (e.g. 50 rows high), it is rendered at the current cursor position. If drawing the TUI causes the terminal viewport to scroll, the relative start row of the TUI shifts upwards.
+
+#### Solution: Scroll-Compensated Cursor Query
+
+To achieve pixel-perfect mouse hover and click tracking, the TUI dynamically queries its own starting position and compensates for scrolling:
+
+1. **Startup Position Query:** Immediately after entering raw mode, query the absolute cursor row position by writing `\x1b[6n` (Cursor Position Report) and reading the response (`\x1b[r;cR`), yielding `start_row`.
+2. **Dynamic Scroll Calculation:** During mouse events, query the active viewport row height (`actual_h` via `ioctl(TIOCGWINSZ)`).
+3. **Viewport Shift Mapping:** Compute the scrollback shift and the TUI-relative mouse row:
+   ```zig
+   const scroll_amount = if (start_row + tui_h - 1 > actual_h)
+       (start_row + tui_h - 1) - actual_h
+   else
+       0;
+   const y_start = start_row - scroll_amount;
+   const click_row = click_row_raw - y_start + 1;
+   ```
+This provides robust, warp-free coordinate tracking under any scroll state, terminal height, or cursor start position.
