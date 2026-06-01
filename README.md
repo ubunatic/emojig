@@ -17,12 +17,10 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 > GUI mode is Wayland-only for now and requires `foot` and `wl-copy`.
 > Install with `brew`, `cargo`, `apt`, or a package manager of your choice.
 
-To download the latest static binary and install it to `~/.local/`:
+To download the latest static binary and install it:
 
 ```sh
-cd ~/Downloads
-curl -o emojig -L "https://codeberg.org/ubunatic/emojig/releases/download/latest/emojig-$(uname -m)-linux-musl"
-chmod +x emojig && ./emojig --install
+curl -fsSL https://ubunatic.com/emojig/install.sh | sh
 ```
 
 `--install` copies the binary to `~/.local/bin/emojig` and writes shell integration
