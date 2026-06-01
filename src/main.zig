@@ -886,7 +886,9 @@ pub fn main(init: std.process.Init) !void {
             if (!is_first_render) {
                 var move_buf: [48]u8 = undefined;
                 if (resized) {
-                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{1 + row_off});
+                    const diff = @as(i32, @intCast(last_h)) - @as(i32, @intCast(current_h));
+                    const d = @max(0, @as(i32, @intCast(1 + row_off)) + diff);
+                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{d});
                     try writeAll(stdout_fd, move_seq);
                 } else {
                     const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
