@@ -39,3 +39,19 @@ release-publish: release-build ⚙️
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
 	fj release create "emojig v$(VERSION)" --tag "v$(VERSION)" --draft \
 	  $(addprefix --attach ,$(wildcard dist/*.tar.gz dist/*.deb dist/*.rpm dist/SHA256SUMS dist/SHA256SUMS.minisig dist/emojig-x86_64-linux-musl dist/emojig-aarch64-linux-musl))
+
+bump-patch: ⚙️  # bump patch version in build.zig.zon
+	@go run scripts/bump_version.go patch
+
+bump-minor: ⚙️  # bump minor version in build.zig.zon
+	@go run scripts/bump_version.go minor
+
+bump-major: ⚙️  # bump major version in build.zig.zon
+	@go run scripts/bump_version.go major
+
+tag: ⚙️  # commit version/changelog changes and tag the release
+	git commit -am "release: v$(VERSION)"
+	git tag -a v$(VERSION) -m "emojig v$(VERSION)"
+	@echo "✅ Committed and tagged v$(VERSION)"
+
+

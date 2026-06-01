@@ -45,22 +45,24 @@ zig fmt --check src/
 
 ### 2. Bump version and write changelog
 
-Edit `build.zig.zon`:
-```
-.version = "0.X.Y",
-```
-
-Add an entry to `CHANGELOG.md` (create it if it doesn't exist yet).
-
-Commit:
+Run one of the automated version bump Makefile targets to update `build.zig.zon` with the correct Semantic Versioning increment:
 ```sh
-git commit -am "release: v0.X.Y"
+make bump-patch     # e.g., 0.1.1 -> 0.1.2
+make bump-minor     # e.g., 0.1.1 -> 0.2.0
+make bump-major     # e.g., 0.1.1 -> 1.0.0
 ```
 
-### 3. Tag and push
+Add an entry to `CHANGELOG.md` detailing the changes (create the file if it does not exist yet).
 
+### 3. Commit and tag
+
+Instead of manually typing version numbers in Git commands, run the automated `tag` target. It extracts the version from `build.zig.zon`, commits the version and changelog modifications, and tags the commit:
 ```sh
-git tag -a v0.X.Y -m "emojig v0.X.Y"
+make tag
+```
+
+Now push the commit and the tag to Codeberg:
+```sh
 git push origin main v0.X.Y
 ```
 
