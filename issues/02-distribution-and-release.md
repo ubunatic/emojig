@@ -68,11 +68,12 @@ Cross-compiling macOS targets from Linux is not viable without Apple's SDK.
 
 | Tier | Channels |
 |------|----------|
-| **P0** | Release tarballs + `SHA256SUMS`, `curl \| sh` |
-| **P1** | Homebrew tap (`brew`), Nix flake |
+| **P0** | Release tarballs + `SHA256SUMS`, `install.sh` (`curl \| sh` installer script) |
+| **P1** | Homebrew tap (`brew`) |
 | **P2** | `.deb` / `.rpm` packages |
+| **Nix** | *Dropped / Closed by Design to focus resources on brew and install.sh* |
 | **AUR** | *Dropped / Closed by Design to avoid PKGBUILD maintenance overhead* |
-| **Go** | *Native Go install is skipped (app is Zig-native); Go is used for in-tree build tooling scripts* |
+| **Go** | *Dropped / Closed by Design to avoid Go runtime/compilation wrapper overhead* |
 
 ---
 
@@ -368,11 +369,9 @@ Served at `ubunatic.com/emojig/install.sh` once the vanity domain is set up.
 
 AUR packaging (`emojig` / `emojig-bin`) has been dropped to avoid PKGBUILD maintenance overhead, shifting focus fully to Homebrew (`brew`) and the direct `curl | sh` static installer.
 
-### 6.3 Nix flake (P1)
+### 6.3 Nix flake (Closed / Dropped by Design)
 
-`flake.nix` exposing `packages.<system>.default` and `apps.default`. Use `zig` from
-nixpkgs (or `zig-overlay` pinned to 0.16.0). Wrap binary with `makeWrapper` to ensure
-`wl-clipboard`/`xclip` are on `PATH`. Enables `nix run codeberg:ubunatic/emojig`.
+Nix flake packaging has been dropped to focus development and release resources entirely on the Homebrew (`brew`) and `install.sh` distribution paths.
 
 ### 6.4 `.deb` / `.rpm` (P2)
 
