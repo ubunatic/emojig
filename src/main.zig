@@ -629,6 +629,17 @@ pub fn main(init: std.process.Init) !void {
         break :blk true; // enabled by default
     };
 
+    // Signed bias for the hide threshold.  The TUI hides when tui_top <= hide_bias.
+    // Default 0: hide exactly when the TUI top would enter scrollback (tui_top <= 0).
+    // Positive (e.g. 2): hide earlier, keeping N rows of margin before scrollback.
+    // Negative (e.g. -1): hide later, tolerating N rows already in scrollback.
+    const final_hide_bias: i32 = blk: {
+        if (init.environ_map.get("EMOJIG_HIDE_BIAS")) |env_val| {
+            break :blk std.fmt.parseInt(i32, env_val, 10) catch 0;
+        }
+        break :blk 0;
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
@@ -948,7 +959,7 @@ pub fn main(init: std.process.Init) !void {
 
                         // Decide hide/show based on whether the TUI top is still on-screen.
                         // tui_top <= 0 means the TUI header row would be in scrollback.
-                        const should_hide = final_hide_overflow and (tui_top <= 0);
+                        const should_hide = final_hide_overflow and (tui_top <= final_hide_bias);
 
                         if (should_hide and !is_tui_hidden) {
                             // Entering hidden mode: erase everything visible from our TUI and
