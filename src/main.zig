@@ -699,6 +699,10 @@ pub fn main(init: std.process.Init) !void {
         break :blk term != null and std.mem.eql(u8, term.?, "linux");
     };
 
+    const is_ssh = init.environ_map.get("SSH_CONNECTION") != null or init.environ_map.get("SSH_CLIENT") != null or init.environ_map.get("SSH_TTY") != null;
+
+    const force_stdout = is_ssh or is_linux_vt or (std.c.isatty(std.posix.STDOUT_FILENO) == 0);
+
     if (is_linux_vt and !opt_gui and !opt_tui) {
         try writeAll(std.posix.STDERR_FILENO,
             \\emojig: Linux virtual console detected (TERM=linux).
@@ -777,7 +781,8 @@ pub fn main(init: std.process.Init) !void {
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;
 
-    mru.load();
+    var result_emoji: ?[]const u8 = null;
+    var result_safe_buf: [64]u8 = undefined;
 
     const tty_flags = std.posix.O{ .ACCMODE = .RDWR };
     const tty_fd = try std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0);
@@ -786,211 +791,217 @@ pub fn main(init: std.process.Init) !void {
     const stdout_fd = tty_fd;
     const stdin_fd = tty_fd;
 
-    // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
-    try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+    {
+        mru.load();
 
-    const orig_termios = try std.posix.tcgetattr(stdin_fd);
-    global_orig_termios = orig_termios;
+        // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+        try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
 
-    var act = std.posix.Sigaction{
-        .handler = .{ .handler = sigHandler },
-        .mask = std.mem.zeroes(std.posix.sigset_t),
-        .flags = 0,
-    };
-    std.posix.sigaction(std.posix.SIG.INT, &act, null);
-    std.posix.sigaction(std.posix.SIG.TERM, &act, null);
+        const orig_termios = try std.posix.tcgetattr(stdin_fd);
+        global_orig_termios = orig_termios;
 
-    var raw = orig_termios;
-    raw.iflag.IGNBRK = false;
-    raw.iflag.BRKINT = false;
-    raw.iflag.PARMRK = false;
-    raw.iflag.ISTRIP = false;
-    raw.iflag.INLCR = false;
-    raw.iflag.IGNCR = false;
-    raw.iflag.ICRNL = false;
-    raw.iflag.IXON = false;
-    raw.oflag.OPOST = false;
-    raw.lflag.ECHO = false;
-    raw.lflag.ECHONL = false;
-    raw.lflag.ICANON = false;
-    raw.lflag.ISIG = false;
-    raw.lflag.IEXTEN = false;
-    raw.cflag.CSIZE = .CS8;
-    raw.cflag.PARENB = false;
-    const system = std.posix.system;
-    raw.cc[@intFromEnum(system.V.MIN)] = 1;
-    raw.cc[@intFromEnum(system.V.TIME)] = 0;
-    try std.posix.tcsetattr(stdin_fd, .NOW, raw);
+        var act = std.posix.Sigaction{
+            .handler = .{ .handler = sigHandler },
+            .mask = std.mem.zeroes(std.posix.sigset_t),
+            .flags = 0,
+        };
+        std.posix.sigaction(std.posix.SIG.INT, &act, null);
+        std.posix.sigaction(std.posix.SIG.TERM, &act, null);
 
-    var system_theme: Theme = if (theme == .system)
-        detectSystemTheme(stdin_fd, stdout_fd, raw)
-    else
-        theme;
+        var raw = orig_termios;
+        raw.iflag.IGNBRK = false;
+        raw.iflag.BRKINT = false;
+        raw.iflag.PARMRK = false;
+        raw.iflag.ISTRIP = false;
+        raw.iflag.INLCR = false;
+        raw.iflag.IGNCR = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.IXON = false;
+        raw.oflag.OPOST = false;
+        raw.lflag.ECHO = false;
+        raw.lflag.ECHONL = false;
+        raw.lflag.ICANON = false;
+        raw.lflag.ISIG = false;
+        raw.lflag.IEXTEN = false;
+        raw.cflag.CSIZE = .CS8;
+        raw.cflag.PARENB = false;
+        const system = std.posix.system;
+        raw.cc[@intFromEnum(system.V.MIN)] = 1;
+        raw.cc[@intFromEnum(system.V.TIME)] = 0;
+        try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
-    const content_rows: usize = 8;
-    const final_h = if (show_border) content_rows + 2 else content_rows;
-    var is_first_render = true;
+        var system_theme: Theme = if (theme == .system)
+            detectSystemTheme(stdin_fd, stdout_fd, raw)
+        else
+            theme;
 
-    defer {
-        std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
-        if (!is_first_render) {
-            // Move cursor to top of our TUI region from the search bar line where we are
-            var move_buf: [32]u8 = undefined;
-            const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off}) catch "";
-            _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
+        const content_rows: usize = 8;
+        const final_h = if (show_border) content_rows + 2 else content_rows;
+        var is_first_render = true;
 
-            // Clear each of the final_h lines
-            var k: usize = 0;
-            while (k < final_h) : (k += 1) {
-                const clear_seq = "\x1b[2K";
-                _ = std.posix.system.write(stdout_fd, clear_seq.ptr, clear_seq.len);
-                if (k < final_h - 1) {
-                    const down_seq = "\x1b[B\r";
-                    _ = std.posix.system.write(stdout_fd, down_seq.ptr, down_seq.len);
+        defer {
+            std.posix.tcsetattr(stdin_fd, .NOW, orig_termios) catch {};
+            if (!is_first_render) {
+                // Move cursor to top of our TUI region from the search bar line where we are
+                var move_buf: [32]u8 = undefined;
+                const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off}) catch "";
+                _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
+
+                // Clear each of the final_h lines
+                var k: usize = 0;
+                while (k < final_h) : (k += 1) {
+                    const clear_seq = "\x1b[2K";
+                    _ = std.posix.system.write(stdout_fd, clear_seq.ptr, clear_seq.len);
+                    if (k < final_h - 1) {
+                        const down_seq = "\x1b[B\r";
+                        _ = std.posix.system.write(stdout_fd, down_seq.ptr, down_seq.len);
+                    }
+                }
+                // Move cursor back up to the top start position so the new prompt is printed there
+                if (final_h > 1) {
+                    const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{final_h - 1}) catch "";
+                    _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
                 }
             }
-            // Move cursor back up to the top start position so the new prompt is printed there
-            if (final_h > 1) {
-                const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{final_h - 1}) catch "";
-                _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
+            writeAll(stdout_fd, RESTORE) catch {};
+            logMemoryUsage();
+        }
+
+        applyTerminalColors(stdout_fd, theme, system_theme);
+
+        var query_buf: [64]u8 = undefined;
+        var query_len: usize = 0;
+
+        const cols = 6;
+        const rows = 4;
+        const total_cells = cols * rows;
+
+        var selected_idx: ?usize = null;
+        var top_matches: [total_cells]emojig.Match = undefined;
+        var top_count: usize = 0;
+
+        var should_copy_and_exit = false;
+        var theme_hovered = false;
+
+        emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+
+        var read_buf: [64]u8 = undefined;
+        const spaces = " " ** 512;
+        const content_width = term_width;
+
+        while (true) {
+            const palette = effectivePalette(theme, system_theme);
+
+            // ----------------------------------------------------------------
+            // Render
+            // ----------------------------------------------------------------
+            try writeAll(stdout_fd, "\x1b[?25l");
+            if (!is_first_render) {
+                var move_buf: [32]u8 = undefined;
+                const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
+                try writeAll(stdout_fd, move_seq);
+            } else {
+                is_first_render = false;
             }
-        }
-        writeAll(stdout_fd, RESTORE) catch {};
-        logMemoryUsage();
-    }
 
-    applyTerminalColors(stdout_fd, theme, system_theme);
+            var line_buf: [1024]u8 = undefined;
 
-    var query_buf: [64]u8 = undefined;
-    var query_len: usize = 0;
+            // Optional top border row.
+            if (show_border) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.border_bg);
+                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[0m \r\n");
+            }
 
-    const cols = 6;
-    const rows = 4;
-    const total_cells = cols * rows;
-
-    var selected_idx: ?usize = null;
-    var top_matches: [total_cells]emojig.Match = undefined;
-    var top_count: usize = 0;
-
-    var should_copy_and_exit = false;
-    var result_emoji: ?[]const u8 = null;
-    var result_safe_buf: [64]u8 = undefined;
-    var theme_hovered = false;
-
-    emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
-
-    var read_buf: [64]u8 = undefined;
-    const spaces = " " ** 512;
-    const content_width = term_width;
-
-    while (true) {
-        const palette = effectivePalette(theme, system_theme);
-
-        // ----------------------------------------------------------------
-        // Render
-        // ----------------------------------------------------------------
-        try writeAll(stdout_fd, "\x1b[?25l");
-        if (!is_first_render) {
-            var move_buf: [32]u8 = undefined;
-            const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
-            try writeAll(stdout_fd, move_seq);
-        } else {
-            is_first_render = false;
-        }
-
-        var line_buf: [1024]u8 = undefined;
-
-        // Optional top border row.
-        if (show_border) {
+            // Blank top padding row.
             try writeAll(stdout_fd, " ");
-            try writeAll(stdout_fd, palette.border_bg);
+            try writeAll(stdout_fd, palette.bg);
+            try writeAll(stdout_fd, palette.fg);
             try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
             try writeAll(stdout_fd, "\x1b[0m \r\n");
-        }
 
-        // Blank top padding row.
-        try writeAll(stdout_fd, " ");
-        try writeAll(stdout_fd, palette.bg);
-        try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-        try writeAll(stdout_fd, "\x1b[0m \r\n");
+            // Search bar — entire row uses search_bg for a clean "menu row" look.
+            const prefix_cols = 3;
+            const icon_cols = 4;
+            const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
+            const display_query_len = @min(query_len, max_query_cols);
+            const pad_len = if (content_width > prefix_cols + icon_cols)
+                content_width - prefix_cols - icon_cols - display_query_len
+            else
+                0;
 
-        // Search bar — entire row uses search_bg for a clean "menu row" look.
-        const prefix_cols = 3;
-        const icon_cols = 4;
-        const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
-        const display_query_len = @min(query_len, max_query_cols);
-        const pad_len = if (content_width > prefix_cols + icon_cols)
-            content_width - prefix_cols - icon_cols - display_query_len
-        else
-            0;
+            try writeAll(stdout_fd, " ");
+            try writeAll(stdout_fd, palette.search_bg);
+            try writeAll(stdout_fd, "🔍 ");
+            try writeAll(stdout_fd, query_buf[0..display_query_len]);
+            try writeAll(stdout_fd, spaces[0..pad_len]);
+            const icon_hl = if (theme_hovered) palette.selection_bg else "";
+            const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
+            try writeAll(stdout_fd, icon_buf);
+            try writeAll(stdout_fd, "\x1b[0m \r\n");
 
-        try writeAll(stdout_fd, " ");
-        try writeAll(stdout_fd, palette.search_bg);
-        try writeAll(stdout_fd, "🔍 ");
-        try writeAll(stdout_fd, query_buf[0..display_query_len]);
-        try writeAll(stdout_fd, spaces[0..pad_len]);
-        const icon_hl = if (theme_hovered) palette.selection_bg else "";
-        const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
-        try writeAll(stdout_fd, icon_buf);
-        try writeAll(stdout_fd, "\x1b[0m \r\n");
+            // Blank spacer row.
+            try writeAll(stdout_fd, " ");
+            try writeAll(stdout_fd, palette.bg);
+            try writeAll(stdout_fd, palette.fg);
+            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+            try writeAll(stdout_fd, "\x1b[0m \r\n");
 
-        // Blank spacer row.
-        try writeAll(stdout_fd, " ");
-        try writeAll(stdout_fd, palette.bg);
-        try writeAll(stdout_fd, palette.fg);
-        try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-        try writeAll(stdout_fd, "\x1b[0m \r\n");
+            // Grid rows.
+            var r: usize = 0;
+            while (r < rows) : (r += 1) {
+                var cell_buffers: [6][64]u8 = undefined;
+                var cell_strings: [6][]const u8 = undefined;
 
-        // Grid rows.
-        var r: usize = 0;
-        while (r < rows) : (r += 1) {
-            var cell_buffers: [6][64]u8 = undefined;
-            var cell_strings: [6][]const u8 = undefined;
-
-            var c: usize = 0;
-            while (c < cols) : (c += 1) {
-                const idx = r * cols + c;
-                if (idx < top_count) {
-                    const m = top_matches[idx];
-                    const entry = emojig.EmojiDb.getEntry(m.index);
-                    var strip_buf: [32]u8 = undefined;
-                    const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                    if (selected_idx) |sel| {
-                        if (idx == sel) {
-                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                var c: usize = 0;
+                while (c < cols) : (c += 1) {
+                    const idx = r * cols + c;
+                    if (idx < top_count) {
+                        const m = top_matches[idx];
+                        const entry = emojig.EmojiDb.getEntry(m.index);
+                        var strip_buf: [32]u8 = undefined;
+                        const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
+                        if (selected_idx) |sel| {
+                            if (idx == sel) {
+                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}{s}\x1b[0m{s}{s} ", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                            } else {
+                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                            }
                         } else {
                             cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                         }
                     } else {
-                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                        cell_strings[c] = "    ";
                     }
-                } else {
-                    cell_strings[c] = "    ";
                 }
+
+                const grid_rem = if (content_width > 24) content_width - 24 else 0;
+                const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..grid_rem] });
+                try writeAll(stdout_fd, grid_line);
             }
 
-            const grid_rem = if (content_width > 24) content_width - 24 else 0;
-            const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..grid_rem] });
-            try writeAll(stdout_fd, grid_line);
-        }
-
-        // Description row.
-        const desc_suffix = if (show_border) " \r\n" else " ";
-        const max_len = if (content_width > 1) content_width - 1 else 0;
-        if (selected_idx) |sel| {
-            if (top_count > 0 and sel < top_count) {
-                const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                if (name.len > max_len and max_len >= 3) {
-                    const display_name = name[0 .. max_len - 3];
-                    const printed_cols = 1 + display_name.len + 3;
-                    const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
-                    try writeAll(stdout_fd, name_line);
+            // Description row.
+            const desc_suffix = if (show_border) " \r\n" else " ";
+            const max_len = if (content_width > 1) content_width - 1 else 0;
+            if (selected_idx) |sel| {
+                if (top_count > 0 and sel < top_count) {
+                    const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
+                    if (name.len > max_len and max_len >= 3) {
+                        const display_name = name[0 .. max_len - 3];
+                        const printed_cols = 1 + display_name.len + 3;
+                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..pad_len_desc], desc_suffix });
+                        try writeAll(stdout_fd, name_line);
+                    } else {
+                        const printed_cols = 1 + name.len;
+                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
+                        try writeAll(stdout_fd, name_line);
+                    }
                 } else {
-                    const printed_cols = 1 + name.len;
-                    const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..pad_len_desc], desc_suffix });
+                    const pad_len_desc = content_width;
+                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
             } else {
@@ -998,262 +1009,269 @@ pub fn main(init: std.process.Init) !void {
                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
                 try writeAll(stdout_fd, name_line);
             }
-        } else {
-            const pad_len_desc = content_width;
-            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..pad_len_desc], desc_suffix });
-            try writeAll(stdout_fd, name_line);
-        }
 
-        // Optional bottom border row.
-        if (show_border) {
-            try writeAll(stdout_fd, " ");
-            try writeAll(stdout_fd, palette.border_bg);
-            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-            try writeAll(stdout_fd, "\x1b[0m ");
-        }
+            // Optional bottom border row.
+            if (show_border) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.border_bg);
+                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[0m ");
+            }
 
-        // Reposition cursor to search bar input (relative up, horizontal absolute column).
-        var cursor_buf: [48]u8 = undefined;
-        const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
-        const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
-        try writeAll(stdout_fd, cursor_seq);
+            // Reposition cursor to search bar input (relative up, horizontal absolute column).
+            var cursor_buf: [48]u8 = undefined;
+            const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
+            const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
+            try writeAll(stdout_fd, cursor_seq);
 
-        // ----------------------------------------------------------------
-        // Copy & exit deferred action (rendered one frame first)
-        // ----------------------------------------------------------------
-        if (should_copy_and_exit) {
-            const sel_idx = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
-            if (sel_idx) |sel| {
-                if (sel < top_count) {
-                    const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
-                    mru.save(selected.emoji);
-                    if (std.c.isatty(std.posix.STDOUT_FILENO) != 0) {
-                        // Standalone: stdout is the terminal — copy to clipboard only.
-                        copyToClipboard(init, selected.emoji, final_safe) catch {};
-                    } else {
-                        // Piped/captured: print to stdout for shell widget, also try clipboard.
-                        result_emoji = if (final_safe)
-                            emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
-                        else
-                            selected.emoji;
-                        copyToClipboard(init, selected.emoji, final_safe) catch {};
+            // ----------------------------------------------------------------
+            // Copy & exit deferred action (rendered one frame first)
+            // ----------------------------------------------------------------
+            if (should_copy_and_exit) {
+                const sel_idx = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
+                if (sel_idx) |sel| {
+                    if (sel < top_count) {
+                        const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                        mru.save(selected.emoji);
+                        if (!force_stdout) {
+                            // Standalone: stdout is the terminal — copy to clipboard only.
+                            copyToClipboard(init, selected.emoji, final_safe) catch {
+                                // If copy fails (e.g. over SSH/VT, or without clipboard tools), fall back to printing to stdout
+                                result_emoji = if (final_safe)
+                                    emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
+                                else
+                                    selected.emoji;
+                            };
+                        } else {
+                            // SSH, VT, or piped/captured: print to stdout, also try clipboard in background.
+                            result_emoji = if (final_safe)
+                                emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
+                            else
+                                selected.emoji;
+                            copyToClipboard(init, selected.emoji, final_safe) catch {};
+                        }
                     }
                 }
-            }
-            break;
-        }
-
-        // ----------------------------------------------------------------
-        // Read input
-        // ----------------------------------------------------------------
-        var n = try std.posix.read(stdin_fd, &read_buf);
-        if (n == 0) break;
-
-        // If we got a lone ESC, wait briefly for the rest of an escape sequence.
-        // Arrow keys send ESC [ A/B/C/D; in some contexts (e.g. ZLE widgets) the
-        // bytes can arrive in separate reads.
-        if (n == 1 and read_buf[0] == 27) {
-            var timed = raw;
-            timed.cc[@intFromEnum(system.V.MIN)] = 0;
-            timed.cc[@intFromEnum(system.V.TIME)] = 1; // 100 ms
-            std.posix.tcsetattr(stdin_fd, .NOW, timed) catch {};
-            const n_rest = std.posix.read(stdin_fd, read_buf[1..]) catch 0;
-            std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
-            n += n_rest;
-        }
-
-        const bytes = read_buf[0..n];
-
-        if (bytes[0] == 27) {
-            if (n == 1) {
-                // ESC key
                 break;
-            } else if (n > 2 and bytes[1] == '[') {
-                // Alt+F4: \x1b[1;3S (XTerm mod=3) or \x1b[1;9S (kitty mod=9)
-                if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
-                    (bytes[4] == '3' or bytes[4] == '9'))
-                {
+            }
+
+            // ----------------------------------------------------------------
+            // Read input
+            // ----------------------------------------------------------------
+            var n = try std.posix.read(stdin_fd, &read_buf);
+            if (n == 0) break;
+
+            // If we got a lone ESC, wait briefly for the rest of an escape sequence.
+            // Arrow keys send ESC [ A/B/C/D; in some contexts (e.g. ZLE widgets) the
+            // bytes can arrive in separate reads.
+            if (n == 1 and read_buf[0] == 27) {
+                var timed = raw;
+                timed.cc[@intFromEnum(system.V.MIN)] = 0;
+                timed.cc[@intFromEnum(system.V.TIME)] = 1; // 100 ms
+                std.posix.tcsetattr(stdin_fd, .NOW, timed) catch {};
+                const n_rest = std.posix.read(stdin_fd, read_buf[1..]) catch 0;
+                std.posix.tcsetattr(stdin_fd, .NOW, raw) catch {};
+                n += n_rest;
+            }
+
+            const bytes = read_buf[0..n];
+
+            if (bytes[0] == 27) {
+                if (n == 1) {
+                    // ESC key
                     break;
-                } else if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
-                    // Arrow keys — normal cursor key mode (\x1b[A/B/C/D)
-                    if (selected_idx == null) {
-                        if (top_count > 0) selected_idx = 0;
-                        continue;
-                    }
-                    var sel = selected_idx.?;
-                    if (bytes[2] == 'A') {
-                        if (top_count > 0) {
-                            if (sel >= cols) {
-                                sel -= cols;
-                            } else {
-                                const target = sel + (rows - 1) * cols;
-                                sel = if (target < top_count) target else top_count - 1;
+                } else if (n > 2 and bytes[1] == '[') {
+                    // Alt+F4: \x1b[1;3S (XTerm mod=3) or \x1b[1;9S (kitty mod=9)
+                    if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
+                        (bytes[4] == '3' or bytes[4] == '9'))
+                    {
+                        break;
+                    } else if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
+                        // Arrow keys — normal cursor key mode (\x1b[A/B/C/D)
+                        if (selected_idx == null) {
+                            if (top_count > 0) selected_idx = 0;
+                            continue;
+                        }
+                        var sel = selected_idx.?;
+                        if (bytes[2] == 'A') {
+                            if (top_count > 0) {
+                                if (sel >= cols) {
+                                    sel -= cols;
+                                } else {
+                                    const target = sel + (rows - 1) * cols;
+                                    sel = if (target < top_count) target else top_count - 1;
+                                }
+                            }
+                        } else if (bytes[2] == 'B') {
+                            if (top_count > 0) {
+                                const target = sel + cols;
+                                sel = if (target < top_count) target else sel % cols;
+                            }
+                        } else if (bytes[2] == 'C') {
+                            if (top_count > 0) {
+                                sel = if (sel < top_count - 1) sel + 1 else 0;
+                            }
+                        } else if (bytes[2] == 'D') {
+                            if (top_count > 0) {
+                                sel = if (sel > 0) sel - 1 else top_count - 1;
                             }
                         }
-                    } else if (bytes[2] == 'B') {
-                        if (top_count > 0) {
-                            const target = sel + cols;
-                            sel = if (target < top_count) target else sel % cols;
-                        }
-                    } else if (bytes[2] == 'C') {
-                        if (top_count > 0) {
-                            sel = if (sel < top_count - 1) sel + 1 else 0;
-                        }
-                    } else if (bytes[2] == 'D') {
-                        if (top_count > 0) {
-                            sel = if (sel > 0) sel - 1 else top_count - 1;
-                        }
-                    }
-                    selected_idx = sel;
-                } else if (bytes[2] == '<') {
-                    // SGR Mouse event — find first terminator to handle batched events.
-                    const sgr_data = bytes[3..n];
-                    var term_pos: usize = 0;
-                    var term_char: u8 = 0;
-                    while (term_pos < sgr_data.len) : (term_pos += 1) {
-                        if (sgr_data[term_pos] == 'M' or sgr_data[term_pos] == 'm') {
-                            term_char = sgr_data[term_pos];
-                            break;
-                        }
-                    }
-                    if (term_char == 0) continue;
-
-                    var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
-                    const button_str = it.next() orelse continue;
-                    const col_str = it.next() orelse continue;
-                    const row_str = it.next() orelse continue;
-
-                    const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
-                    const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
-                    const click_row = std.fmt.parseInt(i32, row_str, 10) catch continue;
-                    const local_col = click_col - 1;
-
-                    const is_motion = (button & 32) != 0;
-                    const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
-
-                    if (is_motion and term_char == 'M') {
-                        // Theme button hover.
-                        const search_row_m: i32 = 2 + row_off;
-                        theme_hovered = (click_row == search_row_m and
-                            local_col >= @as(i32, @intCast(content_width)) - 4);
-
-                        // Grid hover: update selection to cell under cursor (no copy).
-                        // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
-                        const grid_first_row: i32 = 4 + row_off;
-                        const grid_last_row: i32 = 7 + row_off;
-                        if (click_row >= grid_first_row and click_row <= grid_last_row) {
-                            const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                            if (grid_col < cols) {
-                                const hovered = grid_row * cols + grid_col;
-                                if (hovered < top_count) selected_idx = hovered;
+                        selected_idx = sel;
+                    } else if (bytes[2] == '<') {
+                        // SGR Mouse event — find first terminator to handle batched events.
+                        const sgr_data = bytes[3..n];
+                        var term_pos: usize = 0;
+                        var term_char: u8 = 0;
+                        while (term_pos < sgr_data.len) : (term_pos += 1) {
+                            if (sgr_data[term_pos] == 'M' or sgr_data[term_pos] == 'm') {
+                                term_char = sgr_data[term_pos];
+                                break;
                             }
                         }
-                    } else if (!is_motion and btn_id == 0 and term_char == 'M') {
-                        // Left click press.
-                        const search_row: i32 = 2 + row_off;
-                        const grid_first_row: i32 = 4 + row_off;
-                        const grid_last_row: i32 = 7 + row_off;
+                        if (term_char == 0) continue;
 
-                        if (click_row == search_row and
-                            local_col >= @as(i32, @intCast(content_width)) - 4)
-                        {
-                            // Theme toggle icon — cycle and persist to config.
-                            theme = switch (theme) {
-                                .dark => .light,
-                                .light => .system,
-                                .system => .dark,
-                            };
-                            saveThemeToConfig(theme);
-                            if (theme == .system)
-                                system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                            applyTerminalColors(stdout_fd, theme, system_theme);
-                        } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
-                            const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                            if (grid_col < cols) {
-                                const clicked_idx = grid_row * cols + grid_col;
-                                if (clicked_idx < top_count) {
-                                    selected_idx = clicked_idx;
-                                    should_copy_and_exit = true;
+                        var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
+                        const button_str = it.next() orelse continue;
+                        const col_str = it.next() orelse continue;
+                        const row_str = it.next() orelse continue;
+
+                        const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
+                        const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
+                        const click_row = std.fmt.parseInt(i32, row_str, 10) catch continue;
+                        const local_col = click_col - 1;
+
+                        const is_motion = (button & 32) != 0;
+                        const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
+
+                        if (is_motion and term_char == 'M') {
+                            // Theme button hover.
+                            const search_row_m: i32 = 2 + row_off;
+                            theme_hovered = (click_row == search_row_m and
+                                local_col >= @as(i32, @intCast(content_width)) - 4);
+
+                            // Grid hover: update selection to cell under cursor (no copy).
+                            // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
+                            const grid_first_row: i32 = 4 + row_off;
+                            const grid_last_row: i32 = 7 + row_off;
+                            if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                                const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                if (grid_col < cols) {
+                                    const hovered = grid_row * cols + grid_col;
+                                    if (hovered < top_count) selected_idx = hovered;
+                                }
+                            }
+                        } else if (!is_motion and btn_id == 0 and term_char == 'M') {
+                            // Left click press.
+                            const search_row: i32 = 2 + row_off;
+                            const grid_first_row: i32 = 4 + row_off;
+                            const grid_last_row: i32 = 7 + row_off;
+
+                            if (click_row == search_row and
+                                local_col >= @as(i32, @intCast(content_width)) - 4)
+                            {
+                                // Theme toggle icon — cycle and persist to config.
+                                theme = switch (theme) {
+                                    .dark => .light,
+                                    .light => .system,
+                                    .system => .dark,
+                                };
+                                saveThemeToConfig(theme);
+                                if (theme == .system)
+                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                applyTerminalColors(stdout_fd, theme, system_theme);
+                            } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                                const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                if (grid_col < cols) {
+                                    const clicked_idx = grid_row * cols + grid_col;
+                                    if (clicked_idx < top_count) {
+                                        selected_idx = clicked_idx;
+                                        should_copy_and_exit = true;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            } else if (n > 2 and bytes[1] == 'O') {
-                // Arrow keys — application cursor key mode (\x1bOA/B/C/D)
-                // ZLE keeps the terminal in smkx (application mode) during widget execution.
-                if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
-                    if (selected_idx == null) {
-                        if (top_count > 0) selected_idx = 0;
-                        continue;
-                    }
-                    var sel = selected_idx.?;
-                    if (bytes[2] == 'A') {
-                        if (top_count > 0) {
-                            if (sel >= cols) {
-                                sel -= cols;
-                            } else {
-                                const target = sel + (rows - 1) * cols;
-                                sel = if (target < top_count) target else top_count - 1;
+                } else if (n > 2 and bytes[1] == 'O') {
+                    // Arrow keys — application cursor key mode (\x1bOA/B/C/D)
+                    // ZLE keeps the terminal in smkx (application mode) during widget execution.
+                    if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
+                        if (selected_idx == null) {
+                            if (top_count > 0) selected_idx = 0;
+                            continue;
+                        }
+                        var sel = selected_idx.?;
+                        if (bytes[2] == 'A') {
+                            if (top_count > 0) {
+                                if (sel >= cols) {
+                                    sel -= cols;
+                                } else {
+                                    const target = sel + (rows - 1) * cols;
+                                    sel = if (target < top_count) target else top_count - 1;
+                                }
+                            }
+                        } else if (bytes[2] == 'B') {
+                            if (top_count > 0) {
+                                const target = sel + cols;
+                                sel = if (target < top_count) target else sel % cols;
+                            }
+                        } else if (bytes[2] == 'C') {
+                            if (top_count > 0) {
+                                sel = if (sel < top_count - 1) sel + 1 else 0;
+                            }
+                        } else if (bytes[2] == 'D') {
+                            if (top_count > 0) {
+                                sel = if (sel > 0) sel - 1 else top_count - 1;
                             }
                         }
-                    } else if (bytes[2] == 'B') {
-                        if (top_count > 0) {
-                            const target = sel + cols;
-                            sel = if (target < top_count) target else sel % cols;
-                        }
-                    } else if (bytes[2] == 'C') {
-                        if (top_count > 0) {
-                            sel = if (sel < top_count - 1) sel + 1 else 0;
-                        }
-                    } else if (bytes[2] == 'D') {
-                        if (top_count > 0) {
-                            sel = if (sel > 0) sel - 1 else top_count - 1;
-                        }
+                        selected_idx = sel;
                     }
-                    selected_idx = sel;
                 }
-            }
-        } else if (bytes[0] == 127 or bytes[0] == 8) {
-            // Backspace
-            if (query_len > 0) {
-                query_len -= 1;
-                selected_idx = if (query_len == 0) null else 0;
-                emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
-            }
-        } else if (bytes[0] == 10 or bytes[0] == 13) {
-            // Enter
-            should_copy_and_exit = true;
-        } else if (bytes[0] == 9) {
-            // Tab: Cycle theme
-            theme = switch (theme) {
-                .dark => .light,
-                .light => .system,
-                .system => .dark,
-            };
-            saveThemeToConfig(theme);
-            if (theme == .system) {
-                system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-            }
-            applyTerminalColors(stdout_fd, theme, system_theme);
-        } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
-            // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
-            break;
-        } else {
-            for (bytes) |b| {
-                if (b >= 32 and b <= 126 and query_len < 63) {
-                    query_buf[query_len] = b;
-                    query_len += 1;
-                    selected_idx = 0;
+            } else if (bytes[0] == 127 or bytes[0] == 8) {
+                // Backspace
+                if (query_len > 0) {
+                    query_len -= 1;
+                    selected_idx = if (query_len == 0) null else 0;
                     emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                }
+            } else if (bytes[0] == 10 or bytes[0] == 13) {
+                // Enter
+                should_copy_and_exit = true;
+            } else if (bytes[0] == 9) {
+                // Tab: Cycle theme
+                theme = switch (theme) {
+                    .dark => .light,
+                    .light => .system,
+                    .system => .dark,
+                };
+                saveThemeToConfig(theme);
+                if (theme == .system) {
+                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                }
+                applyTerminalColors(stdout_fd, theme, system_theme);
+            } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
+                // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
+                break;
+            } else {
+                for (bytes) |b| {
+                    if (b >= 32 and b <= 126 and query_len < 63) {
+                        query_buf[query_len] = b;
+                        query_len += 1;
+                        selected_idx = 0;
+                        emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                    }
                 }
             }
         }
     }
 
     if (result_emoji) |emoji| {
+        const ts = std.posix.system.timespec{
+            .sec = 0,
+            .nsec = 20 * std.time.ns_per_ms,
+        };
+        _ = std.posix.system.nanosleep(&ts, null);
         writeAll(std.posix.STDOUT_FILENO, emoji) catch {};
         writeAll(std.posix.STDOUT_FILENO, "\n") catch {};
     }
@@ -1263,6 +1281,8 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     const io = init.io;
     var buf: [64]u8 = undefined;
     const clean_text = if (safe) emojig.stripVariationSelectors(text, &buf) else text;
+
+    var copied = false;
 
     if (std.process.spawn(io, .{
         .argv = &.{"wl-copy"},
@@ -1274,18 +1294,39 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
         try writeAll(child.stdin.?.handle, clean_text);
         child.stdin.?.close(io);
         child.stdin = null;
-        _ = child.wait(io) catch {};
-        return;
+        if (child.wait(io)) |term| {
+            switch (term) {
+                .exited => |code| {
+                    if (code == 0) copied = true;
+                },
+                else => {},
+            }
+        } else |_| {}
     } else |_| {}
 
-    var child = try std.process.spawn(io, .{
-        .argv = &.{ "xclip", "-selection", "clipboard" },
-        .stdin = .pipe,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    });
-    try writeAll(child.stdin.?.handle, clean_text);
-    child.stdin.?.close(io);
-    child.stdin = null;
-    _ = try child.wait(io);
+    if (!copied) {
+        if (std.process.spawn(io, .{
+            .argv = &.{ "xclip", "-selection", "clipboard" },
+            .stdin = .pipe,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        })) |spawned| {
+            var child = spawned;
+            try writeAll(child.stdin.?.handle, clean_text);
+            child.stdin.?.close(io);
+            child.stdin = null;
+            if (child.wait(io)) |term| {
+                switch (term) {
+                    .exited => |code| {
+                        if (code == 0) copied = true;
+                    },
+                    else => {},
+                }
+            } else |_| {}
+        } else |_| {}
+    }
+
+    if (!copied) {
+        return error.ClipboardFailed;
+    }
 }

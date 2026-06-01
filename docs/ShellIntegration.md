@@ -75,6 +75,20 @@ Ready-made snippets live in `shell/`. Each binds **Ctrl+E** to an emojig widget.
 ### zsh (`shell/emojig.zsh`)
 
 ```zsh
+emojig() {
+  if test $# -eq 0 && test -t 1
+  then
+    local emoji
+    emoji=$(command emojig)
+    if test -n "$emoji"
+    then
+      print -z -n "$emoji"
+    fi
+  else
+    command emojig "$@"
+  fi
+}
+
 _emojig_widget() {
   local emoji
   zle -I
@@ -83,12 +97,23 @@ _emojig_widget() {
   zle reset-prompt
 }
 zle -N _emojig_widget
-bindkey '^E' _emojig_widget
+bindkey -- "${EMOJIG_KEY:-^E}" _emojig_widget
 ```
 
 `zle -I` inhibits further ZLE input processing while emojig runs.
-`LBUFFER` is the text to the left of the cursor — appending to it inserts
-at the cursor position.
+`LBUFFER` is the text to the left of the cursor — appending to it inserts at the cursor position.
+
+#### Why the Zsh function wrapper is needed
+
+When `emojig` is run plain (standalone) over SSH or in a VT without any piped destination (e.g. `$ emojig`), printing the emoji directly to `stdout` is highly problematic:
+- **TTY/PTY Race Conditions**: Writing to standard output `STDOUT_FILENO` (fd `1`) and restoring the terminal attributes via `/dev/tty` happen almost simultaneously. Because direct socket writes bypass the kernel's controlling-tty lookups, the emoji write often wins the race against the terminal restoration sequence. The screen-clearing sequences (`\x1b[1A\r\x1b[2K...`) are then processed by the terminal *after* the emoji has already been printed, instantly erasing the emoji from the terminal screen.
+- **Prompt Pollution**: Even if the race is won, a direct print simply dumps the emoji on a line by itself above a new shell prompt. The user cannot edit it or execute it immediately; they have to manually select and copy it.
+
+By using the Zsh function wrapper:
+- It detects when `emojig` is executed plain and interactively in the terminal (`test $# -eq 0 && test -t 1`).
+- It captures the selected emoji via stdout pipe redirection (command substitution).
+- It uses the Zsh `print -z -n "$emoji"` built-in to push the selected emoji directly into the next prompt's input buffer.
+This makes a plain run of `emojig` behave cleanly and seamlessly, auto-inserting the selected emoji directly at your next active command prompt.
 
 ### bash (`shell/emojig.bash`)
 

@@ -15,6 +15,13 @@ install: ⚙️  # silent install for testing during development
 	@zig build shell-install >/dev/null && echo "✅ emojig installed" || \
 	 zig build shell-install  # fallback to non-silent on error
 
+SSH_ARCH ?= aarch64-linux-musl
+
+install-ssh: ⚙️  # install to remote host via SSH (usage: make install-ssh HOST=hostname [SSH_ARCH=aarch64-linux-musl])
+	zig build -Doptimize=ReleaseSmall -Dtarget=$(SSH_ARCH)
+	ssh $(HOST) 'mkdir -p ~/.local/bin'
+	scp zig-out/bin/emojig $(HOST):~/.local/bin/emojig
+
 install-verbose: ⚙️
 	zig build shell-install
 
