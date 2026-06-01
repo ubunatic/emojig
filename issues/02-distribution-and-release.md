@@ -69,11 +69,10 @@ Cross-compiling macOS targets from Linux is not viable without Apple's SDK.
 | Tier | Channels |
 |------|----------|
 | **P0** | Release tarballs + `SHA256SUMS`, `curl \| sh` |
-| **P1** | AUR (`emojig-bin` + `emojig`), Nix flake |
-| **P2** | `.deb` / `.rpm`, Homebrew tap |
-| **P3** | `go install` vanity meta (source browsing only, no shim) |
-
-PyPI: decided **no**. `go install` shim: decided **postponed**.
+| **P1** | Homebrew tap (`brew`), Nix flake |
+| **P2** | `.deb` / `.rpm` packages |
+| **AUR** | *Dropped / Closed by Design to avoid PKGBUILD maintenance overhead* |
+| **Go** | *Native Go install is skipped (app is Zig-native); Go is used for in-tree build tooling scripts* |
 
 ---
 
@@ -121,10 +120,8 @@ minisign -G   # prompts for password; writes minisign.pub + minisign.key
 **Homebrew tap repo**
 - Create `codeberg.org/ubunatic/homebrew-tap` (GoReleaser pushes formula updates here)
 
-**AUR (register names now, implement at P1)**
-- Create account at `aur.archlinux.org` if needed
-- Register `emojig` and `emojig-bin` with stub PKGBUILDs
-- Upload SSH public key to AUR account → CI secret `AUR_SSH_KEY`
+**AUR (Dropped / Closed by Design)**
+- Registration and packaging for AUR are skipped to focus on Homebrew (`brew`) and direct `curl | sh` installers.
 
 ---
 
@@ -367,15 +364,9 @@ changelog:
 
 Served at `ubunatic.com/emojig/install.sh` once the vanity domain is set up.
 
-### 6.2 AUR — two packages (P1)
+### 6.2 AUR — (Closed / Dropped by Design)
 
-- **`emojig-bin`** — downloads prebuilt tarball. No Zig needed. `sha256sums` from `SHA256SUMS`.
-  GoReleaser auto-updates.
-- **`emojig`** — builds from source tag with `zig build -Doptimize=ReleaseSmall`.
-  `makedepends=(zig)`, `depends=(wl-clipboard)`,
-  `optdepends=('xclip: X11 fallback' 'foot: recommended host')`.
-
-Both: `arch=(x86_64 aarch64)`, `license=(AGPL3)`, maintained `.SRCINFO`.
+AUR packaging (`emojig` / `emojig-bin`) has been dropped to avoid PKGBUILD maintenance overhead, shifting focus fully to Homebrew (`brew`) and the direct `curl | sh` static installer.
 
 ### 6.3 Nix flake (P1)
 

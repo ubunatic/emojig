@@ -19,7 +19,7 @@ TUI mode runs directly within an interactive shell session.
     *   A modern terminal emulator with UTF-8 support and unicode emoji display capabilities (e.g., Alacritty, Kitty, Foot, Konsole, GNOME Terminal).
     *   A terminal font that includes emoji glyphs (e.g., Noto Color Emoji, Twemoji).
 *   **Limitations**:
-    *   **Linux Virtual Console (`TERM=linux`)**: Does not support rendering complex emoji glyphs in the default kernel console font. Emojig exits with a diagnostic error recommending `fbterm` or a graphical terminal emulator.
+    *   **Linux Virtual Console (`TERM=linux`)**: Does not support rendering complex emoji glyphs in the default kernel console font. Emojig exits with a diagnostic error.
 *   **Compatibility**: Compatible with virtually all Linux distributions and desktop environments when executed inside a supported terminal window or via SSH.
 
 ### B. Graphical (GUI) Mode

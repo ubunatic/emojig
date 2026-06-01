@@ -1,7 +1,7 @@
 # Issue: `--install` copies binary to `~/.local/bin` even when running from system-wide paths
 
 > [!NOTE]
-> **Currency Status:** Current as of June 1, 2026. Analyzes the target directory copy behavior in `--install` for **Emojig v0.1.0**.
+> **Currency Status:** Resolved June 1, 2026. Fixed in `src/main.zig` via `isSystemPath()` auto-detection in `modeInstallLocal`, plus new `--install-shell`, `--install-system`, `--install-check` flags.
 
 ## Problem
 

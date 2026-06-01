@@ -131,3 +131,22 @@ All diagnostics, simulations, and unit tests must reside in-tree:
   * Do not implement local Unix domain sockets, TCP services, or background daemons.
   * State management (such as the MRU list and theme selection) must continue to be handled via direct, zero-allocation POSIX file writes to the disk at startup/shutdown, rather than caching state in a background service.
 
+---
+
+## 9. Execution & Launch Modes
+
+To ensure seamless operation across CLI environments, graphical desktops, and custom keybind triggers, `emojig` supports three distinct launch modes:
+
+1. **Auto-Mode (`emojig` without arguments)**:
+   * **In-place TUI**: If standard input is an interactive terminal (`isatty` / `can_use_tty` is true), the picker launches immediately within the active terminal session.
+   * **Floating GUI**: If executed from a non-interactive context (e.g., desktop shortcut or desktop environment hotkey where `can_use_tty` is false) and a Wayland/X11 session is active, it spawns `foot` with `--gui`.
+2. **Forced TUI Mode (`emojig --tui`)**:
+   * Bypasses environment checks and forces execution in-place in the current terminal. Fails with an exit code of `1` if standard input is not a terminal.
+3. **Forced GUI Mode (`emojig --gui`)**:
+   * Bypasses TTY checks and forces the launching of a new floating `foot` window. Fails if no active Wayland or X11 graphical session is detected.
+
+### Design Rationale: Why "fzf-like" Auto-Detection is Used
+* **CLI Composability**: Standard shell utilities must respect Unix piping idioms. Launching in-place when a TTY is active mimics standard tools like `fzf` and `skim`, enabling users to seamlessly integrate the picker into shell scripts or run it directly in splits/multiplexers without popup window disruption.
+* **Hotkey and Widget Ergonomics**: Desktop hotkeys are spawned in non-TTY environments. By auto-detecting the absence of a TTY and automatically launching the floating graphical window fallback, `emojig` acts as both a CLI tool and a global graphical widget under a single unified executable name.
+
+

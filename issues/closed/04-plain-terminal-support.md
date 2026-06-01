@@ -12,7 +12,7 @@ This plan outlines the architecture and steps to make `emojig` a completely self
 * **Self-Sustained Binary**: Remove the shell launcher script from the build system and configuration steps.
 * **Plain Terminal / No-GUI Support**: Automatically run as a modal TUI in the current session if no GUI is present.
 * **Flexible Execution Modes**:
-  * `emojig` (no options): Open floating window if GUI is active; fall back to local modal TUI otherwise.
+  * `emojig` (no options): Run local TUI session inline if a TTY is available; otherwise, spawn a floating GUI window if a GUI session is active (acts as a standard pipeline/widget).
   * `emojig --gui`: Force floating terminal window or fail with exit code `1` if no GUI session is detected.
   * `emojig --tui`: Force local modal TUI session or fail with exit code `1` if standard input is not a terminal.
 * **GUI Icon Fix**: Auto-install `.desktop` and SVG icon files to user directories on launch if they are missing, ensuring correct taskbar/dock icons.
@@ -34,12 +34,13 @@ graph TD
     G -- No --> H["Fail: No GUI session detected"]
     G -- Yes --> I["Launch foot window"]
     
-    F -- No --> J{"GUI session detected?"}
-    J -- Yes --> I
-    J -- No --> K{"isatty(STDIN)?"}
+    F -- No --> K{"isatty(STDIN)?"}
     K -- Yes --> E
-    K -- No --> D
+    K -- No --> J{"GUI session detected?"}
+    J -- Yes --> I
+    J -- No --> D
 ```
+
 
 ---
 

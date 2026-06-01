@@ -91,40 +91,17 @@ commonly packaged and heavier. `sudo apt install kmscon` on Ubuntu.
 ## Options for emojig
 
 ### Option A — Detect and warn ✓ done
+Implemented. The application detects `TERM=linux` and displays a warning prompt guiding the user. Bypassed only when explicitly executing via `--tui`.
 
-Implemented. See "Current behaviour" above.
+### Option B — Auto-launch fbterm (Dropped / Closed)
+**Dropped (By Design)**. To maintain simplicity, keep binary footprint minimal, and avoid managing framebuffer complex dependencies, we will not auto-detect or spawn `fbterm`. The user is warned on virtual consoles and can manually handle rendering wrapper wrappers (such as `fbterm -- emojig --tui`) if required.
 
-### Option B — Auto-launch fbterm (mirrors --gui/foot pattern)
+### Option C — `emojig --setup` mode (Dropped / Closed)
+**Dropped (By Design)**. Guided interactive subcommands are out of scope for a fast, minimalist picker binary.
 
-When `TERM=linux` and `/dev/fb0` is accessible and `fbterm` is in PATH, auto-
-spawn `fbterm -- emojig --tui` rather than printing the warning. Same subprocess-
-spawn pattern already used for `--gui`/foot.
-
-**Caveat**: monochrome emoji only. Requires user to be in the `video` group —
-if `/dev/fb0` is not accessible the fallback is the existing warning.
-
-**Effort**: medium.
-**Trade-off**: silent degradation to monochrome; group membership is a one-time
-setup step the user must do regardless.
-
-### Option C — `emojig --setup` mode (longer term)
-
-A guided setup subcommand that detects the environment and installs/configures
-what is needed:
-
-```
-emojig --setup          # auto-detect context, guide interactively
-emojig --setup fb       # virtual console: check fbterm, font, group membership
-emojig --setup gui      # Wayland/X11: ensure foot, .desktop, icon
-```
-
-**Effort**: large — new subcommand, interactive prompts, privilege checks.
-**Trade-off**: best long-term UX; overkill until there is user demand.
+---
 
 ## Recommended plan
+1. **Done**: Option A — `TERM=linux` guard with a direct diagnostic warning. Users who want virtual console support can explicitly execute `--tui` inside framebuffer terminal environments (e.g. `fbterm -- emojig --tui`).
+2. **Closed**: Option B & Option C dropped to maintain standalone utility constraints.
 
-1. **Done**: Option A — `TERM=linux` guard with diagnostic message; `--tui`
-   bypasses for users who know what they're doing (e.g. `fbterm -- emojig --tui`).
-2. **Next**: Option B — auto-detect `/dev/fb0` accessible + fbterm in PATH and
-   spawn fbterm automatically, falling back to the warning if unavailable.
-3. **Later**: Option C if virtual console usage becomes a real user need.
