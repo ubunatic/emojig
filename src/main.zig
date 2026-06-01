@@ -607,6 +607,17 @@ pub fn main(init: std.process.Init) !void {
         break :blk false;
     };
 
+    // Signed bias added to the inline-TUI scroll reservation on startup.
+    // Positive values cause more newlines to be emitted (eat more lines above),
+    // negative values reduce the reservation (eat fewer lines / "uneat").
+    // Default 0. Example: EMOJIG_SCROLL_BIAS=-1
+    const env_scroll_bias: i32 = blk: {
+        if (init.environ_map.get("EMOJIG_SCROLL_BIAS")) |env_val| {
+            break :blk std.fmt.parseInt(i32, env_val, 10) catch 0;
+        }
+        break :blk 0;
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
@@ -791,7 +802,11 @@ pub fn main(init: std.process.Init) !void {
             var ws_start = std.mem.zeroes(std.posix.winsize);
             const ws_start_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_start));
             const start_h = if (ws_start_rc == 0 and ws_start.row > 0) ws_start.row else 24;
-            const space_needed = final_h - 1 - @as(usize, @intCast(1 + row_off));
+            // space_needed: how many rows below current cursor the TUI needs.
+            // EMOJIG_SCROLL_BIAS adjusts this (positive = eat more, negative = eat fewer).
+            const base_space: i32 = @as(i32, @intCast(final_h)) - 1 - @as(i32, @intCast(1 + row_off));
+            const biased_space: i32 = base_space + env_scroll_bias;
+            const space_needed: usize = if (biased_space > 0) @as(usize, @intCast(biased_space)) else 0;
             const start_row_val = global_tui_start_row orelse 1;
             const overflow = if (start_row_val + @as(i32, @intCast(space_needed)) > @as(i32, @intCast(start_h)))
                 (start_row_val + @as(i32, @intCast(space_needed))) - @as(i32, @intCast(start_h))
