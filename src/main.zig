@@ -340,6 +340,7 @@ fn spawnFootWindow(
         env_safe_arg,
         env_debug_arg,
         env_timeout_arg,
+        "EMOJIG_ALT_SCREEN=1",
         exe_path,
         "--tui",
     };
@@ -454,6 +455,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_border: ?bool = null;
     var opt_safe = false;
     var opt_debug = false;
+    var opt_alt_screen = false;
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -470,6 +472,8 @@ pub fn main(init: std.process.Init) !void {
             opt_safe = true;
         } else if (std.mem.eql(u8, arg, "--debug")) {
             opt_debug = true;
+        } else if (std.mem.eql(u8, arg, "--alt-screen")) {
+            opt_alt_screen = true;
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
                 if (std.mem.eql(u8, v, "light")) opt_theme = .light else if (std.mem.eql(u8, v, "dark")) opt_theme = .dark else if (std.mem.eql(u8, v, "system")) opt_theme = .system else {
@@ -529,6 +533,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating terminal window (spawns foot)\n" ++
+                "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
                 "  -v, --version                Show version and exit\n" ++
@@ -595,12 +600,20 @@ pub fn main(init: std.process.Init) !void {
         break :blk null;
     };
 
+    const env_alt_screen: bool = blk: {
+        if (init.environ_map.get("EMOJIG_ALT_SCREEN")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk false;
+    };
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
     const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
     const final_height = opt_height orelse env_height orelse cfg.height orelse 8;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
+    const final_alt_screen = opt_alt_screen or env_alt_screen;
 
     const has_gui_session = blk: {
         const wayland = init.environ_map.get("WAYLAND_DISPLAY");
@@ -764,11 +777,39 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.MIN)] = 1;
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
-        global_tui_start_row = 1;
+        if (final_alt_screen) {
+            global_tui_start_row = 1;
+        } else {
+            global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
+        }
 
         const content_rows: usize = 8;
         var final_h = if (show_border) content_rows + 2 else content_rows;
         if (final_debug) final_h += 2;
+
+        if (!final_alt_screen) {
+            var ws_start = std.mem.zeroes(std.posix.winsize);
+            const ws_start_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_start));
+            const start_h = if (ws_start_rc == 0 and ws_start.row > 0) ws_start.row else 24;
+            const space_needed = final_h - 1 - @as(usize, @intCast(1 + row_off));
+            const start_row_val = global_tui_start_row orelse 1;
+            const overflow = if (start_row_val + @as(i32, @intCast(space_needed)) > @as(i32, @intCast(start_h)))
+                (start_row_val + @as(i32, @intCast(space_needed))) - @as(i32, @intCast(start_h))
+            else
+                0;
+            if (overflow > 0) {
+                var k: usize = 0;
+                while (k < overflow) : (k += 1) {
+                    try writeAll(stdout_fd, "\n");
+                }
+                var up_buf: [32]u8 = undefined;
+                const up_seq = try std.fmt.bufPrint(&up_buf, "\x1b[{d}A\r", .{overflow});
+                try writeAll(stdout_fd, up_seq);
+                if (global_tui_start_row) |*r| {
+                    r.* -= overflow;
+                }
+            }
+        }
 
         var system_theme: Theme = if (theme == .system)
             detectSystemTheme(stdin_fd, stdout_fd, raw)
@@ -805,9 +846,13 @@ pub fn main(init: std.process.Init) !void {
             logMemoryUsage();
         }
 
-        // Switch to alternate screen (1049h), disable line wrap (7l), enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
-        // Must come after defer is registered so RESTORE is guaranteed to disable tracking, close alternate screen, and restore wrap.
-        try writeAll(stdout_fd, "\x1b[?1049h\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+        // Disable line wrap (7l), enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+        // Switch to alternate screen (1049h) if configured.
+        if (final_alt_screen) {
+            try writeAll(stdout_fd, "\x1b[?1049h\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+        } else {
+            try writeAll(stdout_fd, "\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+        }
 
         applyTerminalColors(stdout_fd, theme, system_theme);
 
@@ -862,8 +907,15 @@ pub fn main(init: std.process.Init) !void {
             if (!is_first_render) {
                 var move_buf: [48]u8 = undefined;
                 if (resized) {
-                    const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
-                    try writeAll(stdout_fd, move_seq);
+                    if (final_alt_screen) {
+                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[2J\x1b[1;1H", .{});
+                        try writeAll(stdout_fd, move_seq);
+                    } else {
+                        const diff = @as(i32, @intCast(last_h)) - @as(i32, @intCast(current_h));
+                        const d = @max(0, @as(i32, @intCast(1 + row_off)) + diff);
+                        const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{d});
+                        try writeAll(stdout_fd, move_seq);
+                    }
                 } else {
                     const move_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{1 + row_off});
                     try writeAll(stdout_fd, move_seq);
@@ -1037,6 +1089,9 @@ pub fn main(init: std.process.Init) !void {
             if (resized) {
                 last_w = current_w;
                 last_h = current_h;
+                if (!final_alt_screen) {
+                    global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
+                }
             }
 
             // ----------------------------------------------------------------
