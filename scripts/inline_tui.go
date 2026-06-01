@@ -65,12 +65,13 @@ func drawFrame(tty *os.File, tick int, hidden bool) {
 		return
 	}
 
+	rows, _ := termSize(tty.Fd())
 	lines := []string{
 		"",
 		fmt.Sprintf(" inline TUI  [%s]", cursor),
 		" ─────────────────",
-		" row 1: hello",
-		" row 2: world",
+		fmt.Sprintf(" Term Rows: %-3d | TUI Height: %-3d", rows, tuiHeight),
+		fmt.Sprintf(" Status: Visible | Threshold: %-3d", tuiHeight+1),
 		" q to quit",
 	}
 	for i, l := range lines {

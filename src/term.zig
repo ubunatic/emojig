@@ -63,10 +63,30 @@ pub fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void
 // ---------------------------------------------------------------------------
 
 pub fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
+    const sys = std.posix.system;
+
+    // CRITICAL WARNING FOR SUBSEQUENT AGENTS/DEVELOPERS:
+    // We MUST drain stdin non-blockingly before writing "\x1b[6n". If there are any stale buffered
+    // bytes in the input queue (such as mouse click releases or motion events from startup/resize),
+    // sys.read will read them instead of the CPR response, causing queryCursorRow to fail (returns null).
+    // A null global_tui_start_row disables viewport warping mouse offset mapping, rendering mouse clicks
+    // and hovers completely dead. DO NOT REMOVE THIS DRAIN BLOCK!
+    var drain = raw;
+    drain.cc[@intFromEnum(sys.V.MIN)] = 0;
+    drain.cc[@intFromEnum(sys.V.TIME)] = 0;
+    std.posix.tcsetattr(stdin_fd, .NOW, drain) catch return null;
+
+    var drain_buf: [256]u8 = undefined;
+    while (true) {
+        const rc = sys.read(stdin_fd, &drain_buf, drain_buf.len);
+        if (rc <= 0) break;
+    }
+
+    // 2. Now write the query sequence
     writeAll(stdout_fd, "\x1b[6n") catch return null;
 
+    // 3. Configure to 200ms timeout for reading the response
     var timed = raw;
-    const sys = std.posix.system;
     timed.cc[@intFromEnum(sys.V.MIN)] = 0;
     timed.cc[@intFromEnum(sys.V.TIME)] = 2; // 200 ms timeout
     std.posix.tcsetattr(stdin_fd, .NOW, timed) catch return null;

@@ -94,12 +94,18 @@ fn drawFrame(tick: usize, hidden: bool) void {
     const blink: []const u8 = if (tick % 2 == 0) " " else "█";
     const title = std.fmt.bufPrint(&title_buf, " inline TUI  [{s}]", .{blink}) catch " inline TUI  [?]";
 
+    var row1_buf: [64]u8 = undefined;
+    var row2_buf: [64]u8 = undefined;
+    const rows = termRows();
+    const row1 = std.fmt.bufPrint(&row1_buf, " Term Rows: {d:<3} | TUI Height: {d:<3}", .{ rows, tui_height }) catch " Term Rows: ? | TUI Height: ?";
+    const row2 = std.fmt.bufPrint(&row2_buf, " Status: Visible | Threshold: {d:<3}", .{tui_height + 1}) catch " Status: Visible | Threshold: ?";
+
     const lines = [tui_height][]const u8{
         "",
         title,
         " \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
-        " row 1: hello",
-        " row 2: world",
+        row1,
+        row2,
         " q to quit",
     };
 
