@@ -830,7 +830,7 @@ pub fn main(init: std.process.Init) !void {
                 var ws = std.mem.zeroes(std.posix.winsize);
                 const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws));
                 const current_w = if (size_rc == 0 and ws.col > 0) ws.col else 27;
-                break :blk (current_w <= 26);
+                break :blk (current_w < 27);
             };
 
             if (!is_first_render) {
@@ -841,44 +841,42 @@ pub fn main(init: std.process.Init) !void {
                 is_first_render = false;
             }
 
-            if (is_too_small) {
-                try writeAll(stdout_fd, " \x1b[31m⚠️ Width < 27\x1b[0m\r\n");
-                var k: usize = 1;
-                while (k < final_h) : (k += 1) {
-                    try writeAll(stdout_fd, "\r\n");
-                }
-                var cursor_buf: [48]u8 = undefined;
-                const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
-                const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
-                try writeAll(stdout_fd, cursor_seq);
-            } else {
-                var line_buf: [1024]u8 = undefined;
+            var line_buf: [1024]u8 = undefined;
 
-                // Optional top border row.
-                if (show_border) {
-                    try writeAll(stdout_fd, " ");
-                    try writeAll(stdout_fd, palette.border_bg);
-                    try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-                    try writeAll(stdout_fd, "\x1b[0m \r\n");
-                }
-
-                // Blank top padding row.
+            // Optional top border row.
+            if (show_border) {
                 try writeAll(stdout_fd, " ");
-                try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, palette.fg);
+                try writeAll(stdout_fd, palette.border_bg);
                 try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
                 try writeAll(stdout_fd, "\x1b[0m \r\n");
+            }
 
-                // Search bar — entire row uses search_bg for a clean "menu row" look.
-                const prefix_cols = 3;
-                const icon_cols = 4;
-                const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
-                const display_query_len = @min(query_len, max_query_cols);
-                const pad_len = if (content_width > prefix_cols + icon_cols)
-                    content_width - prefix_cols - icon_cols - display_query_len
-                else
-                    0;
+            // Blank top padding row.
+            try writeAll(stdout_fd, " ");
+            try writeAll(stdout_fd, palette.bg);
+            try writeAll(stdout_fd, palette.fg);
+            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+            try writeAll(stdout_fd, "\x1b[0m \r\n");
 
+            // Search bar — entire row uses search_bg for a clean "menu row" look.
+            const prefix_cols = 3;
+            const icon_cols = 4;
+            const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
+            const display_query_len = @min(query_len, max_query_cols);
+            const pad_len = if (content_width > prefix_cols + icon_cols)
+                content_width - prefix_cols - icon_cols - display_query_len
+            else
+                0;
+
+            if (is_too_small) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.search_bg);
+                const warn_text = "⚠️ Width < 27";
+                try writeAll(stdout_fd, warn_text);
+                const warn_pad = if (content_width > 13) content_width - 13 else 0;
+                try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[0m \r\n");
+            } else {
                 try writeAll(stdout_fd, " ");
                 try writeAll(stdout_fd, palette.search_bg);
                 try writeAll(stdout_fd, "🔍 ");
@@ -888,17 +886,22 @@ pub fn main(init: std.process.Init) !void {
                 const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
                 try writeAll(stdout_fd, icon_buf);
                 try writeAll(stdout_fd, "\x1b[0m \r\n");
+            }
 
-                // Blank spacer row.
-                try writeAll(stdout_fd, " ");
-                try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, palette.fg);
-                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-                try writeAll(stdout_fd, "\x1b[0m \r\n");
+            // Blank spacer row.
+            try writeAll(stdout_fd, " ");
+            try writeAll(stdout_fd, palette.bg);
+            try writeAll(stdout_fd, palette.fg);
+            try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+            try writeAll(stdout_fd, "\x1b[0m \r\n");
 
-                // Grid rows.
-                var r: usize = 0;
-                while (r < rows) : (r += 1) {
+            // Grid rows.
+            var r: usize = 0;
+            while (r < rows) : (r += 1) {
+                if (is_too_small) {
+                    const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m \r\n", .{ palette.bg, spaces[0..@min(content_width, spaces.len)] });
+                    try writeAll(stdout_fd, grid_line);
+                } else {
                     var cell_buffers: [6][64]u8 = undefined;
                     var cell_strings: [6][]const u8 = undefined;
 
@@ -928,28 +931,25 @@ pub fn main(init: std.process.Init) !void {
                     const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}\x1b[0m \r\n", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
                     try writeAll(stdout_fd, grid_line);
                 }
+            }
 
-                // Description row.
-                const desc_suffix = if (show_border) " \r\n" else " ";
-                const max_len = if (content_width > 1) content_width - 1 else 0;
-                if (selected_idx) |sel| {
-                    if (top_count > 0 and sel < top_count) {
-                        const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                        if (name.len > max_len and max_len >= 3) {
-                            const display_name = name[0 .. max_len - 3];
-                            const printed_cols = 1 + display_name.len + 3;
-                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
-                            try writeAll(stdout_fd, name_line);
-                        } else {
-                            const printed_cols = 1 + name.len;
-                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
-                            try writeAll(stdout_fd, name_line);
-                        }
+            // Description row.
+            const desc_suffix = if (show_border) " \r\n" else " ";
+            const max_len = if (content_width > 1) content_width - 1 else 0;
+            if (selected_idx != null and !is_too_small) {
+                const sel = selected_idx.?;
+                if (top_count > 0 and sel < top_count) {
+                    const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
+                    if (name.len > max_len and max_len >= 3) {
+                        const display_name = name[0 .. max_len - 3];
+                        const printed_cols = 1 + display_name.len + 3;
+                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}\x1b[0m{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                        try writeAll(stdout_fd, name_line);
                     } else {
-                        const pad_len_desc = content_width;
-                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                        const printed_cols = 1 + name.len;
+                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}\x1b[0m{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                         try writeAll(stdout_fd, name_line);
                     }
                 } else {
@@ -957,42 +957,49 @@ pub fn main(init: std.process.Init) !void {
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
                     try writeAll(stdout_fd, name_line);
                 }
-
-                // Optional bottom border row.
-                if (show_border) {
-                    try writeAll(stdout_fd, " ");
-                    try writeAll(stdout_fd, palette.border_bg);
-                    try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
-                    try writeAll(stdout_fd, "\x1b[0m ");
-                }
-
-                if (final_debug) {
-                    try writeAll(stdout_fd, "\r\n");
-
-                    var ws_dbg = std.mem.zeroes(std.posix.winsize);
-                    const rc_dbg = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_dbg));
-                    const actual_w = if (rc_dbg == 0 and ws_dbg.col > 0) ws_dbg.col else 27;
-                    const actual_h = if (rc_dbg == 0 and ws_dbg.row > 0) ws_dbg.row else 10;
-
-                    const line1 = " 🐞 Debug Info:";
-                    const pad1 = if (actual_w >= 16) actual_w - 16 else 0;
-                    try writeAll(stdout_fd, line1);
-                    try writeAll(stdout_fd, spaces[0..@min(pad1, spaces.len)]);
-                    try writeAll(stdout_fd, "\r\n");
-
-                    var dbg_buf: [128]u8 = undefined;
-                    const line2 = try std.fmt.bufPrint(&dbg_buf, "    Size: W={d} H={d}", .{ actual_w, actual_h });
-                    const pad2 = if (actual_w > line2.len + 1) actual_w - 1 - line2.len else 0;
-                    try writeAll(stdout_fd, line2);
-                    try writeAll(stdout_fd, spaces[0..@min(pad2, spaces.len)]);
-                }
-
-                // Reposition cursor to search bar input (relative up, horizontal absolute column).
-                var cursor_buf: [48]u8 = undefined;
-                const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
-                const cursor_seq = try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
-                try writeAll(stdout_fd, cursor_seq);
+            } else {
+                const pad_len_desc = content_width;
+                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}\x1b[0m{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)], desc_suffix });
+                try writeAll(stdout_fd, name_line);
             }
+
+            // Optional bottom border row.
+            if (show_border) {
+                try writeAll(stdout_fd, " ");
+                try writeAll(stdout_fd, palette.border_bg);
+                try writeAll(stdout_fd, spaces[0..@min(content_width, spaces.len)]);
+                try writeAll(stdout_fd, "\x1b[0m ");
+            }
+
+            if (final_debug) {
+                try writeAll(stdout_fd, "\r\n");
+
+                var ws_dbg = std.mem.zeroes(std.posix.winsize);
+                const rc_dbg = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_dbg));
+                const actual_w = if (rc_dbg == 0 and ws_dbg.col > 0) ws_dbg.col else 27;
+                const actual_h = if (rc_dbg == 0 and ws_dbg.row > 0) ws_dbg.row else 10;
+
+                const line1 = " 🐞 Debug Info:";
+                const pad1 = if (actual_w >= 16) actual_w - 16 else 0;
+                try writeAll(stdout_fd, line1);
+                try writeAll(stdout_fd, spaces[0..@min(pad1, spaces.len)]);
+                try writeAll(stdout_fd, "\r\n");
+
+                var dbg_buf: [128]u8 = undefined;
+                const line2 = try std.fmt.bufPrint(&dbg_buf, "    Size: W={d} H={d}", .{ actual_w, actual_h });
+                const pad2 = if (actual_w > line2.len + 1) actual_w - 1 - line2.len else 0;
+                try writeAll(stdout_fd, line2);
+                try writeAll(stdout_fd, spaces[0..@min(pad2, spaces.len)]);
+            }
+
+            // Reposition cursor to search bar input (relative up, horizontal absolute column).
+            var cursor_buf: [48]u8 = undefined;
+            const cursor_up = final_h - @as(usize, @intCast(2 + row_off));
+            const cursor_seq = if (is_too_small)
+                try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up})
+            else
+                try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + query_len });
+            try writeAll(stdout_fd, cursor_seq);
 
             // ----------------------------------------------------------------
             // Copy & exit deferred action (rendered one frame first)
