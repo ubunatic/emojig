@@ -212,15 +212,16 @@ const Config = struct {
 };
 
 /// Read configuration from the config file in a single pass.
-fn loadConfig() Config {
+fn loadConfig(io: std.Io) Config {
     var cfg = Config{};
     var path_buf: [512]u8 = undefined;
     const path = configPath(&path_buf) orelse return cfg;
-    const flags = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, flags, 0) catch return cfg;
-    defer _ = std.posix.system.close(fd);
-    var file_buf: [1024]u8 = undefined;
-    const len = std.posix.read(fd, &file_buf) catch return cfg;
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return cfg;
+    defer file.close(io);
+    var file_buf: [4096]u8 = undefined;
+    const len = file.readPositionalAll(io, &file_buf, 0) catch return cfg;
+    // If buffer is full the file may be larger; skip parsing to avoid acting on truncated data.
+    if (len == file_buf.len) return cfg;
     var it = std.mem.splitScalar(u8, file_buf[0..len], '\n');
     while (it.next()) |raw_line| {
         const line = std.mem.trim(u8, raw_line, " \t\r");
@@ -245,7 +246,7 @@ fn loadConfig() Config {
 }
 
 /// Rewrite the config file with an updated theme= line, preserving other keys.
-fn saveThemeToConfig(t: Theme) void {
+fn saveThemeToConfig(io: std.Io, t: Theme) void {
     const theme_str: []const u8 = switch (t) {
         .dark => "dark",
         .light => "light",
@@ -269,18 +270,17 @@ fn saveThemeToConfig(t: Theme) void {
     const path = configPath(&path_buf) orelse return;
 
     // Read existing content to preserve non-theme lines.
-    var old_buf: [1024]u8 = undefined;
+    var old_buf: [4096]u8 = undefined;
     var old_len: usize = 0;
-    {
-        const rf = std.posix.O{ .ACCMODE = .RDONLY };
-        if (std.posix.openat(std.posix.AT.FDCWD, path, rf, 0)) |rfd| {
-            old_len = std.posix.read(rfd, &old_buf) catch 0;
-            _ = std.posix.system.close(rfd);
-        } else |_| {}
-    }
+    if (std.Io.Dir.openFileAbsolute(io, path, .{})) |rfile| {
+        old_len = rfile.readPositionalAll(io, &old_buf, 0) catch 0;
+        rfile.close(io);
+        // If buffer is full the file may be larger; abort to avoid silently truncating it.
+        if (old_len == old_buf.len) return;
+    } else |_| {}
 
     // Rebuild: every non-theme, non-blank line, then the updated theme line.
-    var out: [2048]u8 = undefined;
+    var out: [4096 + 32]u8 = undefined;
     var pos: usize = 0;
     var lines = std.mem.splitScalar(u8, old_buf[0..old_len], '\n');
     while (lines.next()) |raw| {
@@ -296,10 +296,9 @@ fn saveThemeToConfig(t: Theme) void {
     const new_line = std.fmt.bufPrint(out[pos..], "theme={s}\n", .{theme_str}) catch return;
     pos += new_line.len;
 
-    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o644) catch return;
-    defer _ = std.posix.system.close(fd);
-    _ = std.posix.system.write(fd, out[0..pos].ptr, pos);
+    const wfile = std.Io.Dir.createFileAbsolute(io, path, .{}) catch return;
+    defer wfile.close(io);
+    wfile.writePositionalAll(io, out[0..pos], 0) catch {};
 }
 
 fn ensureDirExists(home: []const u8, sub_path: []const u8) void {
@@ -637,7 +636,7 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(0);
     }
 
-    const cfg = loadConfig();
+    const cfg = loadConfig(init.io);
 
     const env_theme: ?Theme = blk: {
         if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
@@ -1176,7 +1175,7 @@ pub fn main(init: std.process.Init) !void {
                                     .light => .system,
                                     .system => .dark,
                                 };
-                                saveThemeToConfig(theme);
+                                saveThemeToConfig(init.io, theme);
                                 if (theme == .system)
                                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme);
@@ -1245,7 +1244,7 @@ pub fn main(init: std.process.Init) !void {
                     .light => .system,
                     .system => .dark,
                 };
-                saveThemeToConfig(theme);
+                saveThemeToConfig(init.io, theme);
                 if (theme == .system) {
                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                 }
