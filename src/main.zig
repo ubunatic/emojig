@@ -21,6 +21,7 @@ const shell_fish = @embedFile("shell/emojig.fish");
 // The web-compatible (plain SVG) variant is embedded; regenerate it with
 // scripts/web_logo.sh whenever the source icon changes.
 const icon_svg = @embedFile("assets/emojig-icon.web.svg");
+const icon_png = @embedFile("assets/emojig-icon.png");
 
 // ---------------------------------------------------------------------------
 // Theme, Palette & Terminal Wrappers
@@ -230,7 +231,7 @@ fn ensureDirExists(home: []const u8, sub_path: []const u8) void {
     _ = std.c.mkdir(path_buf[0..path.len :0], 0o755);
 }
 
-fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
+fn ensureDesktopIntegration(io: std.Io, home: []const u8, exe_path: []const u8) void {
     ensureDirExists(home, ".local");
     ensureDirExists(home, ".local/share");
     ensureDirExists(home, ".local/share/applications");
@@ -238,6 +239,20 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
     ensureDirExists(home, ".local/share/icons/hicolor");
     ensureDirExists(home, ".local/share/icons/hicolor/scalable");
     ensureDirExists(home, ".local/share/icons/hicolor/scalable/apps");
+    ensureDirExists(home, ".local/share/icons/hicolor/128x128");
+    ensureDirExists(home, ".local/share/icons/hicolor/128x128/apps");
+
+    var exec_path_buf: [1024]u8 = undefined;
+    var exec_path: []const u8 = exe_path;
+    if (std.mem.indexOf(u8, exe_path, ".zig-cache") != null or std.mem.indexOf(u8, exe_path, "zig-out") != null) {
+        const local_bin = std.fmt.bufPrint(&exec_path_buf, "{s}/.local/bin/emojig", .{home}) catch "";
+        if (local_bin.len > 0) {
+            if (std.posix.openat(std.posix.AT.FDCWD, local_bin, std.posix.O{ .ACCMODE = .RDONLY }, 0)) |fd| {
+                _ = std.posix.system.close(fd);
+                exec_path = local_bin;
+            } else |_| {}
+        }
+    }
 
     // Write .desktop entry
     var desktop_path_buf: [512]u8 = undefined;
@@ -249,12 +264,12 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
         \\Name=Emojig Picker
         \\Comment=Interactive emoji picker
         \\Exec={s} --gui
-        \\Icon=emojig-picker
+        \\Icon={s}/.local/share/icons/emojig-picker.png
         \\Terminal=false
         \\Categories=Utility;
         \\StartupWMClass=emojig-picker
         \\
-    , .{exe_path}) catch return;
+    , .{ exec_path, home }) catch return;
 
     if (desktop_path.len + 1 <= desktop_path_buf.len) {
         desktop_path_buf[desktop_path.len] = 0;
@@ -277,6 +292,59 @@ fn ensureDesktopIntegration(home: []const u8, exe_path: []const u8) void {
             _ = std.posix.system.write(fd, svg_text.ptr, svg_text.len);
         } else |_| {}
     }
+
+    // Write PNG icon to hicolor 128x128/apps
+    var png_path_buf: [512]u8 = undefined;
+    const png_path = std.fmt.bufPrint(&png_path_buf, "{s}/.local/share/icons/hicolor/128x128/apps/emojig-picker.png", .{home}) catch return;
+    const png_data = icon_png;
+    if (png_path.len + 1 <= png_path_buf.len) {
+        png_path_buf[png_path.len] = 0;
+        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+        if (std.posix.openat(std.posix.AT.FDCWD, png_path_buf[0..png_path.len :0], wf, 0o644)) |fd| {
+            defer _ = std.posix.system.close(fd);
+            _ = std.posix.system.write(fd, png_data.ptr, png_data.len);
+        } else |_| {}
+    }
+
+    // Write PNG icon directly to share/icons fallback
+    var png_fallback_buf: [512]u8 = undefined;
+    const png_fallback_path = std.fmt.bufPrint(&png_fallback_buf, "{s}/.local/share/icons/emojig-picker.png", .{home}) catch return;
+    if (png_fallback_path.len + 1 <= png_fallback_buf.len) {
+        png_fallback_buf[png_fallback_path.len] = 0;
+        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+        if (std.posix.openat(std.posix.AT.FDCWD, png_fallback_buf[0..png_fallback_path.len :0], wf, 0o644)) |fd| {
+            defer _ = std.posix.system.close(fd);
+            _ = std.posix.system.write(fd, png_data.ptr, png_data.len);
+        } else |_| {}
+    }
+
+    // Run update-desktop-database
+    var app_dir_buf: [512]u8 = undefined;
+    if (std.fmt.bufPrint(&app_dir_buf, "{s}/.local/share/applications", .{home})) |app_dir| {
+        var child = std.process.spawn(io, .{
+            .argv = &.{ "update-desktop-database", app_dir },
+            .stdin = .ignore,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        }) catch null;
+        if (child) |*c| {
+            _ = c.wait(io) catch {};
+        }
+    } else |_| {}
+
+    // Run gtk-update-icon-cache
+    var icon_dir_buf: [512]u8 = undefined;
+    if (std.fmt.bufPrint(&icon_dir_buf, "{s}/.local/share/icons/hicolor", .{home})) |icon_dir| {
+        var child = std.process.spawn(io, .{
+            .argv = &.{ "gtk-update-icon-cache", "-f", "-t", icon_dir },
+            .stdin = .ignore,
+            .stdout = .ignore,
+            .stderr = .ignore,
+        }) catch null;
+        if (child) |*c| {
+            _ = c.wait(io) catch {};
+        }
+    } else |_| {}
 }
 
 fn spawnFootWindow(
@@ -403,6 +471,7 @@ fn copyBinary(io: std.Io, home: []const u8) bool {
 
     if (dst_path.len + 1 > dst_buf.len) return false;
     dst_buf[dst_path.len] = 0;
+    _ = std.posix.system.unlink(dst_buf[0..dst_path.len :0]);
     const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
     const dst_fd = std.posix.openat(std.posix.AT.FDCWD, dst_buf[0..dst_path.len :0], wf, 0o755) catch return false;
     defer _ = std.posix.system.close(dst_fd);
@@ -435,6 +504,12 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
 
     const fish_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.fish", .{home}) catch return;
     _ = writeFile(&buf, fish_path, shell_fish);
+
+    var dst_buf: [1024]u8 = undefined;
+    const dst_path = std.fmt.bufPrint(&dst_buf, "{s}/.local/bin/emojig", .{home}) catch "";
+    if (dst_path.len > 0) {
+        ensureDesktopIntegration(io, home, dst_path);
+    }
 
     if (bin_ok) {
         writeAll(std.posix.STDOUT_FILENO, "Installed binary to ~/.local/bin/emojig\n") catch {};
@@ -702,7 +777,7 @@ pub fn main(init: std.process.Init) !void {
 
         if (std.c.getenv("HOME")) |home_c| {
             const home = std.mem.span(home_c);
-            ensureDesktopIntegration(home, exe_path);
+            ensureDesktopIntegration(init.io, home, exe_path);
         }
 
         spawnFootWindow(
