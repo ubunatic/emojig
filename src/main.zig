@@ -1090,7 +1090,9 @@ pub fn main(init: std.process.Init) !void {
                 last_w = current_w;
                 last_h = current_h;
                 if (!final_alt_screen) {
-                    global_tui_start_row = queryCursorRow(stdin_fd, stdout_fd, raw);
+                    if (queryCursorRow(stdin_fd, stdout_fd, raw)) |cursor_row| {
+                        global_tui_start_row = cursor_row - @as(i32, @intCast(1 + row_off));
+                    }
                 }
             }
 
