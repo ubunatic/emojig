@@ -707,11 +707,8 @@ pub fn main(init: std.process.Init) !void {
             \\emojig: Linux virtual console detected (TERM=linux).
             \\Emoji glyphs cannot render in the kernel console font.
             \\
-            \\Options:
-            \\  * Install fbterm:  sudo apt install fbterm
-            \\    Then run:        fbterm -- emojig
-            \\  * Or switch to a terminal emulator (foot, alacritty, kitty, ...)
-            \\  * Or connect via SSH from a machine with a terminal emulator
+            \\Please switch to a graphical terminal emulator (foot, alacritty, kitty, ...)
+            \\or connect via SSH from a machine with a terminal emulator.
             \\
         );
         std.process.exit(1);
@@ -1324,6 +1321,30 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
                 }
             } else |_| {}
         } else |_| {}
+    }
+
+    if (!copied) {
+        if (init.environ_map.get("TMUX") != null) {
+            if (std.process.spawn(io, .{
+                .argv = &.{ "tmux", "load-buffer", "-" },
+                .stdin = .pipe,
+                .stdout = .ignore,
+                .stderr = .ignore,
+            })) |spawned| {
+                var child = spawned;
+                try writeAll(child.stdin.?.handle, clean_text);
+                child.stdin.?.close(io);
+                child.stdin = null;
+                if (child.wait(io)) |term| {
+                    switch (term) {
+                        .exited => |code| {
+                            if (code == 0) copied = true;
+                        },
+                        else => {},
+                    }
+                } else |_| {}
+            } else |_| {}
+        }
     }
 
     if (!copied) {
