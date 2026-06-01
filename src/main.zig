@@ -793,9 +793,6 @@ pub fn main(init: std.process.Init) !void {
     {
         mru.load();
 
-        // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
-        try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
-
         const orig_termios = try std.posix.tcgetattr(stdin_fd);
         global_orig_termios = orig_termios;
 
@@ -865,6 +862,10 @@ pub fn main(init: std.process.Init) !void {
             writeAll(stdout_fd, RESTORE) catch {};
             logMemoryUsage();
         }
+
+        // Enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+        // Must come after defer is registered so RESTORE is guaranteed to disable tracking.
+        try writeAll(stdout_fd, "\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
 
         applyTerminalColors(stdout_fd, theme, system_theme);
 
