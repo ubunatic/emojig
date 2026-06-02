@@ -923,8 +923,14 @@ pub fn main(init: std.process.Init) !void {
                         }
                     }
                     if (last_drawn_h > 1) {
-                        const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{last_drawn_h - 1}) catch "";
-                        _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
+                        if (force_stdout) {
+                            // If stdout is piped/captured, leave the cursor at the bottom of the cleared TUI area
+                            // so that the printed emoji lands on a fresh line below the prompt.
+                            _ = std.posix.system.write(stdout_fd, "\r\n", 2);
+                        } else {
+                            const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{last_drawn_h - 1}) catch "";
+                            _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
+                        }
                     }
                 }
             }
@@ -1772,6 +1778,27 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
                 } else |_| {}
             } else |_| {}
         }
+    }
+
+    if (!copied) {
+        // Fallback: OSC 52 escape sequence (remote terminal & browser sandbox compatible)
+        const tty_flags = std.posix.O{ .ACCMODE = .WRONLY };
+        if (std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0)) |fd| {
+            defer _ = std.posix.system.close(fd);
+            var base64_buf: [256]u8 = undefined;
+            const base64_str = std.base64.standard.Encoder.encode(&base64_buf, clean_text);
+            var osc_buf: [512]u8 = undefined;
+            // Write to both CLIPBOARD ('c') and PRIMARY ('p') selection buffers
+            const osc_seq_c = std.fmt.bufPrint(&osc_buf, "\x1b]52;c;{s}\x07", .{base64_str}) catch "";
+            if (osc_seq_c.len > 0) {
+                _ = std.posix.system.write(fd, osc_seq_c.ptr, osc_seq_c.len);
+            }
+            const osc_seq_p = std.fmt.bufPrint(&osc_buf, "\x1b]52;p;{s}\x07", .{base64_str}) catch "";
+            if (osc_seq_p.len > 0) {
+                _ = std.posix.system.write(fd, osc_seq_p.ptr, osc_seq_p.len);
+            }
+            copied = true;
+        } else |_| {}
     }
 
     if (!copied) {
