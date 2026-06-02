@@ -1,7 +1,7 @@
 # Inline Terminal UIs: Scrollback Preservation & The "Eat Lines Above" Resize Strategy
 
 > [!NOTE]
-> **Currency Status:** Current as of June 1, 2026. Documents the scrollback preservation mechanics analyzed from [inline_tui.go](file:///home/uwe/projects/emojig/scripts/inline_tui.go) and [inline_tui.zig](file:///home/uwe/projects/emojig/scripts/inline_tui.zig).
+> **Currency Status:** Current as of June 2, 2026. Documents the scrollback preservation mechanics analyzed from [inline_tui.go](file:///home/uwe/projects/emojig/scripts/inline_tui.go) and [inline_tui.zig](file:///home/uwe/projects/emojig/scripts/inline_tui.zig) for **Emojig v0.1.5**.
 
 This document analyzes how the minimal inline TUI implementation preserves the shell prompt/command line that initiated the application during vertical terminal shrinking. By employing a specific cursor placement invariant and a height-sensitive collapse threshold, this strategy prevents TUI lines from polluting the terminal's scrollback history.
 

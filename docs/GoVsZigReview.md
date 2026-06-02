@@ -1,7 +1,7 @@
 # Emojig: Go vs. Zig Architectural Review
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Matches the hybrid architecture implemented in **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Matches the hybrid architecture implemented in **Emojig v0.1.5**.
 
 This document provides a comparative analysis of the **Emojig** codebase from a Go vs. Zig perspective. It evaluates whether a pure Go implementation could have achieved the same runtime constraints and discusses the pros, cons, and synergies of the hybrid architecture currently implemented in the repository.
 

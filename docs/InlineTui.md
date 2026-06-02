@@ -1,7 +1,7 @@
 # Design Guide: Inline Terminal UIs (TUI) & Clean Viewport Management
 
 > [!NOTE]
-> **Currency Status:** Current as of June 1, 2026. Reflects the inline viewport management, non-scrolling overwrite mechanics, and query-based exit synchronization of **Emojig v0.1.x**.
+> **Currency Status:** Current as of June 2, 2026. Reflects the inline viewport management, non-scrolling overwrite mechanics, and query-based exit synchronization of **Emojig v0.1.5**.
 
 How emojig renders an inline TUI that does not hijack the screen or alternate buffer,
 preserves scrollback history, and cleans up after itself on exit.

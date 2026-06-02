@@ -1,7 +1,7 @@
 # Documentation & Issue Naming Conventions
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Details the repository naming conventions and organizing principles established during the documentation consolidation for **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Details the repository naming conventions and organizing principles established during the documentation consolidation for **Emojig v0.1.5**.
 
 ## 1. Overview
 

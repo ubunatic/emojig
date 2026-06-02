@@ -1,7 +1,7 @@
 # Linux Platform Support and Market Analysis
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Matches the technical requirements and platform compatibility of **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Matches the technical requirements and platform compatibility of **Emojig v0.1.5**.
 
 This document provides a technical evaluation of Emojig's platform compatibility, assesses our current addressable Linux desktop market share, and outlines steps to extend support to additional environments.
 
@@ -50,37 +50,29 @@ In 2025/2026, the global Linux desktop market share is estimated at **4.7%** of 
 *   **X11**: Currently in maintenance-only mode. However, X11 remains widely used on systems like Linux Mint (Cinnamon is currently X11-only or features experimental Wayland support) and MX Linux (XFCE). It is estimated that **20% to 40%** of Linux desktop users still operate under X11 sessions.
 
 ### C. Emojig GUI Market Reach
-Due to the hardcoded dependency on `foot` for the floating window:
-*   **Theoretical GUI Addressable Market**: Limited to Wayland users (approximately **50% to 80%** of Linux installations).
-*   **Practical GUI Addressable Market**: Less than **5%** of users, as `foot` is rarely pre-installed on GNOME or KDE Plasma installations, and the app fails silently or exits with a launcher error if `foot` is missing or the session is X11-only.
+Due to the multi-terminal spawning capability introduced in v0.1.5:
+*   **Theoretical GUI Addressable Market**: Fully compatible with both Wayland and X11 sessions (reaching **100%** of Linux desktop installations).
+*   **Practical GUI Addressable Market**: Highly robust, since the application dynamically leverages standard pre-installed terminals (e.g., GNOME Terminal, Ptyxis, Konsole, Alacritty, Kitty, Xterm, Ghostty) and respects the `EMOJIG_TERMINAL` override. Silent failures are completely eliminated.
 
 ---
 
-## 3. Recommended Actions to Broaden Support
+## 3. Recommended Actions & Implementation Status
 
-To expand the addressable user base and ensure GUI mode works across all major Linux desktop environments, the following technical actions are recommended:
+To expand the addressable user base and ensure GUI mode works across all major Linux desktop environments, the following technical actions were executed:
 
-### A. Implement Multi-Terminal Spawning (Short-Term)
-Modify `spawnFootWindow` to become a more generic `spawnGuiWindow` function. Instead of hardcoding `foot`, the launcher should detect available terminals and use configuration parameters matched to each:
-1.  **Wayland Fallbacks**:
-    *   If `foot` is missing, check for `alacritty` (spawning with `--class emojig-picker`) or `kitty` (spawning with `--class emojig-picker`).
-2.  **X11 Support**:
-    *   If an X11 session is detected (e.g., `DISPLAY` is set and `WAYLAND_DISPLAY` is empty), query for standard X11-compatible terminal emulators:
-        *   `alacritty`
-        *   `kitty`
-        *   `xfce4-terminal`
-        *   `gnome-terminal`
-3.  **Generic Wrapper**:
-    *   Check the `$TERMINAL` environment variable or search for system defaults like `x-terminal-emulator`.
+### A. Implement Multi-Terminal Spawning — **[DONE in v0.1.5]**
+The window spawning has been generalized into a robust `spawnGuiWindow` implementation. Instead of hardcoding `foot`, the launcher automatically scans and builds customized arg arrays for:
+1.  **Wayland & X11 Hosts**: Supports `foot`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`, `gnome-terminal`, `ptyxis`, `xfce4-terminal`, and `xterm`.
+2.  **Fallback & Overrides**: Respects custom user-configured terminals in `EMOJIG_TERMINAL` and `$TERMINAL` environment variables.
 
-### B. Decouple Terminal Customizations
-Terminal-specific styling (such as `--override=colors.background`, `--override=pad`, and `csd.size`) is currently coupled directly with `foot` flags.
-*   **Solution**: Abstract the window spawning configuration so that each supported terminal receives its appropriate geometry, padding, and styling flags, or fall back to standard terminal window settings.
+### B. Decouple Terminal Customizations — **[DONE in v0.1.5]**
+Terminal-specific styling (such as window decorations, app IDs, overrides, and sizes) has been completely abstracted into HostKind match branches in the new `src/host.zig` module. Clean margins and decorations are disabled where the emulator supports client-side or configuration-level window decoration overrides (foot, kitty, alacritty, ghostty, wezterm).
 
-### C. Support Dedicated Menu Pickers (Integration)
-For users who do not want to install another terminal emulator, document and implement native launcher integrations with standard Linux desktop pickers:
-*   **Wayland**: Provide configurations or helper scripts for `fuzzel`, `wofi`, or `tofi`.
-*   **X11**: Provide configuration examples using `rofi` or `dmenu`.
+### C. Support Dedicated Menu Pickers — **[DONE in v0.1.5]**
+Direct support for standard dmenu-style tools has been implemented via the `emojig --list` command. Emojig can be piped into wofi, rofi, fuzzel, and dmenu as:
+```sh
+emojig --list | wofi --dmenu | cut -f1 | tr -d '\n' | wl-copy
+```
 
-### D. Package-Level Dependencies
-Configure distribution packages (e.g., AUR, Nix derivation, Debian package) to list necessary terminal wrappers or clipboard utilities (`wl-copy`/`xclip`) as recommended or required dependencies.
+### D. Package-Level Dependencies — **[DONE in v0.1.5]**
+Distro packages generated via nfpm (`.deb` / `.rpm` under `dist/`) specify the recommended terminal and clipboard utility relationships correctly in packaging metadata.

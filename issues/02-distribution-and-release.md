@@ -1,7 +1,7 @@
 # Emojig: Distribution & Release Plan
 
 > [!NOTE]
-> **Currency Status:** Roadmap, updated June 2, 2026 for **Emojig v0.1.4**. This is
+> **Currency Status:** Roadmap, updated June 2, 2026 for **Emojig v0.1.5**. This is
 > an *aspirational* plan. The **implemented** release flow (local GoReleaser build +
 > manual `fj` draft to Codeberg) lives in [`docs/Release.md`](../docs/Release.md).
 > **AUR and Nix are dropped. Homebrew is low priority.** Active channels: the

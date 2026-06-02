@@ -1,7 +1,7 @@
 # Emojig: Zero-Allocation Emoji Picker
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Matches the active architecture, features, and design goals of **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Matches the active architecture, features, and design goals of **Emojig v0.1.5**.
 
 A high-performance, low-memory emoji picker in Zig. Runs as an inline TUI in any terminal,
 as a floating GUI window on Wayland/X11, or as a shell widget (fzf-style) that inserts the
@@ -93,34 +93,25 @@ SIGINT/SIGTERM handlers, panic override, terminal always restored.
 ### Phase 6 — Theming ✓
 Dark/light/system themes, OSC 11 background detection, Tab toggle, config persistence.
 
-### Phase 7 — Self-managing binary ✓
-Auto-detect GUI vs TUI mode. `--gui` spawns foot with correct geometry. `--tui` forces
-inline TUI. `--wait` blocks until foot window closes. Desktop `.desktop` + SVG icon
-written on first `--gui` run. Virtual console guard (`TERM=linux`).
+### Phase 7 — Self-managing binary & GUI Selector ✓
+Auto-detect GUI vs TUI mode. GUI window spawning (`spawnGuiWindow`) dynamically supports `foot`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`, `gnome-terminal`, `ptyxis`, and `xterm`, and respects overrides via `EMOJIG_TERMINAL` and `$TERMINAL`. Borderless rules are enabled where the host terminal exposes a CLI flag. Writes desktop `.desktop` launcher metadata and SVG icon on installation or first run.
 
 ### Phase 8 — stdout / shell integration ✓
-TUI writes to `/dev/tty`; stdout is clean for shell capture. Selected emoji printed to
-stdout after TUI teardown. Shell snippets in `shell/` for zsh, bash, fish (Ctrl+E widget).
-Handles both normal (`\x1b[A`) and application (`\x1bOA`) cursor key modes — fixes arrow
-keys inside ZLE widgets where zsh activates `smkx`.
+TUI writes to `/dev/tty`; stdout is clean for shell capture. Selected emoji printed to stdout after TUI teardown. Shell snippets in `shell/` for zsh, bash, fish (Ctrl+E widget). Handles both normal (`\x1b[A`) and application (`\x1bOA`) cursor key modes — fixes arrow keys inside ZLE widgets where zsh activates `smkx`.
 
-### Phase 9 — Shell snippet distribution (next)
-- Ship `shell/` snippets in release tarballs
-- `--install-shell-integration [zsh|bash|fish]` flag to append the snippet to the
-  user's rc file
-- Document in README
+### Phase 9 — Shell snippet distribution ✓
+- Ship `shell/` integration scripts inside release tarballs.
+- Implemented `emojig --install` which copies the static musl binary to `~/.local/bin/emojig` and writes the shell rc integration scripts directly under `~/.local/share/emojig/shell/` to enable fast manual loading.
+- Fully documented the sourcing in README.
 
 ### Phase 10 — macOS / SSH (pending)
 - macOS: `/dev/tty` + stdout mode already works; clipboard via `pbcopy`. Needs CI runner.
 - SSH: stdout mode works natively (no clipboard needed). Needs docs.
 
-### Phase 11 — Release infrastructure (partially done)
-See `issues/02-distribution-and-release.md` (roadmap) and `docs/Release.md` (actual flow).
-Done: README, `--version`, `.goreleaser.yaml`, minisign keypair, Codeberg remote, static
-musl tarballs + `.deb`/`.rpm`, signed `SHA256SUMS`, manual `fj` draft release.
-Pending: Woodpecker CI (Codeberg, Linux).
-Dropped: AUR, Nix. Low priority: Homebrew; GitHub mirror + GitHub Actions CI
-(deferred until there are external contributors).
+### Phase 11 — Release infrastructure & Launcher Pipe ✓
+- Implemented pipe-friendly `emojig --list` to feed standard dmenu-style launchers (`rofi`, `wofi`, `fuzzel`, `dmenu`).
+- Local release builds managed via GoReleaser and nfpm for static musl binaries and `.deb` / `.rpm` outputs.
+- Automated tag-triggered Woodpecker CI (`.woodpecker/release.yml`) remains planned as a roadmap target. Dropped: AUR, Nix. Low priority: Homebrew; GitHub mirror + Actions.
 
 ---
 

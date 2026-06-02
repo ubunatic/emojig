@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Git Worktrees — Guide & Hard-Won Lessons
 
 > [!NOTE]
-> **Currency Status:** Current as of June 2, 2026 (**Emojig v0.1.4**). Written after a
+> **Currency Status:** Current as of June 2, 2026 (**Emojig v0.1.5**). Written after a
 > multi-agent session that hit every one of the worktree pitfalls below. Read this
 > before spinning up parallel work — most of these cost real debugging time.
 

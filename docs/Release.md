@@ -1,7 +1,7 @@
 # Release Runbook
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Matches the release process, dependencies, and runbook for **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Matches the release process, dependencies, and runbook for **Emojig v0.1.5**.
 
 ## Prerequisites
 

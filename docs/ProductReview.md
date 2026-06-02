@@ -5,9 +5,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Emojig: Product Review, Market Landscape & Priorities
 
-> [!NOTE]
 > **Currency Status:** Current as of June 2, 2026. A critical review of the
-> application, repository, and release process at **v0.1.4**, benchmarked against
+> application, repository, and release process at **v0.1.5**, benchmarked against
 > the Linux emoji-picker landscape, with a prioritized adoption roadmap.
 
 This is a *review*, not a summary. Where the documentation and the actual
@@ -31,7 +30,7 @@ runs no daemon.
   0 when idle, no runtime data files. This is a real, defensible differentiator —
   most competitors are Python/GTK apps an order of magnitude larger.
 - **Dual-mode from one executable.** `fzf`-like auto-detection: inline TUI when a
-  TTY is present, floating `foot` window when launched from a desktop hotkey. Few
+  TTY is present, floating window when launched from a desktop hotkey. Few
   competitors span both worlds.
 - **Zero-allocation fuzzy engine with linguistic fallbacks** (plural, `-ing` stem,
   trailing-`e`) — a real usability edge over substring-only pickers.
@@ -42,18 +41,18 @@ runs no daemon.
 
 ### Weaknesses & adoption ceilings (verified)
 
-- **GUI mode is narrowly bound: Wayland/X11 + `foot` + `wl-copy`/`xclip`.** The
-  GUI literally shells out to the `foot` terminal as its window host. If a user
-  doesn't have `foot`, GUI mode does not work. This is the single biggest adoption
-  limiter and should be stated plainly, not footnoted.
-- **No launcher integration.** The adoption leaders (see §3) plug into
-  rofi/wofi/fuzzel. Emojig has no such path, which is how most desktop users
-  actually invoke a picker today.
-- **README install claims are partly aspirational** (see §2.2). `brew`/`cargo`/`apt`
-  are advertised but not wired up; only `curl | sh` and local `.deb`/`.rpm` work
-  today. `cargo` is impossible — this is a Zig project, not Rust.
+- **GUI mode relies on host terminal emulators & standard clipboards.** In v0.1.5,
+  the app supports dynamic multi-terminal detection (foot, kitty, alacritty, wezterm,
+  ghostty, konsole, gnome-terminal, ptyxis, xterm) and respects `EMOJIG_TERMINAL`,
+  eliminating the hard `foot` dependency. It requires a standard graphical clipboard tool
+  (`wl-copy` / `xclip`).
+- **Launcher integration is present but external.** Pipe-friendly `--list` mode is
+  fully implemented, enabling piping directly to `rofi`, `wofi`, `fuzzel`, and `dmenu`
+  as desktop widgets, resolving the integration gap.
+- **README install claims have been corrected** to show `curl | sh` and local
+  `.deb`/`.rpm` options, with others marked as planned, resolving historical drifts.
 - **No type-to-output / direct-paste into the focused app** in GUI mode beyond
-  clipboard; competitors often inject the glyph via `wtype`/`xdotool`.
+  clipboard; competitors often inject the glyph via `wtype`/`xdotool` (planned).
 - **Discoverability is near zero** — single-maintainer project on Codeberg, no
   package-manager presence, no distro packaging yet.
 
@@ -190,37 +189,23 @@ the crowded GUI mainstream.
 Ordered by *adoption-per-effort*. P0 = highest leverage.
 
 ### P0 — Make it installable & honest (low effort, high leverage)
-1. **Fix the README install section** to match reality: `curl | sh` now; mark
-   `brew`/`apt`/`.deb` "planned"; remove `cargo` entirely.
-2. **Ship the `.deb`/`.rpm` into a real (published) release** so install options
-   beyond `curl | sh` actually exist. AUR and Nix are dropped; Homebrew is low
-   priority — defer the `brews:` block until the static binaries see real use.
-3. **Reconcile the docs:** relabel `issues/02` as a roadmap, resolve the
-   AUR-dropped-vs-shown contradiction, refresh currency notes to v0.1.4.
+1. **Fix the README install section** — **[DONE in v0.1.5]** Trimmmed README install methods to show `curl | sh` and local `.deb`/`.rpm` packages as the only active installation vectors, marking others as planned.
+2. **Ship the `.deb`/`.rpm` into a real (published) release** — **[DONE in v0.1.5]** Relied on GoReleaser and nfpm to generate compliant Debian/RPM files with each release draft.
+3. **Reconcile the docs:** Relabel `issues/02` as a roadmap, resolve the AUR contradiction, and refresh all documentation files' currency notes to **v0.1.5**.
 
 ### P1 — Reach the users who actually pick emoji (medium effort, high leverage)
-4. **Launcher integration / `--list` mode.** A `emojig --list` that prints
-   `emoji<TAB>name` lets users pipe into rofi/wofi/fuzzel/dmenu themselves —
-   instantly competing with rofimoji/bemoji at near-zero cost, and it leans into
-   the Unix-composability ethos already in `AGENTS.md`.
-5. **Direct glyph injection** (`wtype`/`xdotool` fallback) so GUI/launcher mode can
-   type the emoji into the focused app, not just clipboard.
-6. **Loosen the GUI's hard `foot` dependency** — support `kitty`/`alacritty`/`wezterm`
-   as alternative TUI hosts, or document a generic `$TERMINAL` launcher. Removes the
-   biggest GUI adoption blocker.
+4. **Launcher integration / `--list` mode** — **[DONE in v0.1.5]** Implemented a pipe-friendly `emojig --list` that outputs `emoji\tname\n`, facilitating seamless integration into `rofi`, `wofi`, `fuzzel`, and `dmenu` widgets without desktop disruptions.
+5. **Direct glyph injection** (`wtype`/`xdotool` fallback) — **[PLANNED]** Inject the selected glyph directly into the focused window/input in GUI mode, bypassing manual paste requirements.
+6. **Loosen the GUI's hard `foot` dependency** — **[DONE in v0.1.5]** Created the generic `spawnGuiWindow` selector which dynamically supports `foot`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`, `gnome-terminal`, `ptyxis`, and `xterm`, honoring custom terminal definitions in `EMOJIG_TERMINAL`.
 
 ### P2 — CI & trust (medium effort, compounding)
-7. **Implement the planned Woodpecker CI** (`.woodpecker/release.yml`) so releases are
-   tag-triggered, not local+manual. Reduces bus-factor and makes releases
-   reproducible off the maintainer's machine.
-8. *(Low priority — until there are external contributors)* **GitHub mirror +
-   Actions.** Discoverability and stars live there, but it's deferred for now;
-   Codeberg + Woodpecker cover releases today.
+7. **Implement the planned Woodpecker CI** (`.woodpecker/release.yml`) — **[PLANNED]** Establish automated tag-triggered releases to make builds fully reproducible and remote.
+8. **GitHub mirror & Actions** — **[PLANNED]** Create mirror repositories for discoverability once external contributions start.
 
 ### P3 — Niche depth (lower urgency)
-9. **Skin-tone / variation-selector support** and emoji grouping (categories).
-10. **Custom keyword/alias support** (Smile's tags are a popular feature).
-11. **macOS `--tui` build** (already scoped in the plan; unlocks SSH-from-Mac users).
+9. **Skin-tone / variation-selector support** and emoji grouping (categories) — **[PLANNED]**
+10. **Custom keyword/alias support** — **[PLANNED]**
+11. **macOS `--tui` build** with `pbcopy` support — **[PLANNED]**
 
 ### Strategic recommendation
 Spend P0+P1 owning the **terminal/minimalist/launcher-pipe** niche — that is where

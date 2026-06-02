@@ -1,7 +1,7 @@
 # Managing the Installer Script (install.sh)
 
 > [!NOTE]
-> **Currency Status:** Current as of June 1, 2026. Outlines the installation script architecture, Codeberg API dynamic resolution, and hosting strategies for **Emojig v0.1.1**.
+> **Currency Status:** Current as of June 2, 2026. Outlines the installation script architecture, Codeberg API dynamic resolution, and hosting strategies for **Emojig v0.1.5**.
 
 This document outlines the architecture, implementation details, and hosting workflow for the **Emojig** lightweight POSIX installer script. The primary goal is to maintain a frictionless one-liner installation:
 

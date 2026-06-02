@@ -1,7 +1,7 @@
 # Shell Integration: fzf-style Stdout Mode
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Matches the shell widget integrations and stdout capture behavior of **Emojig v0.1.0**.
+> **Currency Status:** Current as of June 2, 2026. Matches the shell widget integrations and stdout capture behavior of **Emojig v0.1.5**.
 
 How emojig integrates with shells via stdout capture, and the technical details
 discovered during implementation.
