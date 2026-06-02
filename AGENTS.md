@@ -148,14 +148,35 @@ To ensure seamless operation across CLI environments, graphical desktops, and cu
 
 1. **Auto-Mode (`emojig` without arguments)**:
    * **In-place TUI**: If standard input is an interactive terminal (`isatty` / `can_use_tty` is true), the picker launches immediately within the active terminal session.
-   * **Floating GUI**: If executed from a non-interactive context (e.g., desktop shortcut or desktop environment hotkey where `can_use_tty` is false) and a Wayland/X11 session is active, it spawns `foot` with `--gui`.
+   * **Floating GUI**: If executed from a non-interactive context (e.g., desktop shortcut or desktop environment hotkey where `can_use_tty` is false) and a Wayland/X11 session is active, it opens a floating GUI window via `--gui`.
 2. **Forced TUI Mode (`emojig --tui`)**:
    * Bypasses environment checks and forces execution in-place in the current terminal. Fails with an exit code of `1` if standard input is not a terminal.
 3. **Forced GUI Mode (`emojig --gui`)**:
-   * Bypasses TTY checks and forces the launching of a new floating `foot` window. Fails if no active Wayland or X11 graphical session is detected.
+   * Bypasses TTY checks and forces the launching of a new floating GUI window. The host terminal is chosen by precedence — `EMOJIG_TERMINAL`, then `$TERMINAL` (if on PATH), then auto-detection (`foot` preferred, else `kitty`/`alacritty`/`wezterm`/`ghostty`/`konsole`/`gnome-terminal`/`xterm`). `foot` keeps cell-precise sizing; others adapt via altscreen. Fails if no active Wayland or X11 graphical session is detected, or if no supported terminal is found (`EMOJIG_TERMINAL` hint is printed).
 
 ### Design Rationale: Why "fzf-like" Auto-Detection is Used
 * **CLI Composability**: Standard shell utilities must respect Unix piping idioms. Launching in-place when a TTY is active mimics standard tools like `fzf` and `skim`, enabling users to seamlessly integrate the picker into shell scripts or run it directly in splits/multiplexers without popup window disruption.
 * **Hotkey and Widget Ergonomics**: Desktop hotkeys are spawned in non-TTY environments. By auto-detecting the absence of a TTY and automatically launching the floating graphical window fallback, `emojig` acts as both a CLI tool and a global graphical widget under a single unified executable name.
+
+---
+
+## 10. Git Worktrees (parallel & agent work)
+
+When running parallel branches or spawning agents with `isolation: "worktree"`, read
+**[`docs/Worktrees.md`](docs/Worktrees.md)** first. Critical points:
+
+* **Preparation**: a fresh worktree builds with no bootstrap because `src/emojis.bin`
+  is *tracked*. The gitignored `data/` dir (needed only by `make pack`) is **not**
+  present — use `make worktree NAME=...`, which creates a sibling worktree and
+  symlinks `data/`.
+* **Merging agent work back — do not `cp` the agent's file over `main`.** Agent
+  worktrees are branched from a base commit and may be **stale** (missing commits you
+  landed after launch). Diff against the agent's **merge-base** and `git apply` the
+  patch, then re-run `zig build test` + `zig fmt --check src/` in `main`. A naive copy
+  can silently revert newer features.
+* **Hygiene**: `.claude/worktrees/` is gitignored so transient agent worktrees don't
+  pollute `git status` or get scanned by `reuse lint` (which otherwise reports false
+  non-compliance). Stage commits by explicit path — never `git add -A` — because other
+  agents may have uncommitted changes in the shared `main` tree at the same time.
 
 
