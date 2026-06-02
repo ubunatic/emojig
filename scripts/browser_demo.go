@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -33,15 +35,19 @@ FROM alpine:3.20
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# Install ttyd and system tools (including standard emoji-compatible fonts, mc, fzf, bash, and Go)
-RUN apk add --no-cache ttyd shadow font-noto-emoji mc fzf bash go
+# Layer 1: heavy/slow packages — cached independently so they survive most Dockerfile edits.
+# go, gcc, and the emoji font are the largest downloads; put them first.
+RUN apk add --no-cache go gcc font-noto-emoji
+
+# Layer 2: lighter runtime tools — add or remove these without busting the layer above.
+RUN apk add --no-cache ttyd shadow mc fzf bash sudo curl
 
 # Create a non-root unprivileged demo user with bash shell
 RUN useradd -m -s /bin/bash demo-user
 WORKDIR /home/demo-user
 
-# Copy native executable from the host build
-COPY zig-out/bin/emojig /usr/local/bin/emojig
+# Copy native executable from the host build as emojig-dev (public install provides the real emojig)
+COPY zig-out/bin/emojig /usr/local/bin/emojig-dev
 
 # Copy shell integration scripts
 COPY src/shell /usr/local/share/emojig/shell
@@ -49,17 +55,30 @@ COPY src/shell /usr/local/share/emojig/shell
 # Copy Go and helper scripts
 COPY scripts /home/demo-user/scripts
 
-# Configure bash_profile and bashrc for demo-user to automatically source Emojig keybinds and show help
+# Allow demo-user to install packages with apk (no password required)
+RUN echo 'demo-user ALL=(root) NOPASSWD: /sbin/apk add *, /sbin/apk update, /sbin/apk search *' \
+    > /etc/sudoers.d/demo-user && chmod 0440 /etc/sudoers.d/demo-user
+
+# Configure bash_profile and bashrc for demo-user:
+#   - runs the public install script first (visual first action in the demo terminal)
+#   - then shows the help banner
 RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
     echo 'export LANG=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export LC_ALL=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export PS1="\[\033[01;32m\]➜  \[\033[01;34m\]\W\[\033[00m\] "' >> /home/demo-user/.bash_profile && \
     echo 'source /usr/local/share/emojig/shell/emojig.bash' >> /home/demo-user/.bash_profile && \
+    echo '# Auto-run the public install script so it is the first visible action' >> /home/demo-user/.bash_profile && \
+    echo 'echo ""' >> /home/demo-user/.bash_profile && \
+    echo 'echo "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m"' >> /home/demo-user/.bash_profile && \
+    echo 'curl -fsSL https://ubunatic.com/emojig/install.sh | sh' >> /home/demo-user/.bash_profile && \
+    echo 'echo ""' >> /home/demo-user/.bash_profile && \
     echo 'echo "👋 Welcome to the Emojig TUI Sandbox!"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Press: Ctrl-E                (to trigger the Emojig shell widget!)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: emojig --tui --safe   (to run the emoji picker manually)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: mc                   (to run Midnight Commander)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: fzf                  (to run fuzzy finder)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Press: Ctrl-E                 (to trigger the Emojig shell widget!)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: emojig --tui --safe    (to run the installed emoji picker)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: emojig-dev --tui --safe (to run the local dev build)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: mc                    (to run Midnight Commander)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: fzf                   (to run fuzzy finder)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Install packages: sudo apk add <package>"' >> /home/demo-user/.bash_profile && \
     echo 'echo "💡 Go Demos: go run scripts/test_tui.go"' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
     cp /home/demo-user/.bash_profile /home/demo-user/.bashrc && \
@@ -86,9 +105,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Emojig - Interactive TUI Browser Sandbox</title>
     {{FAVICON}}
-    <!-- Premium Fonts and Tailwind/Custom styles for the WOW factor -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <!-- Fonts and xterm styles — served locally from /vendor/ (no external CDN calls) -->
+    <link href="/vendor/fonts.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/xterm.css" />
     <style>
         :root {
             --bg-color: #0f1015;
@@ -322,15 +341,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
     </div>
 
-    <!-- Load xterm.js and Unicode 11 addon from CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-unicode11@0.7.0/lib/xterm-addon-unicode11.js"></script>
+    <!-- Load xterm.js and Unicode 11 addon from local vendor (no external CDN calls) -->
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-unicode11.js"></script>
     <script>
         // Setup xterm.js instance matching standard ANSI layout (80x24)
         const term = new Terminal({
             cols: 80,
             rows: 24,
             cursorBlink: true,
+            allowProposedApi: true,
             theme: {
                 background: '#12131a',
                 foreground: '#a8a8a8',
@@ -536,6 +556,107 @@ func stopContainer(rt string) {
 	_ = exec.Command(rt, "stop", containerName).Run()
 }
 
+// vendorDir is the directory under scripts/ where downloaded assets are cached.
+const vendorDir = "scripts/vendor"
+
+// vendorAssets downloads all external JS/CSS/font dependencies into scripts/vendor/ so the
+// demo HTML never makes calls to external CDNs or font services.
+func vendorAssets() error {
+	if err := os.MkdirAll(vendorDir, 0755); err != nil {
+		return fmt.Errorf("creating vendor dir: %w", err)
+	}
+
+	// Plain JS/CSS assets: source URL → local filename.
+	plainAssets := []struct{ url, name string }{
+		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css", "xterm.css"},
+		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js", "xterm.js"},
+		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js.map", "xterm.js.map"},
+		{"https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.7.0/lib/addon-unicode11.js", "addon-unicode11.js"},
+		{"https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.7.0/lib/addon-unicode11.js.map", "addon-unicode11.js.map"},
+	}
+	for _, a := range plainAssets {
+		dst := filepath.Join(vendorDir, a.name)
+		if err := downloadFile(a.url, dst); err != nil {
+			return fmt.Errorf("downloading %s: %w", a.url, err)
+		}
+		fmt.Printf("  ✅ vendored %s\n", a.name)
+	}
+
+	// Google Fonts: fetch the CSS (with a modern UA to get woff2 URLs), download every
+	// referenced font file, rewrite the CSS to use local /vendor/ paths, save fonts.css.
+	googleFontsURL := "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+	fontsCSS, err := fetchGoogleFontsCSS(googleFontsURL)
+	if err != nil {
+		return fmt.Errorf("vendoring Google Fonts: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(vendorDir, "fonts.css"), []byte(fontsCSS), 0644); err != nil {
+		return fmt.Errorf("writing fonts.css: %w", err)
+	}
+	fmt.Println("  ✅ vendored fonts.css + woff2 font files")
+
+	return nil
+}
+
+// downloadFile fetches url and saves the body to dst.
+// If dst already exists it is reused (acts as a simple on-disk cache).
+func downloadFile(url, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return nil // already cached
+	}
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, url)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
+// fetchGoogleFontsCSS downloads the Google Fonts CSS stylesheet, downloads every woff2 font
+// file it references into vendorDir, and returns the CSS with all url(...) values rewritten
+// to use local /vendor/<filename> paths.
+func fetchGoogleFontsCSS(googleURL string) (string, error) {
+	req, err := http.NewRequest("GET", googleURL, nil)
+	if err != nil {
+		return "", err
+	}
+	// A modern User-Agent is required: Google Fonts serves woff2 only to capable browsers.
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	cssBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	css := string(cssBytes)
+
+	// Rewrite every url(https://...) reference: download the font file and point to /vendor/<name>.
+	re := regexp.MustCompile(`url\((https://[^)]+)\)`)
+	var downloadErr error
+	css = re.ReplaceAllStringFunc(css, func(match string) string {
+		fontURL := re.FindStringSubmatch(match)[1]
+		// Derive a safe local filename from the last path segment, stripping any query string.
+		name := filepath.Base(strings.SplitN(fontURL, "?", 2)[0])
+		dst := filepath.Join(vendorDir, name)
+		if err := downloadFile(fontURL, dst); err != nil {
+			fmt.Printf("  ⚠️  failed to download font %s: %v\n", fontURL, err)
+			downloadErr = err
+			return match // keep original URL on error rather than breaking the CSS
+		}
+		return "url(/vendor/" + name + ")"
+	})
+	return css, downloadErr
+}
+
 func main() {
 	fmt.Println("====================================================")
 	fmt.Println("       Emojig TUI Browser Sandbox Prototyper        ")
@@ -549,7 +670,15 @@ func main() {
 	}
 	fmt.Println("✅ Musl compilation successful!")
 
-	// Step 2: Generate demo files.
+	// Step 2: Vendor all external JS/CSS/font assets locally so the HTML serves with no CDN calls.
+	fmt.Println("Vendoring external assets into scripts/vendor/...")
+	if err := vendorAssets(); err != nil {
+		fmt.Printf("❌ Failed to vendor assets: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✅ All assets vendored.")
+
+	// Step 3: Generate demo files.
 	dockerfilePath := filepath.Join("scripts", "demo.Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644); err != nil {
 		fmt.Printf("❌ Failed to write Dockerfile: %v\n", err)
@@ -571,7 +700,7 @@ func main() {
 	}
 	fmt.Printf("📝 Generated client-side HTML:   %s\n", htmlPath)
 
-	// Step 3: Find a container runtime and run the ttyd container.
+	// Step 4: Find a container runtime and run the ttyd container.
 	rt := findRuntime()
 	if rt == "" {
 		// Fallback: try local ttyd directly.

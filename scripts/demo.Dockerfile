@@ -7,15 +7,19 @@ FROM alpine:3.20
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# Install ttyd and system tools (including standard emoji-compatible fonts, mc, fzf, bash, and Go)
-RUN apk add --no-cache ttyd shadow font-noto-emoji mc fzf bash go
+# Layer 1: heavy/slow packages — cached independently so they survive most Dockerfile edits.
+# go, gcc, and the emoji font are the largest downloads; put them first.
+RUN apk add --no-cache go gcc font-noto-emoji
+
+# Layer 2: lighter runtime tools — add or remove these without busting the layer above.
+RUN apk add --no-cache ttyd shadow mc fzf bash sudo curl
 
 # Create a non-root unprivileged demo user with bash shell
 RUN useradd -m -s /bin/bash demo-user
 WORKDIR /home/demo-user
 
-# Copy native executable from the host build
-COPY zig-out/bin/emojig /usr/local/bin/emojig
+# Copy native executable from the host build as emojig-dev (public install provides the real emojig)
+COPY zig-out/bin/emojig /usr/local/bin/emojig-dev
 
 # Copy shell integration scripts
 COPY src/shell /usr/local/share/emojig/shell
@@ -23,17 +27,30 @@ COPY src/shell /usr/local/share/emojig/shell
 # Copy Go and helper scripts
 COPY scripts /home/demo-user/scripts
 
-# Configure bash_profile and bashrc for demo-user to automatically source Emojig keybinds and show help
+# Allow demo-user to install packages with apk (no password required)
+RUN echo 'demo-user ALL=(root) NOPASSWD: /sbin/apk add *, /sbin/apk update, /sbin/apk search *' \
+    > /etc/sudoers.d/demo-user && chmod 0440 /etc/sudoers.d/demo-user
+
+# Configure bash_profile and bashrc for demo-user:
+#   - runs the public install script first (visual first action in the demo terminal)
+#   - then shows the help banner
 RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
     echo 'export LANG=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export LC_ALL=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export PS1="\[\033[01;32m\]➜  \[\033[01;34m\]\W\[\033[00m\] "' >> /home/demo-user/.bash_profile && \
     echo 'source /usr/local/share/emojig/shell/emojig.bash' >> /home/demo-user/.bash_profile && \
+    echo '# Auto-run the public install script so it is the first visible action' >> /home/demo-user/.bash_profile && \
+    echo 'echo ""' >> /home/demo-user/.bash_profile && \
+    echo 'echo "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m"' >> /home/demo-user/.bash_profile && \
+    echo 'curl -fsSL https://ubunatic.com/emojig/install.sh | sh' >> /home/demo-user/.bash_profile && \
+    echo 'echo ""' >> /home/demo-user/.bash_profile && \
     echo 'echo "👋 Welcome to the Emojig TUI Sandbox!"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Press: Ctrl-E                (to trigger the Emojig shell widget!)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: emojig --tui --safe   (to run the emoji picker manually)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: mc                   (to run Midnight Commander)"' >> /home/demo-user/.bash_profile && \
-    echo 'echo "💡 Type: fzf                  (to run fuzzy finder)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Press: Ctrl-E                 (to trigger the Emojig shell widget!)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: emojig --tui --safe    (to run the installed emoji picker)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: emojig-dev --tui --safe (to run the local dev build)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: mc                    (to run Midnight Commander)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Type: fzf                   (to run fuzzy finder)"' >> /home/demo-user/.bash_profile && \
+    echo 'echo "💡 Install packages: sudo apk add <package>"' >> /home/demo-user/.bash_profile && \
     echo 'echo "💡 Go Demos: go run scripts/test_tui.go"' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
     cp /home/demo-user/.bash_profile /home/demo-user/.bashrc && \

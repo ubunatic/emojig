@@ -21,3 +21,5 @@ data/
 # transient agent worktrees (created by the Agent tool)
 /.claude/worktrees/
 
+# Runtime-generated browser demo vendor assets (downloaded by browser_demo.go)
+scripts/vendor/
