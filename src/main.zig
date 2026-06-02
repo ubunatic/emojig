@@ -537,6 +537,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_gui = false;
     var opt_wait = false;
     var opt_install = false;
+    var opt_list = false;
     var opt_theme: ?Theme = null;
     var opt_width: ?usize = null;
     var opt_height: ?usize = null;
@@ -552,6 +553,8 @@ pub fn main(init: std.process.Init) !void {
             opt_tui = true;
         } else if (std.mem.eql(u8, arg, "--install")) {
             opt_install = true;
+        } else if (std.mem.eql(u8, arg, "--list")) {
+            opt_list = true;
         } else if (std.mem.eql(u8, arg, "--gui")) {
             opt_gui = true;
         } else if (std.mem.eql(u8, arg, "--wait")) {
@@ -624,6 +627,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
+                "  --list                       Print all emojis as 'emoji<TAB>name' for rofi/wofi/dmenu\n" ++
                 "  -v, --version                Show version and exit\n" ++
                 "  -h, --help                   Show this help message\n");
             std.process.exit(0);
@@ -641,6 +645,33 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         });
         installShellIntegration(init.io, home);
+        std.process.exit(0);
+    }
+
+    if (opt_list) {
+        var buf: [4096]u8 = undefined;
+        var buf_pos: usize = 0;
+        var i: usize = 0;
+        while (i < emojig.EmojiDb.count) : (i += 1) {
+            const entry = emojig.EmojiDb.getEntry(i);
+            // emoji + tab + name + newline; max emoji ~8 bytes, name ~64 bytes
+            const needed = entry.emoji.len + 1 + entry.name.len + 1;
+            if (buf_pos + needed > buf.len) {
+                try writeAll(std.posix.STDOUT_FILENO, buf[0..buf_pos]);
+                buf_pos = 0;
+            }
+            @memcpy(buf[buf_pos .. buf_pos + entry.emoji.len], entry.emoji);
+            buf_pos += entry.emoji.len;
+            buf[buf_pos] = '\t';
+            buf_pos += 1;
+            @memcpy(buf[buf_pos .. buf_pos + entry.name.len], entry.name);
+            buf_pos += entry.name.len;
+            buf[buf_pos] = '\n';
+            buf_pos += 1;
+        }
+        if (buf_pos > 0) {
+            try writeAll(std.posix.STDOUT_FILENO, buf[0..buf_pos]);
+        }
         std.process.exit(0);
     }
 

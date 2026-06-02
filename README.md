@@ -19,7 +19,9 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 
 > [!Important]
 > GUI mode is Wayland-only for now and requires `foot` and `wl-copy`.
-> Install with `brew`, `cargo`, `apt`, or a package manager of your choice.
+
+The recommended install is the static-binary script below. Distro packages
+(`.deb` / `.rpm`) ship with each release; a Homebrew formula is planned.
 
 To download the latest static binary and install it:
 
@@ -75,12 +77,32 @@ pick an emoji, it lands at your cursor. Also copies to clipboard if available.
 
 To use a different key: `export EMOJIG_KEY='^F'` (zsh/bash format) before sourcing.
 
+## Launcher integration (rofi / wofi / fuzzel / dmenu)
+
+`emojig --list` prints every emoji as `emoji<TAB>name`, one per line, with no UI.
+Pipe it into any dmenu-style launcher and let the launcher do the filtering:
+
+```sh
+# wofi (Wayland)
+emojig --list | wofi --dmenu | cut -f1 | tr -d '\n' | wl-copy
+
+# rofi (X11)
+emojig --list | rofi -dmenu -i | cut -f1 | tr -d '\n' | xclip -selection clipboard
+
+# fuzzel (Wayland)
+emojig --list | fuzzel --dmenu | cut -f1 | tr -d '\n' | wl-copy
+```
+
+Bind one of these to a desktop hotkey for a system-wide picker themed by your
+existing launcher — no `foot` dependency required.
+
 ## Usage
 
 ```sh
 emojig                  # auto: floating window (GUI) or inline TUI (terminal)
 emojig --tui            # force inline TUI — works over SSH, in VT, anywhere
 emojig --gui            # force floating foot window (Wayland/X11)
+emojig --list           # print all emojis as 'emoji<TAB>name' (for rofi/wofi/dmenu)
 emojig --install        # install binary + shell scripts to ~/.local/
 $(emojig)               # stdout capture — emoji goes to the calling shell
 emojig | wl-copy        # pipe to clipboard tool directly
