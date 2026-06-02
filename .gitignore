@@ -9,6 +9,9 @@ data/
 # Log files
 *.log
 
+# big videos
+*.mp4
+
 # gthumb files
 .comments
 

@@ -361,6 +361,7 @@ const HostKind = enum {
     konsole,
     gnome_terminal,
     ptyxis,
+    xfce4_terminal,
     xterm,
     generic,
 };
@@ -439,6 +440,7 @@ fn hostKindFromName(name: []const u8) HostKind {
     if (std.mem.eql(u8, name, "konsole")) return .konsole;
     if (std.mem.eql(u8, name, "gnome-terminal")) return .gnome_terminal;
     if (std.mem.eql(u8, name, "ptyxis")) return .ptyxis;
+    if (std.mem.eql(u8, name, "xfce4-terminal")) return .xfce4_terminal;
     if (std.mem.eql(u8, name, "xterm")) return .xterm;
     return .generic;
 }
@@ -608,6 +610,17 @@ fn buildGuiArgv(
             out[n] = term;
             n += 1;
             out[n] = "--";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .xfce4_terminal => {
+            // TODO: find out about decos
+            out[n] = term;
+            n += 1;
+            out[n] = "-x";
             n += 1;
             for (tail) |s| {
                 out[n] = s;
