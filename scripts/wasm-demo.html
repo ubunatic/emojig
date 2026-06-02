@@ -575,13 +575,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         function applyWasmMode() {
             if (wasmAvailable) {
-                document.getElementById('wasm-frame').style.display = '';
+                const frame = document.getElementById('wasm-frame');
+                frame.style.display = '';
                 document.getElementById('wasm-unavailable').style.display = 'none';
 
                 // Lazy load the iframe on first switch to WASM mode
                 if (!wasmFrameLoaded) {
-                    document.getElementById('wasm-frame').src = '/wasm-out/index.html';
+                    frame.src = '/wasm-out/index.html';
                     wasmFrameLoaded = true;
+                    // Focus after load so the inner xterm receives keyboard events
+                    frame.addEventListener('load', () => frame.focus(), { once: true });
+                } else {
+                    frame.focus();
                 }
             } else {
                 document.getElementById('wasm-unavailable').style.display = '';

@@ -670,13 +670,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         function applyWasmMode() {
             if (wasmAvailable) {
-                document.getElementById('wasm-frame').style.display = '';
+                const frame = document.getElementById('wasm-frame');
+                frame.style.display = '';
                 document.getElementById('wasm-unavailable').style.display = 'none';
 
                 // Lazy load the iframe on first switch to WASM mode
                 if (!wasmFrameLoaded) {
-                    document.getElementById('wasm-frame').src = '/wasm-out/index.html';
+                    frame.src = '/wasm-out/index.html';
                     wasmFrameLoaded = true;
+                    // Focus after load so the inner xterm receives keyboard events
+                    frame.addEventListener('load', () => frame.focus(), { once: true });
+                } else {
+                    frame.focus();
                 }
             } else {
                 document.getElementById('wasm-unavailable').style.display = '';
@@ -713,8 +718,8 @@ func findRuntime() string {
 }
 
 // runCmd runs a command with inherited stdout/stderr and returns any error.
-func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+func runCmd(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -727,10 +732,171 @@ func stopContainer(rt string) {
 
 const c2wRepo = "https://github.com/ktock/container2wasm.git"
 
-// buildC2WInDocker builds WASM using docker:dind.
-// Exports the image to tar, then loads and compiles it inside the container.
-func buildC2WInDocker(rt, imageName, outDir string) bool {
+// c2wBuildContainer is the (privileged, nested-dockerd) container that runs the
+// WASM compile. It must be force-removed on every exit path: killing the
+// `docker run` client does NOT stop the container, so on Ctrl+C it would
+// otherwise orphan with a dockerd + buildkit still running inside it.
+const c2wBuildContainer = "emojig-c2w-build-temp"
+
+// c2wCacheVolume persists the nested dockerd's /var/lib/docker (pulled base
+// images + buildkit layer cache) across runs. Without it every WASM build
+// starts with an empty daemon and re-pulls/re-builds everything. Clear it with
+// `docker volume rm emojig-c2w-dind-cache` if it ever gets corrupted or large.
+const c2wCacheVolume = "emojig-c2w-dind-cache"
+
+// c2wBuilderImage is the image whose containers run the nested-dockerd WASM
+// build. Only one may run at a time — they share c2wCacheVolume.
+const c2wBuilderImage = "emojig-c2w-builder"
+
+// stopGrace is the `docker stop -t` timeout (seconds) the nested dockerd gets
+// to flush /var/lib/docker before it's SIGKILLed. Generous so a stop during
+// heavy build I/O still shuts down cleanly and keeps the cache intact.
+const stopGrace = "30"
+
+// The c2w build must run as root: c2w's rootfs stage uses mknod, which the
+// kernel forbids inside the rootless podman user namespace (EPERM regardless of
+// --privileged). So the build subsystem (builder image, stale-stop, run,
+// cleanup) is invoked rootfully via sudo; only the app-image export stays
+// rootless, since emojig-demo lives in the user's rootless storage.
+
+// sudoCtx builds a context-bound `sudo <rt> <args...>` command. Stdin is the
+// terminal so sudo can prompt if cached credentials have expired.
+func sudoCtx(ctx context.Context, rt string, args ...string) *exec.Cmd {
+	c := exec.CommandContext(ctx, "sudo", append([]string{rt}, args...)...)
+	c.Stdin = os.Stdin
+	return c
+}
+
+// sudoBare is sudoCtx without a context, for cleanup that must survive ctx
+// cancellation (Ctrl+C).
+func sudoBare(rt string, args ...string) *exec.Cmd {
+	c := exec.Command("sudo", append([]string{rt}, args...)...)
+	c.Stdin = os.Stdin
+	return c
+}
+
+// primeSudo validates sudo credentials once up front so the multi-minute build
+// doesn't pause to prompt midway.
+func primeSudo(ctx context.Context) error {
+	fmt.Println("🔑 WASM build needs real root (mknod is blocked in rootless podman) — priming sudo...")
+	c := exec.CommandContext(ctx, "sudo", "-v")
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return c.Run()
+}
+
+// chownToUser restores ownership of a path written by the rootful build back to
+// the invoking user, so the output dir isn't left root-owned.
+func chownToUser(path string) {
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	c := exec.Command("sudo", "chown", "-R", owner, path)
+	c.Stdin = os.Stdin
+	if err := c.Run(); err != nil {
+		fmt.Printf("⚠️  Could not restore ownership of %s (try: sudo chown -R %s %s): %v\n", path, owner, path, err)
+	}
+}
+
+// stopStaleBuilds gracefully stops any container created from the c2w builder
+// image — e.g. a build orphaned by a previous Ctrl+C. They must be gone before
+// a new build starts: a second nested dockerd on the shared c2wCacheVolume
+// (/var/lib/docker) would corrupt it. We `stop` (SIGTERM) rather than `rm -f`
+// (SIGKILL) so the nested dockerd flushes and the cache stays intact; the
+// containers are `--rm`, so stopping also removes them. Reports what it
+// stopped so it's visible.
+func stopStaleBuilds(rt string) {
+	out, err := sudoBare(rt, "ps", "-aq", "--filter", "ancestor="+c2wBuilderImage).Output()
+	if err != nil {
+		// Fall back to the well-known name if the filter isn't supported.
+		_ = sudoBare(rt, "stop", "-t", stopGrace, c2wBuildContainer).Run()
+		return
+	}
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return
+	}
+	fmt.Printf("🧹 Stopping %d stale c2w build container(s) from a previous run...\n", len(ids))
+	_ = sudoBare(rt, append([]string{"stop", "-t", stopGrace}, ids...)...).Run()
+}
+
+// buildC2WBuilderImage ensures the c2w builder image is built and current.
+// Rootful: the image must live in root's storage, since the rootful `docker run`
+// looks for it there. We always invoke build (not a presence check) so changes
+// to scripts/Dockerfile.c2w are picked up; the layer cache makes an unchanged
+// build near-instant.
+func buildC2WBuilderImage(ctx context.Context, rt string) bool {
+	fmt.Printf("🔨 Ensuring c2w builder image is up to date...\n")
+	buildCmd := sudoCtx(ctx, rt, "build", "-t", c2wBuilderImage, "-f", "scripts/Dockerfile.c2w", ".")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		fmt.Printf("⚠️  Failed to build c2w builder: %v\n%s", err, out)
+		return false
+	}
+	fmt.Printf("✅ c2w builder ready\n")
+	return true
+}
+
+// humanSize renders a byte count as a short human-readable string.
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+}
+
+// watchOutDir polls dir until ctx is cancelled, reporting files in the
+// mounted output directory as they first appear and as they grow. This gives
+// "a bit" of visible progress for the otherwise-silent c2w compile.
+func watchOutDir(ctx context.Context, dir string) {
+	seen := map[string]int64{}
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				info, err := d.Info()
+				if err != nil {
+					return nil
+				}
+				rel, _ := filepath.Rel(dir, path)
+				size := info.Size()
+				prev, ok := seen[rel]
+				if !ok {
+					fmt.Printf("   📄 %s (%s)\n", rel, humanSize(size))
+				} else if size != prev {
+					fmt.Printf("   📈 %s (%s)\n", rel, humanSize(size))
+				}
+				seen[rel] = size
+				return nil
+			})
+		}
+	}
+}
+
+// buildC2WInDocker builds WASM using the cached c2w builder image.
+func buildC2WInDocker(ctx context.Context, rt, imageName, outDir string) bool {
 	fmt.Printf("🔄 Compiling to WebAssembly (this may take 1-5 minutes)...\n")
+
+	// Prime sudo once: the build subsystem below runs rootfully (mknod needs
+	// real root) and we don't want a password prompt interrupting it midway.
+	if err := primeSudo(ctx); err != nil {
+		fmt.Printf("⚠️  rootful WASM build needs sudo: %v\n", err)
+		return false
+	}
+
+	// Build or reuse the c2w builder image
+	if !buildC2WBuilderImage(ctx, rt) {
+		return false
+	}
 
 	absOutDir, _ := filepath.Abs(outDir)
 	tmpDir, _ := os.MkdirTemp("", "c2w-dind-*")
@@ -738,50 +904,150 @@ func buildC2WInDocker(rt, imageName, outDir string) bool {
 
 	imageTarPath := filepath.Join(tmpDir, "image.tar")
 
-	// Step 1: Export image from host
-	fmt.Printf("   Exporting %s image...\n", imageName)
-	exportCmd := exec.Command(rt, "save", "-o", imageTarPath, imageName)
+	// Export image from host — rootless, since emojig-demo lives in the user's
+	// rootless storage. The rootful build only needs the resulting tar file.
+	fmt.Printf("   Exporting %s...\n", imageName)
+	exportCmd := exec.CommandContext(ctx, rt, "save", "-o", imageTarPath, imageName)
 	if err := exportCmd.Run(); err != nil {
 		fmt.Printf("⚠️  Failed to export image: %v\n", err)
 		return false
 	}
 
-	// Step 2: Run docker:dind with the tar file and output dir mounted
-	cmd := exec.Command(rt, "run", "--rm",
-		"--privileged",
-		"-v", imageTarPath + ":/tmp/image.tar",
-		"-v", absOutDir + ":/out",
-		"docker:dind",
-		"/bin/sh", "-c", fmt.Sprintf(`
-set -e
-# Start dockerd daemon in background
-dockerd --storage-driver=overlay2 &
+	// Stop any stale build containers from a previous (e.g. interrupted) run —
+	// they'd otherwise hold the shared cache volume and corrupt it.
+	stopStaleBuilds(rt)
+	// Guarantee this run's container is stopped on every exit path — including
+	// Ctrl+C, where killing the `docker run` client below does NOT stop the
+	// (privileged, nested-dockerd) container. `stop` (SIGTERM) lets the nested
+	// dockerd flush so the cache stays intact; the fresh, uncancelled command
+	// still runs after ctx is cancelled. The container is `--rm`, so stopping
+	// also removes it.
+	defer func() { _ = sudoBare(rt, "stop", "-t", stopGrace, c2wBuildContainer).Run() }()
+
+	// Run c2w in the builder image (rootful — mknod needs real root). The nested
+	// dockerd stores pulled base images and the buildkit layer cache in
+	// /var/lib/docker; back that with a persistent named volume so subsequent
+	// runs reuse the cache instead of re-pulling ubuntu/rust/golang and
+	// re-running every apt-get layer.
+	// NOTE: the host output dir is mounted at /export, NOT /out. c2w's buildx
+	// exports with --output type=local,dest=/ and replaces the top-level /out
+	// entry — which fails with "device or resource busy" if /out is a bind
+	// mountpoint. So c2w writes to a real /out inside the container and we copy
+	// the result to the mounted /export afterward.
+	cmd := sudoCtx(ctx, rt, "run", "--name", c2wBuildContainer, "--rm", "--privileged",
+		"-v", imageTarPath+":/tmp/image.tar",
+		"-v", absOutDir+":/export",
+		"-v", c2wCacheVolume+":/var/lib/docker",
+		c2wBuilderImage,
+		"sh", "-c", `
+export DOCKER_HOST=unix:///var/run/docker.sock
+dockerd --log-level=error > /tmp/dockerd.log 2>&1 &
 DOCKER_PID=$!
 
-# Wait for docker daemon to be ready
-for i in $(seq 1 60); do
+# On 'docker stop' (SIGTERM to this PID 1 shell), shut the nested dockerd down
+# gracefully and wait for it, so /var/lib/docker (the cache volume) is flushed
+# cleanly instead of being SIGKILLed mid-write.
+trap 'kill -TERM $DOCKER_PID 2>/dev/null; wait $DOCKER_PID; exit 143' TERM INT
+
+# Wait for daemon
+i=0
+while test $i -lt 60; do
   if docker ps > /dev/null 2>&1; then
     break
   fi
+  i=$((i + 1))
   sleep 1
 done
 
-# Build and run c2w
-apk add --no-cache git go bash
-git clone --depth=1 https://github.com/ktock/container2wasm.git /tmp/c2w
-cd /tmp/c2w
-go build -o /usr/local/bin/c2w ./cmd/c2w
-docker load < /tmp/image.tar
-c2w %s /out --to-js
+if ! docker ps > /dev/null 2>&1; then
+  echo "ERROR: Docker daemon failed to start"
+  cat /tmp/dockerd.log
+  exit 1
+fi
 
-# Clean up
-kill $DOCKER_PID || true
-`, imageName),
+docker load -q < /tmp/image.tar > /dev/null 2>&1
+docker tag localhost/emojig-demo:latest emojig-demo:latest > /dev/null 2>&1
+
+# Build a WASM-specific variant: same image but with /bin/bash as entrypoint.
+# The Dockerfile entrypoint is 'ttyd' (a WebSocket server) which is correct for
+# Docker/live mode but leaves WASM stdin/stdout unconnected. This trivial overlay
+# (one config layer) doesn't bust the c2w Bochs toolchain cache.
+docker build -q -t emojig-demo-wasm - << 'WASM_DOCKERFILE'
+FROM emojig-demo
+ENTRYPOINT ["/bin/bash", "--login"]
+WASM_DOCKERFILE
+
+# Run c2w, keeping the full log via tee while showing a filtered live view:
+# only the first line of each buildkit step plus DONE/CACHED/ERROR markers.
+# fflush() keeps awk from block-buffering so the view stays live, not bursty.
+# The exit file captures c2w's real status (not tee/awk's).
+echo "Running c2w (filtered live log — step headers + DONE)..."
+{ c2w emojig-demo-wasm /out/out.wasm 2>&1; echo $? > /tmp/c2w.exit; } | tee /tmp/c2w.log | awk '
+/^[[:space:]]*$/        { next }
+/ DONE| CACHED| ERROR/  { print; fflush(); next }
+/^#[0-9]+ /             { if (!seen[$1]++) print; fflush(); next }
+                        { print; fflush() }
+'
+EXIT_CODE=$(cat /tmp/c2w.exit)
+
+if test "$EXIT_CODE" -ne 0; then
+  echo "── c2w failed — full log ──"
+  cat /tmp/c2w.log
+else
+  # Assemble a servable page: drop the WASI-browser htdocs (index.html + loader
+  # JS, kept in the builder image) alongside the generated /out/out.wasm.
+  if ! cp -a /opt/c2w-htdocs/. /out/; then
+    echo "ERROR: failed to copy htdocs"
+    EXIT_CODE=1
+  fi
+  # The htdocs files hardcode paths from server root, but the demo serves them
+  # from /wasm-out/ — repoint all root-relative imports there.
+  # Also add DOCTYPE to avoid Quirks Mode in the iframe.
+  sed -i '1s/^/<!DOCTYPE html>\n/' /out/index.html
+  sed -i 's#/out.wasm"#/wasm-out/out.wasm"#' /out/index.html
+  sed -i \
+    's#"/browser_wasi_shim/#"/wasm-out/browser_wasi_shim/#g
+     s#"/worker-util\.js"#"/wasm-out/worker-util.js"#g
+     s#"/wasi-util\.js"#"/wasm-out/wasi-util.js"#g' \
+    /out/worker.js /out/stack-worker.js
+  # c2w wrote to the real (non-mounted) /out; copy everything into the
+  # bind-mounted /export so it lands in the host output dir.
+  if cp -a /out/. /export/; then
+    echo "📦 Copied WASM + htdocs to host."
+    echo "── build artifacts ──"
+    du -sh /out/* /out/browser_wasi_shim/* 2>/dev/null | sort -rh
+  else
+    echo "ERROR: failed to copy output to /export"
+    EXIT_CODE=1
+  fi
+fi
+
+# Stop the nested dockerd and WAIT for it to finish flushing /var/lib/docker
+# (the cache volume) before the container exits. Without the wait, PID 1 exits
+# immediately, the container is torn down, and dockerd is SIGKILLed mid-write —
+# leaving the buildkit cache uncommitted, so the next run starts cold.
+kill -TERM $DOCKER_PID 2>/dev/null || true
+wait $DOCKER_PID 2>/dev/null || true
+exit "$EXIT_CODE"
+`,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// If ctx is cancelled and the `docker run` client doesn't exit promptly
+	// after SIGKILL, force Wait to return so cmd.Run() unblocks and the
+	// deferred rmBuildContainer cleanup can run.
+	cmd.WaitDelay = 10 * time.Second
 
-	if err := cmd.Run(); err != nil {
+	// Watch the mounted output dir for progress while c2w runs silently.
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	go watchOutDir(watchCtx, absOutDir)
+
+	err := cmd.Run()
+	stopWatch()
+	// The rootful build writes into /out as root; hand the files back to the
+	// user so the output dir isn't left root-owned (success or failure).
+	chownToUser(absOutDir)
+	if err != nil {
 		fmt.Printf("⚠️  WASM compilation failed: %v\n", err)
 		return false
 	}
@@ -792,7 +1058,7 @@ kill $DOCKER_PID || true
 
 // ensureC2W checks if c2w is in PATH; if not, builds and installs it from source.
 // Returns true if c2w is available (or was successfully installed), false otherwise.
-func ensureC2W() bool {
+func ensureC2W(ctx context.Context) bool {
 	if _, err := exec.LookPath("c2w"); err == nil {
 		return true
 	}
@@ -806,7 +1072,7 @@ func ensureC2W() bool {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := runCmd("git", "clone", "--depth=1", c2wRepo, tmpDir); err != nil {
+	if err := runCmd(ctx, "git", "clone", "--depth=1", c2wRepo, tmpDir); err != nil {
 		fmt.Printf("⚠️  Failed to clone c2w repo: %v\n", err)
 		return false
 	}
@@ -816,7 +1082,7 @@ func ensureC2W() bool {
 	_ = os.MkdirAll(binDir, 0755)
 	binPath := filepath.Join(binDir, "c2w")
 
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/c2w")
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", binPath, "./cmd/c2w")
 	cmd.Dir = tmpDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -836,9 +1102,9 @@ func ensureC2W() bool {
 
 // runC2W compiles a container image to WASM using container2wasm.
 // Returns true if successful, false otherwise.
-func runC2W(imageName, outDir string) bool {
+func runC2W(ctx context.Context, imageName, outDir string) bool {
 	fmt.Printf("🔄 Compiling container image to WebAssembly (this may take 1-5 minutes)...\n")
-	cmd := exec.Command("c2w", imageName, outDir, "--to-js")
+	cmd := exec.CommandContext(ctx, "c2w", imageName, outDir, "--to-js")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -850,14 +1116,29 @@ func runC2W(imageName, outDir string) bool {
 	return true
 }
 
+// crossOriginIsolated adds the COOP/COEP headers that put the page in a
+// cross-origin-isolated context. The WASI-browser runtime uses SharedArrayBuffer
+// and Atomics, which the browser only exposes when these headers are present.
+func crossOriginIsolated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	fmt.Println("====================================================")
 	fmt.Println("      Emojig TUI Browser Sandbox — All Modes        ")
 	fmt.Println("====================================================")
 
+	// Cancel in-flight builds when the user hits Ctrl+C.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	// Step 1: Build static Musl binary for container compatibility.
 	fmt.Println("Building statically linked Musl binary (zig-out/bin/emojig)...")
-	if err := runCmd("zig", "build", "-Dtarget=x86_64-linux-musl", "-Doptimize=ReleaseSmall"); err != nil {
+	if err := runCmd(ctx, "zig", "build", "-Dtarget=x86_64-linux-musl", "-Doptimize=ReleaseSmall"); err != nil {
 		fmt.Printf("❌ Failed to compile emojig: %v\n", err)
 		os.Exit(1)
 	}
@@ -901,25 +1182,32 @@ func main() {
 		defer func() { _ = ttydCmd.Process.Kill() }()
 		fmt.Printf("✅ Local ttyd running on :%s\n", ttydPort)
 	} else {
-		// Step 4: Build the container image.
+		// Step 4: Build the container image (quiet; dump the log only on failure).
 		fmt.Printf("🐳 Using runtime: %s — building image %q...\n", rt, imageName)
-		if err := runCmd(rt, "build", "-t", imageName, "-f", dockerfilePath, "."); err != nil {
-			fmt.Printf("❌ Image build failed: %v\n", err)
+		buildCmd := exec.CommandContext(ctx, rt, "build", "-q", "-t", imageName, "-f", dockerfilePath, ".")
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			fmt.Printf("❌ Image build failed: %v\n%s", err, out)
 			os.Exit(1)
 		}
 		fmt.Printf("✅ Image %q ready\n", imageName)
 
-		// Step 5: Build WASM using Docker (works with both docker and podman on host).
-		_ = os.RemoveAll(wasmOutDir)
-		os.MkdirAll(wasmOutDir, 0755)
-
-		fmt.Println("Building WebAssembly version...")
-		buildC2WInDocker(rt, imageName, wasmOutDir)
+		// Step 5: Build WASM (cached unless deleted).
+		wasmIndexPath := filepath.Join(wasmOutDir, "index.html")
+		if _, err := os.Stat(wasmIndexPath); err == nil {
+			fmt.Println("✅ WASM already built (cached)")
+		} else {
+			os.MkdirAll(wasmOutDir, 0755)
+			fmt.Println("Building WebAssembly version...")
+			if !buildC2WInDocker(ctx, rt, imageName, wasmOutDir) {
+				fmt.Println("❌ Failed to build WASM. Exiting.")
+				os.Exit(1)
+			}
+		}
 
 		// Step 6: Stop any stale container, then start a fresh one.
 		fmt.Printf("Starting container %q on port %s...\n", containerName, ttydPort)
 		stopContainer(rt)
-		if err := runCmd(rt, "run", "--rm", "-d", "-t",
+		if err := runCmd(ctx, rt, "run", "--rm", "-d", "-t",
 			"-p", ttydPort+":"+ttydPort,
 			"--name", containerName,
 			imageName,
@@ -933,7 +1221,7 @@ func main() {
 
 	// Step 7: Start HTTP file server to serve the scripts/ directory.
 	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.Dir("scripts")))
+	mux.Handle("/", crossOriginIsolated(http.FileServer(http.Dir("scripts"))))
 	srv := &http.Server{Addr: ":" + httpPort, Handler: mux}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -958,14 +1246,12 @@ func main() {
 	fmt.Println()
 
 	// Step 8: Wait for SIGINT or SIGTERM, then tear down.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	<-ctx.Done()
 
 	fmt.Println("\n🛑 Shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(ctx)
+	_ = srv.Shutdown(shutdownCtx)
 	// deferred stopContainer / ttydCmd.Kill run here.
 	fmt.Println("✅ All services stopped.")
 }

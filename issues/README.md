@@ -9,6 +9,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | Issue | Title | Priority | Summary |
 |---|---|---|---|
 | [**02**](02-distribution-and-release.md) | [Distribution & Release Plan](02-distribution-and-release.md) | **P1** | Outlines target package channels (AUR, Nix, Homebrew) and cross-compilation pipeline tasks for tagged releases. |
+| [**09**](09-wasm-build-rootless-mknod.md) | [WASM build fails under rootless podman (`mknod` blocked in userns)](09-wasm-build-rootless-mknod.md) | **P1** | c2w's `rootfs` stage `mknod /dev/null` returns EPERM because rootless podman runs in a user namespace; needs a rootful runtime or build VM. |
 
 ---
 
