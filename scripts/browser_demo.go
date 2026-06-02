@@ -725,17 +725,120 @@ func stopContainer(rt string) {
 	_ = exec.Command(rt, "stop", containerName).Run()
 }
 
-// checkC2W checks if container2wasm (c2w) is available in PATH.
-func checkC2W() bool {
-	_, err := exec.LookPath("c2w")
-	return err == nil
+const c2wRepo = "https://github.com/ktock/container2wasm.git"
+
+// buildC2WInDocker builds WASM using docker:dind.
+// Exports the image to tar, then loads and compiles it inside the container.
+func buildC2WInDocker(rt, imageName, outDir string) bool {
+	fmt.Printf("🔄 Compiling to WebAssembly (this may take 1-5 minutes)...\n")
+
+	absOutDir, _ := filepath.Abs(outDir)
+	tmpDir, _ := os.MkdirTemp("", "c2w-dind-*")
+	defer os.RemoveAll(tmpDir)
+
+	imageTarPath := filepath.Join(tmpDir, "image.tar")
+
+	// Step 1: Export image from host
+	fmt.Printf("   Exporting %s image...\n", imageName)
+	exportCmd := exec.Command(rt, "save", "-o", imageTarPath, imageName)
+	if err := exportCmd.Run(); err != nil {
+		fmt.Printf("⚠️  Failed to export image: %v\n", err)
+		return false
+	}
+
+	// Step 2: Run docker:dind with the tar file and output dir mounted
+	cmd := exec.Command(rt, "run", "--rm",
+		"--privileged",
+		"-v", imageTarPath + ":/tmp/image.tar",
+		"-v", absOutDir + ":/out",
+		"docker:dind",
+		"/bin/sh", "-c", fmt.Sprintf(`
+set -e
+# Start dockerd daemon in background
+dockerd --storage-driver=overlay2 &
+DOCKER_PID=$!
+
+# Wait for docker daemon to be ready
+for i in $(seq 1 60); do
+  if docker ps > /dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+# Build and run c2w
+apk add --no-cache git go bash
+git clone --depth=1 https://github.com/ktock/container2wasm.git /tmp/c2w
+cd /tmp/c2w
+go build -o /usr/local/bin/c2w ./cmd/c2w
+docker load < /tmp/image.tar
+c2w %s /out --to-js
+
+# Clean up
+kill $DOCKER_PID || true
+`, imageName),
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("⚠️  WASM compilation failed: %v\n", err)
+		return false
+	}
+
+	fmt.Println("✅ Container compiled to WebAssembly!")
+	return true
+}
+
+// ensureC2W checks if c2w is in PATH; if not, builds and installs it from source.
+// Returns true if c2w is available (or was successfully installed), false otherwise.
+func ensureC2W() bool {
+	if _, err := exec.LookPath("c2w"); err == nil {
+		return true
+	}
+
+	fmt.Println("⚙️  c2w not found — building from source (one-time setup)...")
+
+	tmpDir, err := os.MkdirTemp("", "c2w-build-*")
+	if err != nil {
+		fmt.Printf("⚠️  Failed to create temp dir: %v\n", err)
+		return false
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := runCmd("git", "clone", "--depth=1", c2wRepo, tmpDir); err != nil {
+		fmt.Printf("⚠️  Failed to clone c2w repo: %v\n", err)
+		return false
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	binDir := filepath.Join(homeDir, ".local", "bin")
+	_ = os.MkdirAll(binDir, 0755)
+	binPath := filepath.Join(binDir, "c2w")
+
+	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/c2w")
+	cmd.Dir = tmpDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("⚠️  Failed to build c2w: %v\n", err)
+		return false
+	}
+
+	// Ensure the new binary is found on subsequent exec calls
+	if err := os.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
+		fmt.Printf("⚠️  Failed to update PATH: %v\n", err)
+	}
+
+	fmt.Println("✅ c2w installed to " + binPath)
+	return true
 }
 
 // runC2W compiles a container image to WASM using container2wasm.
 // Returns true if successful, false otherwise.
 func runC2W(imageName, outDir string) bool {
 	fmt.Printf("🔄 Compiling container image to WebAssembly (this may take 1-5 minutes)...\n")
-	cmd := exec.Command("c2w", "--to-js", "--entrypoint", "/bin/bash --login", imageName, outDir)
+	cmd := exec.Command("c2w", imageName, outDir, "--to-js")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -806,20 +909,12 @@ func main() {
 		}
 		fmt.Printf("✅ Image %q ready\n", imageName)
 
-		// Step 5: Attempt container2wasm compilation (optional, warn if fails).
-		if checkC2W() {
-			// Clean up old WASM output if it exists
-			_ = os.RemoveAll(wasmOutDir)
-			os.MkdirAll(wasmOutDir, 0755)
+		// Step 5: Build WASM using Docker (works with both docker and podman on host).
+		_ = os.RemoveAll(wasmOutDir)
+		os.MkdirAll(wasmOutDir, 0755)
 
-			if !runC2W(imageName, wasmOutDir) {
-				fmt.Println("   Continuing without WASM support...")
-			}
-		} else {
-			fmt.Println("⚠️  container2wasm (c2w) not found in PATH.")
-			fmt.Println("   WASM mode will not be available.")
-			fmt.Println("   To enable: install container2wasm and ensure 'c2w' is in PATH")
-		}
+		fmt.Println("Building WebAssembly version...")
+		buildC2WInDocker(rt, imageName, wasmOutDir)
 
 		// Step 6: Stop any stale container, then start a fresh one.
 		fmt.Printf("Starting container %q on port %s...\n", containerName, ttydPort)
