@@ -18,7 +18,9 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 ## Install
 
 > [!Important]
-> GUI mode is Wayland-only for now and requires `foot` and `wl-copy`.
+> GUI mode needs a graphical session (Wayland or X11), a supported terminal
+> (`foot`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`, `gnome-terminal`,
+> or `xterm` — override with `EMOJIG_TERMINAL`), and a clipboard tool (`wl-copy` / `xclip`).
 
 The recommended install is the static-binary script below. Distro packages
 (`.deb` / `.rpm`) ship with each release; a Homebrew formula is planned.
@@ -45,9 +47,12 @@ sudo zypper install noto-coloremoji-fonts    # openSUSE
 ```
 
 ## The TUI-GUI
-The *GUI* mode currently requires the [`foot`](https://codeberg.org/dnkl/foot) terminal to serve the emoji *TUI* in a borderless window.
+The *GUI* mode hosts the emoji *TUI* in a borderless terminal window.
 
-I chose `foot` since it lauches instantly, uses minimal resources, and has all the features needed for a great TUI.
+[`foot`](https://codeberg.org/dnkl/foot) is preferred — it launches instantly, uses
+minimal resources, and gives pixel-perfect cell sizing. If `foot` isn't installed,
+emojig auto-detects `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`,
+`gnome-terminal`, or `xterm`. Force a specific one with `EMOJIG_TERMINAL=kitty`.
 
 **💻**  Bind a desktop key to run `emojig --gui` \
 `>_`  Run `emojig --tui` inline in the terminal \
@@ -91,8 +96,9 @@ the floating picker:
   Shortcuts* → add one running `emojig --gui`.
 - **KDE Plasma**: System Settings → Shortcuts → *Custom Shortcuts* → command `emojig --gui`.
 
-`emojig --gui` opens the picker in a small floating window (currently via `foot`, so
-`sudo apt install foot`); pick an emoji and it lands on your clipboard.
+`emojig --gui` opens the picker in a small floating window — via `foot` if installed,
+otherwise your detected terminal (kitty, alacritty, …), or set `EMOJIG_TERMINAL`. Pick
+an emoji and it lands on your clipboard.
 
 > Tip: inside a terminal you need no hotkey at all — the **Ctrl+E** shell widget
 > (above) fuzzy-picks and drops the emoji right at your cursor.
@@ -123,7 +129,7 @@ favourite line to a hotkey. If you *don't* already use such a launcher, prefer
 ```sh
 emojig                  # auto: floating window (GUI) or inline TUI (terminal)
 emojig --tui            # force inline TUI — works over SSH, in VT, anywhere
-emojig --gui            # force floating foot window (Wayland/X11)
+emojig --gui            # force floating window (foot/kitty/alacritty/…; $EMOJIG_TERMINAL)
 emojig --list           # print all emojis as 'emoji<TAB>name' (for rofi/wofi/dmenu)
 emojig --install        # install binary + shell scripts to ~/.local/
 $(emojig)               # stdout capture — emoji goes to the calling shell
@@ -160,7 +166,7 @@ saves your choice to `~/.config/emojig/config`. Override with `--theme` or
 ## Requirements
 
 - Linux (x86\_64 or aarch64)
-- **GUI mode** (`--gui`): `foot` terminal + Wayland or X11 session
+- **GUI mode** (`--gui`): a supported terminal (`foot`/`kitty`/`alacritty`/`wezterm`/… or `EMOJIG_TERMINAL`) + Wayland or X11 session
 - **Clipboard**: `wl-copy` (Wayland) or `xclip` (X11) — optional
 
 ## Performance

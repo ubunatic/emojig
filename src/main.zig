@@ -347,7 +347,252 @@ fn ensureDesktopIntegration(io: std.Io, home: []const u8, exe_path: []const u8) 
     } else |_| {}
 }
 
-fn spawnFootWindow(
+// ---------------------------------------------------------------------------
+// Terminal host selection and GUI window spawning
+// ---------------------------------------------------------------------------
+
+/// Known terminal emulators with specific argv layouts.
+const HostKind = enum {
+    foot,
+    kitty,
+    alacritty,
+    wezterm,
+    ghostty,
+    konsole,
+    gnome_terminal,
+    xterm,
+    generic,
+};
+
+/// Check whether `name` (a basename like "kitty") exists as an executable on
+/// `$PATH`. Uses only stack buffers — no heap allocation.
+fn whichOnPath(path_env: []const u8, name: []const u8) bool {
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    var it = std.mem.splitScalar(u8, path_env, ':');
+    while (it.next()) |dir| {
+        if (dir.len == 0) continue;
+        const joined = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ dir, name }) catch continue;
+        const rc = std.posix.system.faccessat(std.posix.AT.FDCWD, joined, std.posix.X_OK, 0);
+        if (std.posix.errno(rc) == .SUCCESS) return true;
+    }
+    return false;
+}
+
+/// Select the terminal host to use, following this precedence:
+///   1. EMOJIG_TERMINAL (absolute path or name; used as-is, no PATH check needed)
+///   2. $TERMINAL env var if the program exists on PATH
+///   3. Detection list: foot, kitty, alacritty, wezterm, ghostty, konsole,
+///      gnome-terminal, xterm — first found on PATH wins.
+/// Returns the terminal executable string and its HostKind.
+/// Returns null if no usable terminal could be found.
+const TerminalSelection = struct {
+    exe: []const u8,
+    kind: HostKind,
+};
+
+fn selectTerminalHost(environ_map: anytype) ?TerminalSelection {
+    const path_env = environ_map.get("PATH") orelse "";
+
+    // 1. EMOJIG_TERMINAL — explicit override, no PATH check
+    if (environ_map.get("EMOJIG_TERMINAL")) |t| {
+        if (t.len > 0) {
+            const base = std.fs.path.basename(t);
+            return .{ .exe = t, .kind = hostKindFromName(base) };
+        }
+    }
+
+    // 2. $TERMINAL if it exists on PATH
+    if (environ_map.get("TERMINAL")) |t| {
+        if (t.len > 0 and whichOnPath(path_env, t)) {
+            return .{ .exe = t, .kind = hostKindFromName(t) };
+        }
+    }
+
+    // 3. Detection list — foot preferred (listed first)
+    const candidates = [_][]const u8{
+        "foot",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "ghostty",
+        "konsole",
+        "gnome-terminal",
+        "xterm",
+    };
+    for (candidates) |name| {
+        if (whichOnPath(path_env, name)) {
+            return .{ .exe = name, .kind = hostKindFromName(name) };
+        }
+    }
+
+    return null;
+}
+
+fn hostKindFromName(name: []const u8) HostKind {
+    if (std.mem.eql(u8, name, "foot")) return .foot;
+    if (std.mem.eql(u8, name, "kitty")) return .kitty;
+    if (std.mem.eql(u8, name, "alacritty")) return .alacritty;
+    if (std.mem.eql(u8, name, "wezterm")) return .wezterm;
+    if (std.mem.eql(u8, name, "ghostty")) return .ghostty;
+    if (std.mem.eql(u8, name, "konsole")) return .konsole;
+    if (std.mem.eql(u8, name, "gnome-terminal")) return .gnome_terminal;
+    if (std.mem.eql(u8, name, "xterm")) return .xterm;
+    return .generic;
+}
+
+/// Maximum argv length — foot is the largest at 20 tokens; 24 gives safe headroom.
+const MAX_ARGV = 24;
+
+/// Assemble the full launch argv into `out[0..N]` and return the live slice.
+/// All string arguments must have lifetimes at least as long as `out`.
+/// `tail` is the terminal-independent suffix: "env" VARS... exe_path "--tui".
+///
+/// NOTE: Cell-precise window sizing is foot-only. Other terminals receive the
+/// `env EMOJIG_RESIZE_MODE=altscreen` tail and adapt via altscreen mode.
+fn buildGuiArgv(
+    out: *[MAX_ARGV][]const u8,
+    kind: HostKind,
+    term: []const u8,
+    // foot-only formatting args (ignored for non-foot hosts):
+    size_arg: []const u8,
+    bg_arg: []const u8,
+    fg_arg: []const u8,
+    // terminal-independent tail starting with "env":
+    tail: []const []const u8,
+) []const []const u8 {
+    var n: usize = 0;
+    switch (kind) {
+        .foot => {
+            out[n] = term;
+            n += 1;
+            out[n] = "--app-id=emojig-picker";
+            n += 1;
+            out[n] = size_arg;
+            n += 1;
+            out[n] = "--override=font=monospace:size=14";
+            n += 1;
+            out[n] = "--override=cursor.blink=yes";
+            n += 1;
+            out[n] = "--override=pad=8x4";
+            n += 1;
+            out[n] = "--override=csd.size=0";
+            n += 1;
+            out[n] = bg_arg;
+            n += 1;
+            out[n] = fg_arg;
+            n += 1;
+            // foot runs the command as plain positional args (no -e)
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .kitty => {
+            out[n] = term;
+            n += 1;
+            out[n] = "--class";
+            n += 1;
+            out[n] = "emojig-picker";
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .alacritty => {
+            out[n] = term;
+            n += 1;
+            out[n] = "--class";
+            n += 1;
+            out[n] = "emojig-picker";
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .wezterm => {
+            out[n] = term;
+            n += 1;
+            out[n] = "start";
+            n += 1;
+            out[n] = "--class";
+            n += 1;
+            out[n] = "emojig-picker";
+            n += 1;
+            out[n] = "--";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .ghostty => {
+            out[n] = term;
+            n += 1;
+            out[n] = "--class=emojig-picker";
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .konsole => {
+            out[n] = term;
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .gnome_terminal => {
+            out[n] = term;
+            n += 1;
+            out[n] = "--";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .xterm => {
+            out[n] = term;
+            n += 1;
+            out[n] = "-class";
+            n += 1;
+            out[n] = "emojig";
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .generic => {
+            // Generic fallback: <term> -e <tail>
+            out[n] = term;
+            n += 1;
+            out[n] = "-e";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+    }
+    return out[0..n];
+}
+
+fn spawnGuiWindow(
     init: std.process.Init,
     exe_path: []const u8,
     width: usize,
@@ -403,16 +648,8 @@ fn spawnFootWindow(
     var env_timeout: [64]u8 = undefined;
     const env_timeout_arg = try std.fmt.bufPrint(&env_timeout, "EMOJIG_PICKER_TIMEOUT={s}", .{timeout_val});
 
-    const argv = &.{
-        "foot",
-        "--app-id=emojig-picker",
-        size_arg,
-        "--override=font=monospace:size=14",
-        "--override=cursor.blink=yes",
-        "--override=pad=8x4",
-        "--override=csd.size=0",
-        bg_arg,
-        fg_arg,
+    // Terminal-independent tail: env VARS... exe_path --tui
+    const tail = [_][]const u8{
         "env",
         env_w_arg,
         env_h_arg,
@@ -426,6 +663,15 @@ fn spawnFootWindow(
         "--tui",
     };
 
+    // Select terminal host
+    const sel = selectTerminalHost(init.environ_map) orelse {
+        try writeAll(std.posix.STDERR_FILENO, "Error: no terminal emulator found. Set EMOJIG_TERMINAL to your terminal executable.\n");
+        std.process.exit(1);
+    };
+
+    var argv_out: [MAX_ARGV][]const u8 = undefined;
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, size_arg, bg_arg, fg_arg, &tail);
+
     var child = try std.process.spawn(io, .{
         .argv = argv,
         .stdin = .ignore,
@@ -436,6 +682,49 @@ fn spawnFootWindow(
     if (wait) {
         _ = try child.wait(io);
     }
+}
+
+test "buildGuiArgv: foot argv starts with expected tokens" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
+    const argv = buildGuiArgv(&out, .foot, "foot", "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", &tail);
+    try std.testing.expect(argv.len >= 4);
+    try std.testing.expectEqualStrings("foot", argv[0]);
+    try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
+    try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
+    try std.testing.expectEqualStrings("--override=font=monospace:size=14", argv[3]);
+    // tail starts after 9 prefix tokens
+    try std.testing.expectEqualStrings("env", argv[9]);
+    try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
+}
+
+test "buildGuiArgv: xterm argv starts with expected tokens" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
+    const argv = buildGuiArgv(&out, .xterm, "xterm", "", "", "", &tail);
+    try std.testing.expect(argv.len >= 2);
+    try std.testing.expectEqualStrings("xterm", argv[0]);
+    try std.testing.expectEqualStrings("-class", argv[1]);
+    try std.testing.expectEqualStrings("emojig", argv[2]);
+    try std.testing.expectEqualStrings("-e", argv[3]);
+    try std.testing.expectEqualStrings("env", argv[4]);
+    try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
+}
+
+test "whichOnPath finds and rejects" {
+    const path = if (std.c.getenv("PATH")) |p| std.mem.span(p) else "/usr/bin:/bin";
+    try std.testing.expect(whichOnPath(path, "sh"));
+    try std.testing.expect(!whichOnPath(path, "zzz_no_such_binary_zzz"));
+}
+
+test "buildGuiArgv: generic argv uses -e" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", "", "", "", &tail);
+    try std.testing.expectEqualStrings("/bin/true", argv[0]);
+    try std.testing.expectEqualStrings("-e", argv[1]);
+    try std.testing.expectEqualStrings("env", argv[2]);
+    try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +912,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
-                "  --gui                        Force floating terminal window (spawns foot)\n" ++
+                "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/alacritty/...)\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
@@ -811,7 +1100,7 @@ pub fn main(init: std.process.Init) !void {
             ensureDesktopIntegration(init.io, home, exe_path);
         }
 
-        spawnFootWindow(
+        spawnGuiWindow(
             init,
             exe_path,
             final_width,
@@ -822,7 +1111,7 @@ pub fn main(init: std.process.Init) !void {
             final_debug,
             opt_wait,
         ) catch |err| {
-            try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Make sure 'foot' is installed and in your PATH (");
+            try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
             try writeAll(std.posix.STDERR_FILENO, ").\n");
             std.process.exit(1);
