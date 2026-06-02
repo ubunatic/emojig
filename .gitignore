@@ -12,3 +12,6 @@ data/
 # gthumb files
 .comments
 
+# git worktrees created inside the repo (prefer siblings via `make worktree`)
+/worktrees/
+

@@ -1,7 +1,11 @@
 # Emojig: Distribution & Release Plan
 
 > [!NOTE]
-> **Currency Status:** Current as of May 31, 2026. Outlines the cross-compiled static binary distribution and release strategy for **Emojig v0.1.0**.
+> **Currency Status:** Roadmap, updated June 2, 2026 for **Emojig v0.1.4**. This is
+> an *aspirational* plan. The **implemented** release flow (local GoReleaser build +
+> manual `fj` draft to Codeberg) lives in [`docs/Release.md`](../docs/Release.md).
+> **AUR and Nix are dropped. Homebrew is low priority.** Active channels: the
+> `curl | sh` static installer (P0) and `.deb` / `.rpm` packages (P2).
 
 How to ship `emojig` to many machines through many package managers, and how to
 cut a clean release every time.
@@ -31,7 +35,7 @@ Two properties make this possible:
 | Host | Role |
 |------|------|
 | `codeberg.org/ubunatic/emojig` | Canonical git repo + Releases (artifact source of truth) |
-| `github.com/ubunatic/emojig` | Push mirror; GitHub Actions CI (macOS runners) |
+| `github.com/ubunatic/emojig` | Push mirror; GitHub Actions CI (macOS runners) — **low priority until there are external contributors** |
 | `codeberg.org/ubunatic/homebrew-tap` | Homebrew formula repo (GoReleaser pushes here) |
 | `ubunatic.com/emojig` | Vanity redirects + Go meta tags (low priority, see §4) |
 
@@ -69,10 +73,10 @@ Cross-compiling macOS targets from Linux is not viable without Apple's SDK.
 | Tier | Channels |
 |------|----------|
 | **P0** | Release tarballs + `SHA256SUMS`, `install.sh` (`curl \| sh` installer script) |
-| **P1** | Homebrew tap (`brew`) |
 | **P2** | `.deb` / `.rpm` packages |
-| **Nix** | *Dropped / Closed by Design to focus resources on brew and install.sh* |
+| **Low** | Homebrew tap (`brew`) — deferred; nice-to-have once binaries are in wide use |
 | **AUR** | *Dropped / Closed by Design to avoid PKGBUILD maintenance overhead* |
+| **Nix** | *Dropped / Closed by Design to focus resources on `install.sh` + deb/rpm* |
 | **Go** | *Dropped / Closed by Design to avoid Go runtime/compilation wrapper overhead* |
 
 ---
@@ -173,12 +177,14 @@ git push origin main v0.1.0
 ### 3.5 Downstream propagation
 
 GoReleaser handles automatically on each tag push:
-- Homebrew tap formula (`codeberg.org/ubunatic/homebrew-tap`)
-- AUR PKGBUILDs (`emojig-bin`, `emojig`)
 - `.deb` / `.rpm` via built-in nfpm
 
+Deferred / dropped:
+- Homebrew tap formula — **low priority**, not yet wired into `.goreleaser.yaml`
+- AUR PKGBUILDs — **dropped**
+- Nix flake — **dropped**
+
 Manual per release:
-- [ ] Nix flake: bump `version` + `hash`, or rely on `nix flake update` in consumers
 - [ ] Verify `curl | sh` installer resolves "latest" correctly
 
 ---
@@ -248,6 +254,9 @@ Cross-compilation via Zig — no macOS runner needed here.
 
 ### 5.2 GitHub Actions — macOS targets (when TUI lands)
 
+> **Low priority until there are external contributors.** The GitHub mirror and its
+> Actions (macOS runners) are deferred; Codeberg + Woodpecker cover Linux releases today.
+
 `.github/workflows/release.yml` — runs on `v*` tags:
 ```yaml
 jobs:
@@ -305,28 +314,12 @@ nfpms:
     suggests: [xclip, foot]
     license: AGPL-3.0-or-later
 
-brews:
-  - repository:
-      owner: ubunatic
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.CODEBERG_TOKEN }}"
-    homepage: https://codeberg.org/ubunatic/emojig
-    license: AGPL-3.0-or-later
-    dependencies:
-      - name: zig
-        type: build
-
-aurs:
-  - name: emojig-bin
-    homepage: https://codeberg.org/ubunatic/emojig
-    description: Zero-allocation emoji picker for Wayland
-    maintainers: [ubunatic]
-    license: AGPL-3.0-or-later
-    private_key: "{{ .Env.AUR_SSH_KEY }}"
-    git_url: ssh://aur@aur.archlinux.org/emojig-bin.git
-    depends: [wl-clipboard]
-    optdepends: ["xclip: X11 clipboard fallback", "foot: recommended floating host"]
+# brews: LOW PRIORITY — deferred, intentionally NOT in the current .goreleaser.yaml.
+#   Build-from-source formula pushed to codeberg.org/ubunatic/homebrew-tap.
+#   Wire this up only once the static binaries see real-world use.
+#
+# aurs: DROPPED by design — no PKGBUILD maintenance overhead.
+# nix:  DROPPED by design.
 
 gitea_urls:
   api: https://codeberg.org/api/v1/
@@ -378,10 +371,11 @@ Nix flake packaging has been dropped to focus development and release resources 
 Produced automatically by GoReleaser via built-in nfpm. No separate `nfpm.yaml` needed.
 `Recommends: wl-clipboard`; `Suggests: xclip, foot`. Attached to the Release.
 
-### 6.5 Homebrew tap (P2)
+### 6.5 Homebrew tap (Low priority — deferred)
 
-`codeberg.org/ubunatic/homebrew-tap`. GoReleaser pushes updated formula on each release.
-Build-from-source formula using `zig`. Add `depends_on :linux` once macOS TUI ships without it.
+`codeberg.org/ubunatic/homebrew-tap`. Would have GoReleaser push an updated formula on
+each release (build-from-source using `zig`, `depends_on :linux`). **Not yet wired into
+`.goreleaser.yaml`** — deferred until the static binaries see real-world use.
 
 ### 6.6 Zig package consumers (native, bonus)
 
@@ -403,8 +397,8 @@ for the reusable parts.
 | **0** | LICENSE, README, Codeberg push, GitHub mirror, keypair, version 0.1.0, `--version`, goreleaser config, CI files | — |
 | **1** | First tagged Release via goreleaser | Release tarballs, `SHA256SUMS`, `zig fetch`, `.deb`/`.rpm` |
 | **2** | `install.sh`, vanity domain Go meta tags | `curl \| sh` |
-| **3** | AUR packages, Nix flake | AUR, Nix |
-| **4** | Homebrew tap live | `brew install` |
+| **3** | *(dropped — no longer planned)* | — |
+| **4** | Homebrew tap (low priority, only if demand) | `brew install` |
 | **5** | macOS builds (after `--tui` lands) | macOS `curl \| sh` |
 | **6** | `go install` shim if demand exists | `go install` |
 

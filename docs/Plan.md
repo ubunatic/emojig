@@ -114,10 +114,13 @@ keys inside ZLE widgets where zsh activates `smkx`.
 - macOS: `/dev/tty` + stdout mode already works; clipboard via `pbcopy`. Needs CI runner.
 - SSH: stdout mode works natively (no clipboard needed). Needs docs.
 
-### Phase 11 — Release infrastructure (pending)
-See `issues/02-distribution-and-release.md` for the full plan.
-Short list: README, `--version`, GoReleaser config, Woodpecker + GitHub Actions CI,
-Codeberg + GitHub remotes, minisign keypair, AUR/Nix/Homebrew packages.
+### Phase 11 — Release infrastructure (partially done)
+See `issues/02-distribution-and-release.md` (roadmap) and `docs/Release.md` (actual flow).
+Done: README, `--version`, `.goreleaser.yaml`, minisign keypair, Codeberg remote, static
+musl tarballs + `.deb`/`.rpm`, signed `SHA256SUMS`, manual `fj` draft release.
+Pending: Woodpecker CI (Codeberg, Linux).
+Dropped: AUR, Nix. Low priority: Homebrew; GitHub mirror + GitHub Actions CI
+(deferred until there are external contributors).
 
 ---
 

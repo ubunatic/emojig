@@ -56,6 +56,26 @@ clean: ⚙️  # purge compile, release, and cache folders
 	@rm -rf zig-out .zig-cache dist
 	@echo "🧹 Cleaned build artifacts"
 
+WORKTREE_DIR ?= ../emojig-$(NAME)
+WORKTREE_BRANCH ?= $(NAME)
+
+worktree: ⚙️  # create a sibling git worktree ready to build (usage: make worktree NAME=feature [WORKTREE_BRANCH=branch])
+	test -n "$(NAME)"  # ensure NAME var is set, e.g. make worktree NAME=my-feature
+	git worktree add -b $(WORKTREE_BRANCH) $(WORKTREE_DIR)
+	@# data/ holds the raw emoji datasets; it is gitignored, so a fresh worktree
+	@# lacks it. Link it so `make pack` works there too (builds/tests need only the
+	@# tracked src/emojis.bin and work without this link).
+	@test -d data && ln -sfn $(CURDIR)/data $(WORKTREE_DIR)/data && echo "🔗 linked data/ into worktree" || true
+	@echo "✅ worktree ready at $(WORKTREE_DIR) on branch $(WORKTREE_BRANCH)"
+	@echo "   cd $(WORKTREE_DIR) && zig build test"
+	@echo "   remove later with: git worktree remove $(WORKTREE_DIR)"
+
+uninstall: ⚙️  # remove binary, shell integration, and desktop entry
+	@rm -f  ~/.local/bin/emojig
+	@rm -rf ~/.local/share/emojig
+	@rm -f  ~/.local/share/applications/emojig-picker.desktop
+	@echo "✅ emojig uninstalled"
+
 install: ⚙️  # silent install for testing during development
 	@zig build shell-install -Doptimize=ReleaseSmall >/dev/null && echo "✅ emojig installed" || \
 	 zig build shell-install -Doptimize=ReleaseSmall  # fallback to non-silent on error
