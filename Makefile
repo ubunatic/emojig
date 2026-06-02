@@ -34,6 +34,31 @@ gui: ⚙️  # launch the floating terminal picker window (requires foot)
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run scripts/screenshot.go zig-out/bin/emojig
 
+ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
+	@echo "Launching 8 terminal emulators with emojig TUI..."
+	@kitty -d $$HOME \
+	    -o initial_window_width=50c -o initial_window_height=20c \
+	    -o confirm_os_window_close=0 \
+	    zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5; killall kitty' &
+	@ghostty --working-directory=$$HOME \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@gnome-terminal --working-directory=$$HOME --geometry=50x20 \
+	    -- zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@alacritty --working-directory $$HOME \
+	    -o 'window.dimensions.columns=50' -o 'window.dimensions.lines=20' \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@ptyxis -d $$HOME \
+	    -- zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@foot -D $$HOME -W 50x20 \
+	    zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@xfce4-terminal --default-working-directory=$$HOME --geometry=50x20 \
+	    -x zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@tilix --working-directory=$$HOME --geometry=50x20 \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@echo "Waiting 3s for terminals to settle..."
+	@sleep 3
+	@go run scripts/tty_bench.go
+
 pack: ⚙️  # compress and pack emoji database json into src/emojis.bin
 	@go run scripts/pack_emojis.go
 
