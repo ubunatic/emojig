@@ -22,7 +22,7 @@ SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["docs/*.png", "minisign.pub"]
+path = ["docs/*.png", "docs/*.mp4", "website/*.png", "website/*.html", "minisign.pub"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
