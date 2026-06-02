@@ -7,13 +7,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +22,7 @@ const (
 	imageName     = "emojig-demo"
 	ttydPort      = "7681"
 	httpPort      = "8080"
+	wasmOutDir    = "scripts/wasm-out"
 )
 
 const dockerfileContent = `# SPDX-FileCopyrightText: 2026 Uwe Jugel
@@ -63,13 +62,14 @@ RUN echo 'demo-user ALL=(root) NOPASSWD: /sbin/apk add *, /sbin/apk update, /sbi
 #   - runs the public install script first (visual first action in the demo terminal)
 #   - then shows the help banner
 RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
+    echo 'export PATH=$HOME/.local/bin:$PATH' >> /home/demo-user/.bash_profile && \
     echo 'export LANG=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export LC_ALL=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export PS1="\[\033[01;32m\]➜  \[\033[01;34m\]\W\[\033[00m\] "' >> /home/demo-user/.bash_profile && \
     echo 'source /usr/local/share/emojig/shell/emojig.bash' >> /home/demo-user/.bash_profile && \
     echo '# Auto-run the public install script so it is the first visible action' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
-    echo 'echo "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m"' >> /home/demo-user/.bash_profile && \
+    echo 'printf "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m\n"' >> /home/demo-user/.bash_profile && \
     echo 'curl -fsSL https://ubunatic.com/emojig/install.sh | sh' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
     echo 'echo "👋 Welcome to the Emojig TUI Sandbox!"' >> /home/demo-user/.bash_profile && \
@@ -94,7 +94,7 @@ USER demo-user
 ENTRYPOINT ["ttyd", "-p", "7681", "--writable", "/bin/bash", "--login"]
 `
 
-const htmlContent = `<!--
+const wasmHtmlContent = `<!--
 SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
@@ -103,9 +103,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emojig - Interactive TUI Browser Sandbox</title>
+    <title>Emojig - Interactive TUI Browser Sandbox (Docker & WASM)</title>
     {{FAVICON}}
-    <!-- Fonts and xterm styles — served locally from /vendor/ (no external CDN calls) -->
     <link href="/vendor/fonts.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/xterm.css" />
     <style>
@@ -132,7 +131,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             overflow-x: hidden;
         }
 
-        /* Subtle animated background gradient glow */
         .bg-glow {
             position: absolute;
             width: 600px;
@@ -194,6 +192,59 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             box-shadow: 0 20px 40px rgba(59, 130, 246, 0.1);
         }
 
+        .mode-toggle {
+            display: flex;
+            gap: 0;
+            margin-bottom: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px;
+            border-radius: 8px;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .mode-btn {
+            background: transparent;
+            color: #94a3b8;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .mode-btn:hover {
+            color: #60a5fa;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.15) 100%);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.1);
+        }
+
+        .mode-btn::after {
+            content: attr(data-shortcut);
+            display: inline;
+            margin-left: 6px;
+            font-size: 0.75rem;
+            color: #64748b;
+            opacity: 0.6;
+        }
+
+        .mode-btn.active::after {
+            opacity: 1;
+            color: #94a3b8;
+        }
+
         #terminal-wrapper {
             position: relative;
             width: 100%;
@@ -208,6 +259,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         #terminal {
             width: 100%;
             height: 420px;
+        }
+
+        #wasm-frame {
+            width: 100%;
+            height: 420px;
+            border: none;
+            border-radius: 12px;
+            background-color: #12131a;
+        }
+
+        .wasm-unavailable {
+            display: none;
+            width: 100%;
+            max-width: 840px;
+            background-color: #12131a;
+            border-radius: 12px;
+            padding: 40px;
+            border: 1px solid #1f2937;
+            text-align: center;
+            color: #94a3b8;
+        }
+
+        .wasm-unavailable h3 {
+            color: #f87171;
+            margin-top: 0;
         }
 
         .instructions {
@@ -261,7 +337,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             justify-content: center;
             transition: all 0.2s ease;
         }
-        
+
         .resize-handle.bottom {
             margin-top: 6px;
             border-top: 2px dashed rgba(31, 41, 55, 0.8);
@@ -317,26 +393,45 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <div class="card">
             <span class="badge">Interactive TUI Environment</span>
-            
+
+            <!-- Mode Toggle -->
+            <div class="mode-toggle">
+                <button id="btn-docker" class="mode-btn active" onclick="setMode('docker')" data-shortcut="Press D" title="Docker mode (Press D)">🐳 Docker (Live)</button>
+                <button id="btn-wasm" class="mode-btn" onclick="setMode('wasm')" data-shortcut="Press W" title="WASM mode (Press W)">🧊 WASM (Offline)</button>
+            </div>
+
+            <!-- Docker Terminal Area -->
             <div id="terminal-wrapper" style="position: relative;">
                 <div id="terminal"></div>
             </div>
-            <div id="resize-bottom" class="resize-handle bottom"></div>
+            <div id="resize-bottom" class="resize-handle bottom" style="display: none;"></div>
 
-            <div style="display: flex; gap: 16px; align-items: center; justify-content: center; width: 100%; margin-top: 8px; flex-wrap: wrap;">
+            <!-- WASM Unavailable Message -->
+            <div id="wasm-unavailable" class="wasm-unavailable">
+                <h3>⚠️ WASM Build Not Available</h3>
+                <p>container2wasm (c2w) was not installed or the build failed.</p>
+                <p>The Docker (Live) mode is fully functional. To use WASM, ensure <code>c2w</code> is in your PATH.</p>
+            </div>
+
+            <!-- WASM iframe (loaded lazily on tab switch) -->
+            <iframe id="wasm-frame" style="display: none;"></iframe>
+
+            <div style="display: flex; gap: 16px; align-items: center; justify-content: center; width: 100%; margin-top: 8px; flex-wrap: wrap; flex-direction: column;">
                 <div style="color: #94a3b8; font-size: 0.9rem; text-align: center;">
-                    Use <b>Arrow Keys</b> to navigate • Press <b>Enter</b> to copy/select • Press <b>Ctrl-C</b> to exit
+                    <div><b>Terminal:</b> Arrow Keys to navigate • Enter to copy • Ctrl-C to exit</div>
+                    <div><b>Mode:</b> Press <b>D</b> for Docker • Press <b>W</b> for WASM</div>
                 </div>
                 <button id="btn-reset" class="ctrl-btn">Reset Session 🔄</button>
             </div>
         </div>
 
         <div class="instructions">
-            <h3>Terminal Sandbox Features</h3>
+            <h3>💡 Quick Tips</h3>
             <ul>
-                <li><b>High Fidelity:</b> Powered by <code>ttyd</code> streaming standard POSIX pseudoterminal (PTY) boundaries.</li>
-                <li><b>Interactive Mouse:</b> Fully supports hover interactions and click-to-copy sequences via SGR mouse coordinates.</li>
-                <li><b>Safe Mode:</b> Automatically runs with <code>--safe</code> to strip browser emoji variations for pixel-perfect column grid alignment.</li>
+                <li><b>Switch Modes Instantly:</b> Press <b>D</b> for Docker (Live) or <b>W</b> for WASM (Offline) — anytime, anywhere</li>
+                <li><b>Docker Mode:</b> Full streaming terminal via ttyd. Perfect for real-time testing.</li>
+                <li><b>WASM Mode:</b> Zero-server environment. Offline capable. Everything runs in your browser.</li>
+                <li><b>Reset:</b> Click "Reset Session 🔄" to reconnect (Docker mode) or reload (WASM mode)</li>
             </ul>
         </div>
     </div>
@@ -345,6 +440,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-unicode11.js"></script>
     <script>
+        let currentMode = 'docker';
+        let wasmAvailable = false;
+        let wasmFrameLoaded = false;
+
         // Setup xterm.js instance matching standard ANSI layout (80x24)
         const term = new Terminal({
             cols: 80,
@@ -404,35 +503,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const hostname = window.location.hostname || '127.0.0.1';
             const wsUrl = protocol + '//' + hostname + ':7681/ws';
-            
+
             console.log("WebSocket connecting to: " + wsUrl);
             socket = new WebSocket(wsUrl, 'tty');
             socket.binaryType = 'arraybuffer';
-            
+
             socket.onopen = () => {
                 console.log("WebSocket connection established successfully!");
                 term.focus();
-                
-                // Send initial JSON handshake to ttyd to spawn the child process
-                // The JSON string itself starts with '{' (0x7B), which acts as the ttyd JSON opcode.
+
                 const handshake = JSON.stringify({ AuthToken: "" });
                 socket.send(new TextEncoder().encode(handshake));
-                
-                // Send terminal resize command to ttyd
-                // Format: '1' (0x31) + JSON containing columns and rows
+
                 const resizeMsg = JSON.stringify({ columns: term.cols, rows: term.rows });
                 const payload = new Uint8Array([0x31, ...new TextEncoder().encode(resizeMsg)]);
                 socket.send(payload);
             };
 
-            // Handle TTYD protocol opcode-based server-to-client frames
             socket.onmessage = (event) => {
                 const raw = new Uint8Array(event.data);
                 if (raw.length === 0) return;
-                
+
                 const opcode = raw[0];
                 const payload = raw.slice(1);
-                
+
                 if (opcode === 48) { // OUTPUT data (ASCII '0')
                     const text = decoder.decode(payload, { stream: true });
                     term.write(text);
@@ -476,46 +570,46 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
         });
 
-        // Drag-to-resize terminal layout handling (syncs xterm rows and ttyd container sizes)
+        // Drag-to-resize terminal layout handling
         const termElement = document.getElementById('terminal');
         const termWrapper = document.getElementById('terminal-wrapper');
         const setupResize = (handleElement) => {
             let startY = 0;
             let startHeight = 0;
-            
+
             const onMouseMove = (e) => {
                 const dy = e.clientY - startY;
                 const newHeight = startHeight + dy;
                 const clampedHeight = Math.max(200, Math.min(1200, newHeight));
                 termElement.style.height = clampedHeight + 'px';
                 termWrapper.style.height = clampedHeight + 'px';
+                document.getElementById('wasm-frame').style.height = clampedHeight + 'px';
 
-                // Proportional monospace JetBrains Mono line-height mapping
                 const charHeight = 17.5;
                 const newRows = Math.floor(clampedHeight / charHeight);
                 if (newRows !== term.rows) {
                     term.resize(term.cols, newRows);
                 }
             };
-            
+
             const onMouseUp = () => {
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
                 document.body.style.cursor = 'default';
                 termElement.style.pointerEvents = 'auto';
             };
-            
+
             handleElement.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 startY = e.clientY;
                 startHeight = termWrapper.clientHeight;
                 document.body.style.cursor = 'ns-resize';
-                termElement.style.pointerEvents = 'none'; // Disable pointer events to prevent xterm selecting issues during drag
+                termElement.style.pointerEvents = 'none';
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
             });
         };
-        
+
         setupResize(document.getElementById('resize-bottom'));
 
         // Handle reset button click to restart the terminal and reconnect
@@ -527,6 +621,81 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
             term.reset();
             connectWebSocket();
+        });
+
+        // Mode toggle functionality — WASM availability is checked lazily on first switch,
+        // so Docker mode (the default) never triggers a 404 probe on page load.
+        let wasmChecked = false;
+
+        function setMode(mode) {
+            currentMode = mode;
+            const isDocker = mode === 'docker';
+
+            document.getElementById('terminal-wrapper').style.display = isDocker ? '' : 'none';
+            document.getElementById('resize-bottom').style.display = isDocker ? '' : 'none';
+
+            if (isDocker) {
+                document.getElementById('wasm-frame').style.display = 'none';
+                document.getElementById('wasm-unavailable').style.display = 'none';
+                term.focus();
+            } else {
+                // WASM mode
+                if (wasmChecked) {
+                    applyWasmMode();
+                } else {
+                    // Check if WASM output is available first
+                    fetch('/wasm-out/index.html', { method: 'HEAD' })
+                        .then(response => {
+                            wasmChecked = true;
+                            if (response.ok) {
+                                wasmAvailable = true;
+                                console.log("WASM build is available");
+                            } else {
+                                console.log("WASM build not available (404)");
+                            }
+                            applyWasmMode();
+                        })
+                        .catch(err => {
+                            wasmChecked = true;
+                            console.log("WASM build not available:", err);
+                            applyWasmMode();
+                        });
+                }
+            }
+
+            // Update button states
+            document.getElementById('btn-docker').classList.toggle('active', isDocker);
+            document.getElementById('btn-wasm').classList.toggle('active', !isDocker);
+        }
+
+        function applyWasmMode() {
+            if (wasmAvailable) {
+                document.getElementById('wasm-frame').style.display = '';
+                document.getElementById('wasm-unavailable').style.display = 'none';
+
+                // Lazy load the iframe on first switch to WASM mode
+                if (!wasmFrameLoaded) {
+                    document.getElementById('wasm-frame').src = '/wasm-out/index.html';
+                    wasmFrameLoaded = true;
+                }
+            } else {
+                document.getElementById('wasm-unavailable').style.display = '';
+                document.getElementById('wasm-frame').style.display = 'none';
+            }
+        }
+
+        // Keyboard shortcuts: D for Docker, W for WASM
+        document.addEventListener('keydown', (e) => {
+            // Only if not typing in an input/textarea
+            if (e.target === document.body || e.target === document.documentElement) {
+                if (e.key === 'd' || e.key === 'D') {
+                    e.preventDefault();
+                    setMode('docker');
+                } else if (e.key === 'w' || e.key === 'W') {
+                    e.preventDefault();
+                    setMode('wasm');
+                }
+            }
         });
     </script>
 </body>
@@ -556,110 +725,31 @@ func stopContainer(rt string) {
 	_ = exec.Command(rt, "stop", containerName).Run()
 }
 
-// vendorDir is the directory under scripts/ where downloaded assets are cached.
-const vendorDir = "scripts/vendor"
-
-// vendorAssets downloads all external JS/CSS/font dependencies into scripts/vendor/ so the
-// demo HTML never makes calls to external CDNs or font services.
-func vendorAssets() error {
-	if err := os.MkdirAll(vendorDir, 0755); err != nil {
-		return fmt.Errorf("creating vendor dir: %w", err)
-	}
-
-	// Plain JS/CSS assets: source URL → local filename.
-	plainAssets := []struct{ url, name string }{
-		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css", "xterm.css"},
-		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js", "xterm.js"},
-		{"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js.map", "xterm.js.map"},
-		{"https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.7.0/lib/addon-unicode11.js", "addon-unicode11.js"},
-		{"https://cdn.jsdelivr.net/npm/@xterm/addon-unicode11@0.7.0/lib/addon-unicode11.js.map", "addon-unicode11.js.map"},
-	}
-	for _, a := range plainAssets {
-		dst := filepath.Join(vendorDir, a.name)
-		if err := downloadFile(a.url, dst); err != nil {
-			return fmt.Errorf("downloading %s: %w", a.url, err)
-		}
-		fmt.Printf("  ✅ vendored %s\n", a.name)
-	}
-
-	// Google Fonts: fetch the CSS (with a modern UA to get woff2 URLs), download every
-	// referenced font file, rewrite the CSS to use local /vendor/ paths, save fonts.css.
-	googleFontsURL := "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
-	fontsCSS, err := fetchGoogleFontsCSS(googleFontsURL)
-	if err != nil {
-		return fmt.Errorf("vendoring Google Fonts: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(vendorDir, "fonts.css"), []byte(fontsCSS), 0644); err != nil {
-		return fmt.Errorf("writing fonts.css: %w", err)
-	}
-	fmt.Println("  ✅ vendored fonts.css + woff2 font files")
-
-	return nil
+// checkC2W checks if container2wasm (c2w) is available in PATH.
+func checkC2W() bool {
+	_, err := exec.LookPath("c2w")
+	return err == nil
 }
 
-// downloadFile fetches url and saves the body to dst.
-// If dst already exists it is reused (acts as a simple on-disk cache).
-func downloadFile(url, dst string) error {
-	if _, err := os.Stat(dst); err == nil {
-		return nil // already cached
+// runC2W compiles a container image to WASM using container2wasm.
+// Returns true if successful, false otherwise.
+func runC2W(imageName, outDir string) bool {
+	fmt.Printf("🔄 Compiling container image to WebAssembly (this may take 1-5 minutes)...\n")
+	cmd := exec.Command("c2w", "--to-js", "--entrypoint", "/bin/bash --login", imageName, outDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("⚠️  container2wasm (c2w) compilation failed: %v\n", err)
+		fmt.Println("   WASM mode will not be available, but Docker mode will still work.")
+		return false
 	}
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, url)
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0644)
-}
-
-// fetchGoogleFontsCSS downloads the Google Fonts CSS stylesheet, downloads every woff2 font
-// file it references into vendorDir, and returns the CSS with all url(...) values rewritten
-// to use local /vendor/<filename> paths.
-func fetchGoogleFontsCSS(googleURL string) (string, error) {
-	req, err := http.NewRequest("GET", googleURL, nil)
-	if err != nil {
-		return "", err
-	}
-	// A modern User-Agent is required: Google Fonts serves woff2 only to capable browsers.
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	cssBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	css := string(cssBytes)
-
-	// Rewrite every url(https://...) reference: download the font file and point to /vendor/<name>.
-	re := regexp.MustCompile(`url\((https://[^)]+)\)`)
-	var downloadErr error
-	css = re.ReplaceAllStringFunc(css, func(match string) string {
-		fontURL := re.FindStringSubmatch(match)[1]
-		// Derive a safe local filename from the last path segment, stripping any query string.
-		name := filepath.Base(strings.SplitN(fontURL, "?", 2)[0])
-		dst := filepath.Join(vendorDir, name)
-		if err := downloadFile(fontURL, dst); err != nil {
-			fmt.Printf("  ⚠️  failed to download font %s: %v\n", fontURL, err)
-			downloadErr = err
-			return match // keep original URL on error rather than breaking the CSS
-		}
-		return "url(/vendor/" + name + ")"
-	})
-	return css, downloadErr
+	fmt.Println("✅ Container compiled to WebAssembly!")
+	return true
 }
 
 func main() {
 	fmt.Println("====================================================")
-	fmt.Println("       Emojig TUI Browser Sandbox Prototyper        ")
+	fmt.Println("      Emojig TUI Browser Sandbox — All Modes        ")
 	fmt.Println("====================================================")
 
 	// Step 1: Build static Musl binary for container compatibility.
@@ -670,15 +760,7 @@ func main() {
 	}
 	fmt.Println("✅ Musl compilation successful!")
 
-	// Step 2: Vendor all external JS/CSS/font assets locally so the HTML serves with no CDN calls.
-	fmt.Println("Vendoring external assets into scripts/vendor/...")
-	if err := vendorAssets(); err != nil {
-		fmt.Printf("❌ Failed to vendor assets: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Println("✅ All assets vendored.")
-
-	// Step 3: Generate demo files.
+	// Step 2: Generate demo files.
 	dockerfilePath := filepath.Join("scripts", "demo.Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644); err != nil {
 		fmt.Printf("❌ Failed to write Dockerfile: %v\n", err)
@@ -692,15 +774,15 @@ func main() {
 		base64Svg := base64.StdEncoding.EncodeToString(svgBytes)
 		faviconTag = fmt.Sprintf("\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;base64,%s\" />", base64Svg)
 	}
-	finalHtml := strings.ReplaceAll(htmlContent, "{{FAVICON}}", faviconTag)
-	htmlPath := filepath.Join("scripts", "demo.html")
+	finalHtml := strings.ReplaceAll(wasmHtmlContent, "{{FAVICON}}", faviconTag)
+	htmlPath := filepath.Join("scripts", "wasm-demo.html")
 	if err := os.WriteFile(htmlPath, []byte(finalHtml), 0644); err != nil {
 		fmt.Printf("❌ Failed to write demo HTML: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("📝 Generated client-side HTML:   %s\n", htmlPath)
 
-	// Step 4: Find a container runtime and run the ttyd container.
+	// Step 3: Find a container runtime and run the ttyd container.
 	rt := findRuntime()
 	if rt == "" {
 		// Fallback: try local ttyd directly.
@@ -724,7 +806,22 @@ func main() {
 		}
 		fmt.Printf("✅ Image %q ready\n", imageName)
 
-		// Step 5: Stop any stale container, then start a fresh one.
+		// Step 5: Attempt container2wasm compilation (optional, warn if fails).
+		if checkC2W() {
+			// Clean up old WASM output if it exists
+			_ = os.RemoveAll(wasmOutDir)
+			os.MkdirAll(wasmOutDir, 0755)
+
+			if !runC2W(imageName, wasmOutDir) {
+				fmt.Println("   Continuing without WASM support...")
+			}
+		} else {
+			fmt.Println("⚠️  container2wasm (c2w) not found in PATH.")
+			fmt.Println("   WASM mode will not be available.")
+			fmt.Println("   To enable: install container2wasm and ensure 'c2w' is in PATH")
+		}
+
+		// Step 6: Stop any stale container, then start a fresh one.
 		fmt.Printf("Starting container %q on port %s...\n", containerName, ttydPort)
 		stopContainer(rt)
 		if err := runCmd(rt, "run", "--rm", "-d", "-t",
@@ -739,7 +836,7 @@ func main() {
 		fmt.Printf("✅ Container %q running (ttyd on :%s)\n", containerName, ttydPort)
 	}
 
-	// Step 6: Start HTTP file server to serve the scripts/ directory.
+	// Step 7: Start HTTP file server to serve the scripts/ directory.
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("scripts")))
 	srv := &http.Server{Addr: ":" + httpPort, Handler: mux}
@@ -755,13 +852,17 @@ func main() {
 
 	fmt.Println()
 	fmt.Println("====================================================")
-	fmt.Printf("  🌐  Web UI  →  http://localhost:%s/demo.html\n", httpPort)
-	fmt.Printf("  🖥️   ttyd    →  http://localhost:%s\n", ttydPort)
+	fmt.Printf("  🌐  Open Browser  →  http://localhost:%s/wasm-demo.html\n", httpPort)
+	fmt.Println()
+	fmt.Println("  🐳 Press D for Docker (Live)    • Full streaming")
+	fmt.Println("  🧊 Press W for WASM (Offline)   • Zero-server")
+	fmt.Println()
+	fmt.Printf("  (ttyd direct access: http://localhost:%s)\n", ttydPort)
 	fmt.Println("====================================================" )
 	fmt.Println("  Press Ctrl+C to stop all services.")
 	fmt.Println()
 
-	// Step 7: Wait for SIGINT or SIGTERM, then tear down.
+	// Step 8: Wait for SIGINT or SIGTERM, then tear down.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

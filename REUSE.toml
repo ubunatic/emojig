@@ -26,3 +26,15 @@ path = ["docs/*.png", "docs/*.mp4", "website/*.html", "website/*.png", "website/
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = ["scripts/vendor/*.js", "scripts/vendor/xterm.css"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The xterm.js authors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["scripts/vendor/*.woff2", "scripts/vendor/fonts.css"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The Font Authors"
+SPDX-License-Identifier = "OFL-1.1"

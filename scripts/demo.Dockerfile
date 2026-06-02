@@ -35,13 +35,14 @@ RUN echo 'demo-user ALL=(root) NOPASSWD: /sbin/apk add *, /sbin/apk update, /sbi
 #   - runs the public install script first (visual first action in the demo terminal)
 #   - then shows the help banner
 RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
+    echo 'export PATH=$HOME/.local/bin:$PATH' >> /home/demo-user/.bash_profile && \
     echo 'export LANG=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export LC_ALL=C.UTF-8' >> /home/demo-user/.bash_profile && \
     echo 'export PS1="\[\033[01;32m\]➜  \[\033[01;34m\]\W\[\033[00m\] "' >> /home/demo-user/.bash_profile && \
     echo 'source /usr/local/share/emojig/shell/emojig.bash' >> /home/demo-user/.bash_profile && \
     echo '# Auto-run the public install script so it is the first visible action' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
-    echo 'echo "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m"' >> /home/demo-user/.bash_profile && \
+    echo 'printf "\033[01;34m\$ curl -fsSL https://ubunatic.com/emojig/install.sh | sh\033[0m\n"' >> /home/demo-user/.bash_profile && \
     echo 'curl -fsSL https://ubunatic.com/emojig/install.sh | sh' >> /home/demo-user/.bash_profile && \
     echo 'echo ""' >> /home/demo-user/.bash_profile && \
     echo 'echo "👋 Welcome to the Emojig TUI Sandbox!"' >> /home/demo-user/.bash_profile && \

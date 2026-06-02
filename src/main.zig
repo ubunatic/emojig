@@ -1070,7 +1070,7 @@ pub fn main(init: std.process.Init) !void {
                         if (rctx.was_hidden) {
                             try writeAll(stdout_fd, "\r\x1b[J");
                         } else {
-                            const up_rows = @as(usize, @intCast(1 + row_off));
+                            const up_rows = if (exit_preview and last_drawn_h > 1) last_drawn_h - 1 else @as(usize, @intCast(1 + row_off));
                             const seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{up_rows});
                             try writeAll(stdout_fd, seq);
                         }
@@ -1399,11 +1399,15 @@ pub fn main(init: std.process.Init) !void {
                     @as(usize, 0);
 
                 const cursor_seq: []const u8 = if (is_too_small or exit_preview or should_copy_and_exit) blk: {
-                    // Terminal too small, exit preview, or copying & exiting: hide cursor, park at col 1.
-                    if (cursor_up > 0) {
-                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
+                    if (is_too_small) {
+                        if (cursor_up > 0) {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
+                        } else {
+                            break :blk "\x1b[1G\x1b[?25l";
+                        }
                     } else {
-                        break :blk "\x1b[1G\x1b[?25l";
+                        // Exit or preview: hide cursor and leave it at the bottom to prevent drift!
+                        break :blk "\x1b[?25l";
                     }
                 } else blk: {
                     // Normal full TUI: move up, position cursor, enable blink.
