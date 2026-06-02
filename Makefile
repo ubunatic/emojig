@@ -192,9 +192,9 @@ release: preflight ⚙️  # interactive fully automated release flow (commit, t
 	fi
 
 release-full: ⚙️  # tag, push, build, and publish release
-	@$(MAKE) tag
-	git push origin main --tags
-	@$(MAKE) release-publish
+	@$(MAKE) tag  # commit and tag
+	git push origin main --tags  # push code and tag for $(VERSION)
+	@$(MAKE) release-publish  # build, sign, and publish
 
 bump-patch: ⚙️  # bump patch version in build.zig.zon
 	@go run scripts/bump_version.go patch
