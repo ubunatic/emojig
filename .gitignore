@@ -15,3 +15,6 @@ data/
 # git worktrees created inside the repo (prefer siblings via `make worktree`)
 /worktrees/
 
+# transient agent worktrees (created by the Agent tool)
+/.claude/worktrees/
+
