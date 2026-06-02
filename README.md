@@ -20,7 +20,7 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 > [!Important]
 > GUI mode needs a graphical session (Wayland or X11), a supported terminal
 > (`foot`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`, `gnome-terminal`,
-> or `xterm` — override with `EMOJIG_TERMINAL`), and a clipboard tool (`wl-copy` / `xclip`).
+> `ptyxis`, or `xterm` — override with `EMOJIG_TERMINAL`), and a clipboard tool (`wl-copy` / `xclip`).
 
 The recommended install is the static-binary script below. Distro packages
 (`.deb` / `.rpm`) ship with each release; a Homebrew formula is planned.
@@ -52,7 +52,11 @@ The *GUI* mode hosts the emoji *TUI* in a borderless terminal window.
 [`foot`](https://codeberg.org/dnkl/foot) is preferred — it launches instantly, uses
 minimal resources, and gives pixel-perfect cell sizing. If `foot` isn't installed,
 emojig auto-detects `kitty`, `alacritty`, `wezterm`, `ghostty`, `konsole`,
-`gnome-terminal`, or `xterm`. Force a specific one with `EMOJIG_TERMINAL=kitty`.
+`gnome-terminal`, `ptyxis`, or `xterm`. Force a specific one with `EMOJIG_TERMINAL=kitty`.
+
+The window is spawned **borderless** (no title bar) by default for a clean popup look,
+where the terminal supports it (foot, kitty, alacritty, ghostty, wezterm). Disable it
+with `--borderless=false` if your compositor needs the decorations to move the window.
 
 **💻**  Bind a desktop key to run `emojig --gui` \
 `>_`  Run `emojig --tui` inline in the terminal \

@@ -360,6 +360,7 @@ const HostKind = enum {
     ghostty,
     konsole,
     gnome_terminal,
+    ptyxis,
     xterm,
     generic,
 };
@@ -417,6 +418,7 @@ fn selectTerminalHost(environ_map: anytype) ?TerminalSelection {
         "ghostty",
         "konsole",
         "gnome-terminal",
+        "ptyxis",
         "xterm",
     };
     for (candidates) |name| {
@@ -436,16 +438,24 @@ fn hostKindFromName(name: []const u8) HostKind {
     if (std.mem.eql(u8, name, "ghostty")) return .ghostty;
     if (std.mem.eql(u8, name, "konsole")) return .konsole;
     if (std.mem.eql(u8, name, "gnome-terminal")) return .gnome_terminal;
+    if (std.mem.eql(u8, name, "ptyxis")) return .ptyxis;
     if (std.mem.eql(u8, name, "xterm")) return .xterm;
     return .generic;
 }
 
-/// Maximum argv length — foot is the largest at 20 tokens; 24 gives safe headroom.
-const MAX_ARGV = 24;
+/// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
+/// plus an 11-token tail (21 total); 28 gives safe headroom.
+const MAX_ARGV = 28;
 
 /// Assemble the full launch argv into `out[0..N]` and return the live slice.
 /// All string arguments must have lifetimes at least as long as `out`.
 /// `tail` is the terminal-independent suffix: "env" VARS... exe_path "--tui".
+///
+/// `borderless` requests a window with no decorations / title bar (default behaviour).
+/// It is honoured only for terminals that expose a CLI flag for it (foot, kitty,
+/// alacritty, ghostty, wezterm); gnome-terminal, ptyxis, konsole and xterm have no
+/// such flag, so the request is silently ignored for them. This is unrelated to the
+/// in-TUI `--border` / `EMOJIG_BORDER` colored row.
 ///
 /// NOTE: Cell-precise window sizing is foot-only. Other terminals receive the
 /// `env EMOJIG_RESIZE_MODE=altscreen` tail and adapt via altscreen mode.
@@ -453,6 +463,7 @@ fn buildGuiArgv(
     out: *[MAX_ARGV][]const u8,
     kind: HostKind,
     term: []const u8,
+    borderless: bool,
     // foot-only formatting args (ignored for non-foot hosts):
     size_arg: []const u8,
     bg_arg: []const u8,
@@ -475,8 +486,13 @@ fn buildGuiArgv(
             n += 1;
             out[n] = "--override=pad=8x4";
             n += 1;
-            out[n] = "--override=csd.size=0";
-            n += 1;
+            if (borderless) {
+                // Disable client-side decorations (no title bar).
+                out[n] = "--override=csd.size=0";
+                n += 1;
+                out[n] = "--override=csd.preferred=none";
+                n += 1;
+            }
             out[n] = bg_arg;
             n += 1;
             out[n] = fg_arg;
@@ -494,6 +510,12 @@ fn buildGuiArgv(
             n += 1;
             out[n] = "emojig-picker";
             n += 1;
+            if (borderless) {
+                out[n] = "-o";
+                n += 1;
+                out[n] = "hide_window_decorations=yes";
+                n += 1;
+            }
             out[n] = "-e";
             n += 1;
             for (tail) |s| {
@@ -508,6 +530,12 @@ fn buildGuiArgv(
             n += 1;
             out[n] = "emojig-picker";
             n += 1;
+            if (borderless) {
+                out[n] = "-o";
+                n += 1;
+                out[n] = "window.decorations=None";
+                n += 1;
+            }
             out[n] = "-e";
             n += 1;
             for (tail) |s| {
@@ -524,6 +552,12 @@ fn buildGuiArgv(
             n += 1;
             out[n] = "emojig-picker";
             n += 1;
+            if (borderless) {
+                out[n] = "--config";
+                n += 1;
+                out[n] = "window_decorations=NONE";
+                n += 1;
+            }
             out[n] = "--";
             n += 1;
             for (tail) |s| {
@@ -536,6 +570,10 @@ fn buildGuiArgv(
             n += 1;
             out[n] = "--class=emojig-picker";
             n += 1;
+            if (borderless) {
+                out[n] = "--window-decoration=false";
+                n += 1;
+            }
             out[n] = "-e";
             n += 1;
             for (tail) |s| {
@@ -544,6 +582,7 @@ fn buildGuiArgv(
             }
         },
         .konsole => {
+            // konsole has no CLI flag to disable window decorations.
             out[n] = term;
             n += 1;
             out[n] = "-e";
@@ -554,6 +593,18 @@ fn buildGuiArgv(
             }
         },
         .gnome_terminal => {
+            // gnome-terminal (GTK CSD) has no CLI flag to disable decorations.
+            out[n] = term;
+            n += 1;
+            out[n] = "--";
+            n += 1;
+            for (tail) |s| {
+                out[n] = s;
+                n += 1;
+            }
+        },
+        .ptyxis => {
+            // ptyxis (GTK4/libadwaita) has no CLI flag to disable decorations.
             out[n] = term;
             n += 1;
             out[n] = "--";
@@ -564,6 +615,7 @@ fn buildGuiArgv(
             }
         },
         .xterm => {
+            // xterm decorations are WM-controlled; no CLI borderless flag.
             out[n] = term;
             n += 1;
             out[n] = "-class";
@@ -602,6 +654,7 @@ fn spawnGuiWindow(
     safe: bool,
     debug: bool,
     wait: bool,
+    borderless: bool,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -670,7 +723,7 @@ fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, size_arg, bg_arg, fg_arg, &tail);
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -684,24 +737,49 @@ fn spawnGuiWindow(
     }
 }
 
-test "buildGuiArgv: foot argv starts with expected tokens" {
+fn argvContains(argv: []const []const u8, needle: []const u8) bool {
+    for (argv) |a| {
+        if (std.mem.eql(u8, a, needle)) return true;
+    }
+    return false;
+}
+
+test "buildGuiArgv: foot borderless adds csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", &tail);
-    try std.testing.expect(argv.len >= 4);
+    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", &tail);
     try std.testing.expectEqualStrings("foot", argv[0]);
     try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
     try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
-    try std.testing.expectEqualStrings("--override=font=monospace:size=14", argv[3]);
-    // tail starts after 9 prefix tokens
-    try std.testing.expectEqualStrings("env", argv[9]);
+    try std.testing.expect(argvContains(argv, "--override=csd.size=0"));
+    try std.testing.expect(argvContains(argv, "--override=csd.preferred=none"));
     try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
+}
+
+test "buildGuiArgv: foot non-borderless omits csd overrides" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
+    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", &tail);
+    try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
+    try std.testing.expect(!argvContains(argv, "--override=csd.preferred=none"));
+}
+
+test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
+    var on_out: [MAX_ARGV][]const u8 = undefined;
+    var off_out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
+    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", &tail);
+    try std.testing.expect(argvContains(on, "hide_window_decorations=yes"));
+    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", &tail);
+    try std.testing.expect(!argvContains(off, "hide_window_decorations=yes"));
+    try std.testing.expectEqualStrings("kitty", off[0]);
+    try std.testing.expectEqualStrings("-e", off[3]);
 }
 
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -709,6 +787,15 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
     try std.testing.expectEqualStrings("-e", argv[3]);
     try std.testing.expectEqualStrings("env", argv[4]);
     try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
+}
+
+test "buildGuiArgv: ptyxis uses -- separator" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
+    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", &tail);
+    try std.testing.expectEqualStrings("ptyxis", argv[0]);
+    try std.testing.expectEqualStrings("--", argv[1]);
+    try std.testing.expectEqualStrings("env", argv[2]);
 }
 
 test "whichOnPath finds and rejects" {
@@ -720,7 +807,7 @@ test "whichOnPath finds and rejects" {
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -834,6 +921,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_safe = false;
     var opt_debug = false;
     var opt_alt_screen = false;
+    var opt_borderless = true; // spawn the GUI host terminal without decorations (default)
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -854,6 +942,20 @@ pub fn main(init: std.process.Init) !void {
             opt_debug = true;
         } else if (std.mem.eql(u8, arg, "--alt-screen")) {
             opt_alt_screen = true;
+        } else if (std.mem.eql(u8, arg, "--borderless")) {
+            opt_borderless = true;
+        } else if (std.mem.eql(u8, arg, "--no-borderless")) {
+            opt_borderless = false;
+        } else if (std.mem.startsWith(u8, arg, "--borderless=")) {
+            const v = arg["--borderless=".len..];
+            if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1")) {
+                opt_borderless = true;
+            } else if (std.mem.eql(u8, v, "false") or std.mem.eql(u8, v, "0")) {
+                opt_borderless = false;
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: invalid --borderless value. Use true/false or 1/0.\n");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
                 if (std.mem.eql(u8, v, "light")) opt_theme = .light else if (std.mem.eql(u8, v, "dark")) opt_theme = .dark else if (std.mem.eql(u8, v, "system")) opt_theme = .system else {
@@ -912,7 +1014,8 @@ pub fn main(init: std.process.Init) !void {
                 "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
-                "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/alacritty/...)\n" ++
+                "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
+                "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
@@ -1110,6 +1213,7 @@ pub fn main(init: std.process.Init) !void {
             final_safe,
             final_debug,
             opt_wait,
+            opt_borderless,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
