@@ -1421,6 +1421,8 @@ pub fn main(init: std.process.Init) !void {
 
         var should_copy_and_exit = false;
         var exit_preview = false;
+        var exit_preview_step: usize = 0;
+        const max_preview_steps: usize = 8;
         var theme_hovered = false;
 
         // ---------------------------------------------------------------------------
@@ -1573,7 +1575,7 @@ pub fn main(init: std.process.Init) !void {
                 if (show_top_border) {
                     try writeAll(stdout_fd, "\x1b[2K\r");
                     try writeAll(stdout_fd, " ");
-                    if (exit_preview) {
+                    if (exit_preview and exit_preview_step >= 3) {
                         try writeAll(stdout_fd, palette.bg);
                     } else {
                         try writeAll(stdout_fd, palette.border_bg);
@@ -1592,7 +1594,7 @@ pub fn main(init: std.process.Init) !void {
 
                 // Search bar row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
-                if (exit_preview) {
+                if (exit_preview and exit_preview_step >= 3) {
                     // Preview: blank the search bar row.
                     try writeAll(stdout_fd, " ");
                     try writeAll(stdout_fd, palette.bg);
@@ -1708,7 +1710,7 @@ pub fn main(init: std.process.Init) !void {
                 // Description row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
                 const max_len = if (content_width > 1) content_width - 1 else 0;
-                if (exit_preview or (selected_idx == null) or is_too_small) {
+                if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
                     const pad_len_desc = max_w;
                     const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                     try writeAll(stdout_fd, name_line);
@@ -1742,7 +1744,7 @@ pub fn main(init: std.process.Init) !void {
 
                 // Status bar row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
-                if (exit_preview or is_too_small) {
+                if ((exit_preview and exit_preview_step >= 3) or is_too_small) {
                     try writeAll(stdout_fd, " ");
                     try writeAll(stdout_fd, palette.bg);
                     try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
@@ -1772,7 +1774,7 @@ pub fn main(init: std.process.Init) !void {
                 if (show_bottom_border) {
                     try writeAll(stdout_fd, "\x1b[2K\r");
                     try writeAll(stdout_fd, " ");
-                    if (exit_preview) {
+                    if (exit_preview and exit_preview_step >= 3) {
                         try writeAll(stdout_fd, palette.bg);
                     } else {
                         try writeAll(stdout_fd, palette.border_bg);
@@ -1837,11 +1839,16 @@ pub fn main(init: std.process.Init) !void {
                 if (exit_preview) {
                     // Preview frame has been rendered; sleep then exit.
                     if (preview_hold_ns > 0) {
+                        const step_ns = preview_hold_ns / max_preview_steps;
                         const hold_ts = std.posix.system.timespec{
-                            .sec = @intCast(preview_hold_ns / std.time.ns_per_s),
-                            .nsec = @intCast(preview_hold_ns % std.time.ns_per_s),
+                            .sec = @intCast(step_ns / std.time.ns_per_s),
+                            .nsec = @intCast(step_ns % std.time.ns_per_s),
                         };
                         _ = std.posix.system.nanosleep(&hold_ts, null);
+                    }
+                    exit_preview_step += 1;
+                    if (exit_preview_step < max_preview_steps) {
+                        continue;
                     }
                     break;
                 }
