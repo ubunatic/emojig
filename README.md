@@ -77,10 +77,31 @@ pick an emoji, it lands at your cursor. Also copies to clipboard if available.
 
 To use a different key: `export EMOJIG_KEY='^F'` (zsh/bash format) before sourcing.
 
-## Launcher integration (rofi / wofi / fuzzel / dmenu)
+## Desktop hotkey
 
-`emojig --list` prints every emoji as `emoji<TAB>name`, one per line, with no UI.
-Pipe it into any dmenu-style launcher and let the launcher do the filtering:
+For a system-wide picker, bind a key to emojig. The right path depends on your desktop —
+emojig works with whatever you already run, it doesn't ask you to switch launchers.
+
+### Stock desktops (GNOME, KDE, Cinnamon …)
+
+These ship a launcher that can't be piped to, so bind a keyboard shortcut straight to
+the floating picker:
+
+- **GNOME** (e.g. Ubuntu): Settings → Keyboard → *Keyboard Shortcuts* → *Custom
+  Shortcuts* → add one running `emojig --gui`.
+- **KDE Plasma**: System Settings → Shortcuts → *Custom Shortcuts* → command `emojig --gui`.
+
+`emojig --gui` opens the picker in a small floating window (currently via `foot`, so
+`sudo apt install foot`); pick an emoji and it lands on your clipboard.
+
+> Tip: inside a terminal you need no hotkey at all — the **Ctrl+E** shell widget
+> (above) fuzzy-picks and drops the emoji right at your cursor.
+
+### If you already use a dmenu-style launcher (rofi / wofi / fuzzel / bemenu)
+
+Common on tiling WMs (sway, i3, Hyprland). `emojig --list` prints every emoji as
+`emoji<TAB>name` with no UI, so you can feed it to the launcher you **already** run —
+no new dependency:
 
 ```sh
 # wofi (Wayland)
@@ -93,8 +114,9 @@ emojig --list | rofi -dmenu -i | cut -f1 | tr -d '\n' | xclip -selection clipboa
 emojig --list | fuzzel --dmenu | cut -f1 | tr -d '\n' | wl-copy
 ```
 
-Bind one of these to a desktop hotkey for a system-wide picker themed by your
-existing launcher — no `foot` dependency required.
+`cut -f1` keeps the emoji (the name is only there so you can search for it). Bind your
+favourite line to a hotkey. If you *don't* already use such a launcher, prefer
+`emojig --gui` above — don't install one just to pick emoji.
 
 ## Usage
 
