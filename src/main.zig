@@ -1577,10 +1577,21 @@ pub fn main(init: std.process.Init) !void {
                     try writeAll(stdout_fd, " ");
                     if (exit_preview and exit_preview_step >= 3) {
                         try writeAll(stdout_fd, palette.bg);
+                        try writeAll(stdout_fd, palette.border_shade_fg);
+                        const shade_str = switch (exit_preview_step) {
+                            3 => "\u{2593}",
+                            4 => "\u{2592}",
+                            5 => "\u{2591}",
+                            else => " ",
+                        };
+                        var i: usize = 0;
+                        while (i < max_w) : (i += 1) {
+                            try writeAll(stdout_fd, shade_str);
+                        }
                     } else {
                         try writeAll(stdout_fd, palette.border_bg);
+                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                     }
-                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                     try rw.endRow();
                 }
 
@@ -1595,10 +1606,20 @@ pub fn main(init: std.process.Init) !void {
                 // Search bar row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
                 if (exit_preview and exit_preview_step >= 3) {
-                    // Preview: blank the search bar row.
+                    // Preview: blank/shade the search bar row.
                     try writeAll(stdout_fd, " ");
                     try writeAll(stdout_fd, palette.bg);
-                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                    try writeAll(stdout_fd, palette.search_shade_fg);
+                    const shade_str = switch (exit_preview_step) {
+                        3 => "\u{2593}",
+                        4 => "\u{2592}",
+                        5 => "\u{2591}",
+                        else => " ",
+                    };
+                    var i: usize = 0;
+                    while (i < max_w) : (i += 1) {
+                        try writeAll(stdout_fd, shade_str);
+                    }
                 } else {
                     const pad_len = if (content_width > prefix_cols + icon_cols)
                         content_width - prefix_cols - icon_cols - display_query_len
@@ -1747,7 +1768,21 @@ pub fn main(init: std.process.Init) !void {
                 if ((exit_preview and exit_preview_step >= 3) or is_too_small) {
                     try writeAll(stdout_fd, " ");
                     try writeAll(stdout_fd, palette.bg);
-                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                    if (exit_preview and exit_preview_step >= 3) {
+                        try writeAll(stdout_fd, palette.search_shade_fg);
+                        const shade_str = switch (exit_preview_step) {
+                            3 => "\u{2593}",
+                            4 => "\u{2592}",
+                            5 => "\u{2591}",
+                            else => " ",
+                        };
+                        var i: usize = 0;
+                        while (i < max_w) : (i += 1) {
+                            try writeAll(stdout_fd, shade_str);
+                        }
+                    } else {
+                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                    }
                 } else {
                     try writeAll(stdout_fd, " ");
                     try writeAll(stdout_fd, palette.search_bg);
@@ -1776,10 +1811,21 @@ pub fn main(init: std.process.Init) !void {
                     try writeAll(stdout_fd, " ");
                     if (exit_preview and exit_preview_step >= 3) {
                         try writeAll(stdout_fd, palette.bg);
+                        try writeAll(stdout_fd, palette.border_shade_fg);
+                        const shade_str = switch (exit_preview_step) {
+                            3 => "\u{2593}",
+                            4 => "\u{2592}",
+                            5 => "\u{2591}",
+                            else => " ",
+                        };
+                        var i: usize = 0;
+                        while (i < max_w) : (i += 1) {
+                            try writeAll(stdout_fd, shade_str);
+                        }
                     } else {
                         try writeAll(stdout_fd, palette.border_bg);
+                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                     }
-                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                     try rw.endRow();
                 }
 
@@ -1812,8 +1858,8 @@ pub fn main(init: std.process.Init) !void {
                 else
                     @as(usize, 0);
 
-                const cursor_seq: []const u8 = if (is_too_small or exit_preview) blk: {
-                    // Terminal too small or exit preview: hide cursor, park at col 1.
+                const cursor_seq: []const u8 = if (is_too_small or exit_preview or should_copy_and_exit) blk: {
+                    // Terminal too small, exit preview, or copying & exiting: hide cursor, park at col 1.
                     if (cursor_up > 0) {
                         break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
                     } else {

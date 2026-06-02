@@ -212,6 +212,14 @@ Disable line wrap with `\x1b[?7l` on entry; re-enable with `\x1b[?7h` on exit.
 Overflow causes the terminal to wrap onto a new line, creating an implicit scroll
 and corrupting the layout.
 
+### Cursor Line Flicker on Fade-Out
+
+**Problem:** In terminal emulators with "Highlight active line" or "Highlight cursor line" features (such as Tilix/VTE), the terminal draws a background highlight on the line where the cursor is currently located. Even if the cursor is hidden via `\x1b[?25l`, the terminal emulator still tracks the cursor's logical position. During a multi-frame fade-out animation or a rapid teardown clear, moving the cursor to park it or draw rows results in wild screen flickering as the line highlight flashes across the entire TUI viewport. Additionally, clipboard copy utilities (such as `wl-copy`/`xclip`) run as external processes, introducing a blocking delay of 50-100ms. If the cursor is not hidden before this delay, it remains visible in the search bar, creating a jarring transition.
+
+**Solution:** 
+1. **Hide Immediately on Decision:** The cursor must be hidden (`\x1b[?25l`) and parked at column 1 immediately when the exit decision is registered (`should_copy_and_exit`), *before* executing the blocking clipboard copy or starting the fade-out animation loop.
+2. **Deactivate Highlight via Visibility:** Since modern terminals disable the active line highlight entirely when the cursor is hidden, hiding the cursor at the start of the exit sequence ensures the line highlight remains turned off throughout all frames of the fade animation and `defer` cleanup, completely eliminating flicker.
+
 ---
 
 ## 9. Current Knowns & Verification

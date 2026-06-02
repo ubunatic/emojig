@@ -15,6 +15,8 @@ pub const Palette = struct {
     selection_bg: []const u8,
     search_bg: []const u8, // entire search-bar row
     border_bg: []const u8, // optional border rows
+    search_shade_fg: []const u8, // foreground color sequence for search bar shading
+    border_shade_fg: []const u8, // foreground color sequence for border shading
 };
 
 pub const dark_palette = Palette{
@@ -23,6 +25,8 @@ pub const dark_palette = Palette{
     .selection_bg = "\x1b[48;5;24m\x1b[38;5;255m",
     .search_bg = "\x1b[48;5;238m\x1b[38;5;255m",
     .border_bg = "",
+    .search_shade_fg = "\x1b[38;5;238m",
+    .border_shade_fg = "\x1b[38;5;236m",
 };
 
 pub const light_palette = Palette{
@@ -31,6 +35,8 @@ pub const light_palette = Palette{
     .selection_bg = "\x1b[48;5;111m\x1b[38;5;232m",
     .search_bg = "\x1b[48;5;251m\x1b[38;5;232m",
     .border_bg = "",
+    .search_shade_fg = "\x1b[38;5;251m",
+    .border_shade_fg = "\x1b[38;5;252m",
 };
 
 pub fn themeIcon(t: Theme) []const u8 {
