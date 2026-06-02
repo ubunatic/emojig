@@ -4,12 +4,24 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
+)
+
+const (
+	containerName = "test-env"
+	imageName     = "emojig-demo"
+	ttydPort      = "7681"
+	httpPort      = "8080"
 )
 
 const dockerfileContent = `# SPDX-FileCopyrightText: 2026 Uwe Jugel
@@ -56,11 +68,11 @@ RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
 # Expose default ttyd port
 EXPOSE 7681
 
-# Run the app under ttyd as the demo-user with strict bounds:
-# - '--once': exit the container when the session finishes or Ctrl-C is pressed.
-# - '--writable': allow terminal inputs (required for interactive pickers).
+# Run the app under ttyd as the demo-user.
+# '--writable': allow terminal inputs (required for interactive pickers).
+# Note: '--once' is intentionally omitted so the Reset Session button can reconnect.
 USER demo-user
-ENTRYPOINT ["ttyd", "-p", "7681", "--once", "--writable", "/bin/bash", "--login"]
+ENTRYPOINT ["ttyd", "-p", "7681", "--writable", "/bin/bash", "--login"]
 `
 
 const htmlContent = `<!--
@@ -228,8 +240,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
-            z-index: 10;
             transition: all 0.2s ease;
         }
         
@@ -503,34 +513,50 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </html>
 `
 
+// findRuntime returns the first container runtime found in PATH (podman preferred).
+func findRuntime() string {
+	for _, rt := range []string{"podman", "docker"} {
+		if _, err := exec.LookPath(rt); err == nil {
+			return rt
+		}
+	}
+	return ""
+}
+
+// runCmd runs a command with inherited stdout/stderr and returns any error.
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// stopContainer stops the named container, ignoring errors (may not be running).
+func stopContainer(rt string) {
+	_ = exec.Command(rt, "stop", containerName).Run()
+}
+
 func main() {
 	fmt.Println("====================================================")
 	fmt.Println("       Emojig TUI Browser Sandbox Prototyper        ")
 	fmt.Println("====================================================")
 
-	// Step 1: Ensure static Musl binary is compiled for container compatibility
-	binPath := filepath.Join("zig-out", "bin", "emojig")
-	fmt.Println("Ensuring statically linked Musl binary (zig-out/bin/emojig) is compiled...")
-	buildCmd := exec.Command("zig", "build", "-Dtarget=x86_64-linux-musl", "-Doptimize=ReleaseSmall")
-	buildCmd.Stdout = os.Stdout
-	buildCmd.Stderr = os.Stderr
-	if err := buildCmd.Run(); err != nil {
+	// Step 1: Build static Musl binary for container compatibility.
+	fmt.Println("Building statically linked Musl binary (zig-out/bin/emojig)...")
+	if err := runCmd("zig", "build", "-Dtarget=x86_64-linux-musl", "-Doptimize=ReleaseSmall"); err != nil {
 		fmt.Printf("❌ Failed to compile emojig: %v\n", err)
-		fmt.Println("Please ensure Zig is installed and try again.")
 		os.Exit(1)
 	}
 	fmt.Println("✅ Musl compilation successful!")
 
-	// Step 2: Auto-generate the demo files
+	// Step 2: Generate demo files.
 	dockerfilePath := filepath.Join("scripts", "demo.Dockerfile")
-	err := os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644); err != nil {
 		fmt.Printf("❌ Failed to write Dockerfile: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("📝 Generated sandbox Dockerfile: %s\n", dockerfilePath)
 
-	// Read the SVG icon and encode it as a base64 favicon
 	var faviconTag string
 	svgPath := filepath.Join("src", "assets", "emojig-icon.web.svg")
 	if svgBytes, err := os.ReadFile(svgPath); err == nil {
@@ -538,52 +564,83 @@ func main() {
 		faviconTag = fmt.Sprintf("\n    <link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml;base64,%s\" />", base64Svg)
 	}
 	finalHtml := strings.ReplaceAll(htmlContent, "{{FAVICON}}", faviconTag)
-
 	htmlPath := filepath.Join("scripts", "demo.html")
-	err = os.WriteFile(htmlPath, []byte(finalHtml), 0644)
-	if err != nil {
+	if err := os.WriteFile(htmlPath, []byte(finalHtml), 0644); err != nil {
 		fmt.Printf("❌ Failed to write demo HTML: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("📝 Generated client-side HTML:   %s\n", htmlPath)
 
-	// Step 3: Check if local ttyd is installed
-	_, ttydErr := exec.LookPath("ttyd")
-
-	if ttydErr != nil {
-		// Local ttyd is missing - serve Docker instruction
-		fmt.Println("\n----------------------------------------------------")
-		fmt.Println("ℹ️  Local 'ttyd' installation not found in PATH.")
-		fmt.Println("   To run the interactive browser demo in a secure container sandbox:")
-		fmt.Println("----------------------------------------------------")
-		fmt.Println("1. Build the Docker container image:")
-		fmt.Printf("   $ docker build -t emojig-demo -f %s .\n\n", dockerfilePath)
-		fmt.Println("2. Run the sandboxed container:")
-		fmt.Println("   $ docker run --rm -d -t -p 7681:7681 emojig-demo\n")
-		fmt.Println("3. Open the client interface in your browser:")
-		fmt.Printf("   Simply open the file in your browser or run a simple local webserver:\n")
-		fmt.Printf("   $ python3 -m http.server 8080 --directory scripts/\n")
-		fmt.Println("   Then navigate to http://localhost:8080/demo.html to view and interact!")
-		fmt.Println("====================================================")
-	} else {
-		// Local ttyd is present - offer to spawn directly!
-		fmt.Println("\n🎉 Local 'ttyd' detected! Ready to serve direct interactive session.")
-		fmt.Println("Starting ttyd background service...")
-		
-		ttydCmd := exec.Command("ttyd", "-p", "7681", "--once", "--writable", binPath, "--tui", "--safe")
+	// Step 3: Find a container runtime and run the ttyd container.
+	rt := findRuntime()
+	if rt == "" {
+		// Fallback: try local ttyd directly.
+		fmt.Println("⚠️  No container runtime (podman/docker) found. Trying local ttyd...")
+		binPath := filepath.Join("zig-out", "bin", "emojig")
+		ttydCmd := exec.Command("ttyd", "-p", ttydPort, "--writable", binPath, "--tui", "--safe")
 		ttydCmd.Stdout = os.Stdout
 		ttydCmd.Stderr = os.Stderr
-		
 		if err := ttydCmd.Start(); err != nil {
-			fmt.Printf("❌ Failed to start ttyd: %v\n", err)
+			fmt.Printf("❌ No container runtime or local ttyd found. Cannot start ttyd server.\n")
 			os.Exit(1)
 		}
-		
-		fmt.Println("🚀 Interactive TUI server running on port 7681!")
-		fmt.Printf("👉 Open %s directly in your browser to play with the picker!\n", htmlPath)
-		fmt.Println("Press Ctrl+C to terminate.")
-		
-		// Wait for command to finish
-		_ = ttydCmd.Wait()
+		defer func() { _ = ttydCmd.Process.Kill() }()
+		fmt.Printf("✅ Local ttyd running on :%s\n", ttydPort)
+	} else {
+		// Step 4: Build the container image.
+		fmt.Printf("🐳 Using runtime: %s — building image %q...\n", rt, imageName)
+		if err := runCmd(rt, "build", "-t", imageName, "-f", dockerfilePath, "."); err != nil {
+			fmt.Printf("❌ Image build failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ Image %q ready\n", imageName)
+
+		// Step 5: Stop any stale container, then start a fresh one.
+		fmt.Printf("Starting container %q on port %s...\n", containerName, ttydPort)
+		stopContainer(rt)
+		if err := runCmd(rt, "run", "--rm", "-d", "-t",
+			"-p", ttydPort+":"+ttydPort,
+			"--name", containerName,
+			imageName,
+		); err != nil {
+			fmt.Printf("❌ Failed to start container: %v\n", err)
+			os.Exit(1)
+		}
+		defer stopContainer(rt)
+		fmt.Printf("✅ Container %q running (ttyd on :%s)\n", containerName, ttydPort)
 	}
+
+	// Step 6: Start HTTP file server to serve the scripts/ directory.
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.Dir("scripts")))
+	srv := &http.Server{Addr: ":" + httpPort, Handler: mux}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("HTTP server error: %v\n", err)
+		}
+	}()
+	fmt.Printf("✅ HTTP server running on :%s\n", httpPort)
+
+	// Give ttyd a moment to initialise before printing the URL.
+	time.Sleep(time.Second)
+
+	fmt.Println()
+	fmt.Println("====================================================")
+	fmt.Printf("  🌐  Web UI  →  http://localhost:%s/demo.html\n", httpPort)
+	fmt.Printf("  🖥️   ttyd    →  http://localhost:%s\n", ttydPort)
+	fmt.Println("====================================================" )
+	fmt.Println("  Press Ctrl+C to stop all services.")
+	fmt.Println()
+
+	// Step 7: Wait for SIGINT or SIGTERM, then tear down.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("\n🛑 Shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(ctx)
+	// deferred stopContainer / ttydCmd.Kill run here.
+	fmt.Println("✅ All services stopped.")
 }

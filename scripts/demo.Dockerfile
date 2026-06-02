@@ -42,8 +42,8 @@ RUN echo 'export EMOJIG_SAFE=true' >> /home/demo-user/.bash_profile && \
 # Expose default ttyd port
 EXPOSE 7681
 
-# Run the app under ttyd as the demo-user with strict bounds:
-# - '--once': exit the container when the session finishes or Ctrl-C is pressed.
-# - '--writable': allow terminal inputs (required for interactive pickers).
+# Run the app under ttyd as the demo-user.
+# '--writable': allow terminal inputs (required for interactive pickers).
+# Note: '--once' is intentionally omitted so the Reset Session button can reconnect.
 USER demo-user
-ENTRYPOINT ["ttyd", "-p", "7681", "--once", "--writable", "/bin/bash", "--login"]
+ENTRYPOINT ["ttyd", "-p", "7681", "--writable", "/bin/bash", "--login"]
