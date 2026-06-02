@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- SPDX-FileCopyrightText: 2026 Uwe Jugel -->
+
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+
+<!-- Desktop/launcher icon for the emojig picker (installed to
+     ~/.local/share/icons/hicolor/scalable/apps/emojig-picker.svg).
+     Hand-drawn vector smiley, transparent background. Edit freely;
+     it is embedded into the binary at build time. -->
+
+<svg
+   width="100"
+   height="100"
+   viewBox="0 0 100 100"
+   version="1.1"
+   id="svg3"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#">
+  <defs
+     id="defs3">
+    <linearGradient
+       id="linearGradient3">
+      <stop
+         style="stop-color:#fffd04;stop-opacity:1;"
+         offset="0"
+         id="stop3" />
+      <stop
+         style="stop-color:#f2ac00;stop-opacity:1;"
+         offset="1"
+         id="stop4" />
+    </linearGradient>
+    <radialGradient
+       xlink:href="#linearGradient3"
+       id="radialGradient4"
+       cx="24.636896"
+       cy="23.893257"
+       fx="24.636896"
+       fy="23.893257"
+       r="46"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(1.1836649,1.3169124,-1.4403807,1.2946404,35.330457,-39.179854)" />
+  </defs>
+  <path
+     d="m 33.69515,55.152425 c 13.399933,2.333671 26.753467,2.232664 40,0 -2.666667,6.666667 -9.333333,10 -20,10 -10.666667,0 -17.333333,-3.333333 -20,-10 z"
+     fill="#ffffff"
+     id="path3" />
+  <path
+     d="m 24.226328,85.849885 c 13.399933,-2.333671 26.753467,-2.232664 40,0 -2.666667,-6.666667 -9.333333,-10 -20,-10 -10.666667,0 -17.333333,3.333333 -20,10 z"
+     fill="#ffffff"
+     id="path8" />
+  <!-- face -->
+  <path
+     id="circle1"
+     style="fill:url(#radialGradient4);stroke:none"
+     d="M 50,4 C 24.594902,4 4,24.594902 4,50 4,75.405098 24.594902,96 50,96 75.405098,96 96,75.405098 96,50 96,24.594902 75.405098,4 50,4 Z M 28.847575,57.154734 C 44.180908,59.821401 57.666667,58.666667 73,56 71,74.666667 63.56428,82.152425 50.230947,82.152425 c -13.333333,0 -19.383372,-6.331024 -21.383372,-24.997691 z" />
+  <!-- eyes -->
+  <!-- open grinning mouth -->
+  <!-- upper teeth -->
+  <metadata
+     id="metadata4">
+    <rdf:RDF>
+      <cc:License
+         rdf:about="http://creativecommons.org/licenses/by-sa/4.0/">
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Reproduction" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Distribution" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Notice" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Attribution" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#DerivativeWorks" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#ShareAlike" />
+      </cc:License>
+      <cc:Work
+         rdf:about="">
+        <cc:license
+           rdf:resource="http://creativecommons.org/licenses/by-sa/4.0/" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     id="g7"
+     transform="matrix(1.2243879,0,0,1.2243879,-20.847102,-15.733152)">
+    <ellipse
+       style="fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1.81826"
+       id="ellipse4"
+       cx="69.786003"
+       cy="41.134556"
+       rx="6.6809263"
+       ry="10.555781" />
+    <ellipse
+       style="fill:#000000;fill-opacity:1;stroke:none"
+       id="ellipse7"
+       cx="67.968201"
+       cy="43.929756"
+       rx="3.6743424"
+       ry="5.3073835" />
+  </g>
+  <g
+     id="g8"
+     transform="matrix(1.2243879,0,0,1.2243879,-38.767304,-12.665984)">
+    <ellipse
+       style="fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1.81826"
+       id="ellipse8"
+       cx="60.523319"
+       cy="41.335918"
+       rx="6.6809263"
+       ry="11.045694" />
+    <ellipse
+       style="fill:#000000;fill-opacity:1;stroke:none"
+       id="circle8"
+       cx="62.905766"
+       cy="41.407745"
+       rx="4.1362362"
+       ry="6.0398483" />
+  </g>
+</svg>

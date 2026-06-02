@@ -1,4 +1,10 @@
-# emojig - *all your emoji are belong to us!*
+# <img src="src/assets/emojig-icon.web.svg" width="38" height="38" align="center" alt="emojig logo" /> emojig - *all your emoji are belong to us!*
+
+[![Codeberg](https://img.shields.io/badge/Codeberg-Repository-3a8fcb?logo=codeberg&logoColor=white)](https://codeberg.org/ubunatic/emojig)
+[![Release](https://img.shields.io/badge/Release-v0.1.5-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
+[![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-brightgreen?logo=open-source-initiative&logoColor=white)](https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES)
+[![Language](https://img.shields.io/badge/Language-Zig_0.16-orange?logo=zig&logoColor=white)](https://ziglang.org)
+[![Memory Usage](https://img.shields.io/badge/RAM-%3C%202.0%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
 
 Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free GUI+TUI emoji picker on all your Linux systems.
 
@@ -9,11 +15,15 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 
 
 ## Features
-**🏎️** Fast and low-memory (340 KB static binary, < 2.0 MB RAM) \
-**😀** Works in the terminal and as a floating desktop window \
-**🔍** Fuzzy search across 1,870 emojis \
-**↔️** Navigate with arrow keys or mouse \
-**📋** Sends the emoji to your clipboard or shell prompt
+
+* **🏎️ Zero-Allocation Performance**: Built in Zig, compile-time optimized (`ReleaseSmall`) to keep the static binary under 350 KB and Resident Set Size (RSS) under 2.0 MB.
+* **🌐 Universal Launch Modes**: Runs in-place in active terminals (TUI) or automatically spawns a borderless popup window (GUI) via `foot`, `kitty`, `alacritty`, `ghostty`, or other standard terminals when triggered from hotkeys or desktop environments.
+* **📦 Embedded Database**: 1,870 emojis packed directly at compile time via `@embedFile("emojis.bin")` for zero-allocation, instant runtime access.
+* **🔍 Intelligent Fuzzy Search**: Multi-term space-separated search with automatic plural (`cars` -> `car`), stem (`running` -> `run`), and query-stem (trailing `e`) fallbacks.
+* **↔️ 2D Grid & Mouse Navigation**: Navigate the borderless 2D grid using arrow keys or standard mouse interactions (hover to select, click to confirm, click theme button to toggle).
+* **🌓 Automatic Theming**: Sleek light, dark, and system themes. OSC 11 terminal background detection selects the correct theme automatically, while <kbd>Tab</kbd> toggles and persists choice.
+* **🛡️ Terminal Restoration**: Complete signal (`SIGINT`, `SIGTERM`) and custom panic handling guarantees raw terminal state is fully restored on crash or exit.
+* **📊 Memory Auditing**: Audits resident memory usage on exit via raw POSIX `/proc/self/statm` reads, appending clean statistics to `/tmp/emojig.log`.
 
 ## Install
 
