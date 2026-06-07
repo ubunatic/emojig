@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Google Fonts -->
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+                <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Color+Emoji&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         
         <!-- TUI Simulator CSS -->
         <link rel="stylesheet" href="simulator.css" />
@@ -43,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             body {
-                font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+                font-family: 'Plus Jakarta Sans', system-ui, 'Noto Color Emoji', sans-serif;
                 background: radial-gradient(circle at 50% 0%, var(--bg-main) 0%, var(--bg-gradient-end) 100%);
                 color: var(--text-main);
                 line-height: 1.6;
@@ -735,16 +735,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <section style="margin-bottom: 60px;">
                 <div class="section-title">
                     <span>🎮</span>
-                    <h2>Interactive TUI Playground</h2>
+                    <h2>Interactive Shell Widget Playground</h2>
                 </div>
-                <p class="section-subtitle">Experience Emojig's zero-allocation fuzzy search and TUI layout directly in your browser.</p>
+                <p class="section-subtitle">A real shell prompt — type a command, then press <span class="kbd-combo">Ctrl+E</span> to launch the picker. Pick an emoji and it drops straight into your command line, just like the actual shell widget.</p>
 
                 <div class="sim-container">
                     <!-- Control Panel (Left / Top) -->
                     <div class="sim-panel" id="sim-panel">
                         <div>
                             <h3 class="sim-panel-title">Playground HUD</h3>
-                            <p class="sim-panel-desc">Type query words to filter, use arrow keys to navigate, and Enter or click to copy. Cycles themes with Tab.</p>
+                            <p class="sim-panel-desc">At the prompt, type <code style="color:#a7f3d0;">echo&nbsp;</code> then hit <strong>Ctrl+E</strong> to open the picker. Fuzzy-search, navigate with arrows, and Enter to insert. Back at the shell, <strong>↑↓</strong> recall history and <strong>←→</strong> move the cursor. <strong>Esc</strong> cancels the picker; <strong>Tab</strong> cycles themes.</p>
                         </div>
 
                         <!-- Keyboard Focus Indicator -->
@@ -800,8 +800,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                                 <span class="sim-dot minimize"></span>
                                 <span class="sim-dot expand"></span>
                             </div>
-                            <span class="sim-title">emojig --tui</span>
-                            <span class="sim-badge">TUI Simulator</span>
+                            <span class="sim-title">zsh — emojig widget</span>
+                            <span class="sim-badge">Ctrl+E Shell</span>
                         </div>
                         <div class="sim-screen theme-dark" id="sim-screen">
                             <!-- JS will dynamically render lines here -->
@@ -937,12 +937,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         </thead>
                         <tbody>
                             <tr>
+                                <td><kbd>Ctrl+E</kbd></td>
+                                <td>Launch picker at the shell prompt; inserts pick into the command line</td>
+                            </tr>
+                            <tr>
                                 <td><kbd>Type Text</kbd></td>
                                 <td>Live fuzzy search (auto-stems &amp; plurals)</td>
                             </tr>
                             <tr>
                                 <td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td>
-                                <td>2D Grid Selection (wraps around boundaries)</td>
+                                <td>Picker: 2D grid selection (wraps). Shell: <kbd>↑</kbd><kbd>↓</kbd> history, <kbd>←</kbd><kbd>→</kbd> move cursor</td>
                             </tr>
                             <tr>
                                 <td><kbd>Enter</kbd> / Click</td>

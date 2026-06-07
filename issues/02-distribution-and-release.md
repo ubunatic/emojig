@@ -47,10 +47,11 @@ Two properties make this possible:
 
 `emojig` ships as **one binary** with two modes:
 
-- `--gui` (default) — launches and manages a `foot` terminal window. Requires
-  `foot` installed on the system. Linux/Wayland only.
+- `--gui` (default) — launches and manages a terminal window using multi-terminal spawning
+  (`spawnGuiWindow` in `src/host.zig`). Supports foot/kitty/alacritty/wezterm/ghostty/konsole/
+  gnome-terminal/ptyxis/xfce4-terminal/xterm on both Wayland and X11.
 - `--tui` — raw terminal UI, runs inside any existing terminal. Fallback when
-  `--gui` is not viable (macOS, SSH, non-Wayland). **In progress.**
+  `--gui` is not viable (macOS, SSH, headless).
 
 Additional runtime dep: `wl-copy` (Wayland) or `xclip` (X11) for clipboard.
 `foot` itself is a runtime dep for `--gui` mode, not bundled.
@@ -61,8 +62,8 @@ Additional runtime dep: `wl-copy` (Wayland) or `xclip` (X11) for clipboard.
 |--------|------|--------|
 | `x86_64-linux-musl` | `--gui` + `--tui` | **P0** |
 | `aarch64-linux-musl` | `--gui` + `--tui` | **P0** |
-| `x86_64-macos` | `--tui` only | Pending TUI work |
-| `aarch64-macos` | `--tui` only | Pending TUI work |
+| `x86_64-macos` | `--tui` only | Pending macOS CI runner |
+| `aarch64-macos` | `--tui` only | Pending macOS CI runner |
 | Windows | — | Out of scope |
 
 macOS builds require a macOS CI runner (GitHub Actions `macos-latest`).
@@ -91,11 +92,11 @@ These must land before the first tag.
       `LICENSES/AGPL-3.0-or-later.txt`, `LICENSES/Unicode-DFS-2016.txt`,
       SPDX headers in all source files, `.reuse/dep5` for binary/data files.
       Add `reuse lint` to CI as a gate. Install: `pip install reuse`.
-- [ ] `README.md` — one-liner, screenshot/asciinema, install matrix, `--theme`/`EMOJIG_THEME`, runtime deps
-- [ ] Version bump `0.0.0` → `0.1.0` in `build.zig.zon`
-- [ ] `--version` / `-v` flag (injects version at build time via `build_options`)
-- [ ] `minisign.pub` in repo root
-- [ ] `.goreleaser.yaml`
+- [x] `README.md` — one-liner, screenshot/asciinema, install matrix, `--theme`/`EMOJIG_THEME`, runtime deps
+- [x] Version bump `0.0.0` → `0.1.0` in `build.zig.zon`
+- [x] `--version` / `-v` flag (injects version at build time via `build_options`)
+- [x] `minisign.pub` in repo root
+- [x] `.goreleaser.yaml`
 - [ ] `.woodpecker/ci.yml` and `.woodpecker/release.yml`
 - [ ] `.github/workflows/ci.yml` and `.github/workflows/release.yml`
 

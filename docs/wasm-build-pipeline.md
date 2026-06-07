@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Uwe Jugel
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # WASM Browser Build Pipeline (container2wasm)
 
 How `scripts/browser_demo.go` compiles the emojig container to WebAssembly so the

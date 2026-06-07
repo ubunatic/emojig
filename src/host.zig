@@ -68,13 +68,13 @@ pub fn selectTerminalHost(environ_map: anytype) ?TerminalSelection {
     // 3. Detection list — foot preferred (listed first)
     const candidates = [_][]const u8{
         "foot",
+        "ptyxis",
         "kitty",
         "alacritty",
         "wezterm",
         "ghostty",
         "konsole",
         "gnome-terminal",
-        "ptyxis",
         "xterm",
     };
     for (candidates) |name| {

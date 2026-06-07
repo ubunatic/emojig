@@ -12,8 +12,22 @@ class EmojigSimulator {
         this.showBorder = false;
         this.safeMode = false;
         this.isFocused = false;
-        this.state = "active"; // "active" | "exited"
-        this.copiedEmoji = null;
+
+        // Shell-widget mode: the terminal starts at a shell prompt. Typing echoes
+        // characters; Ctrl+E launches the emojig picker (the TUI). Picking an emoji
+        // inserts it into the command line — exactly like the real shell widget.
+        this.mode = "shell"; // "shell" | "tui"
+        this.shellLines = []; // completed terminal lines: { kind: 'cmd' | 'out', text }
+        this.shellInput = ""; // current command line being typed
+        this.cursorPos = 0; // cursor index within shellInput (in code points)
+        this.shellHistory = []; // executed commands, oldest first
+        this.historyIdx = null; // pointer while browsing history; null = editing fresh line
+        this.shellDraft = ""; // in-progress line stashed when history browsing begins
+        this.maxShellRows = 10; // visible rows before older lines scroll off the top
+        this.promptHtml =
+            `<span class="sim-shell-user">you@emojig</span>` +
+            `<span class="sim-shell-path">:~</span>` +
+            `<span class="sim-shell-sym">$</span> `;
 
         this.cols = 6;
         this.rows = 4;
@@ -238,8 +252,8 @@ class EmojigSimulator {
         const screenEl = document.getElementById("sim-screen");
         if (!screenEl) return;
 
-        if (this.state === "exited") {
-            this.renderExitedState(screenEl);
+        if (this.mode === "shell") {
+            this.renderShell(screenEl);
             return;
         }
 
@@ -368,7 +382,7 @@ class EmojigSimulator {
             });
             cell.addEventListener("click", () => {
                 const match = topMatches[idx];
-                this.selectAndCopy(match.emoji);
+                this.selectEmoji(match.emoji);
             });
         });
 
@@ -384,22 +398,179 @@ class EmojigSimulator {
         }
     }
 
-    renderExitedState(screenEl) {
-        const formattedQuery = this.query ? ` "${this.query}"` : "";
-        screenEl.innerHTML = `
-            <div class="sim-exit-prompt">$ emojig --tui${formattedQuery}</div>
-            <div class="sim-exit-copied">${this.copiedEmoji}</div>
-            <div class="sim-exit-meta">
-                <span>Selected and copied to clipboard!</span><br>
-                <span>Process exited with status 0.</span><br><br>
-                <a id="sim-restart-btn">[↩ Press Enter or Click to Restart]</a>
-            </div>
-        `;
+    // --- Shell Mode ---
 
-        const restartBtn = document.getElementById("sim-restart-btn");
-        if (restartBtn) {
-            restartBtn.addEventListener("click", () => this.resetTui());
+    escapeHtml(str) {
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    seedShell() {
+        this.shellLines = [
+            { kind: "out", text: "# emojig shell widget — type a command, then press Ctrl+E" },
+            { kind: "out", text: "# try: type 'echo ', hit Ctrl+E, pick an emoji, then Enter" },
+        ];
+        this.historyIdx = null;
+        this.shellDraft = "";
+        this.setInput("echo ");
+    }
+
+    // --- Line editing (code-point safe, so the cursor never splits an emoji) ---
+
+    setInput(text) {
+        this.shellInput = text;
+        this.cursorPos = Array.from(text).length;
+    }
+
+    insertAtCursor(text) {
+        const arr = Array.from(this.shellInput);
+        const ins = Array.from(text);
+        arr.splice(this.cursorPos, 0, ...ins);
+        this.shellInput = arr.join("");
+        this.cursorPos += ins.length;
+    }
+
+    deleteBeforeCursor() {
+        if (this.cursorPos <= 0) return;
+        const arr = Array.from(this.shellInput);
+        arr.splice(this.cursorPos - 1, 1);
+        this.shellInput = arr.join("");
+        this.cursorPos--;
+    }
+
+    deleteAtCursor() {
+        const arr = Array.from(this.shellInput);
+        if (this.cursorPos >= arr.length) return;
+        arr.splice(this.cursorPos, 1);
+        this.shellInput = arr.join("");
+    }
+
+    moveCursor(delta) {
+        const len = Array.from(this.shellInput).length;
+        this.cursorPos = Math.max(0, Math.min(len, this.cursorPos + delta));
+    }
+
+    historyPrev() {
+        if (this.shellHistory.length === 0) return;
+        if (this.historyIdx === null) {
+            this.shellDraft = this.shellInput; // stash the in-progress line
+            this.historyIdx = this.shellHistory.length - 1;
+        } else if (this.historyIdx > 0) {
+            this.historyIdx--;
+        } else {
+            return; // already at the oldest entry
         }
+        this.setInput(this.shellHistory[this.historyIdx]);
+    }
+
+    historyNext() {
+        if (this.historyIdx === null) return; // not browsing history
+        if (this.historyIdx < this.shellHistory.length - 1) {
+            this.historyIdx++;
+            this.setInput(this.shellHistory[this.historyIdx]);
+        } else {
+            this.historyIdx = null; // past the newest entry → restore the draft
+            this.setInput(this.shellDraft);
+        }
+    }
+
+    renderShell(screenEl) {
+        const rows = [];
+        for (const line of this.shellLines) {
+            if (line.kind === "cmd") {
+                rows.push(`<div class="sim-row">${this.promptHtml}${this.escapeHtml(line.text)}</div>`);
+            } else {
+                rows.push(`<div class="sim-row sim-shell-out">${this.escapeHtml(line.text)}</div>`);
+            }
+        }
+
+        // Current input line with a blinking block cursor over the char at cursorPos.
+        const arr = Array.from(this.shellInput);
+        const before = this.escapeHtml(arr.slice(0, this.cursorPos).join(""));
+        const underChar = arr[this.cursorPos];
+        const under = underChar ? this.escapeHtml(underChar) : " ";
+        const after = this.escapeHtml(arr.slice(this.cursorPos + 1).join(""));
+        rows.push(
+            `<div class="sim-row">${this.promptHtml}${before}` +
+            `<span class="sim-shell-cursor">${under}</span>${after}</div>`
+        );
+
+        // Keep only the last N rows so the active prompt is always visible.
+        const visible = rows.slice(-this.maxShellRows);
+        screenEl.innerHTML = visible.join("");
+    }
+
+    parseEchoArgs(args) {
+        const trimmed = args.trim();
+        // Strip one matching pair of surrounding quotes, like a real shell would.
+        if (trimmed.length >= 2) {
+            const q = trimmed[0];
+            if ((q === '"' || q === "'") && trimmed[trimmed.length - 1] === q) {
+                return trimmed.slice(1, -1);
+            }
+        }
+        return args;
+    }
+
+    executeShell() {
+        const raw = this.shellInput;
+        this.shellLines.push({ kind: "cmd", text: raw });
+
+        // Record non-empty commands in history (skip consecutive duplicates).
+        if (raw.trim() !== "" && this.shellHistory[this.shellHistory.length - 1] !== raw) {
+            this.shellHistory.push(raw);
+        }
+        this.historyIdx = null;
+        this.shellDraft = "";
+        this.setInput("");
+
+        const trimmed = raw.trim();
+        if (trimmed === "") {
+            this.render();
+            return;
+        }
+
+        const sp = trimmed.indexOf(" ");
+        const cmd = sp === -1 ? trimmed : trimmed.slice(0, sp);
+        const args = sp === -1 ? "" : trimmed.slice(sp + 1);
+
+        switch (cmd) {
+            case "echo":
+                this.shellLines.push({ kind: "out", text: this.parseEchoArgs(args) });
+                break;
+            case "clear":
+                this.shellLines = [];
+                break;
+            case "help":
+                this.shellLines.push({ kind: "out", text: "commands: echo <text>, clear, help" });
+                this.shellLines.push({ kind: "out", text: "press Ctrl+E to launch the emoji picker" });
+                break;
+            default:
+                this.shellLines.push({ kind: "out", text: `zsh: command not found: ${cmd}` });
+        }
+        this.render();
+    }
+
+    openTui() {
+        this.mode = "tui";
+        this.query = "";
+        this.selectedIdx = null;
+        const inputEl = document.getElementById("sim-query-input");
+        if (inputEl) inputEl.value = "";
+        this.updateThemeClass();
+        this.render();
+    }
+
+    closeTui() {
+        // Cancel the picker (Esc / Ctrl+C) and return to the shell unchanged.
+        this.mode = "shell";
+        this.query = "";
+        this.selectedIdx = null;
+        const inputEl = document.getElementById("sim-query-input");
+        if (inputEl) inputEl.value = "";
+        this.render();
     }
 
     // --- Action Methods ---
@@ -423,17 +594,23 @@ class EmojigSimulator {
         this.render();
     }
 
-    selectAndCopy(emoji) {
-        this.copiedEmoji = emoji;
-        this.state = "exited";
+    selectEmoji(emoji) {
+        // Insert the picked emoji into the command line and return to the shell,
+        // mirroring the real Ctrl+E widget. Also copy it for good measure.
+        const formatted = this.formatEmoji(emoji);
+        this.insertAtCursor(formatted); // drop it in at the cursor, like the real widget
+        this.mode = "shell";
+        this.query = "";
+        this.selectedIdx = null;
+        const inputEl = document.getElementById("sim-query-input");
+        if (inputEl) inputEl.value = "";
+        this.updateThemeClass();
         this.render();
 
-        // Copy to clipboard
-        navigator.clipboard.writeText(emoji).then(() => {
-            this.showToast(emoji);
-        }).catch(err => {
-            console.error("Failed to copy emoji: ", err);
-        });
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(formatted).catch(() => {});
+        }
+        this.showToast(formatted);
     }
 
     showToast(emoji) {
@@ -443,7 +620,7 @@ class EmojigSimulator {
 
         const toast = document.createElement("div");
         toast.className = "sim-toast";
-        toast.innerHTML = `<span class="sim-toast-icon">✓</span> Copied ${emoji} to clipboard!`;
+        toast.innerHTML = `<span class="sim-toast-icon">✓</span> Inserted ${emoji} into the command line!`;
         document.body.appendChild(toast);
 
         // Trigger reflow
@@ -456,13 +633,12 @@ class EmojigSimulator {
         }, 2000);
     }
 
-    resetTui() {
-        this.state = "active";
+    resetShell() {
+        this.mode = "shell";
         this.query = "";
         this.selectedIdx = null;
-        this.copiedEmoji = null;
+        this.seedShell();
 
-        // Reset sync elements
         const inputEl = document.getElementById("sim-query-input");
         if (inputEl) inputEl.value = "";
 
@@ -472,23 +648,93 @@ class EmojigSimulator {
     // --- Keyboard Navigation ---
 
     handleKeydown(e) {
-        if (this.state === "exited") {
-            if (e.key === "Enter") {
-                e.preventDefault();
-                this.resetTui();
-            }
-            return;
-        }
-
         // If focus is not active, ignore keydown
         if (!this.isFocused) return;
 
+        if (this.mode === "shell") {
+            this.handleShellKey(e);
+            return;
+        }
+        this.handleTuiKey(e);
+    }
+
+    handleShellKey(e) {
+        // Let the panel's search input drive the picker instead of the shell line.
+        if (e.target && e.target.id === "sim-query-input") return;
+
+        if (e.ctrlKey) {
+            const k = e.key.toLowerCase();
+            if (k === "e") {
+                e.preventDefault();
+                this.openTui(); // launch the emojig picker
+            } else if (k === "c") {
+                e.preventDefault();
+                this.shellLines.push({ kind: "cmd", text: this.shellInput + "^C" });
+                this.historyIdx = null;
+                this.setInput("");
+                this.render();
+            } else if (k === "l") {
+                e.preventDefault();
+                this.shellLines = [];
+                this.render();
+            } else if (k === "a") {
+                e.preventDefault();
+                this.cursorPos = 0; // start of line
+                this.render();
+            }
+            return;
+        }
+        if (e.altKey || e.metaKey) return;
+
+        if (e.key === "Enter") {
+            e.preventDefault();
+            this.executeShell();
+        } else if (e.key === "Backspace") {
+            e.preventDefault();
+            this.deleteBeforeCursor();
+            this.render();
+        } else if (e.key === "Delete") {
+            e.preventDefault();
+            this.deleteAtCursor();
+            this.render();
+        } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            this.moveCursor(-1);
+            this.render();
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            this.moveCursor(1);
+            this.render();
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            this.historyPrev();
+            this.render();
+        } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            this.historyNext();
+            this.render();
+        } else if (e.key === "Home") {
+            e.preventDefault();
+            this.cursorPos = 0;
+            this.render();
+        } else if (e.key === "End") {
+            e.preventDefault();
+            this.cursorPos = Array.from(this.shellInput).length;
+            this.render();
+        } else if (e.key.length === 1) {
+            e.preventDefault();
+            this.insertAtCursor(e.key);
+            this.render();
+        }
+    }
+
+    handleTuiKey(e) {
         // Skip modifiers
         if (e.ctrlKey || e.altKey || e.metaKey) {
-            // Support Ctrl+C to cancel/clear
+            // Ctrl+C cancels the picker and returns to the shell
             if (e.ctrlKey && e.key.toLowerCase() === 'c') {
                 e.preventDefault();
-                this.resetTui();
+                this.closeTui();
             }
             return;
         }
@@ -559,18 +805,14 @@ class EmojigSimulator {
             }
         } else if (e.key === "Escape") {
             e.preventDefault();
-            this.query = "";
-            this.selectedIdx = null;
-            const inputEl = document.getElementById("sim-query-input");
-            if (inputEl) inputEl.value = "";
-            this.render();
+            this.closeTui(); // cancel picker, back to the shell prompt
         } else if (e.key === "Tab") {
             e.preventDefault();
             this.cycleTheme();
         } else if (e.key === "Enter") {
             e.preventDefault();
             if (this.selectedIdx !== null && matches[this.selectedIdx]) {
-                this.selectAndCopy(matches[this.selectedIdx].emoji);
+                this.selectEmoji(matches[this.selectedIdx].emoji);
             }
         } else if (e.key.length === 1) {
             if (e.target.id === "sim-query-input") {
@@ -601,24 +843,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const themeOpt = document.getElementById("sim-opt-theme");
     const focusBadge = document.getElementById("sim-focus-badge");
 
-    // Setup initial theme class
+    // Seed the shell prompt and render the initial screen.
+    sim.seedShell();
     sim.updateThemeClass();
     sim.render();
 
-    // Auto-focus input on page load
-    if (inputEl) {
-        inputEl.focus();
-        sim.isFocused = true;
-        sim.updateThemeClass();
-        updateFocusBadge(true);
-    }
+    // Keyboard stays inactive until the user clicks the terminal (matching the
+    // focus badge). We capture keys at the document level rather than via a
+    // focused <input>, so activating on load would otherwise swallow page-wide
+    // keystrokes (e.g. Space to scroll) before the user touches the demo.
 
     // Event binding: Terminal screen focus
     screenEl.addEventListener("click", () => {
         sim.isFocused = true;
         sim.updateThemeClass();
         updateFocusBadge(true);
-        if (inputEl) inputEl.focus(); // On touch devices, focuses mobile input automatically
+        // In picker (TUI) mode, hand focus to the panel input so touch devices get
+        // a soft keyboard for fuzzy search. In shell mode keep DOM focus off the
+        // input so keystrokes flow to the command line.
+        if (sim.mode === "tui" && inputEl) inputEl.focus();
     });
 
     document.addEventListener("click", (e) => {
@@ -642,13 +885,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Sync search input box
+    // Sync search input box. Typing here launches the picker (TUI) and drives
+    // the fuzzy query — the panel input is the dedicated way into emoji search.
     if (inputEl) {
         inputEl.addEventListener("input", (e) => {
+            sim.mode = "tui";
             sim.query = e.target.value;
             // Reset selection to first match
             const matches = sim.getFilteredMatches();
             sim.selectedIdx = matches.length > 0 ? 0 : null;
+            sim.updateThemeClass();
             sim.render();
         });
         inputEl.addEventListener("focus", () => {
@@ -703,6 +949,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     setupDpad("up", () => {
+        if (sim.mode === "shell") { sim.historyPrev(); sim.render(); return; }
         const matches = sim.getFilteredMatches();
         const topCount = Math.min(24, matches.length);
         if (sim.selectedIdx === null) {
@@ -721,6 +968,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     setupDpad("down", () => {
+        if (sim.mode === "shell") { sim.historyNext(); sim.render(); return; }
         const matches = sim.getFilteredMatches();
         const topCount = Math.min(24, matches.length);
         if (sim.selectedIdx === null) {
@@ -735,6 +983,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     setupDpad("left", () => {
+        if (sim.mode === "shell") { sim.moveCursor(-1); sim.render(); return; }
         const matches = sim.getFilteredMatches();
         const topCount = Math.min(24, matches.length);
         if (sim.selectedIdx === null) {
@@ -748,6 +997,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     setupDpad("right", () => {
+        if (sim.mode === "shell") { sim.moveCursor(1); sim.render(); return; }
         const matches = sim.getFilteredMatches();
         const topCount = Math.min(24, matches.length);
         if (sim.selectedIdx === null) {
@@ -761,13 +1011,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     setupDpad("ok", () => {
-        if (sim.state === "exited") {
-            sim.resetTui();
+        if (sim.mode === "shell") {
+            sim.executeShell(); // run the current command line
             return;
         }
         const matches = sim.getFilteredMatches();
         if (sim.selectedIdx !== null && matches[sim.selectedIdx]) {
-            sim.selectAndCopy(matches[sim.selectedIdx].emoji);
+            sim.selectEmoji(matches[sim.selectedIdx].emoji);
         }
     });
 });

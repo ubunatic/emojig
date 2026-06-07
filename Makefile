@@ -37,6 +37,9 @@ browse: ⚙️  # open the website homepage in the default web browser
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run scripts/screenshot.go zig-out/bin/emojig
 
+record: ⚙️ build  # headlessly record high-quality webm demo videos using Xvfb, xterm, and xdotool
+	go run scripts/record_demo.go
+
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \

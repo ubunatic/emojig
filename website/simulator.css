@@ -81,7 +81,7 @@
 
 /* Terminal Screen */
 .sim-screen {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', 'Noto Color Emoji', monospace;
     font-size: 14.5px;
     line-height: 1.35;
     background-color: var(--term-bg, #1c1c1c);
@@ -163,6 +163,44 @@
     color: var(--term-selection-fg, #ffffff);
 }
 
+/* Shell Mode (Ctrl+E widget demo) */
+.sim-shell-out {
+    color: var(--term-fg, #a8a8a8);
+    opacity: 0.85;
+}
+
+.sim-shell-user {
+    color: var(--term-shell-user, #5fd7a7);
+    font-weight: 500;
+}
+
+.sim-shell-path {
+    color: var(--term-shell-path, #5fafff);
+}
+
+.sim-shell-sym {
+    color: var(--term-fg, #a8a8a8);
+}
+
+.sim-shell-cursor {
+    background-color: var(--term-fg, #a8a8a8);
+    color: var(--term-bg, #1c1c1c);
+    /* step-end keeps the first half of the cycle in the visible (block) state.
+       Each keypress re-renders the line and recreates this element, restarting
+       the animation at t=0 — so the cursor must be visible at t=0, otherwise it
+       stays hidden while arrow keys repeat and only reappears once you stop. */
+    animation: sim-cursor-blink 1s step-end infinite;
+}
+
+/* Blink by toggling the inversion, not opacity, so the character under the
+   block cursor stays visible during the "off" phase instead of disappearing. */
+@keyframes sim-cursor-blink {
+    50% {
+        background-color: transparent;
+        color: var(--term-fg, #a8a8a8);
+    }
+}
+
 /* Exit Prompt Output */
 .sim-exit-prompt {
     font-family: 'JetBrains Mono', monospace;
@@ -202,6 +240,8 @@
     --term-search-fg: #ffffff;
     --term-border-bg: #303030;
     --term-border-fg: #303030;
+    --term-shell-user: #5fd7a7;
+    --term-shell-path: #5fafff;
 }
 
 .sim-screen.theme-light {
@@ -213,6 +253,8 @@
     --term-search-fg: #080808;
     --term-border-bg: #d0d0d0;
     --term-border-fg: #d0d0d0;
+    --term-shell-user: #007a3d;
+    --term-shell-path: #005faf;
 }
 
 /* Control Panel Styles */
