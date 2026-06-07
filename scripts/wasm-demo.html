@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emojig - Interactive TUI Browser Sandbox (Docker & WASM)</title>
+    <title>Emojig - Interactive TUI Browser Sandbox (Docker)</title>
     
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhLS0gU1BEWC1GaWxlQ29weXJpZ2h0VGV4dDogMjAyNiBVd2UgSnVnZWwgLS0+Cgo8IS0tIFNQRFgtTGljZW5zZS1JZGVudGlmaWVyOiBBR1BMLTMuMC1vci1sYXRlciAtLT4KCjwhLS0gRGVza3RvcC9sYXVuY2hlciBpY29uIGZvciB0aGUgZW1vamlnIHBpY2tlciAoaW5zdGFsbGVkIHRvCiAgICAgfi8ubG9jYWwvc2hhcmUvaWNvbnMvaGljb2xvci9zY2FsYWJsZS9hcHBzL2Vtb2ppZy1waWNrZXIuc3ZnKS4KICAgICBIYW5kLWRyYXduIHZlY3RvciBzbWlsZXksIHRyYW5zcGFyZW50IGJhY2tncm91bmQuIEVkaXQgZnJlZWx5OwogICAgIGl0IGlzIGVtYmVkZGVkIGludG8gdGhlIGJpbmFyeSBhdCBidWlsZCB0aW1lLiAtLT4KCjxzdmcKICAgd2lkdGg9IjEwMCIKICAgaGVpZ2h0PSIxMDAiCiAgIHZpZXdCb3g9IjAgMCAxMDAgMTAwIgogICB2ZXJzaW9uPSIxLjEiCiAgIGlkPSJzdmczIgogICB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIKICAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogICB4bWxuczpzdmc9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogICB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiCiAgIHhtbG5zOmNjPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyMiPgogIDxkZWZzCiAgICAgaWQ9ImRlZnMzIj4KICAgIDxsaW5lYXJHcmFkaWVudAogICAgICAgaWQ9ImxpbmVhckdyYWRpZW50MyI+CiAgICAgIDxzdG9wCiAgICAgICAgIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZkMDQ7c3RvcC1vcGFjaXR5OjE7IgogICAgICAgICBvZmZzZXQ9IjAiCiAgICAgICAgIGlkPSJzdG9wMyIgLz4KICAgICAgPHN0b3AKICAgICAgICAgc3R5bGU9InN0b3AtY29sb3I6I2YyYWMwMDtzdG9wLW9wYWNpdHk6MTsiCiAgICAgICAgIG9mZnNldD0iMSIKICAgICAgICAgaWQ9InN0b3A0IiAvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxyYWRpYWxHcmFkaWVudAogICAgICAgeGxpbms6aHJlZj0iI2xpbmVhckdyYWRpZW50MyIKICAgICAgIGlkPSJyYWRpYWxHcmFkaWVudDQiCiAgICAgICBjeD0iMjQuNjM2ODk2IgogICAgICAgY3k9IjIzLjg5MzI1NyIKICAgICAgIGZ4PSIyNC42MzY4OTYiCiAgICAgICBmeT0iMjMuODkzMjU3IgogICAgICAgcj0iNDYiCiAgICAgICBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIKICAgICAgIGdyYWRpZW50VHJhbnNmb3JtPSJtYXRyaXgoMS4xODM2NjQ5LDEuMzE2OTEyNCwtMS40NDAzODA3LDEuMjk0NjQwNCwzNS4zMzA0NTcsLTM5LjE3OTg1NCkiIC8+CiAgPC9kZWZzPgogIDxwYXRoCiAgICAgZD0ibSAzMy42OTUxNSw1NS4xNTI0MjUgYyAxMy4zOTk5MzMsMi4zMzM2NzEgMjYuNzUzNDY3LDIuMjMyNjY0IDQwLDAgLTIuNjY2NjY3LDYuNjY2NjY3IC05LjMzMzMzMywxMCAtMjAsMTAgLTEwLjY2NjY2NywwIC0xNy4zMzMzMzMsLTMuMzMzMzMzIC0yMCwtMTAgeiIKICAgICBmaWxsPSIjZmZmZmZmIgogICAgIGlkPSJwYXRoMyIgLz4KICA8cGF0aAogICAgIGQ9Im0gMjQuMjI2MzI4LDg1Ljg0OTg4NSBjIDEzLjM5OTkzMywtMi4zMzM2NzEgMjYuNzUzNDY3LC0yLjIzMjY2NCA0MCwwIC0yLjY2NjY2NywtNi42NjY2NjcgLTkuMzMzMzMzLC0xMCAtMjAsLTEwIC0xMC42NjY2NjcsMCAtMTcuMzMzMzMzLDMuMzMzMzMzIC0yMCwxMCB6IgogICAgIGZpbGw9IiNmZmZmZmYiCiAgICAgaWQ9InBhdGg4IiAvPgogIDwhLS0gZmFjZSAtLT4KICA8cGF0aAogICAgIGlkPSJjaXJjbGUxIgogICAgIHN0eWxlPSJmaWxsOnVybCgjcmFkaWFsR3JhZGllbnQ0KTtzdHJva2U6bm9uZSIKICAgICBkPSJNIDUwLDQgQyAyNC41OTQ5MDIsNCA0LDI0LjU5NDkwMiA0LDUwIDQsNzUuNDA1MDk4IDI0LjU5NDkwMiw5NiA1MCw5NiA3NS40MDUwOTgsOTYgOTYsNzUuNDA1MDk4IDk2LDUwIDk2LDI0LjU5NDkwMiA3NS40MDUwOTgsNCA1MCw0IFogTSAyOC44NDc1NzUsNTcuMTU0NzM0IEMgNDQuMTgwOTA4LDU5LjgyMTQwMSA1Ny42NjY2NjcsNTguNjY2NjY3IDczLDU2IDcxLDc0LjY2NjY2NyA2My41NjQyOCw4Mi4xNTI0MjUgNTAuMjMwOTQ3LDgyLjE1MjQyNSBjIC0xMy4zMzMzMzMsMCAtMTkuMzgzMzcyLC02LjMzMTAyNCAtMjEuMzgzMzcyLC0yNC45OTc2OTEgeiIgLz4KICA8IS0tIGV5ZXMgLS0+CiAgPCEtLSBvcGVuIGdyaW5uaW5nIG1vdXRoIC0tPgogIDwhLS0gdXBwZXIgdGVldGggLS0+CiAgPG1ldGFkYXRhCiAgICAgaWQ9Im1ldGFkYXRhNCI+CiAgICA8cmRmOlJERj4KICAgICAgPGNjOkxpY2Vuc2UKICAgICAgICAgcmRmOmFib3V0PSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9saWNlbnNlcy9ieS1zYS80LjAvIj4KICAgICAgICA8Y2M6cGVybWl0cwogICAgICAgICAgIHJkZjpyZXNvdXJjZT0iaHR0cDovL2NyZWF0aXZlY29tbW9ucy5vcmcvbnMjUmVwcm9kdWN0aW9uIiAvPgogICAgICAgIDxjYzpwZXJtaXRzCiAgICAgICAgICAgcmRmOnJlc291cmNlPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyNEaXN0cmlidXRpb24iIC8+CiAgICAgICAgPGNjOnJlcXVpcmVzCiAgICAgICAgICAgcmRmOnJlc291cmNlPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyNOb3RpY2UiIC8+CiAgICAgICAgPGNjOnJlcXVpcmVzCiAgICAgICAgICAgcmRmOnJlc291cmNlPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyNBdHRyaWJ1dGlvbiIgLz4KICAgICAgICA8Y2M6cGVybWl0cwogICAgICAgICAgIHJkZjpyZXNvdXJjZT0iaHR0cDovL2NyZWF0aXZlY29tbW9ucy5vcmcvbnMjRGVyaXZhdGl2ZVdvcmtzIiAvPgogICAgICAgIDxjYzpyZXF1aXJlcwogICAgICAgICAgIHJkZjpyZXNvdXJjZT0iaHR0cDovL2NyZWF0aXZlY29tbW9ucy5vcmcvbnMjU2hhcmVBbGlrZSIgLz4KICAgICAgPC9jYzpMaWNlbnNlPgogICAgICA8Y2M6V29yawogICAgICAgICByZGY6YWJvdXQ9IiI+CiAgICAgICAgPGNjOmxpY2Vuc2UKICAgICAgICAgICByZGY6cmVzb3VyY2U9Imh0dHA6Ly9jcmVhdGl2ZWNvbW1vbnMub3JnL2xpY2Vuc2VzL2J5LXNhLzQuMC8iIC8+CiAgICAgIDwvY2M6V29yaz4KICAgIDwvcmRmOlJERj4KICA8L21ldGFkYXRhPgogIDxnCiAgICAgaWQ9Imc3IgogICAgIHRyYW5zZm9ybT0ibWF0cml4KDEuMjI0Mzg3OSwwLDAsMS4yMjQzODc5LC0yMC44NDcxMDIsLTE1LjczMzE1MikiPgogICAgPGVsbGlwc2UKICAgICAgIHN0eWxlPSJmaWxsOiNmZmZmZmY7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlOm5vbmU7c3Ryb2tlLXdpZHRoOjEuODE4MjYiCiAgICAgICBpZD0iZWxsaXBzZTQiCiAgICAgICBjeD0iNjkuNzg2MDAzIgogICAgICAgY3k9IjQxLjEzNDU1NiIKICAgICAgIHJ4PSI2LjY4MDkyNjMiCiAgICAgICByeT0iMTAuNTU1NzgxIiAvPgogICAgPGVsbGlwc2UKICAgICAgIHN0eWxlPSJmaWxsOiMwMDAwMDA7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlOm5vbmUiCiAgICAgICBpZD0iZWxsaXBzZTciCiAgICAgICBjeD0iNjcuOTY4MjAxIgogICAgICAgY3k9IjQzLjkyOTc1NiIKICAgICAgIHJ4PSIzLjY3NDM0MjQiCiAgICAgICByeT0iNS4zMDczODM1IiAvPgogIDwvZz4KICA8ZwogICAgIGlkPSJnOCIKICAgICB0cmFuc2Zvcm09Im1hdHJpeCgxLjIyNDM4NzksMCwwLDEuMjI0Mzg3OSwtMzguNzY3MzA0LC0xMi42NjU5ODQpIj4KICAgIDxlbGxpcHNlCiAgICAgICBzdHlsZT0iZmlsbDojZmZmZmZmO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lO3N0cm9rZS13aWR0aDoxLjgxODI2IgogICAgICAgaWQ9ImVsbGlwc2U4IgogICAgICAgY3g9IjYwLjUyMzMxOSIKICAgICAgIGN5PSI0MS4zMzU5MTgiCiAgICAgICByeD0iNi42ODA5MjYzIgogICAgICAgcnk9IjExLjA0NTY5NCIgLz4KICAgIDxlbGxpcHNlCiAgICAgICBzdHlsZT0iZmlsbDojMDAwMDAwO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lIgogICAgICAgaWQ9ImNpcmNsZTgiCiAgICAgICBjeD0iNjIuOTA1NzY2IgogICAgICAgY3k9IjQxLjQwNzc0NSIKICAgICAgIHJ4PSI0LjEzNjIzNjIiCiAgICAgICByeT0iNi4wMzk4NDgzIiAvPgogIDwvZz4KPC9zdmc+Cg==" />
     <link href="/vendor/fonts.css" rel="stylesheet">
@@ -97,59 +97,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             box-shadow: 0 20px 40px rgba(59, 130, 246, 0.1);
         }
 
-        .mode-toggle {
-            display: flex;
-            gap: 0;
-            margin-bottom: 16px;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 4px;
-            border-radius: 8px;
-            width: fit-content;
-            margin-left: auto;
-            margin-right: auto;
-            border: 1px solid rgba(59, 130, 246, 0.2);
-        }
-
-        .mode-btn {
-            background: transparent;
-            color: #94a3b8;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-family: 'Outfit', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            user-select: none;
-        }
-
-        .mode-btn:hover {
-            color: #60a5fa;
-            background: rgba(59, 130, 246, 0.05);
-        }
-
-        .mode-btn.active {
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.15) 100%);
-            color: #60a5fa;
-            border: 1px solid rgba(59, 130, 246, 0.4);
-            box-shadow: 0 0 12px rgba(59, 130, 246, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.1);
-        }
-
-        .mode-btn::after {
-            content: attr(data-shortcut);
-            display: inline;
-            margin-left: 6px;
-            font-size: 0.75rem;
-            color: #64748b;
-            opacity: 0.6;
-        }
-
-        .mode-btn.active::after {
-            opacity: 1;
-            color: #94a3b8;
-        }
-
         #terminal-wrapper {
             position: relative;
             width: 100%;
@@ -164,31 +111,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         #terminal {
             width: 100%;
             height: 420px;
-        }
-
-        #wasm-frame {
-            width: 100%;
-            height: 420px;
-            border: none;
-            border-radius: 12px;
-            background-color: #12131a;
-        }
-
-        .wasm-unavailable {
-            display: none;
-            width: 100%;
-            max-width: 840px;
-            background-color: #12131a;
-            border-radius: 12px;
-            padding: 40px;
-            border: 1px solid #1f2937;
-            text-align: center;
-            color: #94a3b8;
-        }
-
-        .wasm-unavailable h3 {
-            color: #f87171;
-            margin-top: 0;
         }
 
         .instructions {
@@ -299,32 +221,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="card">
             <span class="badge">Interactive TUI Environment</span>
 
-            <!-- Mode Toggle -->
-            <div class="mode-toggle">
-                <button id="btn-docker" class="mode-btn active" onclick="setMode('docker')" data-shortcut="Press D" title="Docker mode (Press D)">🐳 Docker (Live)</button>
-                <button id="btn-wasm" class="mode-btn" onclick="setMode('wasm')" data-shortcut="Press W" title="WASM mode (Press W)">🧊 WASM (Offline)</button>
-            </div>
-
             <!-- Docker Terminal Area -->
             <div id="terminal-wrapper" style="position: relative;">
                 <div id="terminal"></div>
             </div>
-            <div id="resize-bottom" class="resize-handle bottom" style="display: none;"></div>
-
-            <!-- WASM Unavailable Message -->
-            <div id="wasm-unavailable" class="wasm-unavailable">
-                <h3>⚠️ WASM Build Not Available</h3>
-                <p>container2wasm (c2w) was not installed or the build failed.</p>
-                <p>The Docker (Live) mode is fully functional. To use WASM, ensure <code>c2w</code> is in your PATH.</p>
-            </div>
-
-            <!-- WASM iframe (loaded lazily on tab switch) -->
-            <iframe id="wasm-frame" style="display: none;"></iframe>
+            <div id="resize-bottom" class="resize-handle bottom"></div>
 
             <div style="display: flex; gap: 16px; align-items: center; justify-content: center; width: 100%; margin-top: 8px; flex-wrap: wrap; flex-direction: column;">
                 <div style="color: #94a3b8; font-size: 0.9rem; text-align: center;">
                     <div><b>Terminal:</b> Arrow Keys to navigate • Enter to copy • Ctrl-C to exit</div>
-                    <div><b>Mode:</b> Press <b>D</b> for Docker • Press <b>W</b> for WASM</div>
                 </div>
                 <button id="btn-reset" class="ctrl-btn">Reset Session 🔄</button>
             </div>
@@ -333,10 +238,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="instructions">
             <h3>💡 Quick Tips</h3>
             <ul>
-                <li><b>Switch Modes Instantly:</b> Press <b>D</b> for Docker (Live) or <b>W</b> for WASM (Offline) — anytime, anywhere</li>
                 <li><b>Docker Mode:</b> Full streaming terminal via ttyd. Perfect for real-time testing.</li>
-                <li><b>WASM Mode:</b> Zero-server environment. Offline capable. Everything runs in your browser.</li>
-                <li><b>Reset:</b> Click "Reset Session 🔄" to reconnect (Docker mode) or reload (WASM mode)</li>
+                <li><b>Reset:</b> Click "Reset Session 🔄" to reconnect and restart the TUI environment.</li>
             </ul>
         </div>
     </div>
@@ -345,60 +248,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-unicode11.js"></script>
     <script>
-        let currentMode = 'docker';
-        let wasmAvailable = false;
-        let wasmFrameLoaded = false;
-
         // Setup xterm.js instance matching standard ANSI layout (80x24)
         const term = new Terminal({
             cols: 80,
             rows: 24,
-            cursorBlink: true,
-            allowProposedApi: true,
             theme: {
                 background: '#12131a',
-                foreground: '#a8a8a8',
-                cursor: '#ffffff'
+                foreground: '#e2e8f0',
+                cursor: '#3b82f6',
+                selectionBackground: 'rgba(59, 130, 246, 0.3)',
             },
-            fontFamily: '"JetBrains Mono", "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", monospace'
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontFamily: 'JetBrains Mono, Fira Code, monospace',
+            fontSize: 14,
+            allowProposedApi: true
         });
 
+        // Load Unicode 11 addon for correct double-width emoji calculations
+        const unicode11 = new Unicode11Addon.Unicode11Addon();
+        term.loadAddon(unicode11);
+        term.unicode.activeVersion = '11';
+
+        // Render target
         term.open(document.getElementById('terminal'));
-
-        // Load Unicode 11 addon for correct double-width emoji widths
-        if (typeof Unicode11Addon !== 'undefined') {
-            const unicode11 = new Unicode11Addon.Unicode11Addon();
-            term.loadAddon(unicode11);
-            term.unicode.activeVersion = '11';
-        }
-
-        // Register custom OSC 52 handler to copy text to the host system clipboard
-        term.parser.registerOscHandler(52, (data) => {
-            const parts = data.split(';');
-            if (parts.length >= 2) {
-                const b64 = parts[1];
-                try {
-                    const text = atob(b64);
-                    navigator.clipboard.writeText(text);
-                    console.log("OSC 52 copy successful (target buffer: " + parts[0] + "):", text);
-                    return true;
-                } catch (e) {
-                    console.error("OSC 52 copy failed:", e);
-                }
-            }
-            return false;
-        });
-
-        // Log and automatically copy when user selects text inside the terminal screen
-        term.onSelectionChange(() => {
-            const selection = term.getSelection();
-            if (selection) {
-                console.log("Text selected in terminal:", JSON.stringify(selection));
-                navigator.clipboard.writeText(selection).catch(err => {
-                    console.error("Text selection copy failed:", err);
-                });
-            }
-        });
+        term.focus();
 
         // Connect directly to the local ttyd websocket endpoint using standard subprotocol 'tty'
         let socket;
@@ -435,23 +309,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 if (opcode === 48) { // OUTPUT data (ASCII '0')
                     const text = decoder.decode(payload, { stream: true });
                     term.write(text);
-                } else if (opcode === 49) { // SET_WINDOW_TITLE (ASCII '1')
-                    const title = new TextDecoder().decode(payload);
-                    console.log("Terminal window title update:", title);
-                } else if (opcode === 50) { // SET_PREFERENCES (ASCII '2')
-                    const prefs = new TextDecoder().decode(payload);
-                    console.log("Terminal preferences updated:", prefs);
                 }
             };
 
             socket.onerror = (err) => {
                 console.error("WebSocket connection error:", err);
                 term.write('\r\n\x1b[31mError: Connection to ttyd WebSocket failed.\x1b[0m\r\n');
-                term.write('Please ensure the Docker sandbox or local ttyd server is running on port 7681.\r\n');
-            };
-
-            socket.onclose = (event) => {
-                console.log("WebSocket connection closed. Code: " + event.code + ", Reason: " + event.reason);
             };
         }
 
@@ -488,7 +351,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 const clampedHeight = Math.max(200, Math.min(1200, newHeight));
                 termElement.style.height = clampedHeight + 'px';
                 termWrapper.style.height = clampedHeight + 'px';
-                document.getElementById('wasm-frame').style.height = clampedHeight + 'px';
 
                 const charHeight = 17.5;
                 const newRows = Math.floor(clampedHeight / charHeight);
@@ -526,86 +388,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
             term.reset();
             connectWebSocket();
-        });
-
-        // Mode toggle functionality — WASM availability is checked lazily on first switch,
-        // so Docker mode (the default) never triggers a 404 probe on page load.
-        let wasmChecked = false;
-
-        function setMode(mode) {
-            currentMode = mode;
-            const isDocker = mode === 'docker';
-
-            document.getElementById('terminal-wrapper').style.display = isDocker ? '' : 'none';
-            document.getElementById('resize-bottom').style.display = isDocker ? '' : 'none';
-
-            if (isDocker) {
-                document.getElementById('wasm-frame').style.display = 'none';
-                document.getElementById('wasm-unavailable').style.display = 'none';
-                term.focus();
-            } else {
-                // WASM mode
-                if (wasmChecked) {
-                    applyWasmMode();
-                } else {
-                    // Check if WASM output is available first
-                    fetch('/wasm-out/index.html', { method: 'HEAD' })
-                        .then(response => {
-                            wasmChecked = true;
-                            if (response.ok) {
-                                wasmAvailable = true;
-                                console.log("WASM build is available");
-                            } else {
-                                console.log("WASM build not available (404)");
-                            }
-                            applyWasmMode();
-                        })
-                        .catch(err => {
-                            wasmChecked = true;
-                            console.log("WASM build not available:", err);
-                            applyWasmMode();
-                        });
-                }
-            }
-
-            // Update button states
-            document.getElementById('btn-docker').classList.toggle('active', isDocker);
-            document.getElementById('btn-wasm').classList.toggle('active', !isDocker);
-        }
-
-        function applyWasmMode() {
-            if (wasmAvailable) {
-                const frame = document.getElementById('wasm-frame');
-                frame.style.display = '';
-                document.getElementById('wasm-unavailable').style.display = 'none';
-
-                // Lazy load the iframe on first switch to WASM mode
-                if (!wasmFrameLoaded) {
-                    frame.src = '/wasm-out/index.html';
-                    wasmFrameLoaded = true;
-                    // Focus after load so the inner xterm receives keyboard events
-                    frame.addEventListener('load', () => frame.focus(), { once: true });
-                } else {
-                    frame.focus();
-                }
-            } else {
-                document.getElementById('wasm-unavailable').style.display = '';
-                document.getElementById('wasm-frame').style.display = 'none';
-            }
-        }
-
-        // Keyboard shortcuts: D for Docker, W for WASM
-        document.addEventListener('keydown', (e) => {
-            // Only if not typing in an input/textarea
-            if (e.target === document.body || e.target === document.documentElement) {
-                if (e.key === 'd' || e.key === 'D') {
-                    e.preventDefault();
-                    setMode('docker');
-                } else if (e.key === 'w' || e.key === 'W') {
-                    e.preventDefault();
-                    setMode('wasm');
-                }
-            }
         });
     </script>
 </body>

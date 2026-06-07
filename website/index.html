@@ -15,6 +15,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         
+        <!-- TUI Simulator CSS -->
+        <link rel="stylesheet" href="simulator.css" />
+        
         <style>
             :root {
                 --bg-main: #0b0f19;
@@ -218,6 +221,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 overflow-x: auto;
                 white-space: nowrap;
                 scrollbar-width: none; /* Firefox */
+                flex: 1;
+                min-width: 0;
+                margin-right: 12px;
             }
 
             .terminal-prompt::-webkit-scrollbar {
@@ -250,6 +256,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 gap: 6px;
                 transition: all 0.2s ease;
                 white-space: nowrap;
+                flex-shrink: 0;
             }
 
             .copy-btn:hover {
@@ -304,6 +311,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 border-radius: 12px;
                 overflow: hidden;
                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+                max-width: 640px;
+                margin: 0 auto;
             }
 
             .mockup-header {
@@ -722,6 +731,85 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 </div>
             </section>
 
+            <!-- ── Interactive TUI Simulator ── -->
+            <section style="margin-bottom: 60px;">
+                <div class="section-title">
+                    <span>🎮</span>
+                    <h2>Interactive TUI Playground</h2>
+                </div>
+                <p class="section-subtitle">Experience Emojig's zero-allocation fuzzy search and TUI layout directly in your browser.</p>
+
+                <div class="sim-container">
+                    <!-- Control Panel (Left / Top) -->
+                    <div class="sim-panel" id="sim-panel">
+                        <div>
+                            <h3 class="sim-panel-title">Playground HUD</h3>
+                            <p class="sim-panel-desc">Type query words to filter, use arrow keys to navigate, and Enter or click to copy. Cycles themes with Tab.</p>
+                        </div>
+
+                        <!-- Keyboard Focus Indicator -->
+                        <div class="sim-focus-badge inactive" id="sim-focus-badge">
+                            <span class="sim-dot-indicator"></span> Click terminal to focus keys
+                        </div>
+
+                        <!-- Input field for easy typing, especially on mobile -->
+                        <div class="sim-input-group">
+                            <label class="sim-label" for="sim-query-input">Fuzzy Search Input</label>
+                            <input class="sim-search-input" id="sim-query-input" type="text" placeholder="Type to search emojis..." autocomplete="off" spellcheck="false" />
+                        </div>
+
+                        <!-- Options checkboxes -->
+                        <div class="sim-options-grid">
+                            <div class="sim-option-card" onclick="document.getElementById('sim-opt-border').click();">
+                                <input type="checkbox" id="sim-opt-border" onclick="event.stopPropagation();" />
+                                <span class="sim-option-label">Border (Env)</span>
+                            </div>
+                            <div class="sim-option-card" onclick="document.getElementById('sim-opt-safe').click();">
+                                <input type="checkbox" id="sim-opt-safe" onclick="event.stopPropagation();" />
+                                <span class="sim-option-label">Safe Mode</span>
+                            </div>
+                        </div>
+
+                        <div class="sim-input-group">
+                            <label class="sim-label" for="sim-opt-theme">Theme Option</label>
+                            <select class="sim-search-input" id="sim-opt-theme" style="width: 100%; cursor: pointer;">
+                                <option value="dark">Dark Theme</option>
+                                <option value="light">Light Theme</option>
+                                <option value="system">System (Auto)</option>
+                            </select>
+                        </div>
+
+                        <!-- Mobile D-pad -->
+                        <div>
+                            <label class="sim-label" style="display: block; margin-bottom: 8px; text-align: center;">Navigation DPAD</label>
+                            <div class="sim-dpad">
+                                <button class="sim-dpad-btn up" aria-label="Up">▲</button>
+                                <button class="sim-dpad-btn left" aria-label="Left">◀</button>
+                                <button class="sim-dpad-btn ok" aria-label="OK">OK</button>
+                                <button class="sim-dpad-btn right" aria-label="Right">▶</button>
+                                <button class="sim-dpad-btn down" aria-label="Down">▼</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monospace TUI Screen Mockup (Right / Bottom) -->
+                    <div class="sim-window">
+                        <div class="sim-header">
+                            <div class="sim-buttons">
+                                <span class="sim-dot close"></span>
+                                <span class="sim-dot minimize"></span>
+                                <span class="sim-dot expand"></span>
+                            </div>
+                            <span class="sim-title">emojig --tui</span>
+                            <span class="sim-badge">TUI Simulator</span>
+                        </div>
+                        <div class="sim-screen theme-dark" id="sim-screen">
+                            <!-- JS will dynamically render lines here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- ── Interactive TUI Demo ── -->
             <section style="margin-bottom: 60px;">
                 <div class="section-title">
@@ -944,5 +1032,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 });
             }
         </script>
+        <!-- Emojig TUI Simulator Scripts -->
+        <script src="emojis.js"></script>
+        <script src="simulator.js"></script>
     </body>
 </html>

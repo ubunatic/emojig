@@ -1,0 +1,443 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Uwe Jugel
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+/* Simulator Layout Container */
+.sim-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 30px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 30px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    margin-bottom: 40px;
+}
+
+@media(min-width: 768px) {
+    .sim-container {
+        grid-template-columns: 320px 1fr;
+        align-items: start;
+    }
+}
+
+/* Terminal Window Mockup */
+.sim-window {
+    background: #0d1117;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+}
+
+.sim-header {
+    background: #1f2937;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    user-select: none;
+}
+
+.sim-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.sim-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+.sim-dot.close { background: #ef4444; }
+.sim-dot.minimize { background: #f59e0b; }
+.sim-dot.expand { background: #10b981; }
+
+.sim-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.sim-badge {
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #a78bfa;
+}
+
+/* Terminal Screen */
+.sim-screen {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 14.5px;
+    line-height: 1.35;
+    background-color: var(--term-bg, #1c1c1c);
+    color: var(--term-fg, #a8a8a8);
+    padding: 14px;
+    user-select: none;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+    min-height: 220px;
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sim-screen.focused {
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: inset 0 0 10px rgba(139, 92, 246, 0.15);
+}
+
+/* Row Rendering */
+.sim-row {
+    white-space: pre;
+    display: block;
+    width: 100%;
+}
+
+.sim-row.sim-search,
+.sim-row.sim-status {
+    background-color: var(--term-search-bg, #444444);
+    color: var(--term-search-fg, #ffffff);
+}
+
+.sim-row.sim-border {
+    background-color: var(--term-border-bg, #303030);
+    color: var(--term-border-fg, #303030);
+    height: 1.35em;
+}
+
+/* Search Bar Components */
+.sim-search-prompt {
+    color: var(--term-search-fg, #ffffff);
+}
+
+.sim-search-query {
+    color: var(--term-search-fg, #ffffff);
+}
+
+.sim-cursor {
+    display: inline-block;
+    width: 8px;
+    background-color: var(--term-search-fg, #ffffff);
+    animation: sim-blink 1s step-start infinite;
+}
+
+@keyframes sim-blink {
+    50% { opacity: 0; }
+}
+
+.sim-theme-icon {
+    cursor: pointer;
+    font-size: 11px;
+    transition: background-color 0.1s ease;
+}
+
+.sim-theme-icon.hovered {
+    background-color: var(--term-selection-bg, #005f87);
+    color: var(--term-selection-fg, #ffffff);
+}
+
+/* Emoji Grid Cells */
+.sim-cell {
+    cursor: pointer;
+    display: inline-block;
+    transition: background-color 0.1s ease;
+}
+
+.sim-cell.selected {
+    background-color: var(--term-selection-bg, #005f87);
+    color: var(--term-selection-fg, #ffffff);
+}
+
+/* Exit Prompt Output */
+.sim-exit-prompt {
+    font-family: 'JetBrains Mono', monospace;
+    color: #10b981;
+    margin-bottom: 8px;
+}
+.sim-exit-copied {
+    font-size: 2rem;
+    margin: 12px 0;
+    text-align: center;
+}
+.sim-exit-meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: center;
+    border-top: 1px dashed rgba(255,255,255,0.1);
+    padding-top: 12px;
+    margin-top: 12px;
+}
+.sim-exit-meta a {
+    color: var(--accent-secondary);
+    text-decoration: none;
+    font-weight: bold;
+    cursor: pointer;
+}
+.sim-exit-meta a:hover {
+    text-decoration: underline;
+}
+
+/* Theme color mappings */
+.sim-screen.theme-dark {
+    --term-bg: #1c1c1c;
+    --term-fg: #a8a8a8;
+    --term-selection-bg: #005f87;
+    --term-selection-fg: #ffffff;
+    --term-search-bg: #444444;
+    --term-search-fg: #ffffff;
+    --term-border-bg: #303030;
+    --term-border-fg: #303030;
+}
+
+.sim-screen.theme-light {
+    --term-bg: #eeeeee;
+    --term-fg: #444444;
+    --term-selection-bg: #87afff;
+    --term-selection-fg: #080808;
+    --term-search-bg: #c6c6c6;
+    --term-search-fg: #080808;
+    --term-border-bg: #d0d0d0;
+    --term-border-fg: #d0d0d0;
+}
+
+/* Control Panel Styles */
+.sim-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.sim-panel-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.sim-panel-desc {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.sim-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sim-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--accent-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sim-search-input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+}
+
+.sim-search-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+/* Control Switches */
+.sim-options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.sim-option-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+}
+
+.sim-option-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255,255,255,0.15);
+}
+
+.sim-option-card input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--accent-primary);
+    width: 16px;
+    height: 16px;
+}
+
+.sim-option-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+/* Keyboard Focus Badge */
+.sim-focus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    width: fit-content;
+}
+
+.sim-focus-badge.active {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.sim-focus-badge.inactive {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.sim-dot-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.sim-focus-badge.active .sim-dot-indicator {
+    background-color: #10b981;
+    box-shadow: 0 0 6px #10b981;
+}
+
+.sim-focus-badge.inactive .sim-dot-indicator {
+    background-color: #f59e0b;
+    animation: sim-pulse 2s infinite;
+}
+
+@keyframes sim-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* Mobile DPAD Controller */
+.sim-dpad {
+    display: grid;
+    grid-template-areas: 
+        ". up ."
+        "left ok right"
+        ". down .";
+    grid-template-columns: repeat(3, 46px);
+    grid-template-rows: repeat(3, 40px);
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+.sim-dpad-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.sim-dpad-btn:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: var(--accent-primary);
+    color: #c084fc;
+}
+
+.sim-dpad-btn:active {
+    background: var(--accent-primary);
+    color: #fff;
+    transform: scale(0.95);
+}
+
+.sim-dpad-btn.up { grid-area: up; }
+.sim-dpad-btn.down { grid-area: down; }
+.sim-dpad-btn.left { grid-area: left; }
+.sim-dpad-btn.right { grid-area: right; }
+.sim-dpad-btn.ok { 
+    grid-area: ok; 
+    font-size: 0.78rem; 
+    background: rgba(6, 182, 212, 0.1);
+    border-color: rgba(6, 182, 212, 0.2);
+    color: #22d3ee;
+}
+.sim-dpad-btn.ok:hover {
+    background: rgba(6, 182, 212, 0.25);
+    border-color: #06b6d4;
+    color: #fff;
+}
+
+/* Visual Copy Toast */
+.sim-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: rgba(17, 24, 39, 0.85);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5), 0 0 15px rgba(16, 185, 129, 0.15);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 9999;
+    backdrop-filter: blur(10px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
+}
+
+.sim-toast.show {
+    transform: translateX(-50%) translateY(0);
+}
+
+.sim-toast-icon {
+    color: #10b981;
+    font-weight: bold;
+}

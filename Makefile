@@ -31,6 +31,9 @@ tui: ⚙️  # run TUI mode in the current terminal
 gui: ⚙️  # launch the floating terminal picker window (requires foot)
 	zig build gui
 
+browse: ⚙️  # open the website homepage in the default web browser
+	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"
+
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run scripts/screenshot.go zig-out/bin/emojig
 
@@ -168,6 +171,9 @@ info: ⚙️  # show detailed info about release files and related vars
 	# git diff:
 	@git diff --numstat | sed 's/^/#   /g'
 	
+release-diff: ⚙️  # show a git summary of changes since the last published release
+	@VERSION_PUBLISHED="$(VERSION_PUBLISHED)" go run scripts/release_diff.go
+
 release-publish: release-build ⚙️  # sign SHA256SUMS and publish draft release to Codeberg
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
 	@echo "✅ SHA256SUMS signed"
