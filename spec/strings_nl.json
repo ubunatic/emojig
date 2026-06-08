@@ -1,0 +1,25 @@
+{
+  "description": "UI-tekstreeksen voor de emoji-kiezer (Nederlands).",
+  "search_prompt": " 🔍 ",
+  "search_placeholder": "zoeken…",
+  "status_help_hint": " ?:hulp  ↕↔|↵|Esc",
+  "status_matches": " {count}  ↕↔|↵|Esc",
+  "status_help_hint_wide": " ?:hulp e:afb t:tekst  ↕↔|↵|Esc",
+  "status_matches_wide": " {count} e:afb t:tekst  ↕↔|↵|Esc",
+  "help_title": "Hulp & Sneltoetsen:",
+  "help_lines": [
+    "  Typen: Zoeken",
+    "  Pijlen: Navigeren",
+    "  Enter: Kopieer & Sluit",
+    "  Tab:   Thema Wisselen",
+    "  Esc:   Sluiten"
+  ],
+  "help_lines_wide": [
+    "  Typen       Fuzzy zoeken naar emoji's",
+    "  Pijlen      Navigeren door het raster",
+    "  Hover       Voorbeeld van emoji onder muis",
+    "  Klik/Enter  Kopieer geselecteerde emoji & sluit",
+    "  Tab         Wissel thema (licht/donker)",
+    "  Esc/Ctrl-C  Sluit kiezer"
+  ]
+}

@@ -10,6 +10,10 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 |---|---|---|---|
 | [**02**](02-distribution-and-release.md) | [Distribution & Release Plan](02-distribution-and-release.md) | **P1** | Outlines target package channels (AUR, Nix, Homebrew) and cross-compilation pipeline tasks for tagged releases. |
 | [**09**](09-wasm-build-rootless-mknod.md) | [WASM build fails under rootless podman (`mknod` blocked in userns)](09-wasm-build-rootless-mknod.md) | **P1** | c2w's `rootfs` stage `mknod /dev/null` returns EPERM because rootless podman runs in a user namespace; needs a rootful runtime or build VM. |
+| [**10**](10-synonym-search-ranking.md) | [Synonym Support for Better Search Ranking](10-synonym-search-ranking.md) | **P2** | Typing "car" surfaces `🚋 tram car` before `🚗 automobile` due to late-match penalty; fix via synonym expansion at match time. |
+| [**11**](11-german-search-pferd-fails.md) | [German search "pferd" fails](11-german-search-pferd-fails.md) | **P2** | Non-English search terms fail to match emoji because the database only contains English keywords. |
+| [**12**](12-tui-line-cleanup-and-terminal-restoration.md) | [TUI line cleanup & terminal restoration](12-tui-line-cleanup-and-terminal-restoration.md) | **P1** | TUI rows not erased on exit; selected emoji left floating after fade; cursor not restored to pre-launch position — emoji bleeds into shell prompt on Ctrl-E keybind. |
+| [**13**](13-terminal-state-diagnostic-tool.md) | [Terminal state diagnostic tool](13-terminal-state-diagnostic-tool.md) | **P1** | No tool exists to inspect active terminal modes (scroll region, mouse tracking, raw mode). Makes it impossible to confirm or reproduce issue #12 cleanup bugs without guessing. |
 
 ---
 

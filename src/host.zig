@@ -5,7 +5,7 @@ const std = @import("std");
 const term_lib = @import("term.zig");
 const Theme = term_lib.Theme;
 const writeAll = term_lib.writeAll;
-const defaults = @import("defaults.zig");
+const spec_mod = @import("spec.zig");
 
 /// Known terminal emulators with specific argv layouts.
 pub const HostKind = enum {
@@ -102,7 +102,7 @@ pub fn hostKindFromName(name: []const u8) HostKind {
 }
 
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
-/// plus an 11-token tail (21 total); 28 gives safe headroom.
+/// plus a 14-token tail (24 total); 28 gives safe headroom.
 pub const MAX_ARGV = 28;
 
 /// Assemble the full launch argv into `out[0..N]` and return the live slice.
@@ -325,6 +325,7 @@ pub fn spawnGuiWindow(
     debug: bool,
     wait: bool,
     borderless: bool,
+    spec: *const spec_mod.Spec,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -333,17 +334,20 @@ pub fn spawnGuiWindow(
         .system => "system",
     };
 
-    const foot_bg = if (theme == .light) "eeeeee" else "1c1c1c";
-    const foot_fg = if (theme == .light) "444444" else "a8a8a8";
-    const foot_border = if (theme == .light) "cccccc" else "3c3c3c";
+    // GUI window colors come from spec/theme.json (foot wants bare hex, so we
+    // strip the leading '#'). `system` falls back to the dark palette here.
+    const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
+    const foot_bg = gui_pal.terminal_bg[1..];
+    const foot_fg = gui_pal.terminal_fg[1..];
+    const foot_border = gui_pal.terminal_border[1..];
 
-    // Derive the window height from the GUI grid rows configured in defaults.zig.
-    const gui_content_rows: usize = defaults.gui_rows + defaults.layout_overhead;
+    // Derive the window height from the GUI grid rows configured in spec/layout.json.
+    const gui_content_rows: usize = spec.layout.gui.rows + spec.layout.layout_overhead;
     var final_h = if (border) gui_content_rows + 2 else gui_content_rows;
     if (debug) final_h += 2;
 
     var size_buf: [64]u8 = undefined;
-    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ defaults.gui_width + 2, final_h });
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ spec.layout.gui.width + 2, final_h });
 
     var bg_buf: [64]u8 = undefined;
     const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
@@ -355,7 +359,7 @@ pub fn spawnGuiWindow(
     const border_color_arg = try std.fmt.bufPrint(&border_color_buf, "--override=csd.border-color={s}", .{foot_border});
 
     var env_w: [64]u8 = undefined;
-    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{defaults.gui_width});
+    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{spec.layout.gui.width});
 
     var env_h: [64]u8 = undefined;
     const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{gui_content_rows});
@@ -377,6 +381,23 @@ pub fn spawnGuiWindow(
     var env_timeout: [64]u8 = undefined;
     const env_timeout_arg = try std.fmt.bufPrint(&env_timeout, "EMOJIG_PICKER_TIMEOUT={s}", .{timeout_val});
 
+    // GUI grid dimensions from spec/layout.json (runtime, formerly comptime).
+    var env_cols: [64]u8 = undefined;
+    const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{spec.layout.gui.cols});
+
+    var env_rows: [64]u8 = undefined;
+    const env_rows_arg = try std.fmt.bufPrint(&env_rows, "EMOJIG_ROWS={d}", .{spec.layout.gui.rows});
+
+    // Propagate the GUI exit-preview default from spec/layout.json → animation.exit_preview_gui.
+    // The child process (running --tui inside the spawned window) will see this env var and
+    // use it as its override, bypassing the TUI default (animation.exit_preview_tui).
+    var env_exit_preview: [64]u8 = undefined;
+    const env_exit_preview_arg = try std.fmt.bufPrint(
+        &env_exit_preview,
+        "EMOJIG_EXIT_PREVIEW={s}",
+        .{if (spec.layout.animation.exit_preview_gui) "1" else "0"},
+    );
+
     // Terminal-independent tail: env VARS... exe_path --tui
     const tail = [_][]const u8{
         "env",
@@ -388,8 +409,9 @@ pub fn spawnGuiWindow(
         env_debug_arg,
         env_timeout_arg,
         "EMOJIG_RESIZE_MODE=altscreen",
-        std.fmt.comptimePrint("EMOJIG_COLS={d}", .{defaults.gui_cols}),
-        std.fmt.comptimePrint("EMOJIG_ROWS={d}", .{defaults.gui_rows}),
+        env_cols_arg,
+        env_rows_arg,
+        env_exit_preview_arg,
         exe_path,
         "--tui",
     };

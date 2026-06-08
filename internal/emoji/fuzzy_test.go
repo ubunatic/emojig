@@ -19,7 +19,7 @@ func TestFuzzySubsequence(t *testing.T) {
 		{"face xyz", false},
 	}
 	for _, c := range cases {
-		if _, ok := fuzzyMatch(c.query, target); ok != c.want {
+		if _, ok := fuzzyMatch(c.query, target, nil); ok != c.want {
 			t.Errorf("fuzzyMatch(%q) ok = %v, want %v", c.query, ok, c.want)
 		}
 	}
@@ -29,7 +29,7 @@ func TestFuzzySubsequence(t *testing.T) {
 func TestFuzzyPluralsAndStems(t *testing.T) {
 	target := "racing car"
 	for _, q := range []string{"car", "cars", "racing", "race"} {
-		s, ok := fuzzyMatch(q, target)
+		s, ok := fuzzyMatch(q, target, nil)
 		if !ok {
 			t.Errorf("fuzzyMatch(%q) did not match", q)
 			continue
@@ -42,8 +42,8 @@ func TestFuzzyPluralsAndStems(t *testing.T) {
 
 // Sanity: start-of-word matches should outrank mid-word matches.
 func TestStartOfWordBonus(t *testing.T) {
-	start, _ := fuzzyMatch("face", "face smile")
-	mid, _ := fuzzyMatch("ace", "face smile")
+	start, _ := fuzzyMatch("face", "face smile", nil)
+	mid, _ := fuzzyMatch("ace", "face smile", nil)
 	if start <= mid {
 		t.Errorf("start-of-word %d should outscore mid-word %d", start, mid)
 	}

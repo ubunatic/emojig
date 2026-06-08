@@ -10,6 +10,12 @@ const term_lib = @import("term.zig");
 const resize = @import("resize.zig");
 const host = @import("host.zig");
 const defaults = @import("defaults.zig");
+const spec_mod = @import("spec.zig");
+
+// The declarative UI spec (spec/*.json), parsed once at startup in main().
+// Holds layout dims, theme palettes, key bindings, and UI strings. Lives in a
+// process-lifetime arena; read-only after load.
+var g_spec: spec_mod.Spec = undefined;
 
 // ---------------------------------------------------------------------------
 // Embedded shell integration scripts
@@ -46,15 +52,50 @@ inline fn logMemoryUsage() void {
 }
 
 inline fn themeIcon(t: Theme) []const u8 {
-    return term_lib.themeIcon(t);
+    return g_spec.iconFor(t);
+}
+
+/// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
+/// returning the new index. Wrapping mirrors the historical arrow-key behavior.
+fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
+    if (count == 0) return sel_in;
+    var sel = sel_in;
+    if (std.mem.eql(u8, action, "nav_up")) {
+        if (sel >= cols) {
+            sel -= cols;
+        } else {
+            const target = sel + (rows - 1) * cols;
+            sel = if (target < count) target else count - 1;
+        }
+    } else if (std.mem.eql(u8, action, "nav_down")) {
+        const target = sel + cols;
+        sel = if (target < count) target else sel % cols;
+    } else if (std.mem.eql(u8, action, "nav_left")) {
+        sel = if (sel > 0) sel - 1 else count - 1;
+    } else if (std.mem.eql(u8, action, "nav_right")) {
+        sel = if (sel < count - 1) sel + 1 else 0;
+    }
+    return sel;
+}
+
+/// Render a status-bar template from spec/strings.json, substituting the live
+/// match count for a "{count}" placeholder. Templates without the placeholder
+/// (the help hints) are returned unchanged, avoiding a copy.
+fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
+    const ph = "{count}";
+    if (std.mem.indexOf(u8, tmpl, ph)) |pos| {
+        return std.fmt.bufPrint(buf, "{s}{d}{s}", .{ tmpl[0..pos], total, tmpl[pos + ph.len ..] });
+    }
+    return tmpl;
 }
 
 inline fn effectivePalette(t: Theme, sys: Theme) Palette {
-    return term_lib.effectivePalette(t, sys);
+    return g_spec.paletteFor(t, sys);
 }
 
 inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
-    term_lib.applyTerminalColors(stdout_fd, t, sys);
+    const c = g_spec.terminalColors(t, sys);
+    term_lib.applyTerminalColors(stdout_fd, c.bg, c.fg);
 }
 
 inline fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
@@ -457,6 +498,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_debug = false;
     var opt_alt_screen = false;
     var opt_borderless = true; // spawn the GUI host terminal without decorations (default)
+    var opt_lang: ?[]const u8 = null;
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -535,6 +577,15 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(std.posix.STDERR_FILENO, "Error: --border requires an argument.\n");
                 std.process.exit(1);
             }
+        } else if (std.mem.eql(u8, arg, "--lang") or std.mem.eql(u8, arg, "-l")) {
+            if (args_it.next()) |v| {
+                opt_lang = v;
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --lang/-l requires an argument (e.g. 'de', 'es').\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--lang=")) {
+            opt_lang = arg["--lang=".len..];
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--version")) {
             try writeAll(std.posix.STDOUT_FILENO, "emojig " ++ build_options.version ++ "\n");
             std.process.exit(0);
@@ -546,6 +597,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --width [number]             Set the width of the picker\n" ++
                 "  --height [number]            Set the height of the picker\n" ++
                 "  --border [1|0|true|false]    Enable or disable the border\n" ++
+                "  --lang, -l [code]            Set UI language (de, es, fr, it, pt, pl, ru, uk, nl, tr)\n" ++
                 "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
@@ -565,6 +617,26 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         }
     }
+
+    // Determine language: CLI option takes precedence, then environment variables
+    const lang = opt_lang orelse blk: {
+        if (init.environ_map.get("EMOJIG_LANG")) |v| break :blk v;
+        if (init.environ_map.get("LANG")) |v| break :blk v;
+        if (init.environ_map.get("LC_ALL")) |v| break :blk v;
+        if (init.environ_map.get("LC_MESSAGES")) |v| break :blk v;
+        break :blk null;
+    };
+
+    // Load the declarative UI spec (spec/*.json) once, into a process-lifetime
+    // arena. The embedded JSON is trusted (shipped in the binary), so a parse
+    // failure is a build-time bug; fail loudly rather than limp on defaults.
+    var spec_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    g_spec = spec_mod.load(spec_arena.allocator(), lang) catch |e| {
+        try writeAll(std.posix.STDERR_FILENO, "Error: failed to load embedded UI spec: ");
+        try writeAll(std.posix.STDERR_FILENO, @errorName(e));
+        try writeAll(std.posix.STDERR_FILENO, "\n");
+        std.process.exit(1);
+    };
 
     if (opt_install) {
         const home = std.mem.span(std.c.getenv("HOME") orelse {
@@ -664,7 +736,7 @@ pub fn main(init: std.process.Init) !void {
     const height_override: ?usize = opt_height orelse env_height orelse cfg.height;
 
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
-    const final_width = opt_width orelse env_width orelse cfg.width orelse defaults.tui_width;
+    const final_width = opt_width orelse env_width orelse cfg.width orelse g_spec.layout.tui.width;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
@@ -752,6 +824,7 @@ pub fn main(init: std.process.Init) !void {
             final_debug,
             opt_wait,
             opt_borderless,
+            &g_spec,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
@@ -832,15 +905,15 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
-        const cols: usize = if (init.environ_map.get("EMOJIG_COLS")) |v| std.fmt.parseInt(usize, v, 10) catch defaults.tui_cols else defaults.tui_cols;
+        const cols: usize = if (init.environ_map.get("EMOJIG_COLS")) |v| std.fmt.parseInt(usize, v, 10) catch g_spec.layout.tui.cols else g_spec.layout.tui.cols;
         const rows: usize = blk: {
             if (init.environ_map.get("EMOJIG_ROWS")) |v| {
                 if (std.fmt.parseInt(usize, v, 10)) |n| break :blk n else |_| {}
             }
-            if (height_override) |h| break :blk if (h > defaults.layout_overhead) h - defaults.layout_overhead else 1;
-            break :blk defaults.tui_rows;
+            if (height_override) |h| break :blk if (h > g_spec.layout.layout_overhead) h - g_spec.layout.layout_overhead else 1;
+            break :blk g_spec.layout.tui.rows;
         };
-        const content_rows: usize = rows + defaults.layout_overhead;
+        const content_rows: usize = rows + g_spec.layout.layout_overhead;
         var final_h = if (show_border) content_rows + 2 else content_rows;
         if (final_debug) final_h += 2;
 
@@ -960,13 +1033,20 @@ pub fn main(init: std.process.Init) !void {
 
         applyTerminalColors(stdout_fd, theme, system_theme);
 
-        var query_buf: [64]u8 = undefined;
+        var query_buf: [defaults.MAX_QUERY_LEN]u8 = undefined;
         var query_len: usize = 0;
+        // Effective query cap from the spec, never exceeding the stack buffer.
+        const max_query_len: usize = @min(g_spec.layout.max_query_len, query_buf.len);
 
         const total_cells = cols * rows;
 
+        // The spec grid must fit the compile-time scratch buffers (defaults.zig).
+        std.debug.assert(cols <= defaults.MAX_COLS);
+        std.debug.assert(rows <= defaults.MAX_ROWS);
+        std.debug.assert(total_cells <= defaults.MAX_CELLS);
+
         var selected_idx: ?usize = null;
-        var top_matches: [defaults.max_cells]emojig.Match = undefined;
+        var top_matches: [defaults.MAX_CELLS]emojig.Match = undefined;
         var top_count: usize = 0;
 
         var should_copy_and_exit = false;
@@ -977,14 +1057,23 @@ pub fn main(init: std.process.Init) !void {
 
         // ---------------------------------------------------------------------------
         // Exit preview configuration (parsed once before the render loop).
-        // EMOJIG_EXIT_PREVIEW=0/false  — disable preview entirely (immediate exit)
-        // EMOJIG_EXIT_PREVIEW_MS=N     — hold duration in ms (default 500, clamped 0–5000)
+        //
+        // Priority (highest wins):
+        //   1. EMOJIG_EXIT_PREVIEW=0/false  — force-disable (immediate exit)
+        //   2. EMOJIG_EXIT_PREVIEW=1/true   — force-enable
+        //   3. spec/layout.json animation.exit_preview_tui — per-mode default
+        //
+        // EMOJIG_EXIT_PREVIEW_MS=N overrides the hold duration in ms (clamped 0–5000).
+        // EMOJIG_EXIT_PREVIEW is set to "0" by the GUI launcher when the spec default
+        // for GUI mode (animation.exit_preview_gui) is false.
         // ---------------------------------------------------------------------------
         const preview_enabled: bool = blk: {
             if (init.environ_map.get("EMOJIG_EXIT_PREVIEW")) |v| {
                 if (std.mem.eql(u8, v, "0") or std.mem.eql(u8, v, "false")) break :blk false;
+                if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) break :blk true;
             }
-            break :blk true;
+            // Fall back to the spec default for TUI mode.
+            break :blk g_spec.layout.animation.exit_preview_tui;
         };
         const preview_hold_ns: u64 = blk: {
             const default_ms: u64 = 200;
@@ -1193,10 +1282,12 @@ pub fn main(init: std.process.Init) !void {
                     } else {
                         try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.search_bg);
-                        try writeAll(stdout_fd, "🔍 ");
+                        // The spec prompt carries a leading margin space for mojigo's
+                        // layout; the Zig renderer emits its own margin above, so trim it.
+                        try writeAll(stdout_fd, std.mem.trimStart(u8, g_spec.strings.search_prompt, " "));
                         if (query_len == 0) {
-                            const placeholder = "search\u{2026}";
-                            const placeholder_cols = 7;
+                            const placeholder = g_spec.strings.search_placeholder;
+                            const placeholder_cols = std.unicode.utf8CountCodepoints(placeholder) catch placeholder.len;
                             try writeAll(stdout_fd, palette.fg);
                             try writeAll(stdout_fd, placeholder);
                             try writeAll(stdout_fd, palette.search_bg);
@@ -1220,34 +1311,17 @@ pub fn main(init: std.process.Init) !void {
                     var h_idx: usize = 0;
                     while (h_idx < help_rows) : (h_idx += 1) {
                         try writeAll(stdout_fd, "\x1b[2K\r");
+                        // Help text comes from spec/strings.json: the title plus a
+                        // width-dependent line set (wide >=35 cols, else narrow).
                         var text: []const u8 = "";
-                        if (is_wide) {
-                            const offset = if (help_rows >= 9) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < 7) {
-                                text = switch (h_idx - offset) {
-                                    0 => "Help & Keybindings:",
-                                    1 => "  Typing      Fuzzy search emojis",
-                                    2 => "  Arrows      Navigate the grid",
-                                    3 => "  Hover       Preview emoji under mouse",
-                                    4 => "  Click/Enter Copy selected emoji & exit",
-                                    5 => "  Tab         Toggle theme (light/dark)",
-                                    6 => "  Esc/Ctrl-C  Exit picker",
-                                    else => "",
-                                };
-                            }
-                        } else {
-                            const offset = if (help_rows >= 8) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < 6) {
-                                text = switch (h_idx - offset) {
-                                    0 => "Help & Keybindings:",
-                                    1 => "  Typing: Search",
-                                    2 => "  Arrows: Navigate",
-                                    3 => "  Enter:  Copy & Exit",
-                                    4 => "  Tab:    Toggle Theme",
-                                    5 => "  Esc:    Exit",
-                                    else => "",
-                                };
-                            }
+                        const help_lines = if (is_wide) g_spec.strings.help_lines_wide else g_spec.strings.help_lines;
+                        // Vertically center when there is spare room (mirrors the
+                        // former >=9 wide / >=8 narrow offset thresholds).
+                        const center_threshold: usize = help_lines.len + 3;
+                        const offset = if (help_rows >= center_threshold) @as(usize, 1) else 0;
+                        if (h_idx >= offset and h_idx - offset < help_lines.len + 1) {
+                            const k = h_idx - offset;
+                            text = if (k == 0) g_spec.strings.help_title else help_lines[k - 1];
                         }
                         const pad_len = if (content_width > text.len) content_width - text.len else 0;
                         const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.bg, palette.fg, text, spaces[0..@min(pad_len, spaces.len)] });
@@ -1273,8 +1347,8 @@ pub fn main(init: std.process.Init) !void {
                         } else if (exit_preview) {
                             // Preview frame: show only the selected cell as plain " emoji ",
                             // all other cells blank ("    ").
-                            var cell_buffers: [defaults.max_cols][64]u8 = undefined;
-                            var cell_strings: [defaults.max_cols][]const u8 = undefined;
+                            var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
+                            var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
                             var c: usize = 0;
                             while (c < cols) : (c += 1) {
                                 const idx = r * cols + c;
@@ -1313,8 +1387,8 @@ pub fn main(init: std.process.Init) !void {
                             gl_pos += rem_sp.len;
                             try writeAll(stdout_fd, line_buf[0..gl_pos]);
                         } else {
-                            var cell_buffers: [defaults.max_cols][64]u8 = undefined;
-                            var cell_strings: [defaults.max_cols][]const u8 = undefined;
+                            var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
+                            var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
 
                             var c: usize = 0;
                             while (c < cols) : (c += 1) {
@@ -1439,22 +1513,17 @@ pub fn main(init: std.process.Init) !void {
                     try writeAll(stdout_fd, palette.search_bg);
 
                     var status_text_buf: [128]u8 = undefined;
-                    const status_text = if (query_len == 0)
-                        try std.fmt.bufPrint(&status_text_buf, " ?:help  ↕↔|↵|Esc", .{})
+                    // Status strings come from spec/strings.json (wide variant adds the
+                    // clipboard hints on terminals >=35 cols); {count} -> live total.
+                    const status_tmpl: []const u8 = if (content_width >= 35)
+                        (if (query_len == 0) g_spec.strings.status_help_hint_wide else g_spec.strings.status_matches_wide)
                     else
-                        try std.fmt.bufPrint(&status_text_buf, " {d}  ↕↔|↵|Esc", .{total_matches});
+                        (if (query_len == 0) g_spec.strings.status_help_hint else g_spec.strings.status_matches);
+                    const status_text = try formatStatus(&status_text_buf, status_tmpl, total_matches);
 
-                    const text_cols = if (query_len == 0) blk: {
-                        break :blk @as(usize, 18);
-                    } else blk: {
-                        var digits: usize = 1;
-                        var temp = total_matches;
-                        while (temp >= 10) {
-                            digits += 1;
-                            temp /= 10;
-                        }
-                        break :blk 11 + digits;
-                    };
+                    // Calculate visual columns: the status text has three 3-byte UTF-8 glyphs (↕, ↔, ↵)
+                    // which take 1 column each. Subtracting 6 from the byte length gives the exact column width.
+                    const text_cols = status_text.len - 6;
 
                     try writeAll(stdout_fd, status_text);
 
@@ -1625,47 +1694,29 @@ pub fn main(init: std.process.Init) !void {
 
             const bytes = read_buf[0..n];
 
+            // Decode the raw byte sequence into a logical key name; the binding
+            // table in spec/keys.json maps that name to an action below. Mouse
+            // events and printable text are handled inline (not via bindings).
+            var logical: ?[]const u8 = null;
+
             if (bytes[0] == 27) {
                 if (n == 1) {
-                    // ESC key
-                    break;
+                    logical = "esc";
                 } else if (n > 2 and bytes[1] == '[') {
-                    // Alt+F4: \x1b[1;3S (XTerm mod=3) or \x1b[1;9S (kitty mod=9)
+                    // Alt+F4: \x1b[1;3S (XTerm mod=3) or \x1b[1;9S (kitty mod=9).
+                    // Closes the window regardless of bindings.
                     if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
                         (bytes[4] == '3' or bytes[4] == '9'))
                     {
                         break;
-                    } else if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
-                        // Arrow keys — normal cursor key mode (\x1b[A/B/C/D)
-                        if (selected_idx == null) {
-                            if (top_count > 0) selected_idx = 0;
-                            continue;
-                        }
-                        var sel = selected_idx.?;
-                        if (bytes[2] == 'A') {
-                            if (top_count > 0) {
-                                if (sel >= cols) {
-                                    sel -= cols;
-                                } else {
-                                    const target = sel + (rows - 1) * cols;
-                                    sel = if (target < top_count) target else top_count - 1;
-                                }
-                            }
-                        } else if (bytes[2] == 'B') {
-                            if (top_count > 0) {
-                                const target = sel + cols;
-                                sel = if (target < top_count) target else sel % cols;
-                            }
-                        } else if (bytes[2] == 'C') {
-                            if (top_count > 0) {
-                                sel = if (sel < top_count - 1) sel + 1 else 0;
-                            }
-                        } else if (bytes[2] == 'D') {
-                            if (top_count > 0) {
-                                sel = if (sel > 0) sel - 1 else top_count - 1;
-                            }
-                        }
-                        selected_idx = sel;
+                    } else if (bytes[2] == 'A') {
+                        logical = "up";
+                    } else if (bytes[2] == 'B') {
+                        logical = "down";
+                    } else if (bytes[2] == 'C') {
+                        logical = "right";
+                    } else if (bytes[2] == 'D') {
+                        logical = "left";
                     } else if (bytes[2] == '<') {
                         // SGR Mouse event — find first terminator to handle batched events.
                         const sgr_data = bytes[3..n];
@@ -1746,72 +1797,73 @@ pub fn main(init: std.process.Init) !void {
                         }
                     }
                 } else if (n > 2 and bytes[1] == 'O') {
-                    // Arrow keys — application cursor key mode (\x1bOA/B/C/D)
+                    // Arrow keys — application cursor key mode (\x1bOA/B/C/D).
                     // ZLE keeps the terminal in smkx (application mode) during widget execution.
-                    if (bytes[2] == 'A' or bytes[2] == 'B' or bytes[2] == 'C' or bytes[2] == 'D') {
-                        if (selected_idx == null) {
-                            if (top_count > 0) selected_idx = 0;
-                            continue;
-                        }
-                        var sel = selected_idx.?;
-                        if (bytes[2] == 'A') {
-                            if (top_count > 0) {
-                                if (sel >= cols) {
-                                    sel -= cols;
-                                } else {
-                                    const target = sel + (rows - 1) * cols;
-                                    sel = if (target < top_count) target else top_count - 1;
-                                }
-                            }
-                        } else if (bytes[2] == 'B') {
-                            if (top_count > 0) {
-                                const target = sel + cols;
-                                sel = if (target < top_count) target else sel % cols;
-                            }
-                        } else if (bytes[2] == 'C') {
-                            if (top_count > 0) {
-                                sel = if (sel < top_count - 1) sel + 1 else 0;
-                            }
-                        } else if (bytes[2] == 'D') {
-                            if (top_count > 0) {
-                                sel = if (sel > 0) sel - 1 else top_count - 1;
-                            }
-                        }
-                        selected_idx = sel;
+                    if (bytes[2] == 'A') {
+                        logical = "up";
+                    } else if (bytes[2] == 'B') {
+                        logical = "down";
+                    } else if (bytes[2] == 'C') {
+                        logical = "right";
+                    } else if (bytes[2] == 'D') {
+                        logical = "left";
                     }
                 }
             } else if (bytes[0] == 127 or bytes[0] == 8) {
-                // Backspace
-                if (query_len > 0) {
-                    query_len -= 1;
-                    selected_idx = if (query_len == 0) null else 0;
-                    total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
-                }
+                logical = "backspace";
             } else if (bytes[0] == 10 or bytes[0] == 13) {
-                // Enter
-                should_copy_and_exit = true;
+                logical = "enter";
             } else if (bytes[0] == 9) {
-                // Tab: Cycle theme
-                theme = switch (theme) {
-                    .dark => .light,
-                    .light => .system,
-                    .system => .dark,
-                };
-                saveThemeToConfig(init.io, theme);
-                if (theme == .system) {
-                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                }
-                applyTerminalColors(stdout_fd, theme, system_theme);
+                logical = "tab";
             } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
-                // Ctrl-C / Ctrl-D / Ctrl-Q / Ctrl-W
-                break;
+                logical = switch (bytes[0]) {
+                    3 => "ctrl-c",
+                    4 => "ctrl-d",
+                    0x11 => "ctrl-q",
+                    0x17 => "ctrl-w",
+                    else => unreachable,
+                };
             } else {
+                // Printable text — append to the query (not a bound key).
                 for (bytes) |b| {
-                    if (b >= 32 and b <= 126 and query_len < 63) {
+                    if (b >= 32 and b <= 126 and query_len < max_query_len) {
                         query_buf[query_len] = b;
                         query_len += 1;
                         selected_idx = 0;
                         total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                    }
+                }
+            }
+
+            // Dispatch the decoded key through the spec/keys.json bindings.
+            if (logical) |name| {
+                const action = g_spec.actionFor(name) orelse "";
+                if (std.mem.eql(u8, action, "quit")) {
+                    break;
+                } else if (std.mem.eql(u8, action, "select")) {
+                    should_copy_and_exit = true;
+                } else if (std.mem.eql(u8, action, "delete")) {
+                    if (query_len > 0) {
+                        query_len -= 1;
+                        selected_idx = if (query_len == 0) null else 0;
+                        total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                    }
+                } else if (std.mem.eql(u8, action, "cycle_theme")) {
+                    theme = switch (theme) {
+                        .dark => .light,
+                        .light => .system,
+                        .system => .dark,
+                    };
+                    saveThemeToConfig(init.io, theme);
+                    if (theme == .system) {
+                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                    }
+                    applyTerminalColors(stdout_fd, theme, system_theme);
+                } else if (std.mem.startsWith(u8, action, "nav_")) {
+                    if (selected_idx == null) {
+                        if (top_count > 0) selected_idx = 0;
+                    } else {
+                        selected_idx = navSelect(action, selected_idx.?, top_count, cols, rows);
                     }
                 }
             }

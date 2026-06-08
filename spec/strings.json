@@ -1,15 +1,25 @@
 {
-  "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within tui.width (spec/layout.json) or they are truncated. Mirrors the strings in src/main.zig.",
+  "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within the rendered content width (spec/layout.json) or they are truncated. Consumed by both the Zig app and the Go mojigo port. help_lines is the narrow/default help (mojigo + Zig narrow terminals); help_lines_wide is shown by the Zig app on wide terminals (>=35 cols).",
   "search_prompt": " 🔍 ",
+  "search_placeholder": "search…",
   "status_help_hint": " ?:help  ↕↔|↵|Esc",
   "status_matches": " {count}  ↕↔|↵|Esc",
+  "status_help_hint_wide": " ?:help e:img t:txt  ↕↔|↵|Esc",
+  "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
   "help_title": "Help & Keybindings:",
   "help_lines": [
     "  Typing: Search",
     "  Arrows: Navigate",
-    "  Enter:  Select emoji",
-    "  Tab:    Toggle theme",
-    "  Esc:    Exit picker",
-    "  ?:      Toggle help"
+    "  Enter:  Copy & Exit",
+    "  Tab:    Toggle Theme",
+    "  Esc:    Exit"
+  ],
+  "help_lines_wide": [
+    "  Typing      Fuzzy search emojis",
+    "  Arrows      Navigate the grid",
+    "  Hover       Preview emoji under mouse",
+    "  Click/Enter Copy selected emoji & exit",
+    "  Tab         Toggle theme (light/dark)",
+    "  Esc/Ctrl-C  Exit picker"
   ]
 }

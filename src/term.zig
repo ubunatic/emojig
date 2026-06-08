@@ -19,46 +19,13 @@ pub const Palette = struct {
     border_shade_fg: []const u8, // foreground color sequence for border shading
 };
 
-pub const dark_palette = Palette{
-    .bg = "",
-    .fg = "\x1b[38;5;248m",
-    .selection_bg = "\x1b[48;5;24m\x1b[38;5;255m",
-    .search_bg = "\x1b[48;5;238m\x1b[38;5;255m",
-    .border_bg = "",
-    .search_shade_fg = "\x1b[38;5;238m",
-    .border_shade_fg = "\x1b[38;5;236m",
-};
+// Palettes, the theme icon, and terminal color values now live in the
+// declarative spec (spec/theme.json) and are built at startup by src/spec.zig.
+// See Spec.paletteFor / Spec.iconFor / Spec.terminalColors.
 
-pub const light_palette = Palette{
-    .bg = "",
-    .fg = "\x1b[38;5;238m",
-    .selection_bg = "\x1b[48;5;111m\x1b[38;5;232m",
-    .search_bg = "\x1b[48;5;251m\x1b[38;5;232m",
-    .border_bg = "",
-    .search_shade_fg = "\x1b[38;5;251m",
-    .border_shade_fg = "\x1b[38;5;252m",
-};
-
-pub fn themeIcon(t: Theme) []const u8 {
-    return switch (t) {
-        .dark => "🌙",
-        .light => "🌞",
-        .system => "🔆",
-    };
-}
-
-pub fn effectivePalette(t: Theme, sys: Theme) Palette {
-    const eff = if (t == .system) sys else t;
-    return switch (eff) {
-        .light => light_palette,
-        .dark, .system => dark_palette,
-    };
-}
-
-pub fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme) void {
-    const eff = if (t == .system) sys else t;
-    const bg = if (eff == .light) "#eeeeee" else "#1c1c1c";
-    const fg = if (eff == .light) "#444444" else "#a8a8a8";
+/// Apply the terminal background/foreground via OSC 11/10. `bg`/`fg` are hex
+/// strings including the leading '#' (e.g. "#1c1c1c"), sourced from the spec.
+pub fn applyTerminalColors(stdout_fd: std.posix.fd_t, bg: []const u8, fg: []const u8) void {
     var osc_buf: [64]u8 = undefined;
     const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]11;{s}\x1b\\\x1b]10;{s}\x1b\\", .{ bg, fg }) catch return;
     writeAll(stdout_fd, osc_seq) catch {};

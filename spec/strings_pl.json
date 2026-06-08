@@ -1,0 +1,25 @@
+{
+  "description": "Teksty interfejsu użytkownika dla wyboru emoji (Polski).",
+  "search_prompt": " 🔍 ",
+  "search_placeholder": "szukaj…",
+  "status_help_hint": " ?:pomoc  ↕↔|↵|Esc",
+  "status_matches": " {count}  ↕↔|↵|Esc",
+  "status_help_hint_wide": " ?:pomoc e:obr t:tekst  ↕↔|↵|Esc",
+  "status_matches_wide": " {count} e:obr t:tekst  ↕↔|↵|Esc",
+  "help_title": "Pomoc i Skróty Klawiszowe:",
+  "help_lines": [
+    "  Pisanie: Szukaj",
+    "  Strzałki: Nawigacja",
+    "  Enter:   Kopiuj i Wyjdź",
+    "  Tab:     Zmień Motyw",
+    "  Esc:     Wyjdź"
+  ],
+  "help_lines_wide": [
+    "  Pisanie     Wyszukiwanie rozmyte emoji",
+    "  Strzałki    Nawigacja po siatce",
+    "  Najechanie  Podgląd emoji pod kursorem",
+    "  Klik/Enter  Kopiuj wybrane emoji i wyjdź",
+    "  Tab         Przełącz motyw (jasny/ciemny)",
+    "  Esc/Ctrl-C  Wyjdź z programu"
+  ]
+}

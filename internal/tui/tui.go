@@ -184,6 +184,13 @@ func (a *App) render() {
 	if len(a.query) > 0 {
 		status = strings.ReplaceAll(str.StatusMatches, "{count}", strconv.Itoa(a.total))
 	}
+	if width >= 35 {
+		if len(a.query) == 0 {
+			status = " ?:help e:img t:txt  ↕↔|↵|Esc"
+		} else {
+			status = " " + strconv.Itoa(a.total) + " e:img t:txt  ↕↔|↵|Esc"
+		}
+	}
 	b.WriteString(fg(pal.SearchShadeFg) + truncate(status, width) + term.Reset)
 
 	os.Stdout.WriteString(b.String())

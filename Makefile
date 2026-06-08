@@ -39,6 +39,12 @@ browse: ⚙️  # open the website homepage in the default web browser
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run ./scripts/screenshot/ zig-out/bin/emojig
 
+termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, raw mode, cursor)
+	@sh scripts/termstate.sh
+
+termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl-C to stop)
+	@sh scripts/termstate.sh --watch
+
 record: ⚙️ build  # headlessly record high-quality webm demo videos using Xvfb, xterm, and xdotool
 	go run ./scripts/record/
 

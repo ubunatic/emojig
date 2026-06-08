@@ -92,6 +92,40 @@ pub fn build(b: *std.Build) void {
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
+    // Embed the declarative UI spec (shared with the Go `mojigo` port) so the
+    // binary is self-contained. `src/` is the module root, so @embedFile cannot
+    // reach `../spec`; registering the files as anonymous imports makes them
+    // available to @embedFile by import name from any file in this module.
+    mod.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
+    mod.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
+    mod.addAnonymousImport("spec_keys", .{ .root_source_file = b.path("spec/keys.json") });
+    mod.addAnonymousImport("spec_strings", .{ .root_source_file = b.path("spec/strings.json") });
+    mod.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
+    mod.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
+    mod.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });
+    mod.addAnonymousImport("spec_strings_it", .{ .root_source_file = b.path("spec/strings_it.json") });
+    mod.addAnonymousImport("spec_strings_de", .{ .root_source_file = b.path("spec/strings_de.json") });
+    mod.addAnonymousImport("spec_strings_pl", .{ .root_source_file = b.path("spec/strings_pl.json") });
+    mod.addAnonymousImport("spec_strings_ru", .{ .root_source_file = b.path("spec/strings_ru.json") });
+    mod.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
+    mod.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
+    mod.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
+
+    exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
+    exe.root_module.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
+    exe.root_module.addAnonymousImport("spec_keys", .{ .root_source_file = b.path("spec/keys.json") });
+    exe.root_module.addAnonymousImport("spec_strings", .{ .root_source_file = b.path("spec/strings.json") });
+    exe.root_module.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
+    exe.root_module.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
+    exe.root_module.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });
+    exe.root_module.addAnonymousImport("spec_strings_it", .{ .root_source_file = b.path("spec/strings_it.json") });
+    exe.root_module.addAnonymousImport("spec_strings_de", .{ .root_source_file = b.path("spec/strings_de.json") });
+    exe.root_module.addAnonymousImport("spec_strings_pl", .{ .root_source_file = b.path("spec/strings_pl.json") });
+    exe.root_module.addAnonymousImport("spec_strings_ru", .{ .root_source_file = b.path("spec/strings_ru.json") });
+    exe.root_module.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
+    exe.root_module.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
+    exe.root_module.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
+
     const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);

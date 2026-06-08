@@ -52,9 +52,8 @@ func matchTermDirect(term, target string) (int, bool) {
 	return score, true
 }
 
-// matchTerm scores a single term against target with plural/stem fallbacks.
-// Faithful port of src/root.zig:matchTerm.
-func matchTerm(term, target string) (int, bool) {
+// matchTermSelf scores a term itself (with stem/plural fallbacks) against target.
+func matchTermSelf(term, target string) (int, bool) {
 	if len(term) == 0 {
 		return 0, true
 	}
@@ -117,16 +116,45 @@ func matchTerm(term, target string) (int, bool) {
 	return 0, false
 }
 
+// matchTerm scores a single term against target with plural/stem fallbacks and synonym matching.
+func matchTerm(term, target string, synonyms map[string][]string) (int, bool) {
+	if len(term) == 0 {
+		return 0, true
+	}
+	bestScore := 0
+	matched := false
+
+	if s, ok := matchTermSelf(term, target); ok {
+		bestScore = s
+		matched = true
+	}
+
+	if synonyms != nil {
+		if synList, exists := synonyms[term]; exists {
+			for _, syn := range synList {
+				if s, ok := matchTermDirect(syn, target); ok {
+					if !matched || s > bestScore {
+						bestScore = s
+						matched = true
+					}
+				}
+			}
+		}
+	}
+
+	return bestScore, matched
+}
+
 // fuzzyMatch scores all space-separated terms; every term must match.
 // Faithful port of src/root.zig:fuzzyMatch.
-func fuzzyMatch(query, target string) (int, bool) {
+func fuzzyMatch(query, target string, synonyms map[string][]string) (int, bool) {
 	total := 0
 	hasTerms := false
 	for _, term := range strings.FieldsFunc(query, func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\r' || r == '\n'
 	}) {
 		hasTerms = true
-		s, ok := matchTerm(term, target)
+		s, ok := matchTerm(term, target, synonyms)
 		if !ok {
 			return 0, false
 		}
@@ -137,3 +165,4 @@ func fuzzyMatch(query, target string) (int, bool) {
 	}
 	return total, true
 }
+

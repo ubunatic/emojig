@@ -32,3 +32,9 @@ var KeysJSON []byte
 //
 //go:embed spec/strings.json
 var StringsJSON []byte
+
+// SynonymsJSON is the declarative synonym map (spec/synonyms.json).
+//
+//go:embed spec/synonyms.json
+var SynonymsJSON []byte
+

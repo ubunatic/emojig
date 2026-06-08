@@ -157,7 +157,7 @@ pub const EmojiDb = struct {
     /// Get an emoji database entry by index.
     pub fn getEntry(index: usize) Entry {
         if (index >= count) @panic("index out of bounds");
-        const entry_offset = 16 + index * 12;
+        const entry_offset = 24 + index * 12;
         const emoji_off = std.mem.readInt(u32, data[entry_offset..][0..4], .little);
         const name_off = std.mem.readInt(u32, data[entry_offset + 4 ..][0..4], .little);
         const search_off = std.mem.readInt(u32, data[entry_offset + 8 ..][0..4], .little);
@@ -168,6 +168,32 @@ pub const EmojiDb = struct {
             .emoji = std.mem.sliceTo(str_table[emoji_off..], 0),
             .name = std.mem.sliceTo(str_table[name_off..], 0),
             .search = std.mem.sliceTo(str_table[search_off..], 0),
+        };
+    }
+};
+
+pub const SynonymDb = struct {
+    const data = @embedFile("emojis.bin");
+
+    pub const synonym_table_offset = std.mem.readInt(u32, data[16..20], .little);
+    pub const synonym_count = std.mem.readInt(u32, data[20..24], .little);
+
+    pub const Synonym = struct {
+        from: []const u8,
+        to: []const u8,
+    };
+
+    pub fn getSynonym(index: usize) Synonym {
+        if (index >= synonym_count) @panic("synonym index out of bounds");
+        const entry_offset = synonym_table_offset + index * 8;
+        const from_off = std.mem.readInt(u32, data[entry_offset..][0..4], .little);
+        const to_off = std.mem.readInt(u32, data[entry_offset + 4 ..][0..4], .little);
+
+        const str_table = data[EmojiDb.string_table_offset..][0..EmojiDb.string_table_len];
+
+        return .{
+            .from = std.mem.sliceTo(str_table[from_off..], 0),
+            .to = std.mem.sliceTo(str_table[to_off..], 0),
         };
     }
 };
@@ -234,7 +260,7 @@ fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
 
 /// Match a single search term against a target search string.
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
-pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
+fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
     if (matchTermDirect(term, target)) |score| {
         return score;
@@ -312,6 +338,35 @@ pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
     }
 
     return null;
+}
+
+/// Match a single search term against a target search string.
+/// Returns a score if the term is a subsequence of the target, or null otherwise.
+pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
+    if (term.len == 0) return 0;
+    var best_score: ?i32 = null;
+
+    if (matchTermSelf(term, target)) |score| {
+        best_score = score;
+    }
+
+    var syn_idx: usize = 0;
+    while (syn_idx < SynonymDb.synonym_count) : (syn_idx += 1) {
+        const syn = SynonymDb.getSynonym(syn_idx);
+        if (std.mem.eql(u8, syn.from, term)) {
+            if (matchTermDirect(syn.to, target)) |score| {
+                if (best_score) |best| {
+                    if (score > best) {
+                        best_score = score;
+                    }
+                } else {
+                    best_score = score;
+                }
+            }
+        }
+    }
+
+    return best_score;
 }
 
 /// Matches multiple space-separated terms in the query.
@@ -444,7 +499,7 @@ test "verify all entries" {
 
 test "embedded database check" {
     try std.testing.expectEqualSlices(u8, "EMJG", EmojiDb.magic);
-    try std.testing.expectEqual(@as(u16, 1), EmojiDb.version);
+    try std.testing.expectEqual(@as(u16, 2), EmojiDb.version);
     try std.testing.expect(EmojiDb.count > 0);
 
     const first = EmojiDb.getEntry(0);
@@ -602,5 +657,80 @@ test "prefix filtering by emoji width (e: and t:)" {
     for (top_matches[0..top_count]) |m| {
         const entry = EmojiDb.getEntry(m.index);
         try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(entry.emoji));
+    }
+}
+
+test "synonym search ranking" {
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+
+    _ = search("car", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count >= 2);
+
+    var car_pos: ?usize = null;
+    var tram_pos: ?usize = null;
+
+    var pos: usize = 0;
+    while (pos < top_count) : (pos += 1) {
+        const entry = EmojiDb.getEntry(top_matches[pos].index);
+        if (std.mem.eql(u8, entry.emoji, "🚗")) {
+            car_pos = pos;
+        } else if (std.mem.eql(u8, entry.emoji, "🚋")) {
+            tram_pos = pos;
+        }
+    }
+
+    try std.testing.expect(car_pos != null);
+    try std.testing.expect(tram_pos != null);
+    try std.testing.expect(car_pos.? < tram_pos.?);
+
+    // Test new synonyms
+    top_count = 0;
+    _ = search("auto", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    var found_car = false;
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        if (std.mem.eql(u8, entry.emoji, "🚗")) {
+            found_car = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_car);
+}
+
+test "localization strings JSON files match spec.Strings struct" {
+    const allocator = std.testing.allocator;
+
+    const Strings = struct {
+        search_prompt: []const u8,
+        search_placeholder: []const u8,
+        status_help_hint: []const u8,
+        status_matches: []const u8,
+        status_help_hint_wide: []const u8,
+        status_matches_wide: []const u8,
+        help_title: []const u8,
+        help_lines: []const []const u8,
+        help_lines_wide: []const []const u8,
+    };
+
+    const embedded_specs = [_][]const u8{
+        @embedFile("spec_strings_es"),
+        @embedFile("spec_strings_pt"),
+        @embedFile("spec_strings_fr"),
+        @embedFile("spec_strings_it"),
+        @embedFile("spec_strings_de"),
+        @embedFile("spec_strings_pl"),
+        @embedFile("spec_strings_ru"),
+        @embedFile("spec_strings_uk"),
+        @embedFile("spec_strings_nl"),
+        @embedFile("spec_strings_tr"),
+    };
+
+    for (embedded_specs) |spec_json| {
+        // Parse and validate using JSON parser directly into Strings struct.
+        // This guarantees every required key is present and holds the correct type.
+        var parsed = try std.json.parseFromSlice(Strings, allocator, spec_json, .{ .ignore_unknown_fields = true });
+        parsed.deinit();
     }
 }

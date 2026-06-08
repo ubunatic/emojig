@@ -15,7 +15,8 @@
       "search_shade_fg": 238,
       "border_shade_fg": 236,
       "terminal_bg": "#1c1c1c",
-      "terminal_fg": "#a8a8a8"
+      "terminal_fg": "#a8a8a8",
+      "terminal_border": "#3c3c3c"
     },
     "light": {
       "grid_fg": 238,
@@ -26,7 +27,8 @@
       "search_shade_fg": 251,
       "border_shade_fg": 252,
       "terminal_bg": "#eeeeee",
-      "terminal_fg": "#444444"
+      "terminal_fg": "#444444",
+      "terminal_border": "#cccccc"
     }
   }
 }

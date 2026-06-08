@@ -1,0 +1,25 @@
+{
+  "description": "Emoji seçici arayüz metinleri (Türkçe).",
+  "search_prompt": " 🔍 ",
+  "search_placeholder": "ara…",
+  "status_help_hint": " ?:yardım  ↕↔|↵|Esc",
+  "status_matches": " {count}  ↕↔|↵|Esc",
+  "status_help_hint_wide": " ?:yardım e:gör t:metin  ↕↔|↵|Esc",
+  "status_matches_wide": " {count} e:gör t:metin  ↕↔|↵|Esc",
+  "help_title": "Yardım ve Kısayol Tuşları:",
+  "help_lines": [
+    "  Yazma: Arama",
+    "  Oklar: Gezinme",
+    "  Enter: Kopyala ve Çık",
+    "  Tab:   Temayı Değiştir",
+    "  Esc:   Çıkış"
+  ],
+  "help_lines_wide": [
+    "  Yazma       Bulanık emoji araması",
+    "  Oklar       Izgarada gezinme",
+    "  Üzerine Gel İmleç altındaki emojiyi önizle",
+    "  Tıkla/Enter Seçili emojiyi kopyala ve çık",
+    "  Tab         Temayı değiştir (açık/koyu)",
+    "  Esc/Ctrl-C  Seçiciden çık"
+  ]
+}

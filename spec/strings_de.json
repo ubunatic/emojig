@@ -1,0 +1,25 @@
+{
+  "description": "UI-Texte für die Emoji-Auswahl (Deutsch).",
+  "search_prompt": " 🔍 ",
+  "search_placeholder": "Suche…",
+  "status_help_hint": " ?:Hilfe  ↕↔|↵|Esc",
+  "status_matches": " {count}  ↕↔|↵|Esc",
+  "status_help_hint_wide": " ?:Hilfe e:Bild t:Text  ↕↔|↵|Esc",
+  "status_matches_wide": " {count} e:Bild t:Text  ↕↔|↵|Esc",
+  "help_title": "Hilfe & Tastenbelegung:",
+  "help_lines": [
+    "  Tippen: Suchen",
+    "  Pfeile: Navigieren",
+    "  Enter:  Kopieren & Beenden",
+    "  Tab:    Design umschalten",
+    "  Esc:    Beenden"
+  ],
+  "help_lines_wide": [
+    "  Tippen      Fuzzy-Suche nach Emojis",
+    "  Pfeile      Navigieren im Gitter",
+    "  Hover       Vorschau des Emojis unter der Maus",
+    "  Klick/Enter Ausgewähltes Emoji kopieren & beenden",
+    "  Tab         Design umschalten (hell/dunkel)",
+    "  Esc/Strg-C  Auswahl beenden"
+  ]
+}

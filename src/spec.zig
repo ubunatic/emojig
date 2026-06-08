@@ -1,0 +1,212 @@
+// SPDX-FileCopyrightText: 2026 Uwe Jugel
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+//! Runtime loader for the declarative UI spec (`spec/*.json`).
+//!
+//! These JSON files are the single source of truth for the layout, theme,
+//! key bindings, and UI strings, shared with the Go `mojigo` port. They are
+//! embedded into the binary (see build.zig anonymous imports) and parsed once
+//! at startup into a `Spec`. All allocations are made into a caller-provided
+//! arena that lives for the process lifetime (the hot picker loop stays
+//! allocation-free; parsing happens only at startup).
+//!
+//! Edit the JSON to change grid sizes, colors, bindings, or text — both the
+//! Zig app and mojigo pick the change up.
+
+const std = @import("std");
+const term = @import("term.zig");
+
+const layout_json = @embedFile("spec_layout");
+const theme_json = @embedFile("spec_theme");
+const keys_json = @embedFile("spec_keys");
+const strings_json = @embedFile("spec_strings");
+const strings_es = @embedFile("spec_strings_es");
+const strings_pt = @embedFile("spec_strings_pt");
+const strings_fr = @embedFile("spec_strings_fr");
+const strings_it = @embedFile("spec_strings_it");
+const strings_de = @embedFile("spec_strings_de");
+const strings_pl = @embedFile("spec_strings_pl");
+const strings_ru = @embedFile("spec_strings_ru");
+const strings_uk = @embedFile("spec_strings_uk");
+const strings_nl = @embedFile("spec_strings_nl");
+const strings_tr = @embedFile("spec_strings_tr");
+
+const parse_opts = std.json.ParseOptions{ .ignore_unknown_fields = true };
+
+// ---------------------------------------------------------------------------
+// Parsed JSON shapes (mirror spec/*.json; unknown "description" keys ignored)
+// ---------------------------------------------------------------------------
+
+pub const Dims = struct {
+    cols: usize,
+    rows: usize,
+    width: usize,
+};
+
+pub const Animation = struct {
+    /// Whether the block-shade exit-fade plays in TUI (inline terminal) mode.
+    exit_preview_tui: bool = true,
+    /// Whether the block-shade exit-fade plays in GUI (floating window) mode.
+    exit_preview_gui: bool = true,
+};
+
+pub const Layout = struct {
+    tui: Dims,
+    gui: Dims,
+    layout_overhead: usize,
+    max_query_len: usize,
+    animation: Animation = .{},
+};
+
+pub const PaletteSpec = struct {
+    grid_fg: u8,
+    selection_bg: u8,
+    selection_fg: u8,
+    search_bg: u8,
+    search_fg: u8,
+    search_shade_fg: u8,
+    border_shade_fg: u8,
+    terminal_bg: []const u8,
+    terminal_fg: []const u8,
+    terminal_border: []const u8,
+};
+
+pub const Theme = struct {
+    icons: struct {
+        dark: []const u8,
+        light: []const u8,
+        system: []const u8,
+    },
+    themes: struct {
+        dark: PaletteSpec,
+        light: PaletteSpec,
+    },
+};
+
+pub const Keys = struct {
+    bindings: std.json.ArrayHashMap([]const u8),
+};
+
+pub const Strings = struct {
+    search_prompt: []const u8,
+    search_placeholder: []const u8,
+    status_help_hint: []const u8,
+    status_matches: []const u8,
+    status_help_hint_wide: []const u8,
+    status_matches_wide: []const u8,
+    help_title: []const u8,
+    help_lines: []const []const u8,
+    help_lines_wide: []const []const u8,
+};
+
+// ---------------------------------------------------------------------------
+// Spec bundle
+// ---------------------------------------------------------------------------
+
+pub const Spec = struct {
+    layout: Layout,
+    theme: Theme,
+    keys: Keys,
+    strings: Strings,
+    // term.Palette escape strings built at load from the color indices above.
+    dark_palette: term.Palette,
+    light_palette: term.Palette,
+
+    /// Logical key name -> action ("quit", "select", ...), or null if unbound.
+    /// The input layer decodes raw terminal bytes into the logical names.
+    pub fn actionFor(self: *const Spec, logical_name: []const u8) ?[]const u8 {
+        return self.keys.bindings.map.get(logical_name);
+    }
+
+    /// Theme toggle icon for the given effective theme.
+    pub fn iconFor(self: *const Spec, t: term.Theme) []const u8 {
+        return switch (t) {
+            .dark => self.theme.icons.dark,
+            .light => self.theme.icons.light,
+            .system => self.theme.icons.system,
+        };
+    }
+
+    /// Rendering palette for an effective (non-system) theme.
+    pub fn paletteFor(self: *const Spec, t: term.Theme, sys: term.Theme) term.Palette {
+        const eff = if (t == .system) sys else t;
+        return switch (eff) {
+            .light => self.light_palette,
+            .dark, .system => self.dark_palette,
+        };
+    }
+
+    /// Terminal OSC bg/fg hex (with leading '#') for an effective theme.
+    pub fn terminalColors(self: *const Spec, t: term.Theme, sys: term.Theme) struct { bg: []const u8, fg: []const u8 } {
+        const eff = if (t == .system) sys else t;
+        const p = if (eff == .light) self.theme.themes.light else self.theme.themes.dark;
+        return .{ .bg = p.terminal_bg, .fg = p.terminal_fg };
+    }
+};
+
+/// Parse all four spec files into `arena`. The returned `Spec` (and every slice
+/// it references) lives as long as `arena` is not freed — pass a process-lifetime
+/// arena and never deinit it.
+pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
+    const layout = try std.json.parseFromSliceLeaky(Layout, arena, layout_json, parse_opts);
+    const theme = try std.json.parseFromSliceLeaky(Theme, arena, theme_json, parse_opts);
+    const keys = try std.json.parseFromSliceLeaky(Keys, arena, keys_json, parse_opts);
+
+    var strings_content: []const u8 = strings_json;
+    if (lang) |l| {
+        var lang_buf: [16]u8 = undefined;
+        const len = @min(l.len, lang_buf.len);
+        for (l[0..len], 0..len) |c, i| {
+            lang_buf[i] = std.ascii.toLower(c);
+        }
+        const l_norm = lang_buf[0..len];
+
+        if (std.mem.startsWith(u8, l_norm, "es")) {
+            strings_content = strings_es;
+        } else if (std.mem.startsWith(u8, l_norm, "pt")) {
+            strings_content = strings_pt;
+        } else if (std.mem.startsWith(u8, l_norm, "fr")) {
+            strings_content = strings_fr;
+        } else if (std.mem.startsWith(u8, l_norm, "it")) {
+            strings_content = strings_it;
+        } else if (std.mem.startsWith(u8, l_norm, "de")) {
+            strings_content = strings_de;
+        } else if (std.mem.startsWith(u8, l_norm, "pl")) {
+            strings_content = strings_pl;
+        } else if (std.mem.startsWith(u8, l_norm, "ru")) {
+            strings_content = strings_ru;
+        } else if (std.mem.startsWith(u8, l_norm, "uk")) {
+            strings_content = strings_uk;
+        } else if (std.mem.startsWith(u8, l_norm, "nl")) {
+            strings_content = strings_nl;
+        } else if (std.mem.startsWith(u8, l_norm, "tr")) {
+            strings_content = strings_tr;
+        }
+    }
+
+    const strings = try std.json.parseFromSliceLeaky(Strings, arena, strings_content, parse_opts);
+
+    return .{
+        .layout = layout,
+        .theme = theme,
+        .keys = keys,
+        .strings = strings,
+        .dark_palette = try buildPalette(arena, theme.themes.dark),
+        .light_palette = try buildPalette(arena, theme.themes.light),
+    };
+}
+
+/// Build a `term.Palette` (ANSI escape strings) from a `PaletteSpec`'s
+/// xterm-256 color indices. Mirrors the former compile-time palettes in
+/// src/term.zig: `bg`/`border_bg` are intentionally empty.
+fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec) !term.Palette {
+    return .{
+        .bg = "",
+        .fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.grid_fg}),
+        .selection_bg = try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ p.selection_bg, p.selection_fg }),
+        .search_bg = try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ p.search_bg, p.search_fg }),
+        .border_bg = "",
+        .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.search_shade_fg}),
+        .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.border_shade_fg}),
+    };
+}

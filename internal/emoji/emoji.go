@@ -54,6 +54,7 @@ type DB struct {
 	// DisableZWJ drops ZWJ-sequence emoji from results to avoid the
 	// double-glyph rendering seen on VTE-based terminals (Tilix, GNOME).
 	DisableZWJ bool
+	Synonyms   map[string][]string
 }
 
 // detectDisableZWJ mirrors the env logic in src/root.zig:search. Explicit
@@ -78,9 +79,18 @@ func Load() (*DB, error) {
 	if err := json.Unmarshal(emojig.EmojiJSON, &raw); err != nil {
 		return nil, err
 	}
+	type synonymsFile struct {
+		Synonyms map[string][]string `json:"synonyms"`
+	}
+	var rawSyn synonymsFile
+	if err := json.Unmarshal(emojig.SynonymsJSON, &rawSyn); err != nil {
+		return nil, err
+	}
+
 	db := &DB{
 		Entries:    make([]Entry, 0, len(raw)),
 		DisableZWJ: detectDisableZWJ(),
+		Synonyms:   rawSyn.Synonyms,
 	}
 	for _, r := range raw {
 		if r.Emoji == "" {
@@ -182,7 +192,7 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 		if filterWidth > 0 && Width(db.Entries[i].Emoji) != filterWidth {
 			continue
 		}
-		score, ok := fuzzyMatch(actualQuery, db.Entries[i].Search)
+		score, ok := fuzzyMatch(actualQuery, db.Entries[i].Search, db.Synonyms)
 		if !ok {
 			continue
 		}

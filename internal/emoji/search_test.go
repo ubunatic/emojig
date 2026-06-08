@@ -61,3 +61,37 @@ func TestSearchPrefixFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchSynonymRanking(t *testing.T) {
+	db, err := Load()
+	if err != nil {
+		t.Fatalf("failed to load db: %v", err)
+	}
+
+	top, _ := db.Search("car", 24)
+	if len(top) < 2 {
+		t.Fatalf("expected at least 2 matches for query 'car', got %d", len(top))
+	}
+
+	carPos := -1
+	tramPos := -1
+	for pos, m := range top {
+		e := db.Entries[m.Index]
+		if e.Emoji == "🚗" {
+			carPos = pos
+		} else if e.Emoji == "🚋" {
+			tramPos = pos
+		}
+	}
+
+	if carPos == -1 {
+		t.Errorf("expected to find automobile '🚗' in search results for 'car'")
+	}
+	if tramPos == -1 {
+		t.Errorf("expected to find tram car '🚋' in search results for 'car'")
+	}
+	if carPos != -1 && tramPos != -1 && carPos >= tramPos {
+		t.Errorf("expected automobile '🚗' (rank %d) to outrank tram car '🚋' (rank %d)", carPos, tramPos)
+	}
+}
+

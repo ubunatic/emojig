@@ -1,0 +1,25 @@
+{
+  "description": "Chaînes de caractères de l'interface utilisateur pour le sélecteur (Français).",
+  "search_prompt": " 🔍 ",
+  "search_placeholder": "rechercher…",
+  "status_help_hint": " ?:aide  ↕↔|↵|Échap",
+  "status_matches": " {count}  ↕↔|↵|Échap",
+  "status_help_hint_wide": " ?:aide e:img t:txt  ↕↔|↵|Échap",
+  "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Échap",
+  "help_title": "Aide et Raccourcis Clavier :",
+  "help_lines": [
+    "  Saisir : Rechercher",
+    "  Flèches : Naviguer",
+    "  Entrée :  Copier & Quitter",
+    "  Tab :     Changer de Thème",
+    "  Échap :   Quitter"
+  ],
+  "help_lines_wide": [
+    "  Saisir      Recherche floue d'émojis",
+    "  Flèches     Naviguer dans la grille",
+    "  Survoler    Aperçu de l'émoji sous le curseur",
+    "  Clic/Entrée Copier l'émoji sélectionné & quitter",
+    "  Tab         Changer de thème (clair/sombre)",
+    "  Échap/Ctrl-C Quitter le sélecteur"
+  ]
+}
