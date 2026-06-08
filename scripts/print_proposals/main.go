@@ -42,7 +42,8 @@ const (
 func main() {
 	fmt.Println(bold + "Emojig TUI Render Proposals" + reset)
 	fmt.Println("This script demonstrates the visual designs directly in your terminal.")
-	fmt.Println("Review how each style handles alignment, colors, and layout margins without box-drawing characters.\n")
+	fmt.Println("Review how each style handles alignment, colors, and layout margins without box-drawing characters.")
+	fmt.Println()
 
 	fmt.Println(bold + "=== 1. THE ASYMMETRIC SANDWICH ===" + reset)
 	fmt.Println("Uses full-width color bands at top and bottom to frame the view. Grid sides are completely open.")
@@ -51,7 +52,8 @@ func main() {
 	renderSandwich(darkSearchBg, darkSearchFg, darkSelectionBg, darkSelectionFg)
 	fmt.Println("\n" + bold + "--- Light Theme Variant ---" + reset)
 	renderSandwich(lightSearchBg, lightSearchFg, lightSelectionBg, lightSelectionFg)
-	fmt.Println("\n")
+	fmt.Println()
+	fmt.Println()
 
 	fmt.Println(bold + "=== 2. THE TERMINAL-EDGE BLOCK ===" + reset)
 	fmt.Println("Every row of the TUI is painted with a solid background color up to the physical right edge of the terminal.")
@@ -60,7 +62,8 @@ func main() {
 	renderBlock(darkGridBg, darkGridFg, darkSearchBg, darkSearchFg, darkSelectionBg, darkSelectionFg)
 	fmt.Println("\n" + bold + "--- Light Theme Variant ---" + reset)
 	renderBlock(lightGridBg, lightGridFg, lightSearchBg, lightSearchFg, lightSelectionBg, lightSelectionFg)
-	fmt.Println("\n")
+	fmt.Println()
+	fmt.Println()
 
 	fmt.Println(bold + "=== 3. THE ISOLATED CLI ===" + reset)
 	fmt.Println("Minimalist developer design. No horizontal background blocks. Complete decoupling of columns and rows.")
@@ -69,7 +72,8 @@ func main() {
 	renderIsolated(darkSelectionBg, darkSelectionFg)
 	fmt.Println("\n" + bold + "--- Light Theme Variant ---" + reset)
 	renderIsolated(lightSelectionBg, lightSelectionFg)
-	fmt.Println("\n")
+	fmt.Println()
+	fmt.Println()
 
 	fmt.Println(bold + "Summary & Technical Analysis:" + reset)
 	fmt.Println("1. " + bold + "\\x1b[K (Erase to Line End)" + reset + " is the key: it paints the active background color all the way to the right margin.")

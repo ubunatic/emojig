@@ -280,7 +280,7 @@ func renderTUI(pal Palette, transp bool, animMode string, step int, maxSteps int
 			fmt.Print(currentFG.ToFG() + " ")
 			for col := 0; col < 6; col++ {
 				cell := mockGrid[gridRow][col]
-				
+
 				// Dither check
 				dithered := false
 				if animMode == "dither" && step > 0 {

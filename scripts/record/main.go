@@ -355,7 +355,7 @@ xterm*allowSendEvents: true
 		fmt.Printf("Warning focusing window: %v\n", err)
 	}
 	time.Sleep(500 * time.Millisecond)
-	
+
 	if err := runXdotool("type", "--delay", "150", "cat"); err != nil {
 		return err
 	}

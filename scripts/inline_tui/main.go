@@ -27,13 +27,13 @@ import (
 
 // ANSI sequences
 const (
-	cursorHide   = "\x1b[?25l"
-	cursorShow   = "\x1b[?25h"
-	cursorBlink  = "\x1b[?12h"
-	wrapOff      = "\x1b[?7l"
-	wrapOn       = "\x1b[?7h"
-	clearLine    = "\x1b[2K"
-	cursorDown   = "\x1b[B\r"
+	cursorHide  = "\x1b[?25l"
+	cursorShow  = "\x1b[?25h"
+	cursorBlink = "\x1b[?12h"
+	wrapOff     = "\x1b[?7l"
+	wrapOn      = "\x1b[?7h"
+	clearLine   = "\x1b[2K"
+	cursorDown  = "\x1b[B\r"
 )
 
 func cursorUp(n int) string { return fmt.Sprintf("\x1b[%dA\r", n) }

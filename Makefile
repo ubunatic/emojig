@@ -24,6 +24,8 @@ picker: ⚙️  # launch the emoji picker in a floating foot window (non-blockin
 
 test: ⚙️  # run the unit tests
 	zig build test
+	go vet ./...
+	go test ./...
 
 tui: ⚙️  # run TUI mode in the current terminal
 	zig build tui
@@ -35,10 +37,10 @@ browse: ⚙️  # open the website homepage in the default web browser
 	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"
 
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
-	@timeout 10 go run scripts/screenshot.go zig-out/bin/emojig
+	@timeout 10 go run ./scripts/screenshot/ zig-out/bin/emojig
 
 record: ⚙️ build  # headlessly record high-quality webm demo videos using Xvfb, xterm, and xdotool
-	go run scripts/record_demo.go
+	go run ./scripts/record/
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
@@ -63,10 +65,10 @@ ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/
 	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
 	@echo "Waiting 3s for terminals to settle..."
 	@sleep 3
-	@go run scripts/tty_bench.go
+	@go run ./scripts/tty_bench/
 
 pack: ⚙️  # compress and pack emoji database json into src/emojis.bin
-	@go run scripts/pack_emojis.go
+	@go run ./scripts/pack_emojis/
 
 reuse: ⚙️  # verify license compliance linting
 	@reuse lint
@@ -107,9 +109,12 @@ uninstall: ⚙️  # remove binary, shell integration, and desktop entry
 	@rm -f  ~/.local/share/applications/emojig-picker.desktop
 	@echo "✅ emojig uninstalled"
 
-install: ⚙️  # silent install for testing during development
-	@zig build shell-install -Doptimize=ReleaseSmall >/dev/null && echo "✅ emojig installed" || \
-	 zig build shell-install -Doptimize=ReleaseSmall  # fallback to non-silent on error
+install: ⚙️  # install binary, shell integrations, and desktop launcher
+	@zig build shell-install -Doptimize=ReleaseSmall >/dev/null || (zig build shell-install -Doptimize=ReleaseSmall && exit 1)
+	@echo "✅ Emojig installed successfully!"
+	@echo "   - Binary:   ~/.local/bin/emojig"
+	@echo "   - Shells:   ~/.local/share/emojig/shell/emojig.{bash,zsh,fish}"
+	@echo "   - Launcher: ~/.local/share/applications/emojig-picker.desktop"
 
 SSH_ARCH ?= aarch64-linux-musl
 
@@ -127,6 +132,8 @@ preflight: ⚙️  # run license check, unit tests, and code formatting lint
 	reuse lint
 	zig build test
 	zig fmt --check src/
+	go vet ./...
+	go test ./...
 	@echo "✅ preflight OK"
 
 export MINISIGN_KEY_FILE ?= $(HOME)/.minisign/minisign.key
@@ -175,7 +182,7 @@ info: ⚙️  # show detailed info about release files and related vars
 	@git diff --numstat | sed 's/^/#   /g'
 	
 release-diff: ⚙️  # show a git summary of changes since the last published release
-	@VERSION_PUBLISHED="$(VERSION_PUBLISHED)" go run scripts/release_diff.go
+	@VERSION_PUBLISHED="$(VERSION_PUBLISHED)" go run ./scripts/release_diff/
 
 release-publish: release-build ⚙️  # sign SHA256SUMS and publish draft release to Codeberg
 	minisign -S -s "$${MINISIGN_KEY_FILE:-$$HOME/.minisign/minisign.key}" -m dist/SHA256SUMS -t "emojig v$(VERSION)"
@@ -206,13 +213,13 @@ release-full: ⚙️  # tag, push, build, and publish release
 	@$(MAKE) release-publish  # build, sign, and publish
 
 bump-patch: ⚙️  # bump patch version in build.zig.zon
-	@go run scripts/bump_version.go patch
+	@go run ./scripts/bump_version/ patch
 
 bump-minor: ⚙️  # bump minor version in build.zig.zon
-	@go run scripts/bump_version.go minor
+	@go run ./scripts/bump_version/ minor
 
 bump-major: ⚙️  # bump major version in build.zig.zon
-	@go run scripts/bump_version.go major
+	@go run ./scripts/bump_version/ major
 
 tag: ⚙️  # commit version/changelog changes and tag the release
 	git commit -am "release: v$(VERSION)" --allow-empty
