@@ -10,8 +10,8 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 
 **Website:** https://ubunatic.com/emojig
 
-<img src="docs/emojig-screen-gui-editor-light-v0.1.4.png" height="300"/>
-<img src="docs/emojig-screen-tui-tilix-dark-v0.1.4.png" height="300"/>
+<img src="docs/media/emojig-screen-gui-editor-light-v0.1.4.png" height="300"/>
+<img src="docs/media/emojig-screen-tui-tilix-dark-v0.1.4.png" height="300"/>
 
 
 ## Features

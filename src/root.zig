@@ -36,7 +36,19 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         break :blk false;
     };
 
-    if (query.len == 0) {
+    var actual_query = query;
+    var filter_width: ?usize = null;
+    if (query.len >= 2) {
+        if ((query[0] == 'e' or query[0] == 'E') and query[1] == ':') {
+            actual_query = query[2..];
+            filter_width = 2;
+        } else if ((query[0] == 't' or query[0] == 'T') and query[1] == ':') {
+            actual_query = query[2..];
+            filter_width = 1;
+        }
+    }
+
+    if (actual_query.len == 0) {
         var mru_indices: [mru.MAX_MRU]usize = undefined;
         var mru_resolved: usize = 0;
 
@@ -44,6 +56,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         while (m < mru.getCount() and top_count.* < limit) : (m += 1) {
             const mru_emoji = mru.getEntry(m);
             if (disable_zwj and std.mem.indexOf(u8, mru_emoji, "\xe2\x80\x8d") != null) continue;
+            if (filter_width) |fw| {
+                if (getEmojiWidth(mru_emoji) != fw) continue;
+            }
 
             var db_idx: usize = 0;
             while (db_idx < EmojiDb.count) : (db_idx += 1) {
@@ -62,6 +77,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         while (db_idx < EmojiDb.count and top_count.* < limit) : (db_idx += 1) {
             const entry = EmojiDb.getEntry(db_idx);
             if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+            if (filter_width) |fw| {
+                if (getEmojiWidth(entry.emoji) != fw) continue;
+            }
 
             var already_shown = false;
             var k: usize = 0;
@@ -81,6 +99,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         while (count_idx < EmojiDb.count) : (count_idx += 1) {
             const entry = EmojiDb.getEntry(count_idx);
             if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+            if (filter_width) |fw| {
+                if (getEmojiWidth(entry.emoji) != fw) continue;
+            }
             total += 1;
         }
         return total;
@@ -91,8 +112,11 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
     while (i < EmojiDb.count) : (i += 1) {
         const entry = EmojiDb.getEntry(i);
         if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
+        if (filter_width) |fw| {
+            if (getEmojiWidth(entry.emoji) != fw) continue;
+        }
 
-        if (fuzzyMatch(query, entry.search)) |score| {
+        if (fuzzyMatch(actual_query, entry.search)) |score| {
             total += 1;
             const match = Match{ .index = i, .score = score };
             var insert_pos: usize = 0;
@@ -191,6 +215,19 @@ fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     // Penalty for starting late in the target string
     const start_idx = target_idx - term.len;
     score -= @intCast(start_idx);
+
+    // Exact word match bonus (consecutive match bounded by word boundaries)
+    if (consecutive == term.len) {
+        const start_pos = target_idx - term.len;
+        const is_start_boundary = (start_pos == 0 or target[start_pos - 1] == ' ');
+        const is_end_boundary = (target_idx == target.len or target[target_idx] == ' ');
+        if (is_start_boundary and is_end_boundary) {
+            score += 100;
+        }
+    }
+
+    // Tie-breaker penalty for longer targets (prefer shorter, more precise descriptions)
+    score -= @intCast(target.len);
 
     return score;
 }
@@ -307,6 +344,87 @@ pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
     return out_buf[0..out_idx];
 }
 
+pub fn getEmojiWidth(emoji: []const u8) usize {
+    if (emoji.len == 0) return 0;
+
+    // If it contains the Variation Selector 16 (\xef\xb8\x8f), it is always rendered as double-width
+    if (std.mem.indexOf(u8, emoji, "\xef\xb8\x8f") != null) {
+        return 2;
+    }
+
+    // Decode the first UTF-8 codepoint
+    const view = std.unicode.Utf8View.init(emoji) catch return 2;
+    var iterator = view.iterator();
+    const cp = iterator.nextCodepoint() orelse return 2;
+
+    // Check if it's in a range of double-width characters:
+    // 1. Emojis starting from U+1F000
+    if (cp >= 0x1F000) {
+        return 2;
+    }
+
+    // 2. Certain specific standard double-width emoji code points in the BMP:
+    if (cp == 0x231A or cp == 0x231B or cp == 0x23F3 or
+        (cp >= 0x23E9 and cp <= 0x23EC) or
+        cp == 0x23F0 or
+        cp == 0x2B50 or cp == 0x2B55 or cp == 0x2B1B or cp == 0x2B1C or
+        (cp >= 0x3000 and cp <= 0x32FF))
+    {
+        return 2;
+    }
+
+    // Specific BMP emoji code points that don't have VS16 in the JSON
+    if (cp == 0x25FD or cp == 0x25FE or // ◽, ◾
+        cp == 0x2614 or cp == 0x2615 or // ☔, ☕
+        (cp >= 0x2648 and cp <= 0x2653) or // ♈..♓
+        cp == 0x267F or // ♿
+        cp == 0x2693 or // ⚓
+        cp == 0x26A1 or // ⚡
+        cp == 0x26BD or cp == 0x26BE or // ⚽, ⚾
+        cp == 0x26C4 or cp == 0x26C5 or // ⛄, ⛅
+        cp == 0x26D4 or // ⛔
+        cp == 0x26EA or // ⛪
+        cp == 0x26F2 or cp == 0x26F3 or // ⛲, ⛳
+        cp == 0x26F5 or // ⛵
+        cp == 0x26FA or // ⛺
+        cp == 0x26FD or // ⛽
+        cp == 0x2705 or // ✅
+        cp == 0x270A or cp == 0x270B or // ✊, ✋
+        cp == 0x2728 or // ✨
+        cp == 0x274C or // ❌
+        cp == 0x274E or // ❎
+        (cp >= 0x2753 and cp <= 0x2755) or cp == 0x2757 or // ❓, ❔, ❕, ❗
+        (cp >= 0x2795 and cp <= 0x2797) or // ➕, ➖, ➗
+        cp == 0x27B0 or cp == 0x27BF or // ➰, ➿
+        cp == 0x26AA or cp == 0x26AB or // ⚪, ⚫
+        cp == 0x26CE) // ⛎
+    {
+        return 2;
+    }
+
+    return 1;
+}
+
+test "getEmojiWidth tests" {
+    // Double-width standard emojis:
+    try std.testing.expectEqual(@as(usize, 2), getEmojiWidth("😀"));
+    try std.testing.expectEqual(@as(usize, 2), getEmojiWidth("☕"));
+    try std.testing.expectEqual(@as(usize, 2), getEmojiWidth("⚡"));
+    try std.testing.expectEqual(@as(usize, 2), getEmojiWidth("❤️"));
+
+    // Single-width quasi-emojis:
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("←"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("↑"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("↓"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("→"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("✓"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("✔"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("♔"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("$"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("€"));
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth("α"));
+}
+
 test "verify all entries" {
     var i: usize = 0;
     var has_vs16 = false;
@@ -378,4 +496,111 @@ test "fuzzy matching with plurals and word stems" {
     try std.testing.expect(score_cars.? > 0);
     try std.testing.expect(score_racing.? > 0);
     try std.testing.expect(score_race.? > 0);
+}
+
+test "quasi-emoji search tests" {
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+
+    // Search for "leftwards"
+    _ = search("leftwards", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    var found_left = false;
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        if (std.mem.eql(u8, entry.emoji, "←")) {
+            found_left = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_left);
+
+    // Search for "rightwards"
+    top_count = 0;
+    _ = search("rightwards", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    var found_right = false;
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        if (std.mem.eql(u8, entry.emoji, "→")) {
+            found_right = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_right);
+
+    // Search for "checkmark"
+    top_count = 0;
+    _ = search("checkmark", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    var matched_checkmark = false;
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        if (std.mem.eql(u8, entry.emoji, "✓")) {
+            matched_checkmark = true;
+            break;
+        }
+    }
+    try std.testing.expect(matched_checkmark);
+}
+
+test "exact word and shorter description prioritization" {
+    // Both contain "heart" at the start, but "heart" is shorter and exact
+    const target1 = "heart";
+    const target2 = "heart with ribbon";
+
+    const score1 = fuzzyMatch("heart", target1);
+    const score2 = fuzzyMatch("heart", target2);
+
+    try std.testing.expect(score1.? > score2.?);
+
+    // Exact word match vs substring match in word
+    const target3 = "dog face";
+    const target4 = "hotdog";
+
+    const score3 = fuzzyMatch("dog", target3);
+    const score4 = fuzzyMatch("dog", target4);
+
+    try std.testing.expect(score3.? > score4.?);
+}
+
+test "prefix filtering by emoji width (e: and t:)" {
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+
+    // Search with "e:arrow"
+    top_count = 0;
+    _ = search("e:arrow", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        try std.testing.expectEqual(@as(usize, 2), getEmojiWidth(entry.emoji));
+    }
+
+    // Search with "t:arrow"
+    top_count = 0;
+    _ = search("t:arrow", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(entry.emoji));
+    }
+
+    // Search with empty prefix query: "e:"
+    top_count = 0;
+    _ = search("e:", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        try std.testing.expectEqual(@as(usize, 2), getEmojiWidth(entry.emoji));
+    }
+
+    // Search with empty prefix query: "t:"
+    top_count = 0;
+    _ = search("t:", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(entry.emoji));
+    }
 }

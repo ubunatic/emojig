@@ -1,7 +1,8 @@
-# Zig build directories
+# Zig/Go build directories
 .zig-cache/
 zig-out/
 dist/
+/mojigo
 
 # Downloaded raw emoji source datasets
 data/

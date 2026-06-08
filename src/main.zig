@@ -9,6 +9,7 @@ const mru = emojig.mru;
 const term_lib = @import("term.zig");
 const resize = @import("resize.zig");
 const host = @import("host.zig");
+const defaults = @import("defaults.zig");
 
 // ---------------------------------------------------------------------------
 // Embedded shell integration scripts
@@ -656,9 +657,14 @@ pub fn main(init: std.process.Init) !void {
         break :blk resize.parseMode(init.environ_map.get("EMOJIG_RESIZE_MODE"));
     };
 
+    // An explicit height (CLI --height, EMOJIG_HEIGHT, or config) is a total
+    // content-row count; it is converted to a grid-row count where `rows` is
+    // derived below. EMOJIG_ROWS (set by the GUI launcher) expresses grid rows
+    // directly and takes precedence over this override.
+    const height_override: ?usize = opt_height orelse env_height orelse cfg.height;
+
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
-    const final_width = opt_width orelse env_width orelse cfg.width orelse 25;
-    const final_height = opt_height orelse env_height orelse cfg.height orelse 10;
+    const final_width = opt_width orelse env_width orelse cfg.width orelse defaults.tui_width;
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
@@ -740,8 +746,6 @@ pub fn main(init: std.process.Init) !void {
         host.spawnGuiWindow(
             init,
             exe_path,
-            final_width,
-            final_height,
             final_theme,
             final_border,
             final_safe,
@@ -828,7 +832,15 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
-        const content_rows: usize = 10;
+        const cols: usize = if (init.environ_map.get("EMOJIG_COLS")) |v| std.fmt.parseInt(usize, v, 10) catch defaults.tui_cols else defaults.tui_cols;
+        const rows: usize = blk: {
+            if (init.environ_map.get("EMOJIG_ROWS")) |v| {
+                if (std.fmt.parseInt(usize, v, 10)) |n| break :blk n else |_| {}
+            }
+            if (height_override) |h| break :blk if (h > defaults.layout_overhead) h - defaults.layout_overhead else 1;
+            break :blk defaults.tui_rows;
+        };
+        const content_rows: usize = rows + defaults.layout_overhead;
         var final_h = if (show_border) content_rows + 2 else content_rows;
         if (final_debug) final_h += 2;
 
@@ -951,12 +963,10 @@ pub fn main(init: std.process.Init) !void {
         var query_buf: [64]u8 = undefined;
         var query_len: usize = 0;
 
-        const cols = 6;
-        const rows = 4;
         const total_cells = cols * rows;
 
         var selected_idx: ?usize = null;
-        var top_matches: [total_cells]emojig.Match = undefined;
+        var top_matches: [defaults.max_cells]emojig.Match = undefined;
         var top_count: usize = 0;
 
         var should_copy_and_exit = false;
@@ -988,6 +998,7 @@ pub fn main(init: std.process.Init) !void {
         };
 
         var total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+        selected_idx = if (top_count > 0) 0 else null;
 
         var read_buf: [64]u8 = undefined;
         const spaces = " " ** 512;
@@ -997,6 +1008,11 @@ pub fn main(init: std.process.Init) !void {
         var last_h: usize = final_h;
 
         while (true) {
+            if (query_len > 0 and query_buf[0] == '?') {
+                top_count = 0;
+                total_matches = 0;
+                selected_idx = null;
+            }
             const palette = effectivePalette(theme, system_theme);
 
             // ----------------------------------------------------------------
@@ -1006,9 +1022,9 @@ pub fn main(init: std.process.Init) !void {
 
             var ws_size = std.mem.zeroes(std.posix.winsize);
             const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_size));
-            const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else 27;
+            const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else content_width + 1;
             const current_h = if (size_rc == 0 and ws_size.row > 0) ws_size.row else 10;
-            const is_too_small = (current_w < 27);
+            const is_too_small = (current_w < content_width + 2);
             const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
             const prefix_cols = 3;
@@ -1032,7 +1048,7 @@ pub fn main(init: std.process.Init) !void {
                 current_total_rows += 1; // Top padding
                 current_total_rows += 1; // Search bar
                 current_total_rows += 1; // Spacer
-                current_total_rows += 4; // Grid rows
+                current_total_rows += rows; // Grid rows
                 current_total_rows += 1; // Spacer between grid and description
                 current_total_rows += 1; // Description
                 current_total_rows += 1; // Status bar
@@ -1178,8 +1194,18 @@ pub fn main(init: std.process.Init) !void {
                         try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.search_bg);
                         try writeAll(stdout_fd, "🔍 ");
-                        try writeAll(stdout_fd, query_buf[0..display_query_len]);
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                        if (query_len == 0) {
+                            const placeholder = "search\u{2026}";
+                            const placeholder_cols = 7;
+                            try writeAll(stdout_fd, palette.fg);
+                            try writeAll(stdout_fd, placeholder);
+                            try writeAll(stdout_fd, palette.search_bg);
+                            const ph_pad = if (pad_len >= placeholder_cols) pad_len - placeholder_cols else 0;
+                            try writeAll(stdout_fd, spaces[0..@min(ph_pad, spaces.len)]);
+                        } else {
+                            try writeAll(stdout_fd, query_buf[0..display_query_len]);
+                            try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                        }
                         const icon_hl = if (theme_hovered) palette.selection_bg else "";
                         const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
                         try writeAll(stdout_fd, icon_buf);
@@ -1187,108 +1213,197 @@ pub fn main(init: std.process.Init) !void {
                 }
                 try rw.endRow();
 
-                // Blank spacer row.
-                try writeAll(stdout_fd, "\x1b[2K\r");
-                try writeAll(stdout_fd, " ");
-                try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, palette.fg);
-                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                try rw.endRow();
-
-                // Grid rows.
-                var r: usize = 0;
-                while (r < rows) : (r += 1) {
+                const is_help_mode = (query_len > 0 and query_buf[0] == '?');
+                if (is_help_mode and !is_too_small) {
+                    const help_rows = rows + 3;
+                    const is_wide = (content_width >= 35);
+                    var h_idx: usize = 0;
+                    while (h_idx < help_rows) : (h_idx += 1) {
+                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        var text: []const u8 = "";
+                        if (is_wide) {
+                            const offset = if (help_rows >= 9) @as(usize, 1) else 0;
+                            if (h_idx >= offset and h_idx - offset < 7) {
+                                text = switch (h_idx - offset) {
+                                    0 => "Help & Keybindings:",
+                                    1 => "  Typing      Fuzzy search emojis",
+                                    2 => "  Arrows      Navigate the grid",
+                                    3 => "  Hover       Preview emoji under mouse",
+                                    4 => "  Click/Enter Copy selected emoji & exit",
+                                    5 => "  Tab         Toggle theme (light/dark)",
+                                    6 => "  Esc/Ctrl-C  Exit picker",
+                                    else => "",
+                                };
+                            }
+                        } else {
+                            const offset = if (help_rows >= 8) @as(usize, 1) else 0;
+                            if (h_idx >= offset and h_idx - offset < 6) {
+                                text = switch (h_idx - offset) {
+                                    0 => "Help & Keybindings:",
+                                    1 => "  Typing: Search",
+                                    2 => "  Arrows: Navigate",
+                                    3 => "  Enter:  Copy & Exit",
+                                    4 => "  Tab:    Toggle Theme",
+                                    5 => "  Esc:    Exit",
+                                    else => "",
+                                };
+                            }
+                        }
+                        const pad_len = if (content_width > text.len) content_width - text.len else 0;
+                        const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.bg, palette.fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                        try writeAll(stdout_fd, line);
+                        try rw.endRow();
+                    }
+                } else {
+                    // Blank spacer row.
                     try writeAll(stdout_fd, "\x1b[2K\r");
-                    if (is_too_small) {
-                        const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
-                        try writeAll(stdout_fd, grid_line);
-                    } else if (exit_preview) {
-                        // Preview frame: show only the selected cell as plain " emoji ",
-                        // all other cells blank ("    ").
-                        var cell_buffers: [6][64]u8 = undefined;
-                        var cell_strings: [6][]const u8 = undefined;
-                        var c: usize = 0;
-                        while (c < cols) : (c += 1) {
-                            const idx = r * cols + c;
-                            if (selected_idx) |sel| {
-                                if (idx == sel and idx < top_count) {
+                    try writeAll(stdout_fd, " ");
+                    try writeAll(stdout_fd, palette.bg);
+                    try writeAll(stdout_fd, palette.fg);
+                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                    try rw.endRow();
+
+                    // Grid rows.
+                    var r: usize = 0;
+                    while (r < rows) : (r += 1) {
+                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        if (is_too_small) {
+                            const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(max_w, spaces.len)] });
+                            try writeAll(stdout_fd, grid_line);
+                        } else if (exit_preview) {
+                            // Preview frame: show only the selected cell as plain " emoji ",
+                            // all other cells blank ("    ").
+                            var cell_buffers: [defaults.max_cols][64]u8 = undefined;
+                            var cell_strings: [defaults.max_cols][]const u8 = undefined;
+                            var c: usize = 0;
+                            while (c < cols) : (c += 1) {
+                                const idx = r * cols + c;
+                                if (selected_idx) |sel| {
+                                    if (idx == sel and idx < top_count) {
+                                        const m = top_matches[idx];
+                                        const entry = emojig.EmojiDb.getEntry(m.index);
+                                        var strip_buf: [32]u8 = undefined;
+                                        const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
+                                        if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
+                                        } else {
+                                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                        }
+                                    } else {
+                                        cell_strings[c] = "    ";
+                                    }
+                                } else {
+                                    cell_strings[c] = "    ";
+                                }
+                            }
+                            var gl_pos: usize = 0;
+                            for ([_][]const u8{ " ", palette.bg, palette.fg }) |s| {
+                                @memcpy(line_buf[gl_pos..][0..s.len], s);
+                                gl_pos += s.len;
+                            }
+                            c = 0;
+                            while (c < cols) : (c += 1) {
+                                const cs = cell_strings[c];
+                                @memcpy(line_buf[gl_pos..][0..cs.len], cs);
+                                gl_pos += cs.len;
+                            }
+                            const grid_rem = if (content_width > cols * 4) content_width - cols * 4 else 0;
+                            const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
+                            @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
+                            gl_pos += rem_sp.len;
+                            try writeAll(stdout_fd, line_buf[0..gl_pos]);
+                        } else {
+                            var cell_buffers: [defaults.max_cols][64]u8 = undefined;
+                            var cell_strings: [defaults.max_cols][]const u8 = undefined;
+
+                            var c: usize = 0;
+                            while (c < cols) : (c += 1) {
+                                const idx = r * cols + c;
+                                if (idx < top_count) {
                                     const m = top_matches[idx];
                                     const entry = emojig.EmojiDb.getEntry(m.index);
                                     var strip_buf: [32]u8 = undefined;
                                     const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                    if (selected_idx) |sel| {
+                                        if (idx == sel) {
+                                            if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s} ]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                                            } else {
+                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
+                                            }
+                                        } else {
+                                            if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
+                                            } else {
+                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                            }
+                                        }
+                                    } else {
+                                        if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
+                                        } else {
+                                            cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                        }
+                                    }
                                 } else {
                                     cell_strings[c] = "    ";
                                 }
-                            } else {
-                                cell_strings[c] = "    ";
                             }
-                        }
-                        const grid_rem = if (content_width > 24) content_width - 24 else 0;
-                        const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
-                        try writeAll(stdout_fd, grid_line);
-                    } else {
-                        var cell_buffers: [6][64]u8 = undefined;
-                        var cell_strings: [6][]const u8 = undefined;
 
-                        var c: usize = 0;
-                        while (c < cols) : (c += 1) {
-                            const idx = r * cols + c;
-                            if (idx < top_count) {
-                                const m = top_matches[idx];
-                                const entry = emojig.EmojiDb.getEntry(m.index);
-                                var strip_buf: [32]u8 = undefined;
-                                const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                                if (selected_idx) |sel| {
-                                    if (idx == sel) {
-                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.bg, palette.fg });
-                                    } else {
-                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
-                                    }
-                                } else {
-                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
-                                }
-                            } else {
-                                cell_strings[c] = "    ";
+                            var gl_pos: usize = 0;
+                            for ([_][]const u8{ " ", palette.bg, palette.fg }) |s| {
+                                @memcpy(line_buf[gl_pos..][0..s.len], s);
+                                gl_pos += s.len;
                             }
+                            c = 0;
+                            while (c < cols) : (c += 1) {
+                                const cs = cell_strings[c];
+                                @memcpy(line_buf[gl_pos..][0..cs.len], cs);
+                                gl_pos += cs.len;
+                            }
+                            const grid_rem = if (content_width > cols * 4) content_width - cols * 4 else 0;
+                            const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
+                            @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
+                            gl_pos += rem_sp.len;
+                            try writeAll(stdout_fd, line_buf[0..gl_pos]);
                         }
-
-                        const grid_rem = if (content_width > 24) content_width - 24 else 0;
-                        const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}{s}{s}{s}{s}", .{ palette.bg, palette.fg, cell_strings[0], cell_strings[1], cell_strings[2], cell_strings[3], cell_strings[4], cell_strings[5], spaces[0..@min(grid_rem, spaces.len)] });
-                        try writeAll(stdout_fd, grid_line);
+                        try rw.endRow();
                     }
+
+                    // Spacer row between grid and description.
+                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, " ");
+                    try writeAll(stdout_fd, palette.bg);
+                    try writeAll(stdout_fd, palette.fg);
+                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                     try rw.endRow();
-                }
 
-                // Spacer row between grid and description.
-                try writeAll(stdout_fd, "\x1b[2K\r");
-                try writeAll(stdout_fd, " ");
-                try writeAll(stdout_fd, palette.bg);
-                try writeAll(stdout_fd, palette.fg);
-                try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                try rw.endRow();
-
-                // Description row.
-                try writeAll(stdout_fd, "\x1b[2K\r");
-                const max_len = if (content_width > 1) content_width - 1 else 0;
-                if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
-                    const pad_len_desc = max_w;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
-                    try writeAll(stdout_fd, name_line);
-                } else if (selected_idx != null and !is_too_small) {
-                    const sel = selected_idx.?;
-                    if (top_count > 0 and sel < top_count) {
-                        const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                        if (name.len > max_len and max_len >= 3) {
-                            const display_name = name[0 .. max_len - 3];
-                            const printed_cols = 1 + display_name.len + 3;
-                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)] });
-                            try writeAll(stdout_fd, name_line);
+                    // Description row.
+                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    const max_len = if (content_width > 1) content_width - 1 else 0;
+                    if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
+                        const pad_len_desc = max_w;
+                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
+                        try writeAll(stdout_fd, name_line);
+                    } else if (selected_idx != null and !is_too_small) {
+                        const sel = selected_idx.?;
+                        if (top_count > 0 and sel < top_count) {
+                            const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
+                            if (name.len > max_len and max_len >= 3) {
+                                const display_name = name[0 .. max_len - 3];
+                                const printed_cols = 1 + display_name.len + 3;
+                                const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}", .{ palette.bg, palette.fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                                try writeAll(stdout_fd, name_line);
+                            } else {
+                                const printed_cols = 1 + name.len;
+                                const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                                const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                                try writeAll(stdout_fd, name_line);
+                            }
                         } else {
-                            const printed_cols = 1 + name.len;
-                            const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.bg, palette.fg, name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                            const pad_len_desc = max_w;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                             try writeAll(stdout_fd, name_line);
                         }
                     } else {
@@ -1296,12 +1411,8 @@ pub fn main(init: std.process.Init) !void {
                         const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                         try writeAll(stdout_fd, name_line);
                     }
-                } else {
-                    const pad_len_desc = max_w;
-                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.bg, spaces[0..@min(pad_len_desc, spaces.len)] });
-                    try writeAll(stdout_fd, name_line);
+                    try rw.endRow();
                 }
-                try rw.endRow();
 
                 // Status bar row.
                 try writeAll(stdout_fd, "\x1b[2K\r");
@@ -1328,15 +1439,22 @@ pub fn main(init: std.process.Init) !void {
                     try writeAll(stdout_fd, palette.search_bg);
 
                     var status_text_buf: [128]u8 = undefined;
-                    const status_text = try std.fmt.bufPrint(&status_text_buf, " {d}  ↑↓←→  Tab  ^C", .{total_matches});
+                    const status_text = if (query_len == 0)
+                        try std.fmt.bufPrint(&status_text_buf, " ?:help  ↕↔|↵|Esc", .{})
+                    else
+                        try std.fmt.bufPrint(&status_text_buf, " {d}  ↕↔|↵|Esc", .{total_matches});
 
-                    var digits: usize = 1;
-                    var temp = total_matches;
-                    while (temp >= 10) {
-                        digits += 1;
-                        temp /= 10;
-                    }
-                    const text_cols = 16 + digits;
+                    const text_cols = if (query_len == 0) blk: {
+                        break :blk @as(usize, 18);
+                    } else blk: {
+                        var digits: usize = 1;
+                        var temp = total_matches;
+                        while (temp >= 10) {
+                            digits += 1;
+                            temp /= 10;
+                        }
+                        break :blk 11 + digits;
+                    };
 
                     try writeAll(stdout_fd, status_text);
 
@@ -1586,7 +1704,7 @@ pub fn main(init: std.process.Init) !void {
                             // Grid hover: update selection to cell under cursor (no copy).
                             // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
                             const grid_first_row: i32 = 4 + row_off;
-                            const grid_last_row: i32 = 7 + row_off;
+                            const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
                             if (click_row >= grid_first_row and click_row <= grid_last_row) {
                                 const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                 const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
@@ -1599,7 +1717,7 @@ pub fn main(init: std.process.Init) !void {
                             // Left click press.
                             const search_row: i32 = 2 + row_off;
                             const grid_first_row: i32 = 4 + row_off;
-                            const grid_last_row: i32 = 7 + row_off;
+                            const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
 
                             if (click_row == search_row and
                                 local_col >= @as(i32, @intCast(content_width)) - 4)

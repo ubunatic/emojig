@@ -1,0 +1,24 @@
+{
+  "description": "Language-neutral layout spec for the emojig/mojigo picker. Consumed by Go (internal/spec) today and reusable by a future Zig rewrite. Mirrors src/defaults.zig.",
+  "tui": {
+    "cols": 6,
+    "rows": 4,
+    "width": 25
+  },
+  "gui": {
+    "cols": 10,
+    "rows": 6,
+    "width": 41
+  },
+  "layout_overhead": 6,
+  "max_query_len": 63,
+  "rows_order": [
+    "top_padding",
+    "search_bar",
+    "spacer",
+    "grid",
+    "spacer",
+    "description",
+    "status"
+  ]
+}

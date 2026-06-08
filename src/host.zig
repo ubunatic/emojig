@@ -5,6 +5,7 @@ const std = @import("std");
 const term_lib = @import("term.zig");
 const Theme = term_lib.Theme;
 const writeAll = term_lib.writeAll;
+const defaults = @import("defaults.zig");
 
 /// Known terminal emulators with specific argv layouts.
 pub const HostKind = enum {
@@ -318,8 +319,6 @@ pub fn buildGuiArgv(
 pub fn spawnGuiWindow(
     init: std.process.Init,
     exe_path: []const u8,
-    width: usize,
-    height: usize,
     theme: Theme,
     border: bool,
     safe: bool,
@@ -338,11 +337,13 @@ pub fn spawnGuiWindow(
     const foot_fg = if (theme == .light) "444444" else "a8a8a8";
     const foot_border = if (theme == .light) "cccccc" else "3c3c3c";
 
-    var final_h = if (border) height + 2 else height;
+    // Derive the window height from the GUI grid rows configured in defaults.zig.
+    const gui_content_rows: usize = defaults.gui_rows + defaults.layout_overhead;
+    var final_h = if (border) gui_content_rows + 2 else gui_content_rows;
     if (debug) final_h += 2;
 
     var size_buf: [64]u8 = undefined;
-    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width + 2, final_h });
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ defaults.gui_width + 2, final_h });
 
     var bg_buf: [64]u8 = undefined;
     const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
@@ -354,10 +355,10 @@ pub fn spawnGuiWindow(
     const border_color_arg = try std.fmt.bufPrint(&border_color_buf, "--override=csd.border-color={s}", .{foot_border});
 
     var env_w: [64]u8 = undefined;
-    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{width});
+    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{defaults.gui_width});
 
     var env_h: [64]u8 = undefined;
-    const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{height});
+    const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{gui_content_rows});
 
     var env_theme: [64]u8 = undefined;
     const env_theme_arg = try std.fmt.bufPrint(&env_theme, "EMOJIG_THEME={s}", .{theme_str});
@@ -387,6 +388,8 @@ pub fn spawnGuiWindow(
         env_debug_arg,
         env_timeout_arg,
         "EMOJIG_RESIZE_MODE=altscreen",
+        std.fmt.comptimePrint("EMOJIG_COLS={d}", .{defaults.gui_cols}),
+        std.fmt.comptimePrint("EMOJIG_ROWS={d}", .{defaults.gui_rows}),
         exe_path,
         "--tui",
     };

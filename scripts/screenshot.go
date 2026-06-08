@@ -56,18 +56,15 @@ func main() {
 	defer slave.Close()
 
 	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
-	rowSize := uint16(10)
-	if os.Getenv("EMOJIG_DEBUG") == "1" || os.Getenv("EMOJIG_DEBUG") == "true" {
-		rowSize = 12
-	}
-	ws := winsize{Row: rowSize, Col: 40}
+	rowSize := uint16(12)
+	ws := winsize{Row: rowSize, Col: 50}
 	syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
 
 	cmd := exec.Command(binaryPath, "--tui")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
-	cmd.Env = append(os.Environ(), "EMOJIG_WIDTH=40", "TERM=xterm-256color")
+	cmd.Env = append(os.Environ(), "EMOJIG_WIDTH=45", "EMOJIG_ROWS=4", "EMOJIG_HEIGHT=10", "TERM=xterm-256color")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:  true,
 		Setctty: true,
@@ -80,7 +77,7 @@ func main() {
 	}
 
 	// Wait for initial render.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 
 	syscall.SetNonblock(int(master.Fd()), true)
 	buf := make([]byte, 16384)

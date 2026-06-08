@@ -1,0 +1,17 @@
+{
+  "description": "Language-neutral key bindings. Each logical key name maps to an action. The renderer/input layer is responsible for decoding raw terminal bytes into these logical key names. Mirrors the key switch in src/main.zig.",
+  "bindings": {
+    "esc": "quit",
+    "ctrl-c": "quit",
+    "ctrl-d": "quit",
+    "ctrl-q": "quit",
+    "ctrl-w": "quit",
+    "enter": "select",
+    "backspace": "delete",
+    "tab": "cycle_theme",
+    "up": "nav_up",
+    "down": "nav_down",
+    "left": "nav_left",
+    "right": "nav_right"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within tui.width (spec/layout.json) or they are truncated. Mirrors the strings in src/main.zig.",
+  "search_prompt": " 🔍 ",
+  "status_help_hint": " ?:help  ↕↔|↵|Esc",
+  "status_matches": " {count}  ↕↔|↵|Esc",
+  "help_title": "Help & Keybindings:",
+  "help_lines": [
+    "  Typing: Search",
+    "  Arrows: Navigate",
+    "  Enter:  Select emoji",
+    "  Tab:    Toggle theme",
+    "  Esc:    Exit picker",
+    "  ?:      Toggle help"
+  ]
+}

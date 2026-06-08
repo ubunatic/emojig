@@ -2,6 +2,12 @@
 
 This document details the architectural decisions, coding standards, and safety requirements established for the **Emojig** project. Any agent resuming work on this repository must adhere strictly to these conventions.
 
+## Quickstart
+* See `make help` for common build tasks (and use/extend these targets as needed)
+* Make sure --tui scrollback logic is always super safe!
+* Make sure --gui/--tui mouse hover logic is always safe!
+* Make sure --tui close behavour is safe!
+
 ---
 
 ## 1. Programming Languages & Scripting Constraints

@@ -1,0 +1,32 @@
+{
+  "description": "Language-neutral theme/palette spec. Colors are stored as semantic values (xterm 256-color indices, or hex for OSC terminal colors) so any renderer can emit its own escape sequences. Mirrors src/term.zig.",
+  "icons": {
+    "dark": "🌙",
+    "light": "🌞",
+    "system": "🔆"
+  },
+  "themes": {
+    "dark": {
+      "grid_fg": 248,
+      "selection_bg": 24,
+      "selection_fg": 255,
+      "search_bg": 238,
+      "search_fg": 255,
+      "search_shade_fg": 238,
+      "border_shade_fg": 236,
+      "terminal_bg": "#1c1c1c",
+      "terminal_fg": "#a8a8a8"
+    },
+    "light": {
+      "grid_fg": 238,
+      "selection_bg": 111,
+      "selection_fg": 232,
+      "search_bg": 251,
+      "search_fg": 232,
+      "search_shade_fg": 251,
+      "border_shade_fg": 252,
+      "terminal_bg": "#eeeeee",
+      "terminal_fg": "#444444"
+    }
+  }
+}
