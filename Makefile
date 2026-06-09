@@ -54,6 +54,15 @@ termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl
 record: ⚙️ build  # headlessly record webm demos: TUI (Xvfb/xterm) + GUI desktop scenario (sway/gedit/foot). Set EMOJIG_DEMO_QUERY to change the search term.
 	go run ./scripts/record/
 
+record-tui: ⚙️ build  # record only the TUI demo (Xvfb/xterm/ffmpeg)
+	EMOJIG_RECORD_MODE=tui go run ./scripts/record/
+
+record-gui: ⚙️ build  # record only the GUI desktop scenario (sway/gedit/foot/wf-recorder)
+	EMOJIG_RECORD_MODE=gui go run ./scripts/record/
+
+record-tui-light: ⚙️ build  # record TUI demo with light theme (spec/record-tui-light.json overlay)
+	EMOJIG_RECORD_MODE=tui EMOJIG_RECORD_SPEC=spec/record-tui-light.json go run ./scripts/record/
+
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \
@@ -74,6 +83,8 @@ ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/
 	@xfce4-terminal --default-working-directory=$$HOME --geometry=50x20 \
 	    -x zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
 	@tilix --working-directory=$$HOME --geometry=50x20 \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@crt --workdir $$HOME \
 	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
 	@echo "Waiting 3s for terminals to settle..."
 	@sleep 3

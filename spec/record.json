@@ -1,8 +1,46 @@
 {
   "bitrate": "2M",
   "fps": 30,
-  "tui_font_size": 18,
-  "gui_font_size": 14,
-  "gedit_width": 1000,
-  "gedit_height": 540
+  "tui_font_size": 12,
+  "gui_font_size": 12,
+  "scene_width": 850,
+  "scene_height": 480,
+  "gedit_width": 530,
+  "gedit_height": 400,
+  "tui_prompt": [
+    { "text": "➜", "color": "green" },
+    { "text": "  " },
+    { "text": "~", "color": "cyan" },
+    { "text": " " }
+  ],
+  "tui_title": "Any Terminal",
+  "tui_script": [
+    { "type": "echo Hello TUI ", "desc": "simple echo - no CR yet" },
+    { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
+    { "pause": "1s" },
+    { "type": "car", "desc": "search for 'car'", "speed": 0.1 },
+    { "pause": "1s" },
+    { "type": "<bs><bs><bs>", "desc": "delete search" },
+    { "type": "cat", "desc": "search for cat", "speed": 0.1 },
+    { "pause": "1s" },
+    { "type": "<cr>", "desc": "select cat", "show_keys": true },
+    { "pause": "1s" },
+    { "type": "<cr>", "desc": "confirm echo" },
+    { "pause": "1s" }
+  ],
+  "gui_gedit_script": [
+    { "type": "Hello GUI ", "desc": "pre-emoji text" },
+    { "type": "<C-A-space>", "desc": "fake gui hotkey", "show_keys": true },
+    { "next": "gui_picker_script" },
+    { "type": "<S-ins>", "desc": "(fake) paste hotkey", "show_keys": true },
+    { "type": "🖥️", "desc": "(fake) paste" },
+    { "pause": "1s" }
+  ],
+  "gui_picker_script": [
+    { "type": "compu", "desc": "search query", "speed": 0.1 },
+    { "pause": "1s" },
+    { "type": " desk", "desc": "search query", "speed": 0.1 },
+    { "pause": "1s" },
+    { "type": "<cr>", "desc": "select first result", "show_keys": true }
+  ]
 }

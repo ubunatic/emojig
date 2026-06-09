@@ -32,13 +32,11 @@ import (
 	"time"
 )
 
-const sceneWidth = 1100
-const sceneHeight = 680
 
 // recordScenarioDemo records the full desktop GUI scenario to a webm.
 // query is the search term typed into the picker (default "fire").
-func recordScenarioDemo(binaryPath, query string, spec recordSpec) error {
-	fmt.Printf("🎬 Recording GUI desktop scenario (query %q)...\n", query)
+func recordScenarioDemo(binaryPath string, spec recordSpec) error {
+	fmt.Println("🎬 Recording GUI desktop scenario...")
 
 	outputPath := "website/emojig-gui-light.webm"
 	_ = os.Remove(outputPath)
@@ -57,7 +55,7 @@ default_border none
 default_floating_border none
 for_window [app_id="gedit"] floating enable, resize set %d %d, move position 50 40
 for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move position center
-`, sceneWidth, sceneHeight, spec.GeditWidth, spec.GeditHeight)
+`, spec.SceneWidth, spec.SceneHeight, spec.GeditWidth, spec.GeditHeight)
 	if err := os.WriteFile(cfgPath, []byte(swayCfg), 0644); err != nil {
 		return fmt.Errorf("write sway config: %v", err)
 	}
@@ -74,7 +72,7 @@ for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move po
 	sway := exec.Command("sway", "-c", cfgPath)
 	sway.Env = swayEnv
 	sway.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	sway.Stderr = os.Stderr
+	sway.Stderr = nil
 	if err := sway.Start(); err != nil {
 		return fmt.Errorf("failed to start sway: %v", err)
 	}
@@ -128,15 +126,8 @@ for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move po
 	}
 	time.Sleep(1 * time.Second)
 
-	// 4. Focus gedit and pre-type the sentence the emoji will complete.
-	swaymsg(scene, `[app_id="gedit"] focus`)
-	time.Sleep(300 * time.Millisecond)
-	if err := wtype(scene, "-d", "60", "Let's go "); err != nil {
-		return err
-	}
-	time.Sleep(400 * time.Millisecond)
-
-	// 5. Start recording (wf-recorder, wlr-screencopy — captures sway's output).
+	// 4. Start recording before any typing so everything is captured.
+	subs := NewSubtitleCollector()
 	wf := exec.Command("wf-recorder", "-o", "X11-1", "-c", "libvpx-vp9",
 		"-r", strconv.Itoa(spec.FPS), "-b", spec.Bitrate, "-f", outputPath)
 	wf.Env = scene
@@ -149,56 +140,63 @@ for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move po
 	defer killGroup(wf)
 	time.Sleep(1500 * time.Millisecond)
 
-	// 6. Open the emojig picker (foot popup, light theme) and wait for it.
-	picker := exec.Command(binaryPath, "--gui", "--theme", "light")
-	picker.Env = append(scene, "EMOJIG_TERMINAL=foot",
-		"EMOJIG_GUI_FONT_SIZE="+strconv.Itoa(spec.GUIFontSize))
-	picker.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := picker.Start(); err != nil {
-		return fmt.Errorf("failed to start emojig picker: %v", err)
+	// onNext launches the named script in its own context and returns to the
+	// caller (gedit script) when done. Only "gui_picker_script" is supported.
+	scripts := map[string][]ScriptStep{
+		"gui_picker_script": spec.GUIPickerScript,
 	}
-	defer killGroup(picker)
-	if err := waitForSwayApp(scene, "emojig-picker", true); err != nil {
-		return err
+	onNext := func(name string) error {
+		steps, ok := scripts[name]
+		if !ok {
+			return fmt.Errorf("unknown script %q in next", name)
+		}
+		picker := exec.Command(binaryPath, "--gui", "--theme", "light")
+		picker.Env = append(scene, "EMOJIG_TERMINAL=foot",
+			"EMOJIG_GUI_FONT_SIZE="+strconv.Itoa(spec.GUIFontSize))
+		picker.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := picker.Start(); err != nil {
+			return fmt.Errorf("failed to start emojig picker: %v", err)
+		}
+		defer killGroup(picker)
+		if err := waitForSwayApp(scene, "emojig-picker", true); err != nil {
+			return err
+		}
+		time.Sleep(1200 * time.Millisecond)
+		swaymsg(scene, `[app_id="emojig-picker"] focus`)
+		time.Sleep(300 * time.Millisecond)
+		if err := runWtypeScript(scene, steps, spec.stepDelay(1000*time.Millisecond), nil, subs); err != nil {
+			return err
+		}
+		if err := waitForSwayApp(scene, "emojig-picker", false); err != nil {
+			fmt.Printf("Warning: picker did not close cleanly: %v\n", err)
+		}
+		// Mirror clipboard → PRIMARY so <S-ins> in the gedit script can paste.
+		mirrorClipboardToPrimary(scene)
+		swaymsg(scene, `[app_id="gedit"] focus`)
+		time.Sleep(400 * time.Millisecond)
+		return nil
 	}
-	time.Sleep(1200 * time.Millisecond)
 
-	// 7. Focus the picker, type the query, select the first result.
-	swaymsg(scene, `[app_id="emojig-picker"] focus`)
-	time.Sleep(300 * time.Millisecond)
-	fmt.Printf("Typing query %q...\n", query)
-	if err := wtype(scene, "-d", "130", query); err != nil {
-		return err
-	}
-	time.Sleep(1200 * time.Millisecond)
-	wtype(scene, "-k", "Return")
-
-	// Wait for the picker window to disappear (selection + exit animation done).
-	if err := waitForSwayApp(scene, "emojig-picker", false); err != nil {
-		fmt.Printf("Warning: picker did not close cleanly: %v\n", err)
-	}
-	clip := strings.TrimSpace(captureOutput(scene, "wl-paste"))
-	fmt.Printf("Clipboard now holds: %q\n", clip)
-
-	// 8. Paste into gedit: mirror clipboard -> PRIMARY, then middle-click.
-	// (wtype Ctrl+V is a no-op under sway; PRIMARY + middle-click is reliable.)
-	mirrorClipboardToPrimary(scene)
+	// 5. Focus gedit and run the full gedit script. { "next": "gui_picker_script" }
+	// steps invoke onNext inline, then resume the remaining gedit steps.
 	swaymsg(scene, `[app_id="gedit"] focus`)
-	time.Sleep(400 * time.Millisecond)
-	swaymsg(scene, "seat - cursor set 300 97")
-	swaymsg(scene, "seat - cursor press button2")
-	swaymsg(scene, "seat - cursor release button2")
-	time.Sleep(1300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	if err := runWtypeScript(scene, spec.GUIGeditScript, spec.stepDelay(400*time.Millisecond), onNext, subs); err != nil {
+		return err
+	}
+	time.Sleep(1 * time.Second)
 
-	// 9. Stop recording (SIGINT so wf-recorder finalizes the webm cleanly).
+	// 6. Stop recording (SIGINT so wf-recorder finalizes the webm cleanly).
 	wf.Process.Signal(syscall.SIGINT)
 	wf.Wait()
 
 	if info, err := os.Stat(outputPath); err == nil && info.Size() > 0 {
-		fmt.Printf("✅ Saved GUI scenario to %s (%d bytes)\n", outputPath, info.Size())
+		fmt.Printf("GUI raw video: %s (%d bytes)\n", outputPath, info.Size())
 	} else {
 		return fmt.Errorf("failed to produce scenario video %s (wf-recorder: %s)", outputPath, strings.TrimSpace(wfErr.String()))
 	}
+	addSubtitles(outputPath, spec.Bitrate, subs.Entries)
+	fmt.Printf("✅ Saved GUI scenario to %s\n", outputPath)
 	return nil
 }
 

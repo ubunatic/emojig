@@ -4,12 +4,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,43 +17,102 @@ import (
 )
 
 type recordSpec struct {
-	Bitrate      string `json:"bitrate"`
-	FPS          int    `json:"fps"`
-	TUIFontSize  int    `json:"tui_font_size"`
-	GUIFontSize  int    `json:"gui_font_size"`
-	GeditWidth   int    `json:"gedit_width"`
-	GeditHeight  int    `json:"gedit_height"`
+	Bitrate         string       `json:"bitrate"`
+	FPS             int          `json:"fps"`
+	Speed           float64      `json:"speed"`
+	TUITheme        string       `json:"tui_theme"`
+	TUIBg           string       `json:"tui_bg"`
+	TUIFg           string       `json:"tui_fg"`
+	TUITitle        string       `json:"tui_title"`
+	TUIOutput       string       `json:"tui_output"`
+	TUIFontSize     int          `json:"tui_font_size"`
+	GUIFontSize     int          `json:"gui_font_size"`
+	SceneWidth      int          `json:"scene_width"`
+	SceneHeight     int          `json:"scene_height"`
+	GeditWidth      int          `json:"gedit_width"`
+	GeditHeight     int          `json:"gedit_height"`
+	TUIPrompt       []PromptPart `json:"tui_prompt"`
+	TUIScript       []ScriptStep `json:"tui_script"`
+	GUIGeditScript  []ScriptStep `json:"gui_gedit_script"`
+	GUIPickerScript []ScriptStep `json:"gui_picker_script"`
+}
+
+// stepDelay scales a base duration by spec.Speed (speed=0.5 → 2× slower).
+func (s recordSpec) stepDelay(base time.Duration) time.Duration {
+	if s.Speed <= 0 {
+		return base
+	}
+	return time.Duration(float64(base) / s.Speed)
+}
+
+// tuiColors returns the effective foot/sway bg and fg hex colors (no #).
+// Explicit tui_bg/tui_fg fields win; otherwise tui_theme picks the defaults.
+func (s recordSpec) tuiColors() (bg, fg string) {
+	bg, fg = s.TUIBg, s.TUIFg
+	if bg == "" {
+		if s.TUITheme == "light" {
+			bg = "fafafa"
+		} else {
+			bg = "1c1c1c"
+		}
+	}
+	if fg == "" {
+		if s.TUITheme == "light" {
+			fg = "383a42"
+		} else {
+			fg = "a8a8a8"
+		}
+	}
+	return
+}
+
+// tuiOutputPath returns the output webm path for the TUI recording.
+func (s recordSpec) tuiOutputPath() string {
+	if s.TUIOutput != "" {
+		return s.TUIOutput
+	}
+	if s.TUITheme == "light" {
+		return "website/emojig-tui-light.webm"
+	}
+	return "website/emojig-tui-dark.webm"
 }
 
 func loadRecordSpec() recordSpec {
-	s := recordSpec{Bitrate: "1M", FPS: 25, TUIFontSize: 14, GUIFontSize: 14, GeditWidth: 1000, GeditHeight: 540}
-	data, err := os.ReadFile("spec/record.json")
-	if err != nil {
-		return s
+	s := recordSpec{
+		Bitrate: "1M", FPS: 25, Speed: 1.0, TUIFontSize: 14, GUIFontSize: 14,
+		SceneWidth: 1100, SceneHeight: 680,
+		GeditWidth: 1000, GeditHeight: 540,
+		TUIPrompt: []PromptPart{{Text: "$ "}},
+		TUIScript: []ScriptStep{
+			{Type: "cat", Desc: "search for cat"},
+			{Type: "<right>", Desc: "select first result"},
+			{Type: "<cr>", Desc: "confirm"},
+		},
+		GUIGeditScript: []ScriptStep{
+			{Type: "Let's go ", Desc: "pre-emoji text"},
+		},
+		GUIPickerScript: []ScriptStep{
+			{Type: "fire", Desc: "search query"},
+			{Type: "<cr>", Desc: "select first result"},
+		},
 	}
-	_ = json.Unmarshal(data, &s)
+	// Load base spec, then optional overlay (EMOJIG_RECORD_SPEC).
+	// json.Unmarshal only sets fields present in the JSON, so the overlay
+	// selectively overrides without repeating unchanged values.
+	for _, path := range []string{"spec/record.json", os.Getenv("EMOJIG_RECORD_SPEC")} {
+		if path == "" {
+			continue
+		}
+		if data, err := os.ReadFile(path); err == nil {
+			json.Unmarshal(data, &s)
+		}
+	}
 	return s
 }
 
-const (
-	display = ":99"
-)
-
-// demoQuery returns the search term typed into the GUI picker during the
-// scenario recording. Override with EMOJIG_DEMO_QUERY or the first CLI arg;
-// defaults to "fire".
-func demoQuery() string {
-	if v := os.Getenv("EMOJIG_DEMO_QUERY"); v != "" {
-		return v
-	}
-	if len(os.Args) > 1 && os.Args[1] != "" {
-		return os.Args[1]
-	}
-	return "fire"
-}
+const display = ":99"
 
 func main() {
-	// 1. Build the binary first to ensure we record the latest version
 	fmt.Println("Building emojig...")
 	buildCmd := exec.Command("zig", "build", "-Doptimize=ReleaseSmall")
 	buildCmd.Stdout = os.Stdout
@@ -63,7 +122,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 2. Start Xvfb virtual display
 	fmt.Printf("Starting Xvfb on display %s...\n", display)
 	xvfbCtx, xvfbCancel := context.WithCancel(context.Background())
 	defer xvfbCancel()
@@ -79,48 +137,8 @@ func main() {
 		syscall.Kill(-xvfb.Process.Pid, syscall.SIGTERM)
 		xvfb.Wait()
 	}()
-
-	// Wait for Xvfb to be ready
 	time.Sleep(1 * time.Second)
 
-	// Start Openbox window manager inside Xvfb to handle window focus and mapping correctly
-	fmt.Println("Starting Openbox window manager...")
-	openboxConfig := `<?xml version="1.0" encoding="UTF-8"?>
-<openbox_config xmlns="http://openbox.org/3.4/rc">
-  <theme>
-    <keepBorder>no</keepBorder>
-  </theme>
-  <applications>
-    <application class="*">
-      <decor>no</decor>
-      <shade>no</shade>
-      <position force="yes">
-        <x>0</x>
-        <y>0</y>
-      </position>
-    </application>
-  </applications>
-</openbox_config>
-`
-	if err := os.WriteFile("/tmp/openbox-rc.xml", []byte(openboxConfig), 0644); err != nil {
-		fmt.Printf("Warning: failed to write openbox config: %v\n", err)
-	}
-
-	openbox := exec.CommandContext(xvfbCtx, "openbox", "--sm-disable", "--config-file", "/tmp/openbox-rc.xml")
-	openbox.Env = append(os.Environ(), "DISPLAY="+display)
-	openbox.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := openbox.Start(); err != nil {
-		fmt.Printf("Warning: failed to start Openbox: %v\n", err)
-	} else {
-		defer func() {
-			fmt.Println("Shutting down Openbox...")
-			syscall.Kill(-openbox.Process.Pid, syscall.SIGTERM)
-			openbox.Wait()
-		}()
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	// Resolve absolute path to the emojig binary
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("Failed to get working directory: %v\n", err)
@@ -129,196 +147,176 @@ func main() {
 	binaryPath := cwd + "/zig-out/bin/emojig"
 
 	spec := loadRecordSpec()
+	mode := os.Getenv("EMOJIG_RECORD_MODE") // "tui", "gui", or "" for both
 
-	// 3. Record TUI (Dark Theme)
-	if err := recordTUIDemo(xvfbCtx, binaryPath, spec); err != nil {
-		fmt.Printf("TUI recording failed: %v\n", err)
-		os.Exit(1)
+	if mode == "" || mode == "tui" {
+		if err := recordTUIDemo(binaryPath, spec); err != nil {
+			fmt.Printf("TUI recording failed: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	// 4. Record GUI desktop scenario (Light Theme): gedit + emojig picker + paste.
-	if err := recordScenarioDemo(binaryPath, demoQuery(), spec); err != nil {
-		fmt.Printf("GUI scenario recording failed: %v\n", err)
-		os.Exit(1)
+	if mode == "" || mode == "gui" {
+		if err := recordScenarioDemo(binaryPath, spec); err != nil {
+			fmt.Printf("GUI scenario recording failed: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Println("🎉 Automated demo recording complete!")
 }
 
-func runInDisplay(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "DISPLAY="+display)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	return cmd
-}
-
-func getWindowGeometry(winID string) (int, int, error) {
-	cmd := exec.Command("xdotool", "getwindowgeometry", winID)
-	cmd.Env = append(os.Environ(), "DISPLAY="+display)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, 0, err
+func recordTUIDemo(binaryPath string, spec recordSpec) error {
+	theme := spec.TUITheme
+	if theme == "" {
+		theme = "dark"
 	}
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Geometry:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				geom := parts[1] // e.g. "450x250"
-				sizeParts := strings.Split(geom, "x")
-				if len(sizeParts) == 2 {
-					w, _ := strconv.Atoi(sizeParts[0])
-					h, _ := strconv.Atoi(sizeParts[1])
-					return w, h, nil
-				}
-			}
-		}
-	}
-	return 0, 0, fmt.Errorf("could not parse geometry")
-}
+	fmt.Printf("🎥 Recording TUI Demo (%s theme)...\n", theme)
 
-func waitForWindow(class string) (string, error) {
-	for i := 0; i < 40; i++ {
-		cmd := exec.Command("xdotool", "search", "--class", class)
-		cmd.Env = append(os.Environ(), "DISPLAY="+display)
-		out, err := cmd.Output()
-		if err == nil && len(out) > 0 {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line != "" {
-					return line, nil
-				}
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return "", fmt.Errorf("window with class '%s' not found", class)
-}
-
-func recordTUIDemo(ctx context.Context, binaryPath string, spec recordSpec) error {
-	fmt.Println("🎥 Recording TUI Demo (Dark Theme)...")
-
-	// Set up output path
-	outputPath := "website/emojig-tui-dark.webm"
+	outputPath := spec.tuiOutputPath()
 	_ = os.Remove(outputPath)
 
-	// Launch xterm with specific layout and dark palette styling, running emojig directly
-	xtermArgs := []string{
-		"-xrm", "xterm*allowSendEvents: true",
-		"-fa", "Monospace",
-		"-fs", strconv.Itoa(spec.TUIFontSize),
-		"-geometry", "50x13+0+0",
-		"-bg", "#1c1c1c",
-		"-fg", "#a8a8a8",
-		"-cr", "#ffffff",
-		"+sb",
-		"-bd", "#1c1c1c",
-		"-class", "emojig-tui",
-		"-e", binaryPath, "--tui",
-	}
-	xterm := runInDisplay(ctx, "xterm", xtermArgs...)
-	xterm.Stderr = os.Stderr
-	if err := xterm.Start(); err != nil {
-		return fmt.Errorf("failed to start xterm: %v", err)
-	}
-
-	winID, err := waitForWindow("emojig-tui")
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("failed waiting for window emojig-tui: %v", err)
+		return fmt.Errorf("failed to get working directory: %v", err)
 	}
-	fmt.Printf("TUI Window found: %s\n", winID)
-
-	w, h, err := getWindowGeometry(winID)
+	zdotdir, err := os.MkdirTemp("", "emojig-zsh-*")
 	if err != nil {
-		return fmt.Errorf("failed getting window geometry: %v", err)
+		return fmt.Errorf("failed to create zsh temp dir: %v", err)
 	}
-	fmt.Printf("Window geometry: %dx%d\n", w, h)
-	// ffmpeg needs even dimensions
-	if w%2 != 0 {
-		w++
-	}
-	if h%2 != 0 {
-		h++
+	defer os.RemoveAll(zdotdir)
+
+	zshrc := fmt.Sprintf("export PATH=%s:$PATH\nsource %s/src/shell/emojig.zsh\nexport PS1='%s'\n",
+		filepath.Dir(binaryPath), cwd, renderPS1(spec.TUIPrompt))
+	if err := os.WriteFile(filepath.Join(zdotdir, ".zshrc"), []byte(zshrc), 0644); err != nil {
+		return fmt.Errorf("failed to write zshrc: %v", err)
 	}
 
-	// Start ffmpeg grab
-	ffmpegArgs := []string{
-		"-f", "x11grab",
-		"-video_size", fmt.Sprintf("%dx%d", w, h),
-		"-i", display + ".0+0,0",
-		"-codec:v", "libvpx-vp9",
-		"-b:v", spec.Bitrate,
-		"-r", strconv.Itoa(spec.FPS),
-		"-y",
-		outputPath,
+	bg, fg := spec.tuiColors()
+	footIni := fmt.Sprintf("[colors]\nbackground=%s\nforeground=%s\n", bg, fg)
+	footIniPath := filepath.Join(os.TempDir(), "emojig-foot.ini")
+	if err := os.WriteFile(footIniPath, []byte(footIni), 0644); err != nil {
+		return fmt.Errorf("failed to write foot.ini: %v", err)
 	}
-	ffmpeg := runInDisplay(ctx, "ffmpeg", ffmpegArgs...)
-	ffmpeg.Stderr = os.Stderr
-	if err := ffmpeg.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %v", err)
+	defer os.Remove(footIniPath)
+
+	// 1. Nested sway (same backend as GUI recording).
+	runtimeDir := filepath.Join(os.TempDir(), "emojig-tui-xdg")
+	if err := os.MkdirAll(runtimeDir, 0700); err != nil {
+		return fmt.Errorf("mkdir runtime dir: %v", err)
 	}
-	fmt.Println("ffmpeg recording started...")
-
-	// Let record settle
-	time.Sleep(1 * time.Second)
-
-	// Explicitly focus/activate the window first
-	if err := runXdotool("windowfocus", "--sync", winID); err != nil {
-		fmt.Printf("Warning focusing window: %v\n", err)
+	cfgPath := filepath.Join(os.TempDir(), "emojig-tui-sway.cfg")
+	swayCfg := fmt.Sprintf(`output X11-1 resolution %dx%d position 0 0
+output X11-1 bg #%s solid_color
+for_window [app_id="emojig-picker"] floating enable, border none, resize set 450 340, move position center
+`, spec.SceneWidth, spec.SceneHeight, bg)
+	if err := os.WriteFile(cfgPath, []byte(swayCfg), 0644); err != nil {
+		return fmt.Errorf("write sway config: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
 
-	// Simulate TUI keyboard inputs (using XTest focus-based typing)
-	fmt.Println("Typing query 'cat'...")
-	if err := runXdotool("type", "--delay", "150", "cat"); err != nil {
+	swayEnv := append(os.Environ(),
+		"DISPLAY="+display,
+		"XDG_RUNTIME_DIR="+runtimeDir,
+		"WLR_BACKENDS=x11",
+		"WLR_X11_OUTPUTS=1",
+		"WLR_RENDERER=pixman",
+		"WLR_RENDERER_ALLOW_SOFTWARE=1",
+		"LIBGL_ALWAYS_SOFTWARE=1",
+	)
+	sway := exec.Command("sway", "-c", cfgPath)
+	sway.Env = swayEnv
+	sway.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	sway.Stderr = nil
+	if err := sway.Start(); err != nil {
+		return fmt.Errorf("failed to start sway: %v", err)
+	}
+	defer func() {
+		fmt.Println("Shutting down sway (TUI)...")
+		syscall.Kill(-sway.Process.Pid, syscall.SIGTERM)
+		sway.Wait()
+	}()
+
+	// 2. Wait for Wayland socket.
+	waylandDisplay, err := waitForWaylandSocket(runtimeDir)
+	if err != nil {
 		return err
 	}
-
-	time.Sleep(1 * time.Second)
-
-	fmt.Println("Pressing Right arrow...")
-	if err := runXdotool("key", "Right"); err != nil {
+	swaySock, err := findSwaySocket(runtimeDir)
+	if err != nil {
 		return err
 	}
+	fmt.Printf("sway (TUI) up: WAYLAND_DISPLAY=%s\n", waylandDisplay)
 
-	time.Sleep(1 * time.Second)
+	scene := waylandEnv(runtimeDir, waylandDisplay, swaySock)
+	killGroup := func(c *exec.Cmd) {
+		if c != nil && c.Process != nil {
+			syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
+		}
+	}
 
-	fmt.Println("Pressing Return...")
-	if err := runXdotool("key", "Return"); err != nil {
+	// 3. Launch foot terminal running zsh with the emojig widget loaded.
+	footArgs := []string{
+		"--config=" + footIniPath,
+		"--app-id=emojig-tui",
+		fmt.Sprintf("--font=Monospace:size=%d", spec.TUIFontSize),
+	}
+	if spec.TUITitle != "" {
+		footArgs = append(footArgs, "--title="+spec.TUITitle)
+	}
+	footArgs = append(footArgs, "--", "zsh", "-d")
+	foot := exec.Command("foot", footArgs...)
+	footEnv := append(scene,
+		"ZDOTDIR="+zdotdir,
+		"PATH="+filepath.Dir(binaryPath)+":"+os.Getenv("PATH"),
+		"EMOJIG_TERMINAL=foot",
+		"EMOJIG_GUI_FONT_SIZE="+strconv.Itoa(spec.GUIFontSize),
+	)
+	if spec.TUITheme != "" {
+		footEnv = append(footEnv, "EMOJIG_THEME="+spec.TUITheme)
+	}
+	foot.Env = footEnv
+	foot.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := foot.Start(); err != nil {
+		return fmt.Errorf("failed to start foot: %v", err)
+	}
+	defer killGroup(foot)
+	if err := waitForSwayApp(scene, "emojig-tui", true); err != nil {
 		return err
 	}
+	time.Sleep(1 * time.Second)
 
-	// Wait for xterm process to clean exit
-	fmt.Println("Waiting for xterm to close...")
-	xtermErr := xterm.Wait()
-	if xtermErr != nil {
-		fmt.Printf("Warning: xterm exited with error: %v\n", xtermErr)
-	} else {
-		fmt.Println("xterm closed cleanly.")
+	// 4. Start recording.
+	subs := NewSubtitleCollector()
+	wf := exec.Command("wf-recorder", "-o", "X11-1", "-c", "libvpx-vp9",
+		"-r", strconv.Itoa(spec.FPS), "-b", spec.Bitrate, "-f", outputPath)
+	wf.Env = scene
+	wf.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var wfErr strings.Builder
+	wf.Stderr = &wfErr
+	if err := wf.Start(); err != nil {
+		return fmt.Errorf("failed to start wf-recorder: %v", err)
 	}
+	defer killGroup(wf)
+	time.Sleep(1500 * time.Millisecond)
 
-	// Stop recording
-	fmt.Println("Stopping ffmpeg...")
-	syscall.Kill(-ffmpeg.Process.Pid, syscall.SIGTERM)
-	ffmpeg.Wait()
+	// 5. Run the TUI script via wtype (Wayland input — no focus gymnastics needed).
+	swaymsg(scene, `[app_id="emojig-tui"] focus`)
+	time.Sleep(300 * time.Millisecond)
+	if err := runWtypeScript(scene, spec.TUIScript, spec.stepDelay(800*time.Millisecond), nil, subs); err != nil {
+		return err
+	}
+	time.Sleep(1 * time.Second)
 
-	// Verify the output file exists
+	// 6. Stop recording.
+	wf.Process.Signal(syscall.SIGINT)
+	wf.Wait()
+
 	if info, err := os.Stat(outputPath); err == nil && info.Size() > 0 {
-		fmt.Printf("✅ Saved TUI demo to %s (%d bytes)\n", outputPath, info.Size())
+		fmt.Printf("  TUI raw video: %d bytes\n", info.Size())
 	} else {
-		return fmt.Errorf("failed to produce TUI video file %s", outputPath)
+		return fmt.Errorf("failed to produce TUI video file %s (wf-recorder: %s)", outputPath, strings.TrimSpace(wfErr.String()))
 	}
-	return nil
-}
-
-func runXdotool(args ...string) error {
-	cmd := exec.Command("xdotool", args...)
-	cmd.Env = append(os.Environ(), "DISPLAY="+display)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("xdotool %s failed: %v (stderr: %s)", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
+	addSubtitles(outputPath, spec.Bitrate, subs.Entries)
+	fmt.Printf("✅ Saved TUI demo to %s\n", outputPath)
 	return nil
 }
