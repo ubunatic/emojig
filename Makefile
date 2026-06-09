@@ -30,6 +30,12 @@ test: ⚙️  # run the unit tests
 tui: ⚙️  # run TUI mode in the current terminal
 	zig build tui
 
+tui-go: ⚙️  # run Go TUI port (mojigo) in the current terminal
+	go run ./cmd/mojigo/ --height 10
+
+tui-rust: ⚙️  # run Rust TUI demo in the current terminal
+	cargo run --bin inline-demo -- --height 10
+
 gui: ⚙️  # launch the floating terminal picker window (requires foot)
 	zig build gui
 
@@ -45,7 +51,7 @@ termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, 
 termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl-C to stop)
 	@sh scripts/termstate.sh --watch
 
-record: ⚙️ build  # headlessly record high-quality webm demo videos using Xvfb, xterm, and xdotool
+record: ⚙️ build  # headlessly record webm demos: TUI (Xvfb/xterm) + GUI desktop scenario (sway/gedit/foot). Set EMOJIG_DEMO_QUERY to change the search term.
 	go run ./scripts/record/
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
@@ -64,6 +70,35 @@ ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/
 	@ptyxis -d $$HOME \
 	    -- zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
 	@foot -D $$HOME -W 50x20 \
+	    zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@xfce4-terminal --default-working-directory=$$HOME --geometry=50x20 \
+	    -x zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@tilix --working-directory=$$HOME --geometry=50x20 \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@echo "Waiting 3s for terminals to settle..."
+	@sleep 3
+	@go run ./scripts/tty_bench/
+
+ttylaunch-borderless: ⚙️ build  # launch terminals in borderless mode with emojig TUI and benchmark memory
+	@echo "Launching 8 terminal emulators in borderless mode with emojig TUI..."
+	@kitty -d $$HOME \
+	    -o initial_window_width=50c -o initial_window_height=20c \
+	    -o confirm_os_window_close=0 \
+	    -o hide_window_decorations=titlebar-only \
+	    zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5; killall kitty' &
+	@ghostty --working-directory=$$HOME \
+	    --window-decoration=false \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@gnome-terminal --working-directory=$$HOME --geometry=50x20 \
+	    -- zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@alacritty --working-directory $$HOME \
+	    -o 'window.dimensions.columns=50' -o 'window.dimensions.lines=20' \
+	    -o 'window.decorations=None' \
+	    -e zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@ptyxis -d $$HOME \
+	    -- zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
+	@foot -D $$HOME -W 50x20 \
+	    --override=csd.size=0 --override=csd.preferred=client --override=csd.border-width=1 \
 	    zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
 	@xfce4-terminal --default-working-directory=$$HOME --geometry=50x20 \
 	    -x zsh -lc '$(CURDIR)/zig-out/bin/emojig --tui | cat; sleep 0.5' &
@@ -186,7 +221,7 @@ info: ⚙️  # show detailed info about release files and related vars
 	@git status --short | sed 's/^/#  /g'
 	# git diff:
 	@git diff --numstat | sed 's/^/#   /g'
-	
+
 release-diff: ⚙️  # show a git summary of changes since the last published release
 	@VERSION_PUBLISHED="$(VERSION_PUBLISHED)" go run ./scripts/release_diff/
 
@@ -231,4 +266,3 @@ tag: ⚙️  # commit version/changelog changes and tag the release
 	git commit -am "release: v$(VERSION)" --allow-empty
 	git tag -a v$(VERSION) -m "emojig v$(VERSION)"
 	@echo "✅ Committed and tagged v$(VERSION)"
-

@@ -14,6 +14,9 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**11**](11-german-search-pferd-fails.md) | [German search "pferd" fails](11-german-search-pferd-fails.md) | **P2** | Non-English search terms fail to match emoji because the database only contains English keywords. |
 | [**12**](12-tui-line-cleanup-and-terminal-restoration.md) | [TUI line cleanup & terminal restoration](12-tui-line-cleanup-and-terminal-restoration.md) | **P1** | TUI rows not erased on exit; selected emoji left floating after fade; cursor not restored to pre-launch position — emoji bleeds into shell prompt on Ctrl-E keybind. |
 | [**13**](13-terminal-state-diagnostic-tool.md) | [Terminal state diagnostic tool](13-terminal-state-diagnostic-tool.md) | **P1** | No tool exists to inspect active terminal modes (scroll region, mouse tracking, raw mode). Makes it impossible to confirm or reproduce issue #12 cleanup bugs without guessing. |
+| [**14**](14-gui-desktop-scenario-recording.md) | [GUI desktop scenario recording](14-gui-desktop-scenario-recording.md) | **P3** | New `recordScenarioDemo` records a full desktop story (nested sway + gedit + foot popup + paste) to a webm. Documents headless gotchas: wf-recorder vs x11grab (black frame), wtype modifier no-ops, middle-click PRIMARY paste. Implemented. |
+| [**15**](15-mojigo-inline-height-mode.md) | [mojigo inline `--height` mode + `/dev/tty` I/O](15-mojigo-inline-height-mode.md) | **P2** | Ports skim's four inline-TUI mechanics (cursor query, scroll-by-deficit, fixed absolute-coordinate region, clean teardown) into mojigo as an opt-in `--height N\|N%`; routes UI/input through `/dev/tty` so `e=$(mojigo)` is clean. Implemented. |
+| [**16**](16-tui-flicker.md) | [Zig TUI flickering during rapid redraws](16-tui-flicker.md) | **P2** | Redundant pre-clearing of lines (`\x1b[2K\r`) at the start of drawing each row causes visual flicker. Rely entirely on trailing clear (`\x1b[K`) instead. |
 
 ---
 

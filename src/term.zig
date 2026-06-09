@@ -10,12 +10,16 @@ const std = @import("std");
 pub const Theme = enum { dark, light, system };
 
 pub const Palette = struct {
-    bg: []const u8, // grid rows + description row
-    fg: []const u8, // text color for grid rows (reset after selection)
-    selection_bg: []const u8,
-    search_bg: []const u8, // entire search-bar row
-    border_bg: []const u8, // optional border rows
+    grid_bg: []const u8, // background sequence for grid rows
+    grid_fg: []const u8, // text color escape sequence for grid rows
+    selection_bg: []const u8, // selection background sequence
+    search_bg: []const u8, // entire search-bar row sequence
+    status_bg: []const u8, // entire status-bar row sequence
+    info_bg: []const u8, // info bar background sequence
+    info_fg: []const u8, // info bar text color sequence
+    border_bg: []const u8, // optional border background sequence
     search_shade_fg: []const u8, // foreground color sequence for search bar shading
+    status_shade_fg: []const u8, // foreground color sequence for status bar shading
     border_shade_fg: []const u8, // foreground color sequence for border shading
 };
 
@@ -25,10 +29,17 @@ pub const Palette = struct {
 
 /// Apply the terminal background/foreground via OSC 11/10. `bg`/`fg` are hex
 /// strings including the leading '#' (e.g. "#1c1c1c"), sourced from the spec.
-pub fn applyTerminalColors(stdout_fd: std.posix.fd_t, bg: []const u8, fg: []const u8) void {
-    var osc_buf: [64]u8 = undefined;
-    const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]11;{s}\x1b\\\x1b]10;{s}\x1b\\", .{ bg, fg }) catch return;
-    writeAll(stdout_fd, osc_seq) catch {};
+pub fn applyTerminalColors(stdout_fd: std.posix.fd_t, bg: ?[]const u8, fg: ?[]const u8) void {
+    if (bg) |b| {
+        var osc_buf: [64]u8 = undefined;
+        const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]11;{s}\x1b\\", .{b}) catch return;
+        writeAll(stdout_fd, osc_seq) catch {};
+    }
+    if (fg) |f| {
+        var osc_buf: [64]u8 = undefined;
+        const osc_seq = std.fmt.bufPrint(&osc_buf, "\x1b]10;{s}\x1b\\", .{f}) catch return;
+        writeAll(stdout_fd, osc_seq) catch {};
+    }
 }
 
 // ---------------------------------------------------------------------------

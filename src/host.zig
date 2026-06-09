@@ -152,13 +152,19 @@ pub fn buildGuiArgv(
                 n += 1;
                 out[n] = "--override=csd.border-width=1";
                 n += 1;
-                out[n] = border_color_arg;
+                if (border_color_arg.len > 0) {
+                    out[n] = border_color_arg;
+                    n += 1;
+                }
+            }
+            if (bg_arg.len > 0) {
+                out[n] = bg_arg;
                 n += 1;
             }
-            out[n] = bg_arg;
-            n += 1;
-            out[n] = fg_arg;
-            n += 1;
+            if (fg_arg.len > 0) {
+                out[n] = fg_arg;
+                n += 1;
+            }
             // foot runs the command as plain positional args (no -e)
             for (tail) |s| {
                 out[n] = s;
@@ -337,9 +343,9 @@ pub fn spawnGuiWindow(
     // GUI window colors come from spec/theme.json (foot wants bare hex, so we
     // strip the leading '#'). `system` falls back to the dark palette here.
     const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
-    const foot_bg = gui_pal.terminal_bg[1..];
-    const foot_fg = gui_pal.terminal_fg[1..];
-    const foot_border = gui_pal.terminal_border[1..];
+    const foot_bg = if (gui_pal.terminal_bg) |bg| (if (bg.len > 0) bg[1..] else "") else "";
+    const foot_fg = if (gui_pal.terminal_fg) |fg| (if (fg.len > 0) fg[1..] else "") else "";
+    const foot_border = if (gui_pal.terminal_border) |border_color| (if (border_color.len > 0) border_color[1..] else "") else "";
 
     // Derive the window height from the GUI grid rows configured in spec/layout.json.
     const gui_content_rows: usize = spec.layout.gui.rows + spec.layout.layout_overhead;
@@ -350,13 +356,22 @@ pub fn spawnGuiWindow(
     const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ spec.layout.gui.width + 2, final_h });
 
     var bg_buf: [64]u8 = undefined;
-    const bg_arg = try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg});
+    const bg_arg = if (foot_bg.len > 0)
+        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg})
+    else
+        "";
 
     var fg_buf: [64]u8 = undefined;
-    const fg_arg = try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg});
+    const fg_arg = if (foot_fg.len > 0)
+        try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg})
+    else
+        "";
 
     var border_color_buf: [64]u8 = undefined;
-    const border_color_arg = try std.fmt.bufPrint(&border_color_buf, "--override=csd.border-color={s}", .{foot_border});
+    const border_color_arg = if (foot_border.len > 0)
+        try std.fmt.bufPrint(&border_color_buf, "--override=csd.border-color={s}", .{foot_border})
+    else
+        "";
 
     var env_w: [64]u8 = undefined;
     const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{spec.layout.gui.width});

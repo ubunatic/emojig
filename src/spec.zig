@@ -59,16 +59,23 @@ pub const Layout = struct {
 };
 
 pub const PaletteSpec = struct {
+    grid_bg: ?u8 = null,
     grid_fg: u8,
-    selection_bg: u8,
+    selection_bg: ?u8 = null,
     selection_fg: u8,
-    search_bg: u8,
+    search_bg: ?u8 = null,
     search_fg: u8,
     search_shade_fg: u8,
+    info_bg: ?u8 = null,
+    info_fg: u8,
+    status_bg: ?u8 = null,
+    status_fg: u8,
+    status_shade_fg: u8,
+    border_bg: ?u8 = null,
     border_shade_fg: u8,
-    terminal_bg: []const u8,
-    terminal_fg: []const u8,
-    terminal_border: []const u8,
+    terminal_bg: ?[]const u8 = null,
+    terminal_fg: ?[]const u8 = null,
+    terminal_border: ?[]const u8 = null,
 };
 
 pub const Theme = struct {
@@ -137,7 +144,7 @@ pub const Spec = struct {
     }
 
     /// Terminal OSC bg/fg hex (with leading '#') for an effective theme.
-    pub fn terminalColors(self: *const Spec, t: term.Theme, sys: term.Theme) struct { bg: []const u8, fg: []const u8 } {
+    pub fn terminalColors(self: *const Spec, t: term.Theme, sys: term.Theme) struct { bg: ?[]const u8, fg: ?[]const u8 } {
         const eff = if (t == .system) sys else t;
         const p = if (eff == .light) self.theme.themes.light else self.theme.themes.dark;
         return .{ .bg = p.terminal_bg, .fg = p.terminal_fg };
@@ -200,13 +207,42 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
 /// xterm-256 color indices. Mirrors the former compile-time palettes in
 /// src/term.zig: `bg`/`border_bg` are intentionally empty.
 fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec) !term.Palette {
+    const g_bg = if (p.grid_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+    const s_bg = if (p.search_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+    const st_bg = if (p.status_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+    const i_bg = if (p.info_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+    const sel_bg = if (p.selection_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ bg_val, p.selection_fg })
+    else
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.selection_fg});
+    const b_bg = if (p.border_bg) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
     return .{
-        .bg = "",
-        .fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.grid_fg}),
-        .selection_bg = try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ p.selection_bg, p.selection_fg }),
-        .search_bg = try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ p.search_bg, p.search_fg }),
-        .border_bg = "",
+        .grid_bg = g_bg,
+        .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ g_bg, p.grid_fg }),
+        .selection_bg = sel_bg,
+        .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ s_bg, p.search_fg }),
+        .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ st_bg, p.status_fg }),
+        .info_bg = i_bg,
+        .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ i_bg, p.info_fg }),
+        .border_bg = b_bg,
         .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.search_shade_fg}),
+        .status_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.status_shade_fg}),
         .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.border_shade_fg}),
     };
 }
