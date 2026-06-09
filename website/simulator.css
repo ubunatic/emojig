@@ -91,7 +91,7 @@
     cursor: default;
     position: relative;
     overflow: hidden;
-    min-height: 220px;
+    min-height: 416px;
     border: 2px solid transparent;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
