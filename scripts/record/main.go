@@ -19,6 +19,19 @@ const (
 	display = ":99"
 )
 
+// demoQuery returns the search term typed into the GUI picker during the
+// scenario recording. Override with EMOJIG_DEMO_QUERY or the first CLI arg;
+// defaults to "fire".
+func demoQuery() string {
+	if v := os.Getenv("EMOJIG_DEMO_QUERY"); v != "" {
+		return v
+	}
+	if len(os.Args) > 1 && os.Args[1] != "" {
+		return os.Args[1]
+	}
+	return "fire"
+}
+
 func main() {
 	// 1. Build the binary first to ensure we record the latest version
 	fmt.Println("Building emojig...")
@@ -101,9 +114,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. Record GUI (Light Theme)
-	if err := recordGUIDemo(xvfbCtx, binaryPath); err != nil {
-		fmt.Printf("GUI recording failed: %v\n", err)
+	// 4. Record GUI desktop scenario (Light Theme): gedit + emojig picker + paste.
+	if err := recordScenarioDemo(binaryPath, demoQuery()); err != nil {
+		fmt.Printf("GUI scenario recording failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -274,127 +287,6 @@ func recordTUIDemo(ctx context.Context, binaryPath string) error {
 	} else {
 		return fmt.Errorf("failed to produce TUI video file %s", outputPath)
 	}
-	return nil
-}
-
-func recordGUIDemo(ctx context.Context, binaryPath string) error {
-	fmt.Println("🎥 Recording GUI Demo (Light Theme)...")
-
-	// Set up output path
-	outputPath := "website/emojig-gui-light.webm"
-	_ = os.Remove(outputPath)
-
-	// Configure xterm resources for class 'emojig' to match light theme
-	xrdbResources := `emojig*background: #eeeeee
-emojig*foreground: #444444
-emojig*cursorColor: #444444
-emojig*borderColor: #eeeeee
-emojig*borderWidth: 0
-emojig*scrollBar: false
-emojig*faceName: Monospace
-emojig*faceSize: 14
-emojig*geometry: 53x12+0+0
-emojig*allowSendEvents: true
-xterm*allowSendEvents: true
-`
-	xrdb := runInDisplay(ctx, "xrdb", "-merge")
-	xrdb.Stdin = bytes.NewBufferString(xrdbResources)
-	var xrdbStderr bytes.Buffer
-	xrdb.Stderr = &xrdbStderr
-	if err := xrdb.Run(); err != nil {
-		return fmt.Errorf("failed to load x resources via xrdb: %v (stderr: %s)", err, strings.TrimSpace(xrdbStderr.String()))
-	}
-
-	// Launch emojig in gui mode, forcing xterm host under Xvfb
-	gui := runInDisplay(ctx, binaryPath, "--gui", "--theme", "light")
-	gui.Env = append(gui.Env, "EMOJIG_TERMINAL=xterm")
-	gui.Stderr = os.Stderr
-	if err := gui.Start(); err != nil {
-		return fmt.Errorf("failed to start gui: %v", err)
-	}
-
-	winID, err := waitForWindow("emojig")
-	if err != nil {
-		return err
-	}
-
-	w, h, err := getWindowGeometry(winID)
-	if err != nil {
-		return err
-	}
-	// ffmpeg needs even dimensions
-	if w%2 != 0 {
-		w++
-	}
-	if h%2 != 0 {
-		h++
-	}
-
-	// Start ffmpeg grab
-	ffmpegArgs := []string{
-		"-f", "x11grab",
-		"-video_size", fmt.Sprintf("%dx%d", w, h),
-		"-i", display + ".0+0,0",
-		"-codec:v", "libvpx-vp9",
-		"-b:v", "1M",
-		"-r", "25",
-		"-y",
-		outputPath,
-	}
-	ffmpeg := runInDisplay(ctx, "ffmpeg", ffmpegArgs...)
-	ffmpeg.Stderr = os.Stderr
-	if err := ffmpeg.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %v", err)
-	}
-
-	// Let record settle
-	time.Sleep(1 * time.Second)
-
-	// Explicitly focus/activate the window first
-	if err := runXdotool("windowfocus", "--sync", winID); err != nil {
-		fmt.Printf("Warning focusing window: %v\n", err)
-	}
-	time.Sleep(500 * time.Millisecond)
-
-	if err := runXdotool("type", "--delay", "150", "cat"); err != nil {
-		return err
-	}
-
-	time.Sleep(1 * time.Second)
-
-	if err := runXdotool("key", "Right"); err != nil {
-		return err
-	}
-
-	time.Sleep(1 * time.Second)
-
-	if err := runXdotool("key", "Down"); err != nil {
-		return err
-	}
-
-	time.Sleep(1 * time.Second)
-
-	if err := runXdotool("key", "Return"); err != nil {
-		return err
-	}
-
-	// Wait for window to close (checking if class 'emojig' is gone)
-	xdotoolEnv := append(os.Environ(), "DISPLAY="+display)
-	for i := 0; i < 40; i++ {
-		cmd := exec.Command("xdotool", "search", "--class", "emojig")
-		cmd.Env = xdotoolEnv
-		out, _ := cmd.Output()
-		if len(out) == 0 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	// Stop recording
-	syscall.Kill(-ffmpeg.Process.Pid, syscall.SIGTERM)
-	ffmpeg.Wait()
-
-	fmt.Printf("✅ Saved GUI demo to %s\n", outputPath)
 	return nil
 }
 

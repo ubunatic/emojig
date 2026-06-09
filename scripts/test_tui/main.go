@@ -149,7 +149,7 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 	}
 
 	// Wait for initial render.
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Send search query "fire".
@@ -157,7 +157,7 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 		fmt.Printf("Error writing search key: %v\n", err)
 		os.Exit(1)
 	}
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Send Enter.
