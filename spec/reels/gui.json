@@ -15,19 +15,23 @@
   "gui_app_script": [
     { "type": "Hello GUI ", "desc": "pre-emoji text" },
     { "type": "<C-A-space>", "desc": "fake gui hotkey", "show_keys": true },
-    { "next": "gui_overlay_script" },
+    { "next": "emojig" },
     { "type": "<S-ins>", "desc": "(fake) paste hotkey", "show_keys": true },
     { "type": "🖥️", "desc": "(fake) paste" },
     { "pause": "1s" }
   ],
-  "gui_overlay_args": ["--gui", "--theme", "light"],
-  "gui_overlay_app_id": "emojig-picker",
-  "gui_overlay_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
-  "gui_overlay_script": [
-    { "type": "compu", "desc": "search query" },
-    { "pause": "1s" },
-    { "type": " desk", "desc": "search query" },
-    { "pause": "1s" },
-    { "type": "<cr>", "desc": "select first result", "show_keys": true }
-  ]
+  "gui_apps": {
+    "emojig": {
+      "args": ["--gui", "--theme", "light"],
+      "app_id": "emojig-picker",
+      "env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
+      "script": [
+        { "type": "compu", "desc": "search query" },
+        { "pause": "1s" },
+        { "type": " desk", "desc": "search query" },
+        { "pause": "1s" },
+        { "type": "<cr>", "desc": "select first result", "show_keys": true }
+      ]
+    }
+  }
 }
