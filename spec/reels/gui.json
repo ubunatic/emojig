@@ -15,15 +15,15 @@
   "gui_app_script": [
     { "type": "Hello GUI ", "desc": "pre-emoji text" },
     { "type": "<C-A-space>", "desc": "fake gui hotkey", "show_keys": true },
-    { "next": "gui_picker_script" },
+    { "next": "gui_overlay_script" },
     { "type": "<S-ins>", "desc": "(fake) paste hotkey", "show_keys": true },
     { "type": "🖥️", "desc": "(fake) paste" },
     { "pause": "1s" }
   ],
-  "gui_picker_args": ["--gui", "--theme", "light"],
-  "gui_picker_app_id": "emojig-picker",
-  "gui_picker_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
-  "gui_picker_script": [
+  "gui_overlay_args": ["--gui", "--theme", "light"],
+  "gui_overlay_app_id": "emojig-picker",
+  "gui_overlay_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
+  "gui_overlay_script": [
     { "type": "compu", "desc": "search query" },
     { "pause": "1s" },
     { "type": " desk", "desc": "search query" },
