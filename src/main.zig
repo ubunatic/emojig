@@ -1229,7 +1229,12 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             // Render
             // ----------------------------------------------------------------
-            if (exit_preview or !should_copy_and_exit) {
+            // Skip render when input is already buffered: coalesces rapid
+            // mouse-motion or typing bursts into a single redraw per lull.
+            // Never skip on the first frame or during the exit-preview animation.
+            const skip_render = !is_first_render and !exit_preview and
+                (tui.poll(stdin_fd, pipe_rd, 0) == .tty);
+            if (!skip_render and (exit_preview or !should_copy_and_exit)) {
                 try writeAll(stdout_fd, "\x1b[?25l");
 
                 var ws_size = std.mem.zeroes(std.posix.winsize);

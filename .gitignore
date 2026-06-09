@@ -3,6 +3,7 @@
 zig-out/
 dist/
 /mojigo
+/record
 
 # Downloaded raw emoji source datasets
 data/

@@ -27,8 +27,8 @@ test: ⚙️  # run the unit tests
 	go vet ./...
 	go test ./...
 
-tui: ⚙️  # run TUI mode in the current terminal
-	zig build tui
+tui: ⚙️  # run TUI mode (stdout path: prints selected emoji to terminal)
+	zig build && zig-out/bin/emojig --tui | cat
 
 tui-go: ⚙️  # run Go TUI port (mojigo) in the current terminal
 	go run ./cmd/mojigo/ --height 10

@@ -126,6 +126,7 @@ pub fn buildGuiArgv(
     bg_arg: []const u8,
     fg_arg: []const u8,
     border_color_arg: []const u8,
+    font_arg: []const u8,
     tail: []const []const u8,
 ) []const []const u8 {
     var n: usize = 0;
@@ -137,7 +138,7 @@ pub fn buildGuiArgv(
             n += 1;
             out[n] = size_arg;
             n += 1;
-            out[n] = "--override=font=monospace:size=14";
+            out[n] = font_arg;
             n += 1;
             out[n] = "--override=cursor.blink=yes";
             n += 1;
@@ -396,6 +397,10 @@ pub fn spawnGuiWindow(
     var env_timeout: [64]u8 = undefined;
     const env_timeout_arg = try std.fmt.bufPrint(&env_timeout, "EMOJIG_PICKER_TIMEOUT={s}", .{timeout_val});
 
+    const font_size_val = init.environ_map.get("EMOJIG_GUI_FONT_SIZE") orelse "14";
+    var font_buf: [64]u8 = undefined;
+    const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={s}", .{font_size_val});
+
     // GUI grid dimensions from spec/layout.json (runtime, formerly comptime).
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{spec.layout.gui.cols});
@@ -438,7 +443,7 @@ pub fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, &tail);
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -462,7 +467,7 @@ fn argvContains(argv: []const []const u8, needle: []const u8) bool {
 test "buildGuiArgv: foot borderless adds csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", &tail);
     try std.testing.expectEqualStrings("foot", argv[0]);
     try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
     try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
@@ -476,7 +481,7 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
 test "buildGuiArgv: foot non-borderless omits csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(!argvContains(argv, "--override=csd.preferred=client"));
 }
@@ -485,9 +490,9 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
     var on_out: [MAX_ARGV][]const u8 = undefined;
     var off_out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", &tail);
+    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", &tail);
     try std.testing.expect(argvContains(on, "hide_window_decorations=titlebar-only"));
-    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", &tail);
+    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", &tail);
     try std.testing.expect(!argvContains(off, "hide_window_decorations=titlebar-only"));
     try std.testing.expectEqualStrings("kitty", off[0]);
     try std.testing.expectEqualStrings("-e", off[3]);
@@ -496,7 +501,7 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -509,7 +514,7 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
 test "buildGuiArgv: ptyxis uses -- separator" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("ptyxis", argv[0]);
     try std.testing.expectEqualStrings("--", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -524,7 +529,7 @@ test "whichOnPath finds and rejects" {
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
