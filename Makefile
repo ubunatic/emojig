@@ -59,17 +59,19 @@ WAYREEL := $(HOME)/go/bin/wayreel
 wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
 
-record: ⚙️ wayreel-install  # headlessly record all webm demos (TUI dark + GUI)
-	WAYREEL_SPEC=spec/record.json $(WAYREEL)
+record: ⚙️ wayreel-install  # record all three demos (tui-dark, tui-light, gui)
+	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
+	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
+	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
 
-record-tui: ⚙️ wayreel-install  # record only the TUI demo (dark theme)
-	WAYREEL_SPEC=spec/record.json $(WAYREEL) -mode tui
+record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)
+	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
 
-record-gui: ⚙️ wayreel-install  # record only the GUI desktop scenario
-	WAYREEL_SPEC=spec/record.json $(WAYREEL) -mode gui
+record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)
+	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
 
-record-tui-light: ⚙️ wayreel-install  # record TUI demo with light theme
-	WAYREEL_SPEC=spec/record.json $(WAYREEL) -mode tui -spec spec/record-tui-light.json
+record-gui: ⚙️ wayreel-install  # record GUI desktop scenario
+	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."

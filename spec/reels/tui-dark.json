@@ -1,0 +1,33 @@
+{
+  "build": ["zig", "build", "-Doptimize=ReleaseSmall"],
+  "binary": "zig-out/bin/emojig",
+  "bitrate": "2M",
+  "fps": 30,
+  "scene_width": 850,
+  "scene_height": 480,
+  "tui_font_size": 12,
+  "tui_output": "website/emojig-tui-dark.webm",
+  "tui_title": "Any Terminal",
+  "tui_prompt": [
+    { "text": "➜", "color": "green" },
+    { "text": "  " },
+    { "text": "~", "color": "cyan" },
+    { "text": " " }
+  ],
+  "tui_shell_init": ["source $(pwd)/src/shell/emojig.zsh"],
+  "tui_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
+  "tui_script": [
+    { "type": "echo Hello TUI ", "desc": "simple echo - no CR yet" },
+    { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
+    { "pause": "1s" },
+    { "type": "car", "desc": "search for 'car'" },
+    { "pause": "1s" },
+    { "type": "<bs><bs><bs>", "desc": "delete search" },
+    { "type": "cat", "desc": "search for cat" },
+    { "pause": "1s" },
+    { "type": "<cr>", "desc": "select cat", "show_keys": true },
+    { "pause": "1s" },
+    { "type": "<cr>", "desc": "confirm echo" },
+    { "pause": "1s" }
+  ]
+}
