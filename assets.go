@@ -37,4 +37,3 @@ var StringsJSON []byte
 //
 //go:embed spec/synonyms.json
 var SynonymsJSON []byte
-

@@ -165,4 +165,3 @@ func fuzzyMatch(query, target string, synonyms map[string][]string) (int, bool) 
 	}
 	return total, true
 }
-

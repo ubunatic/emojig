@@ -94,4 +94,3 @@ func TestSearchSynonymRanking(t *testing.T) {
 		t.Errorf("expected automobile '🚗' (rank %d) to outrank tram car '🚋' (rank %d)", carPos, tramPos)
 	}
 }
-

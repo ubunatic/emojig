@@ -37,11 +37,18 @@ type Layout struct {
 // 256-color values; terminal_bg/fg are hex for OSC sequences.
 type Palette struct {
 	GridFg        int    `json:"grid_fg"`
-	SelectionBg   int    `json:"selection_bg"`
+	GridBg        *int   `json:"grid_bg"`
+	SelectionBg   *int   `json:"selection_bg"`
 	SelectionFg   int    `json:"selection_fg"`
-	SearchBg      int    `json:"search_bg"`
+	SearchBg      *int   `json:"search_bg"`
 	SearchFg      int    `json:"search_fg"`
 	SearchShadeFg int    `json:"search_shade_fg"`
+	StatusBg      *int   `json:"status_bg"`
+	StatusFg      int    `json:"status_fg"`
+	StatusShadeFg int    `json:"status_shade_fg"`
+	InfoFg        int    `json:"info_fg"`
+	InfoBg        *int   `json:"info_bg"`
+	BorderBg      *int   `json:"border_bg"`
 	BorderShadeFg int    `json:"border_shade_fg"`
 	TerminalBg    string `json:"terminal_bg"`
 	TerminalFg    string `json:"terminal_fg"`

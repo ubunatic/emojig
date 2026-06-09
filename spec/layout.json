@@ -6,16 +6,16 @@
     "width": 25
   },
   "gui": {
-    "cols": 10,
-    "rows": 6,
-    "width": 41
+    "cols": 8,
+    "rows": 8,
+    "width": 32
   },
   "layout_overhead": 6,
   "max_query_len": 63,
   "animation": {
     "description": "Controls the exit-fade (block-shade preview) animation. exit_preview_tui applies when running inline in a terminal (TUI mode); exit_preview_gui applies when launched as a floating window (GUI mode). Set either to false to skip the animation and exit immediately on selection. The EMOJIG_EXIT_PREVIEW env var and EMOJIG_EXIT_PREVIEW_MS override these defaults at runtime.",
-    "exit_preview_tui": true,
-    "exit_preview_gui": true
+    "exit_preview_tui": false,
+    "exit_preview_gui": false
   },
   "rows_order": [
     "top_padding",

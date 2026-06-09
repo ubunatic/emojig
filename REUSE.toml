@@ -16,7 +16,7 @@ SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["build.zig.zon", ".gitignore", "Makefile", "go.mod", "go.sum", "spec/*.json"]
+path = ["build.zig.zon", ".gitignore", "Makefile", "go.mod", "go.sum", "spec/*.json", "Cargo.lock"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

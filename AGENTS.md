@@ -8,6 +8,11 @@ This document details the architectural decisions, coding standards, and safety 
 * Make sure --gui/--tui mouse hover logic is always safe!
 * Make sure --tui close behavour is safe!
 
+## Assumptions for Agentic Work
+* Assume all tools you need are installed (ffmpeg, go, zig, terminal emulators).
+  Do not always probe for tools with `command -v`. Just call them when needed.
+* Assume recent versions of all tools (modern Go, latest Rust, fresh OS tools, etc.)
+
 ---
 
 ## 1. Programming Languages & Scripting Constraints
@@ -16,7 +21,11 @@ This document details the architectural decisions, coding standards, and safety 
   * Aim for zero-allocation performance in the main interactive loop.
   * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 350 KB and Resident Set Size (RSS) under 2.0 MB.
 * **Helper Scripts & Utilities**: Located under `./scripts/`.
-  * **No Python**: All helpers must be written in Go or Zig (or POSIX-compliant Shell for installers). Do not introduce Python scripts or packages.
+  * **No Python, No Perl, No Heredocs**:
+    All helpers must be written in Go or Zig (or POSIX-compliant Shell for installers).
+    Do not introduce Python scripts or packages.
+    Do not use big inine scripts when exploring/testing code.
+    Do not use heredoc scripts when exploring/testing code.
   * **Go Scripts**: Written as flat, self-contained single files. Execute them using `go run scripts/<name>.go`.
   * **Zero Dependencies**: Go scripts must rely purely on the Go Standard Library without external module requirements.
   * **Zig Scripts**: Written as executable Zig source files. Execute them using `zig run scripts/<name>.zig`.
