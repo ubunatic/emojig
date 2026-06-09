@@ -3,15 +3,17 @@
 
 package tui
 
-import "os"
+import "io"
 
-// readKey reads one keypress and decodes it into a logical key name (matching
-// spec/keys.json) plus, for typed characters, the literal text. The third
-// return is true if stdin closed (treat as quit). Mirrors the key switch in
-// src/main.zig but stays minimal: no mouse, no Alt+F4.
-func readKey() (key, text string, eof bool) {
+// readKey reads one keypress from in and decodes it into a logical key name
+// (matching spec/keys.json) plus, for typed characters, the literal text. The
+// third return is true if the input closed (treat as quit). Reading from the
+// tty handle (not os.Stdin) keeps piped stdin from being consumed as
+// keystrokes. Mirrors the key switch in src/main.zig but stays minimal: no
+// mouse, no Alt+F4.
+func readKey(in io.Reader) (key, text string, eof bool) {
 	var buf [32]byte
-	n, err := os.Stdin.Read(buf[:])
+	n, err := in.Read(buf[:])
 	if err != nil || n == 0 {
 		return "", "", true
 	}

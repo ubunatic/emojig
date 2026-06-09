@@ -39,17 +39,6 @@ func spawnPTY() (*os.File, string) {
 	return master, slaveName
 }
 
-// readAvailable drains whatever is available on master within ~150 ms.
-func readAvailable(master *os.File) string {
-	syscall.SetNonblock(int(master.Fd()), true)
-	defer syscall.SetNonblock(int(master.Fd()), false)
-
-	time.Sleep(150 * time.Millisecond)
-	buf := make([]byte, 65536)
-	n, _ := master.Read(buf)
-	return string(buf[:n])
-}
-
 // stripANSI removes ESC sequences and control characters for plain-text comparison.
 func stripANSI(s string) string {
 	var out strings.Builder
@@ -98,6 +87,11 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 	}
 	defer slave.Close()
 
+	// Set a valid terminal size so the TUI does not collapse into hidden mode.
+	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+	ws := winsize{Row: 24, Col: 80}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
 	cmd := exec.Command(binaryPath, "--tui")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
@@ -117,10 +111,46 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 		fmt.Printf("Error starting command: %v\n", err)
 		os.Exit(1)
 	}
+	slave.Close() // Close parent's copy of slave to allow proper EOF/EIO detection on master PTY
+
+	chunksChan := make(chan string, 100)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				s := string(buf[:n])
+				chunksChan <- s
+				if strings.Contains(s, "\x1b[6n") {
+					// Write back mock Cursor Position Report: row 24, col 80
+					master.Write([]byte("\x1b[24;80R"))
+				}
+			}
+			if err != nil {
+				close(chunksChan)
+				return
+			}
+		}
+	}()
+
+	collectAvailable := func() string {
+		var s strings.Builder
+		for {
+			select {
+			case chunk, ok := <-chunksChan:
+				if !ok {
+					return s.String()
+				}
+				s.WriteString(chunk)
+			default:
+				return s.String()
+			}
+		}
+	}
 
 	// Wait for initial render.
 	time.Sleep(200 * time.Millisecond)
-	_ = readAvailable(master)
+	_ = collectAvailable()
 
 	// Send search query "fire".
 	if _, err := master.Write([]byte("fire")); err != nil {
@@ -128,7 +158,7 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 		os.Exit(1)
 	}
 	time.Sleep(150 * time.Millisecond)
-	_ = readAvailable(master)
+	_ = collectAvailable()
 
 	// Send Enter.
 	if _, err := master.Write([]byte("\n")); err != nil {
@@ -141,29 +171,27 @@ func runTest(binaryPath string, env map[string]string) (previewOutput string, ex
 	exitChan := make(chan error, 1)
 	go func() { exitChan <- cmd.Wait() }()
 
-	// Collect PTY output for up to 1.5 s, draining in small slices.
+	// Collect PTY output for up to 1.5 s.
 	var previewBuf strings.Builder
 	deadline := time.Now().Add(1500 * time.Millisecond)
 	for {
 		select {
 		case e := <-exitChan:
 			// Process has exited; drain any remaining bytes.
-			tail := readAvailable(master)
-			previewBuf.WriteString(tail)
+			time.Sleep(50 * time.Millisecond)
+			previewBuf.WriteString(collectAvailable())
 			exitErr = e
 			previewOutput = previewBuf.String()
 			return
-		default:
-		}
-		if time.Now().After(deadline) {
+		case chunk, ok := <-chunksChan:
+			if ok {
+				previewBuf.WriteString(chunk)
+			}
+		case <-time.After(time.Until(deadline)):
 			fmt.Println("Process did not exit within 1.5 s after Enter — force killing.")
 			cmd.Process.Kill()
 			<-exitChan
 			os.Exit(1)
-		}
-		chunk := readAvailable(master)
-		if chunk != "" {
-			previewBuf.WriteString(chunk)
 		}
 	}
 }
@@ -201,7 +229,15 @@ func main() {
 	}
 	fmt.Println("PASS: fire emoji present in preview frame.")
 
-	if strings.Contains(plainPreview, "[") || strings.Contains(plainPreview, "]") {
+	cleanedPreview := plainPreview
+	// Remove echoed CPR responses and OSC 11 theme queries/responses which contain brackets
+	cleanedPreview = strings.ReplaceAll(cleanedPreview, "^[[24;80R", "")
+	cleanedPreview = strings.ReplaceAll(cleanedPreview, "[24;80R", "")
+	cleanedPreview = strings.ReplaceAll(cleanedPreview, "^]]11;", "")
+	cleanedPreview = strings.ReplaceAll(cleanedPreview, "111110", "")
+	cleanedPreview = strings.ReplaceAll(cleanedPreview, "11111", "")
+
+	if strings.Contains(cleanedPreview, "[") || strings.Contains(cleanedPreview, "]") {
 		fmt.Printf("FAIL: preview frame contains bracket characters (selection highlight not removed).\nPlain text:\n%s\n", plainPreview)
 		os.Exit(1)
 	}

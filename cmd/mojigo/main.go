@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"codeberg.org/ubunatic/emojig/internal/emoji"
 	"codeberg.org/ubunatic/emojig/internal/spec"
@@ -16,6 +17,12 @@ import (
 )
 
 func main() {
+	height, err := parseArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "mojigo:", err)
+		os.Exit(2)
+	}
+
 	specs, err := spec.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mojigo: loading spec:", err)
@@ -28,6 +35,9 @@ func main() {
 	}
 
 	app := tui.New(db, specs)
+	if height.Set() {
+		app.SetHeight(height)
+	}
 	chosen, err := app.Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mojigo:", err)
@@ -36,4 +46,29 @@ func main() {
 	if chosen != "" {
 		fmt.Println(chosen)
 	}
+}
+
+// parseArgs handles the only flag mojigo accepts: --height. Forms supported,
+// mirroring the Rust demo (src/main.rs): --height N, --height N%, --height=N,
+// -H N. With no flag the picker runs in its default alt-screen mode.
+func parseArgs(args []string) (tui.Height, error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--height" || a == "-H":
+			i++
+			if i >= len(args) {
+				return tui.Height{}, fmt.Errorf("%s requires a value (e.g. 8 or 40%%)", a)
+			}
+			return tui.ParseHeight(args[i])
+		case strings.HasPrefix(a, "--height="):
+			return tui.ParseHeight(strings.TrimPrefix(a, "--height="))
+		case a == "-h" || a == "--help":
+			fmt.Println("usage: mojigo [--height N|N%]")
+			os.Exit(0)
+		default:
+			return tui.Height{}, fmt.Errorf("unknown argument: %q", a)
+		}
+	}
+	return tui.Height{}, nil
 }
