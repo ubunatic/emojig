@@ -1,4 +1,5 @@
 {
   "tui_theme": "light",
-  "tui_output": "website/emojig-tui-light.webm"
+  "tui_output": "website/emojig-tui-light.webm",
+  "tui_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12", "EMOJIG_THEME=light"]
 }

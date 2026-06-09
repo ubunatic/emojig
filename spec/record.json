@@ -16,7 +16,7 @@
   ],
   "tui_title": "Any Terminal",
   "tui_shell_init": ["source $(pwd)/src/shell/emojig.zsh"],
-  "tui_env": ["EMOJIG_TERMINAL=foot"],
+  "tui_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
   "tui_script": [
     { "type": "echo Hello TUI ", "desc": "simple echo - no CR yet" },
     { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
