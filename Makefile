@@ -39,7 +39,10 @@ tui-rust: ⚙️  # run Rust TUI demo in the current terminal
 gui: ⚙️  # launch the floating terminal picker window (requires foot)
 	zig build gui
 
-browse: ⚙️  # open the website homepage in the default web browser
+jsdemo: ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.json
+	@printf '// generated from spec/jsdemo.json — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/jsdemo.json)" > website/jsdemo.js
+
+browse: ⚙️ jsdemo  # open the website homepage in the default web browser
 	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"
 
 screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
@@ -51,17 +54,17 @@ termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, 
 termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl-C to stop)
 	@sh scripts/termstate.sh --watch
 
-record: ⚙️ build  # headlessly record webm demos: TUI (Xvfb/xterm) + GUI desktop scenario (sway/gedit/foot). Set EMOJIG_DEMO_QUERY to change the search term.
-	go run ./scripts/record/
+record: ⚙️  # headlessly record all webm demos (TUI dark + GUI) via wayreel
+	WAYREEL_SPEC=spec/record.json go run ../wayreel/
 
-record-tui: ⚙️ build  # record only the TUI demo (Xvfb/xterm/ffmpeg)
-	EMOJIG_RECORD_MODE=tui go run ./scripts/record/
+record-tui: ⚙️  # record only the TUI demo (dark theme) via wayreel
+	WAYREEL_SPEC=spec/record.json go run ../wayreel/ -mode tui
 
-record-gui: ⚙️ build  # record only the GUI desktop scenario (sway/gedit/foot/wf-recorder)
-	EMOJIG_RECORD_MODE=gui go run ./scripts/record/
+record-gui: ⚙️  # record only the GUI desktop scenario via wayreel
+	WAYREEL_SPEC=spec/record.json go run ../wayreel/ -mode gui
 
-record-tui-light: ⚙️ build  # record TUI demo with light theme (spec/record-tui-light.json overlay)
-	EMOJIG_RECORD_MODE=tui EMOJIG_RECORD_SPEC=spec/record-tui-light.json go run ./scripts/record/
+record-tui-light: ⚙️  # record TUI demo with light theme via wayreel
+	WAYREEL_SPEC=spec/record.json go run ../wayreel/ -mode tui -spec spec/record-tui-light.json
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
