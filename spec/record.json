@@ -1,0 +1,8 @@
+{
+  "bitrate": "2M",
+  "fps": 30,
+  "tui_font_size": 18,
+  "gui_font_size": 14,
+  "gedit_width": 1000,
+  "gedit_height": 540
+}

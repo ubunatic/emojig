@@ -8,16 +8,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>emojig — Zero-Allocation TUI/GUI Emoji Picker for Linux</title>
-        <meta name="description" content="Emojig is an ultra-fast, zero-allocation, terminal-based GUI/TUI emoji picker for Linux. Under 350 KB static binary, less than 2 MB RAM usage." />
-        
+        <meta
+            name="description"
+            content="Emojig is an ultra-fast, zero-allocation, terminal-based GUI/TUI emoji picker for Linux. Under 350 KB static binary, less than 2 MB RAM usage."
+        />
+
         <!-- Google Fonts -->
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Color+Emoji&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-        
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Color+Emoji&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+
         <!-- TUI Simulator CSS -->
         <link rel="stylesheet" href="simulator.css" />
-        
+
         <style>
             :root {
                 --bg-main: #0b0f19;
@@ -43,8 +49,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             body {
-                font-family: 'Plus Jakarta Sans', system-ui, 'Noto Color Emoji', sans-serif;
-                background: radial-gradient(circle at 50% 0%, var(--bg-main) 0%, var(--bg-gradient-end) 100%);
+                font-family:
+                    "Plus Jakarta Sans", system-ui, "Noto Color Emoji",
+                    sans-serif;
+                background: radial-gradient(
+                    circle at 50% 0%,
+                    var(--bg-main) 0%,
+                    var(--bg-gradient-end) 100%
+                );
                 color: var(--text-main);
                 line-height: 1.6;
                 padding-bottom: 80px;
@@ -96,10 +108,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .brand-name {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 1.6rem;
                 font-weight: 800;
-                background: linear-gradient(135deg, #ffffff 40%, var(--text-muted) 100%);
+                background: linear-gradient(
+                    135deg,
+                    #ffffff 40%,
+                    var(--text-muted) 100%
+                );
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
                 letter-spacing: -0.5px;
@@ -141,14 +157,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .hero::before {
-                content: '';
+                content: "";
                 position: absolute;
                 top: -80px;
                 left: 50%;
                 transform: translateX(-50%);
                 width: 300px;
                 height: 300px;
-                background: radial-gradient(var(--accent-glow) 0%, transparent 70%);
+                background: radial-gradient(
+                    var(--accent-glow) 0%,
+                    transparent 70%
+                );
                 z-index: -1;
                 pointer-events: none;
             }
@@ -162,12 +181,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             @keyframes float {
-                0%, 100% { transform: translateY(0px); }
-                50% { transform: translateY(-8px); }
+                0%,
+                100% {
+                    transform: translateY(0px);
+                }
+                50% {
+                    transform: translateY(-8px);
+                }
             }
 
             h1 {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 4rem;
                 font-weight: 800;
                 letter-spacing: -2px;
@@ -216,7 +240,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 align-items: center;
                 gap: 12px;
                 padding-left: 14px;
-                font-family: 'JetBrains Mono', monospace;
+                font-family: "JetBrains Mono", monospace;
                 font-size: 0.92rem;
                 overflow-x: auto;
                 white-space: nowrap;
@@ -245,7 +269,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 color: var(--text-main);
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 0.8rem;
                 font-weight: 600;
                 padding: 10px 18px;
@@ -275,7 +299,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             /* Live Demos Display */
             .section-title {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 1.8rem;
                 font-weight: 700;
                 margin-bottom: 12px;
@@ -298,7 +322,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 margin-bottom: 60px;
             }
 
-            @media(min-width: 768px) {
+            @media (min-width: 768px) {
                 .demo-grid {
                     grid-template-columns: 1fr;
                 }
@@ -311,7 +335,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 border-radius: 12px;
                 overflow: hidden;
                 box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-                max-width: 640px;
                 margin: 0 auto;
             }
 
@@ -335,12 +358,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 border-radius: 50%;
             }
 
-            .mockup-dot.close { background: #ef4444; }
-            .mockup-dot.minimize { background: #f59e0b; }
-            .mockup-dot.expand { background: #10b981; }
+            .mockup-dot.close {
+                background: #ef4444;
+            }
+            .mockup-dot.minimize {
+                background: #f59e0b;
+            }
+            .mockup-dot.expand {
+                background: #10b981;
+            }
 
             .mockup-title {
-                font-family: 'JetBrains Mono', monospace;
+                font-family: "JetBrains Mono", monospace;
                 font-size: 0.75rem;
                 color: var(--text-muted);
                 position: absolute;
@@ -349,7 +378,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .mockup-tab-indicator {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 0.75rem;
                 font-weight: 600;
                 background: rgba(255, 255, 255, 0.06);
@@ -366,7 +395,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .mockup-video {
-                width: 100%;
                 display: block;
                 border: none;
             }
@@ -383,7 +411,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .kbd-combo {
-                font-family: 'JetBrains Mono', monospace;
+                font-family: "JetBrains Mono", monospace;
                 font-weight: 500;
                 background: rgba(139, 92, 246, 0.15);
                 color: #c084fc;
@@ -419,13 +447,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .stat-card::before {
-                content: '';
+                content: "";
                 position: absolute;
                 bottom: 0;
                 left: 0;
                 width: 100%;
                 height: 3px;
-                background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+                background: linear-gradient(
+                    90deg,
+                    var(--accent-primary),
+                    var(--accent-secondary)
+                );
                 opacity: 0;
                 transition: opacity 0.3s ease;
             }
@@ -441,12 +473,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .stat-num {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 2.2rem;
                 font-weight: 800;
                 line-height: 1.1;
                 margin-bottom: 4px;
-                background: linear-gradient(135deg, #fff 50%, var(--accent-secondary) 100%);
+                background: linear-gradient(
+                    135deg,
+                    #fff 50%,
+                    var(--accent-secondary) 100%
+                );
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
             }
@@ -467,7 +503,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 margin-bottom: 60px;
             }
 
-            @media(min-width: 680px) {
+            @media (min-width: 680px) {
                 .features-grid {
                     grid-template-columns: repeat(2, 1fr);
                 }
@@ -511,7 +547,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .feature-title {
-                font-family: 'Outfit', sans-serif;
+                font-family: "Outfit", sans-serif;
                 font-size: 1.25rem;
                 font-weight: 700;
                 margin-bottom: 8px;
@@ -532,7 +568,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 margin-bottom: 60px;
             }
 
-            @media(min-width: 768px) {
+            @media (min-width: 768px) {
                 .details-section {
                     grid-template-columns: 1fr 1fr;
                 }
@@ -551,7 +587,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 font-size: 0.9rem;
             }
 
-            .controls-table th, .controls-table td {
+            .controls-table th,
+            .controls-table td {
                 padding: 12px 14px;
                 text-align: left;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -575,7 +612,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 border: 1px solid rgba(255, 255, 255, 0.15);
                 border-radius: 4px;
                 padding: 2px 6px;
-                font-family: 'JetBrains Mono', monospace;
+                font-family: "JetBrains Mono", monospace;
                 font-size: 0.82rem;
                 box-shadow: 0 1.5px 0px rgba(255, 255, 255, 0.2);
             }
@@ -609,7 +646,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             }
 
             .req-body code {
-                font-family: 'JetBrains Mono', monospace;
+                font-family: "JetBrains Mono", monospace;
                 background: rgba(255, 255, 255, 0.06);
                 padding: 1px 5px;
                 border-radius: 4px;
@@ -681,12 +718,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- ── Header ── -->
             <header>
                 <a href="#" class="brand-logo">
-                    <img class="logo-img" src="emojig-icon.svg" alt="emojig logo" />
+                    <img
+                        class="logo-img"
+                        src="emojig-icon.svg"
+                        alt="emojig logo"
+                    />
                     <span class="brand-name">emojig</span>
                 </a>
-                <a class="nav-link-badge" href="https://codeberg.org/ubunatic/emojig" target="_blank" rel="noopener">
+                <a
+                    class="nav-link-badge"
+                    href="https://codeberg.org/ubunatic/emojig"
+                    target="_blank"
+                    rel="noopener"
+                >
                     <svg viewBox="0 0 24 24">
-                        <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.867 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+                        <path
+                            d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.867 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"
+                        />
                     </svg>
                     Codeberg Repository
                 </a>
@@ -694,18 +742,32 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- ── Hero ── -->
             <section class="hero">
-                <img class="hero-icon" src="emojig-icon.svg" alt="emojig large logo" />
+                <img
+                    class="hero-icon"
+                    src="emojig-icon.svg"
+                    alt="emojig large logo"
+                />
                 <h1>emojig</h1>
                 <p class="tagline">
-                    <em>all your emoji are belong to us</em> — ultra-lightweight, zero-allocation TUI &amp; floating GUI emoji picker for Linux.
+                    <em>all your emoji are belong to us</em> —
+                    ultra-lightweight, zero-allocation TUI &amp; floating GUI
+                    emoji picker for Linux.
                 </p>
 
                 <div class="installer-wrapper">
                     <div class="terminal-prompt" id="install-cmd-box">
                         <span class="terminal-symbol">$</span>
-                        <span class="terminal-cmd-text">curl -fsSL https://ubunatic.com/emojig/install.sh | sh</span>
+                        <span class="terminal-cmd-text"
+                            >curl -fsSL https://ubunatic.com/emojig/install.sh |
+                            sh</span
+                        >
                     </div>
-                    <button class="copy-btn" id="copy-btn" onclick="copyInstallCommand()" aria-label="Copy installation command">
+                    <button
+                        class="copy-btn"
+                        id="copy-btn"
+                        onclick="copyInstallCommand()"
+                        aria-label="Copy installation command"
+                    >
                         <span id="copy-btn-text">Copy</span>
                     </button>
                 </div>
@@ -732,47 +794,105 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </section>
 
             <!-- ── Interactive TUI Simulator ── -->
-            <section style="margin-bottom: 60px;">
+            <section style="margin-bottom: 60px">
                 <div class="section-title">
                     <span>🎮</span>
                     <h2>Interactive Shell Widget Playground</h2>
                 </div>
-                <p class="section-subtitle">A real shell prompt — type a command, then press <span class="kbd-combo">Ctrl+E</span> to launch the picker. Pick an emoji and it drops straight into your command line, just like the actual shell widget.</p>
+                <p class="section-subtitle">
+                    A real shell prompt — type a command, then press
+                    <span class="kbd-combo">Ctrl+E</span> to launch the picker.
+                    Pick an emoji and it drops straight into your command line,
+                    just like the actual shell widget.
+                </p>
 
                 <div class="sim-container">
                     <!-- Control Panel (Left / Top) -->
                     <div class="sim-panel" id="sim-panel">
                         <div>
                             <h3 class="sim-panel-title">Playground HUD</h3>
-                            <p class="sim-panel-desc">At the prompt, type <code style="color:#a7f3d0;">echo&nbsp;</code> then hit <strong>Ctrl+E</strong> to open the picker. Fuzzy-search, navigate with arrows, and Enter to insert. Back at the shell, <strong>↑↓</strong> recall history and <strong>←→</strong> move the cursor. <strong>Esc</strong> cancels the picker; <strong>Tab</strong> cycles themes.</p>
+                            <p class="sim-panel-desc">
+                                At the prompt, type
+                                <code style="color: #a7f3d0">echo&nbsp;</code>
+                                then hit <strong>Ctrl+E</strong> to open the
+                                picker. Fuzzy-search, navigate with arrows, and
+                                Enter to insert. Back at the shell,
+                                <strong>↑↓</strong> recall history and
+                                <strong>←→</strong> move the cursor.
+                                <strong>Esc</strong> cancels the picker;
+                                <strong>Tab</strong> cycles themes.
+                            </p>
                         </div>
 
                         <!-- Keyboard Focus Indicator -->
-                        <div class="sim-focus-badge inactive" id="sim-focus-badge">
-                            <span class="sim-dot-indicator"></span> Click terminal to focus keys
+                        <div
+                            class="sim-focus-badge inactive"
+                            id="sim-focus-badge"
+                        >
+                            <span class="sim-dot-indicator"></span> Click
+                            terminal to focus keys
                         </div>
 
                         <!-- Input field for easy typing, especially on mobile -->
                         <div class="sim-input-group">
-                            <label class="sim-label" for="sim-query-input">Fuzzy Search Input</label>
-                            <input class="sim-search-input" id="sim-query-input" type="text" placeholder="Type to search emojis..." autocomplete="off" spellcheck="false" />
+                            <label class="sim-label" for="sim-query-input"
+                                >Fuzzy Search Input</label
+                            >
+                            <input
+                                class="sim-search-input"
+                                id="sim-query-input"
+                                type="text"
+                                placeholder="Type to search emojis..."
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
                         </div>
 
                         <!-- Options checkboxes -->
                         <div class="sim-options-grid">
-                            <div class="sim-option-card" onclick="document.getElementById('sim-opt-border').click();">
-                                <input type="checkbox" id="sim-opt-border" onclick="event.stopPropagation();" />
-                                <span class="sim-option-label">Border (Env)</span>
+                            <div
+                                class="sim-option-card"
+                                onclick="
+                                    document
+                                        .getElementById('sim-opt-border')
+                                        .click()
+                                "
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="sim-opt-border"
+                                    onclick="event.stopPropagation()"
+                                />
+                                <span class="sim-option-label"
+                                    >Border (Env)</span
+                                >
                             </div>
-                            <div class="sim-option-card" onclick="document.getElementById('sim-opt-safe').click();">
-                                <input type="checkbox" id="sim-opt-safe" onclick="event.stopPropagation();" />
+                            <div
+                                class="sim-option-card"
+                                onclick="
+                                    document
+                                        .getElementById('sim-opt-safe')
+                                        .click()
+                                "
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="sim-opt-safe"
+                                    onclick="event.stopPropagation()"
+                                />
                                 <span class="sim-option-label">Safe Mode</span>
                             </div>
                         </div>
 
                         <div class="sim-input-group">
-                            <label class="sim-label" for="sim-opt-theme">Theme Option</label>
-                            <select class="sim-search-input" id="sim-opt-theme" style="width: 100%; cursor: pointer;">
+                            <label class="sim-label" for="sim-opt-theme"
+                                >Theme Option</label
+                            >
+                            <select
+                                class="sim-search-input"
+                                id="sim-opt-theme"
+                                style="width: 100%; cursor: pointer"
+                            >
                                 <option value="dark">Dark Theme</option>
                                 <option value="light">Light Theme</option>
                                 <option value="system">System (Auto)</option>
@@ -781,13 +901,40 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
                         <!-- Mobile D-pad -->
                         <div>
-                            <label class="sim-label" style="display: block; margin-bottom: 8px; text-align: center;">Navigation DPAD</label>
+                            <label
+                                class="sim-label"
+                                style="
+                                    display: block;
+                                    margin-bottom: 8px;
+                                    text-align: center;
+                                "
+                                >Navigation DPAD</label
+                            >
                             <div class="sim-dpad">
-                                <button class="sim-dpad-btn up" aria-label="Up">▲</button>
-                                <button class="sim-dpad-btn left" aria-label="Left">◀</button>
-                                <button class="sim-dpad-btn ok" aria-label="OK">OK</button>
-                                <button class="sim-dpad-btn right" aria-label="Right">▶</button>
-                                <button class="sim-dpad-btn down" aria-label="Down">▼</button>
+                                <button class="sim-dpad-btn up" aria-label="Up">
+                                    ▲
+                                </button>
+                                <button
+                                    class="sim-dpad-btn left"
+                                    aria-label="Left"
+                                >
+                                    ◀
+                                </button>
+                                <button class="sim-dpad-btn ok" aria-label="OK">
+                                    OK
+                                </button>
+                                <button
+                                    class="sim-dpad-btn right"
+                                    aria-label="Right"
+                                >
+                                    ▶
+                                </button>
+                                <button
+                                    class="sim-dpad-btn down"
+                                    aria-label="Down"
+                                >
+                                    ▼
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -811,12 +958,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </section>
 
             <!-- ── Interactive TUI Demo ── -->
-            <section style="margin-bottom: 60px;">
+            <section style="margin-bottom: 60px">
                 <div class="section-title">
                     <span>📺</span>
                     <h2>Fuzzy TUI Picker in Action</h2>
                 </div>
-                <p class="section-subtitle">Runs inline at your prompt with zero context disruption or desktop overhead.</p>
+                <p class="section-subtitle">
+                    Runs inline at your prompt with zero context disruption or
+                    desktop overhead.
+                </p>
 
                 <div class="mockup-window">
                     <div class="mockup-header">
@@ -829,8 +979,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <span class="mockup-tab-indicator">Ctrl+E Widget</span>
                     </div>
                     <div class="mockup-content">
-                        <video class="mockup-video" autoplay loop muted playsinline>
-                            <source src="emojig-tui-dark.webm" type="video/webm" />
+                        <video
+                            class="mockup-video"
+                            autoplay
+                            loop
+                            muted
+                            playsinline
+                        >
+                            <source
+                                src="emojig-tui-dark.webm"
+                                type="video/webm"
+                            />
                         </video>
                     </div>
                     <div class="mockup-caption">
@@ -841,65 +1000,100 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </section>
 
             <!-- ── Features Section ── -->
-            <section style="margin-bottom: 60px;">
+            <section style="margin-bottom: 60px">
                 <div class="section-title">
                     <span>⚡</span>
                     <h2>Status Quo &amp; Features</h2>
                 </div>
-                <p class="section-subtitle">Optimized system-level mechanics, fully standalone, with absolute zero background daemons.</p>
+                <p class="section-subtitle">
+                    Optimized system-level mechanics, fully standalone, with
+                    absolute zero background daemons.
+                </p>
 
                 <div class="features-grid">
                     <!-- Zero-Allocation Card -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">🚀</div>
-                        <h3 class="feature-title">Zero-Allocation Performance</h3>
-                        <p class="feature-desc">Engineered in pure Zig. Performs zero heap allocations during the active search loop. Delivers instantaneous renders under 2.0 MB resident memory.</p>
+                        <h3 class="feature-title">
+                            Zero-Allocation Performance
+                        </h3>
+                        <p class="feature-desc">
+                            Engineered in pure Zig. Performs zero heap
+                            allocations during the active search loop. Delivers
+                            instantaneous renders under 2.0 MB resident memory.
+                        </p>
                     </div>
 
                     <!-- TUI/GUI Card -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">🖥️</div>
                         <h3 class="feature-title">Dual TUI &amp; GUI Modes</h3>
-                        <p class="feature-desc">Fzf-like auto-detection. Launches inline in active terminals, or automatically spawns a borderless graphical popup window when executed from hotkeys.</p>
+                        <p class="feature-desc">
+                            Fzf-like auto-detection. Launches inline in active
+                            terminals, or automatically spawns a borderless
+                            graphical popup window when executed from hotkeys.
+                        </p>
                     </div>
 
                     <!-- Intelligent Search Card -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">🔍</div>
                         <h3 class="feature-title">Intelligent Fuzzy Match</h3>
-                        <p class="feature-desc">Space-separated multi-term matching (AND semantics) with automatic plural (<em>cars → car</em>), verb stem (<em>running → run</em>), and trailing 'e' fallback corrections.</p>
+                        <p class="feature-desc">
+                            Space-separated multi-term matching (AND semantics)
+                            with automatic plural (<em>cars → car</em>), verb
+                            stem (<em>running → run</em>), and trailing 'e'
+                            fallback corrections.
+                        </p>
                     </div>
 
                     <!-- Automatic Theming Card -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">🌗</div>
                         <h3 class="feature-title">OSC 11 Theme Auto-Detect</h3>
-                        <p class="feature-desc">Queries the host terminal background via standard OSC 11 sequences to choose light/dark modes. Toggle instantly via <kbd>Tab</kbd> and save to local config.</p>
+                        <p class="feature-desc">
+                            Queries the host terminal background via standard
+                            OSC 11 sequences to choose light/dark modes. Toggle
+                            instantly via <kbd>Tab</kbd> and save to local
+                            config.
+                        </p>
                     </div>
 
                     <!-- Safety Terminal State -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">🛡️</div>
                         <h3 class="feature-title">Terminal State Safety</h3>
-                        <p class="feature-desc">Custom panic handlers and native POSIX signal captures (`SIGINT`, `SIGTERM`) ensure terminal raw settings, mouse tracking, and cursors are fully restored on exit.</p>
+                        <p class="feature-desc">
+                            Custom panic handlers and native POSIX signal
+                            captures (`SIGINT`, `SIGTERM`) ensure terminal raw
+                            settings, mouse tracking, and cursors are fully
+                            restored on exit.
+                        </p>
                     </div>
 
                     <!-- Embedded DB -->
                     <div class="feature-card">
                         <div class="feature-icon-wrapper">📦</div>
                         <h3 class="feature-title">Embedded Emoji Packer</h3>
-                        <p class="feature-desc">Compile-time database packing serialized via Go pack tools directly into the compiled Zig binary. Zero runtime file/database disk reads during queries.</p>
+                        <p class="feature-desc">
+                            Compile-time database packing serialized via Go pack
+                            tools directly into the compiled Zig binary. Zero
+                            runtime file/database disk reads during queries.
+                        </p>
                     </div>
                 </div>
             </section>
 
             <!-- ── Editor/GUI Demo ── -->
-            <section style="margin-bottom: 60px;">
+            <section style="margin-bottom: 60px">
                 <div class="section-title">
                     <span>✨</span>
                     <h2>Floating Desktop Integration</h2>
                 </div>
-                <p class="section-subtitle">Spawns a beautifully compact floating window using standard native terminals.</p>
+                <p class="section-subtitle">
+                    Spawns a beautifully compact floating window using standard
+                    native terminals.
+                </p>
 
                 <div class="mockup-window">
                     <div class="mockup-header">
@@ -912,12 +1106,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <span class="mockup-tab-indicator">Light Theme</span>
                     </div>
                     <div class="mockup-content">
-                        <video class="mockup-video" autoplay loop muted playsinline>
-                            <source src="emojig-gui-light.webm" type="video/webm" />
+                        <video
+                            class="mockup-video"
+                            autoplay
+                            loop
+                            muted
+                            playsinline
+                        >
+                            <source
+                                src="emojig-gui-light.webm"
+                                type="video/webm"
+                            />
                         </video>
                     </div>
                     <div class="mockup-caption">
-                        <span>Floating window popup over GNOME Text Editor</span>
+                        <span
+                            >Floating window popup over GNOME Text Editor</span
+                        >
                         <span class="kbd-combo">emojig --gui</span>
                     </div>
                 </div>
@@ -927,7 +1132,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <section class="details-section">
                 <!-- Controls Card -->
                 <div class="detail-card">
-                    <h3 class="section-title" style="font-size:1.4rem; margin-bottom:18px;">Keyboard Controls</h3>
+                    <h3
+                        class="section-title"
+                        style="font-size: 1.4rem; margin-bottom: 18px"
+                    >
+                        Keyboard Controls
+                    </h3>
                     <table class="controls-table">
                         <thead>
                             <tr>
@@ -938,27 +1148,49 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <tbody>
                             <tr>
                                 <td><kbd>Ctrl+E</kbd></td>
-                                <td>Launch picker at the shell prompt; inserts pick into the command line</td>
+                                <td>
+                                    Launch picker at the shell prompt; inserts
+                                    pick into the command line
+                                </td>
                             </tr>
                             <tr>
                                 <td><kbd>Type Text</kbd></td>
-                                <td>Live fuzzy search (auto-stems &amp; plurals)</td>
+                                <td>
+                                    Live fuzzy search (auto-stems &amp; plurals)
+                                </td>
                             </tr>
                             <tr>
-                                <td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td>
-                                <td>Picker: 2D grid selection (wraps). Shell: <kbd>↑</kbd><kbd>↓</kbd> history, <kbd>←</kbd><kbd>→</kbd> move cursor, <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> by word, <kbd>Home</kbd>/<kbd>End</kbd> line ends</td>
+                                <td>
+                                    <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd>
+                                    <kbd>→</kbd>
+                                </td>
+                                <td>
+                                    Picker: 2D grid selection (wraps). Shell:
+                                    <kbd>↑</kbd><kbd>↓</kbd> history,
+                                    <kbd>←</kbd><kbd>→</kbd> move cursor,
+                                    <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> by
+                                    word, <kbd>Home</kbd>/<kbd>End</kbd> line
+                                    ends
+                                </td>
                             </tr>
                             <tr>
                                 <td><kbd>Enter</kbd> / Click</td>
-                                <td>Confirm selection &amp; copy to clipboard</td>
+                                <td>
+                                    Confirm selection &amp; copy to clipboard
+                                </td>
                             </tr>
                             <tr>
                                 <td><kbd>Tab</kbd></td>
-                                <td>Cycle theme (dark / light / system) &amp; save</td>
+                                <td>
+                                    Cycle theme (dark / light / system) &amp;
+                                    save
+                                </td>
                             </tr>
                             <tr>
                                 <td><kbd>Esc</kbd> / <kbd>Ctrl+C</kbd></td>
-                                <td>Cancel and restore terminal TTY raw settings</td>
+                                <td>
+                                    Cancel and restore terminal TTY raw settings
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -966,30 +1198,53 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
                 <!-- Setup & Requirements Card -->
                 <div class="detail-card">
-                    <h3 class="section-title" style="font-size:1.4rem; margin-bottom:18px;">Setup &amp; Requirements</h3>
+                    <h3
+                        class="section-title"
+                        style="font-size: 1.4rem; margin-bottom: 18px"
+                    >
+                        Setup &amp; Requirements
+                    </h3>
                     <ul class="requirements-list">
                         <li>
                             <span class="req-bullet">✓</span>
                             <div class="req-body">
-                                <strong>Supported OS:</strong> Linux on standard <code>x86_64</code> or <code>aarch64</code>. Fully runs over SSH or direct VTs.
+                                <strong>Supported OS:</strong> Linux on standard
+                                <code>x86_64</code> or <code>aarch64</code>.
+                                Fully runs over SSH or direct VTs.
                             </div>
                         </li>
                         <li>
                             <span class="req-bullet">✓</span>
                             <div class="req-body">
-                                <strong>GUI Float Terminals:</strong> Spawns via <code>foot</code> (preferred), <code>kitty</code>, <code>alacritty</code>, <code>wezterm</code>, <code>ghostty</code>, <code>konsole</code>, <code>gnome-terminal</code>, or <code>ptyxis</code>.
+                                <strong>GUI Float Terminals:</strong> Spawns via
+                                <code>foot</code> (preferred),
+                                <code>kitty</code>, <code>alacritty</code>,
+                                <code>wezterm</code>, <code>ghostty</code>,
+                                <code>konsole</code>,
+                                <code>gnome-terminal</code>, or
+                                <code>ptyxis</code>.
                             </div>
                         </li>
                         <li>
                             <span class="req-bullet">✓</span>
                             <div class="req-body">
-                                <strong>Clipboard Tools:</strong> Copies to clipboard automatically using <code>wl-copy</code> (Wayland) or <code>xclip</code> (X11) if available.
+                                <strong>Clipboard Tools:</strong> Copies to
+                                clipboard automatically using
+                                <code>wl-copy</code> (Wayland) or
+                                <code>xclip</code> (X11) if available.
                             </div>
                         </li>
                         <li>
                             <span class="req-bullet">✓</span>
                             <div class="req-body">
-                                <strong>Shell Sourcing (Ctrl+E):</strong> Add <code>source ~/.local/share/emojig/shell/emojig.&lt;shell&gt;</code> to your <code>.bashrc</code>, <code>.zshrc</code>, or fish config to enable the trigger.
+                                <strong>Shell Sourcing (Ctrl+E):</strong> Add
+                                <code
+                                    >source
+                                    ~/.local/share/emojig/shell/emojig.&lt;shell&gt;</code
+                                >
+                                to your <code>.bashrc</code>,
+                                <code>.zshrc</code>, or fish config to enable
+                                the trigger.
                             </div>
                         </li>
                     </ul>
@@ -1001,17 +1256,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- ── Footer ── -->
             <footer>
                 <div class="footer-links">
-                    <a href="https://codeberg.org/ubunatic/emojig" target="_blank" rel="noopener">Codeberg Repository</a>
+                    <a
+                        href="https://codeberg.org/ubunatic/emojig"
+                        target="_blank"
+                        rel="noopener"
+                        >Codeberg Repository</a
+                    >
                     <span>•</span>
-                    <a href="https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES" target="_blank" rel="noopener">License Details</a>
+                    <a
+                        href="https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES"
+                        target="_blank"
+                        rel="noopener"
+                        >License Details</a
+                    >
                     <span>•</span>
                     <a href="https://ubunatic.com">Ubunatic Portal</a>
                 </div>
                 <p class="disclaimer">
-                    <strong>License:</strong> Licensed under the AGPL-3.0-or-later license. The embedded database complies with Unicode-DFS-2016.
+                    <strong>License:</strong> Licensed under the
+                    AGPL-3.0-or-later license. The embedded database complies
+                    with Unicode-DFS-2016.
                 </p>
                 <p class="impressum">
-                    <strong>Impressum:</strong> Rein private Seite ohne geschäftsmäßige Interessen. Hosting in Deutschland. Keine Cookies, keine externen Skripte.
+                    <strong>Impressum:</strong> Rein private Seite ohne
+                    geschäftsmäßige Interessen. Hosting in Deutschland. Keine
+                    Cookies, keine externen Skripte.
                 </p>
             </footer>
         </div>
@@ -1019,21 +1288,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Inline Interaction Script -->
         <script>
             function copyInstallCommand() {
-                const text = "curl -fsSL https://ubunatic.com/emojig/install.sh | sh";
-                navigator.clipboard.writeText(text).then(() => {
-                    const btn = document.getElementById("copy-btn");
-                    const btnText = document.getElementById("copy-btn-text");
-                    
-                    btn.classList.add("copied");
-                    btnText.textContent = "Copied! ✓";
-                    
-                    setTimeout(() => {
-                        btn.classList.remove("copied");
-                        btnText.textContent = "Copy";
-                    }, 2000);
-                }).catch(err => {
-                    console.error("Failed to copy installation script: ", err);
-                });
+                const text =
+                    "curl -fsSL https://ubunatic.com/emojig/install.sh | sh";
+                navigator.clipboard
+                    .writeText(text)
+                    .then(() => {
+                        const btn = document.getElementById("copy-btn");
+                        const btnText =
+                            document.getElementById("copy-btn-text");
+
+                        btn.classList.add("copied");
+                        btnText.textContent = "Copied! ✓";
+
+                        setTimeout(() => {
+                            btn.classList.remove("copied");
+                            btnText.textContent = "Copy";
+                        }, 2000);
+                    })
+                    .catch((err) => {
+                        console.error(
+                            "Failed to copy installation script: ",
+                            err,
+                        );
+                    });
             }
         </script>
         <!-- Emojig TUI Simulator Scripts -->

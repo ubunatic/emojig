@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,7 +37,7 @@ const sceneHeight = 680
 
 // recordScenarioDemo records the full desktop GUI scenario to a webm.
 // query is the search term typed into the picker (default "fire").
-func recordScenarioDemo(binaryPath, query string) error {
+func recordScenarioDemo(binaryPath, query string, spec recordSpec) error {
 	fmt.Printf("🎬 Recording GUI desktop scenario (query %q)...\n", query)
 
 	outputPath := "website/emojig-gui-light.webm"
@@ -54,9 +55,9 @@ func recordScenarioDemo(binaryPath, query string) error {
 output X11-1 bg #1f2d3d solid_color
 default_border none
 default_floating_border none
-for_window [app_id="gedit"] floating enable, resize set 1000 540, move position 50 40
+for_window [app_id="gedit"] floating enable, resize set %d %d, move position 50 40
 for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move position center
-`, sceneWidth, sceneHeight)
+`, sceneWidth, sceneHeight, spec.GeditWidth, spec.GeditHeight)
 	if err := os.WriteFile(cfgPath, []byte(swayCfg), 0644); err != nil {
 		return fmt.Errorf("write sway config: %v", err)
 	}
@@ -136,7 +137,8 @@ for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move po
 	time.Sleep(400 * time.Millisecond)
 
 	// 5. Start recording (wf-recorder, wlr-screencopy — captures sway's output).
-	wf := exec.Command("wf-recorder", "-o", "X11-1", "-c", "libvpx-vp9", "-f", outputPath)
+	wf := exec.Command("wf-recorder", "-o", "X11-1", "-c", "libvpx-vp9",
+		"-r", strconv.Itoa(spec.FPS), "-b", spec.Bitrate, "-f", outputPath)
 	wf.Env = scene
 	wf.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var wfErr strings.Builder
@@ -149,7 +151,8 @@ for_window [app_id="emojig-picker"] floating enable, resize set 450 340, move po
 
 	// 6. Open the emojig picker (foot popup, light theme) and wait for it.
 	picker := exec.Command(binaryPath, "--gui", "--theme", "light")
-	picker.Env = append(scene, "EMOJIG_TERMINAL=foot")
+	picker.Env = append(scene, "EMOJIG_TERMINAL=foot",
+		"EMOJIG_GUI_FONT_SIZE="+strconv.Itoa(spec.GUIFontSize))
 	picker.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := picker.Start(); err != nil {
 		return fmt.Errorf("failed to start emojig picker: %v", err)

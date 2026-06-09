@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,25 @@ import (
 	"syscall"
 	"time"
 )
+
+type recordSpec struct {
+	Bitrate      string `json:"bitrate"`
+	FPS          int    `json:"fps"`
+	TUIFontSize  int    `json:"tui_font_size"`
+	GUIFontSize  int    `json:"gui_font_size"`
+	GeditWidth   int    `json:"gedit_width"`
+	GeditHeight  int    `json:"gedit_height"`
+}
+
+func loadRecordSpec() recordSpec {
+	s := recordSpec{Bitrate: "1M", FPS: 25, TUIFontSize: 14, GUIFontSize: 14, GeditWidth: 1000, GeditHeight: 540}
+	data, err := os.ReadFile("spec/record.json")
+	if err != nil {
+		return s
+	}
+	_ = json.Unmarshal(data, &s)
+	return s
+}
 
 const (
 	display = ":99"
@@ -108,14 +128,16 @@ func main() {
 	}
 	binaryPath := cwd + "/zig-out/bin/emojig"
 
+	spec := loadRecordSpec()
+
 	// 3. Record TUI (Dark Theme)
-	if err := recordTUIDemo(xvfbCtx, binaryPath); err != nil {
+	if err := recordTUIDemo(xvfbCtx, binaryPath, spec); err != nil {
 		fmt.Printf("TUI recording failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	// 4. Record GUI desktop scenario (Light Theme): gedit + emojig picker + paste.
-	if err := recordScenarioDemo(binaryPath, demoQuery()); err != nil {
+	if err := recordScenarioDemo(binaryPath, demoQuery(), spec); err != nil {
 		fmt.Printf("GUI scenario recording failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -174,7 +196,7 @@ func waitForWindow(class string) (string, error) {
 	return "", fmt.Errorf("window with class '%s' not found", class)
 }
 
-func recordTUIDemo(ctx context.Context, binaryPath string) error {
+func recordTUIDemo(ctx context.Context, binaryPath string, spec recordSpec) error {
 	fmt.Println("🎥 Recording TUI Demo (Dark Theme)...")
 
 	// Set up output path
@@ -185,7 +207,7 @@ func recordTUIDemo(ctx context.Context, binaryPath string) error {
 	xtermArgs := []string{
 		"-xrm", "xterm*allowSendEvents: true",
 		"-fa", "Monospace",
-		"-fs", "14",
+		"-fs", strconv.Itoa(spec.TUIFontSize),
 		"-geometry", "50x13+0+0",
 		"-bg", "#1c1c1c",
 		"-fg", "#a8a8a8",
@@ -226,8 +248,8 @@ func recordTUIDemo(ctx context.Context, binaryPath string) error {
 		"-video_size", fmt.Sprintf("%dx%d", w, h),
 		"-i", display + ".0+0,0",
 		"-codec:v", "libvpx-vp9",
-		"-b:v", "1M",
-		"-r", "25",
+		"-b:v", spec.Bitrate,
+		"-r", strconv.Itoa(spec.FPS),
 		"-y",
 		outputPath,
 	}

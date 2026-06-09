@@ -34,10 +34,31 @@ Between step 1 and step 2, the line is empty, resulting in a flash of background
 
 ## Proposed Solution
 
-To achieve flicker-free rendering:
-1. **Remove redundant pre-clearing**: Remove `\x1b[2K\r` at the start of drawing each row.
-2. **Rely on trailing clear**: Rely entirely on `\x1b[K` at the end of the row (`RowWriter.endRow()`) to erase any remaining columns. Because the new row text directly overwrites the old text character-by-character, there is no blank frame state, resulting in a perfectly smooth/flicker-free redraw.
-3. **Carriage Return Guard**: Ensure carriage return `\r` is emitted at the beginning of the row if not already handled by cursor positioning or the previous row's end sequence.
+Two complementary approaches (both pending):
+
+### A — Reduce redraw frequency (`skip_render`, implemented)
+
+Before rendering, call `tui.poll(stdin_fd, pipe_rd, 0)` (non-blocking). If input
+is already buffered — e.g., a burst of mouse-motion events or rapid keystrokes —
+skip the render and drain the event first. Render only when the input queue is
+momentarily empty. This collapses N queued events into 1 redraw per lull.
+
+**Implemented** in `src/main.zig` (render guard at the top of the main loop):
+```zig
+const skip_render = !is_first_render and !exit_preview and
+    (tui.poll(stdin_fd, pipe_rd, 0) == .tty);
+if (!skip_render and (exit_preview or !should_copy_and_exit)) { ... }
+```
+First render and exit-preview animation are never skipped.
+
+### B — Remove redundant pre-clearing (pending)
+
+Remove `\x1b[2K\r` at the start of drawing each row (lines ~1337, ~1342, ~1365,
+~1373 in `src/main.zig`). Rely entirely on `\x1b[K` in `RowWriter.endRow()` to
+erase trailing columns. Because the new row text overwrites old text
+character-by-character, there is no blank-frame state between clear and draw.
+Ensure `\r` is emitted at row start (already present via `\x1b[B\r` from the
+previous `endRow`).
 
 ## Affected Files
 * [src/main.zig](file:///home/uwe/projects/emojig/src/main.zig)
