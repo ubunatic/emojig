@@ -54,24 +54,25 @@ termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, 
 termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl-C to stop)
 	@sh scripts/termstate.sh --watch
 
-WAYREEL := $(HOME)/go/bin/wayreel
+WAYREEL      := $(HOME)/go/bin/wayreel
+WAYREEL_FAST ?=
 
 wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
 
 record: ⚙️ wayreel-install  # record all three demos (tui-dark, tui-light, gui)
-	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
-	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
-	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
+	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
+	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
+	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
 
-record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)
-	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
+record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)  [WAYREEL_FAST=2 for 2x speed]
+	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
 
-record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)
-	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
+record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)  [WAYREEL_FAST=2 for 2x speed]
+	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
 
-record-gui: ⚙️ wayreel-install  # record GUI desktop scenario
-	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
+record-gui: ⚙️ wayreel-install  # record GUI desktop scenario  [WAYREEL_FAST=2 for 2x speed]
+	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui $(if $(WAYREEL_FAST),-fast $(WAYREEL_FAST))
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
