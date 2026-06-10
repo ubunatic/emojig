@@ -55,24 +55,23 @@ termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl
 	@sh scripts/termstate.sh --watch
 
 WAYREEL      := $(HOME)/go/bin/wayreel
-WAYREEL_FAST ?=
 
 wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
 
 record: ⚙️ wayreel-install  # record all three demos (tui-dark, tui-light, gui)
-	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
-	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
-	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
+	$(WAYREEL) record spec/reels/tui-dark.json --mode tui
+	$(WAYREEL) record spec/reels/tui-light.json --mode tui
+	$(WAYREEL) record spec/reels/gui.json --mode gui
 
-record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)  [WAYREEL_FAST=2 for 2x speed]
-	WAYREEL_SPEC=spec/reels/tui-dark.json $(WAYREEL) -mode tui
+record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)
+	$(WAYREEL) record spec/reels/tui-dark.json --mode tui
 
-record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)  [WAYREEL_FAST=2 for 2x speed]
-	WAYREEL_SPEC=spec/reels/tui-light.json $(WAYREEL) -mode tui
+record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)
+	$(WAYREEL) record spec/reels/tui-light.json --mode tui
 
-record-gui: ⚙️ wayreel-install  # record GUI desktop scenario  [WAYREEL_FAST=2 for 2x speed]
-	WAYREEL_SPEC=spec/reels/gui.json $(WAYREEL) -mode gui
+record-gui: ⚙️ wayreel-install  # record GUI desktop scenario
+	$(WAYREEL) record spec/reels/gui.json --mode gui
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
@@ -167,17 +166,20 @@ worktree: ⚙️  # create a sibling git worktree ready to build (usage: make wo
 	@echo "   remove later with: git worktree remove $(WORKTREE_DIR)"
 
 uninstall: ⚙️  # remove binary, shell integration, and desktop entry
+	@rm -f  "$$GOPATH/bin/mojigo"
 	@rm -f  ~/.local/bin/emojig
 	@rm -rf ~/.local/share/emojig
 	@rm -f  ~/.local/share/applications/emojig-picker.desktop
 	@echo "✅ emojig uninstalled"
 
 install: ⚙️  # install binary, shell integrations, and desktop launcher
+	@go install ./cmd/mojigo
 	@zig build shell-install -Doptimize=ReleaseSmall >/dev/null || (zig build shell-install -Doptimize=ReleaseSmall && exit 1)
 	@echo "✅ Emojig installed successfully!"
-	@echo "   - Binary:   ~/.local/bin/emojig"
-	@echo "   - Shells:   ~/.local/share/emojig/shell/emojig.{bash,zsh,fish}"
-	@echo "   - Launcher: ~/.local/share/applications/emojig-picker.desktop"
+	@echo "   - Binary:    ~/.local/bin/emojig"
+	@echo "   - Go Binary: $$GOPATH/bin/mojigo"
+	@echo "   - Shells:    ~/.local/share/emojig/shell/emojig.{bash,zsh,fish}"
+	@echo "   - Launcher:  ~/.local/share/applications/emojig-picker.desktop"
 
 SSH_ARCH ?= aarch64-linux-musl
 
