@@ -202,12 +202,10 @@ Adhere to the following conventions.
 
 - Rust @docs/Rust.md,
   cargo fmt + clippy; safe Rust; avoid .unwrap() in library code
-- Go/Golang @docs/Go.md,
-  Modern Go, avoid deps but use Cobra, add tests
 - Bash/Shell @docs/Bash.md,
   No ";", break before then/else/docs
   No "if [[]]", No "if []", Use "if test"
   smart indent!
-- Make/Makefile @docs/Make.md,
-  ⚙️ phony sentinel, self-doc help, build dependency pattern
+- Go/Golang @docs/Go.md,
+  Modern Go, avoid deps but use Cobra, add tests
 <!-- claudeconfig:end Language Conventions -->
