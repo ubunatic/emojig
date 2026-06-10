@@ -17,20 +17,26 @@ class EmojigSimulator {
     // otherwise yank the selection back to the hovered cell). Cleared on a
     // real mousemove.
     this.suppressHover = false;
-    this.fsRoot = this._makeFs();
-    this.cwd    = ["home", "you", "projects", "emojig"];
-    this.fakeEnv = {
-      HOME:         "/home/you",
-      USER:         "you",
+    const spec  = (typeof jsdemoSpec !== "undefined") ? jsdemoSpec : null;
+    this.shellUser     = spec?.user   ?? "you";
+    this.shellHost     = spec?.host   ?? "emojig";
+    this.promptTpl     = spec?.prompt ?? "{user@host}:{cwd}{sym} ";
+    this.cwd    = spec?.cwd
+      ? spec.cwd.replace(/^\//, "").split("/").filter(Boolean)
+      : ["home", "you", "projects", "emojig"];
+    this.fsRoot = this._makeFs(spec?.entries ?? null, this.cwd);
+    this.fakeEnv = Object.assign({
+      HOME:         "/home/" + this.shellUser,
+      USER:         this.shellUser,
       SHELL:        "/bin/zsh",
       TERM:         "xterm-256color",
       EDITOR:       "emojig",
       PATH:         "/home/you/.local/bin:/usr/local/bin:/usr/bin:/bin",
       EMOJIG_THEME: "dark",
       LANG:         "en_US.UTF-8",
-      PWD:          "/home/you/projects/emojig",
+      PWD:          "/" + (spec?.cwd ?? "/home/you/projects/emojig").replace(/^\//, ""),
       GREETING:     "Hello 👋",
-    };
+    }, spec?.env ?? {});
 
     // Shell-widget mode: the terminal starts at a shell prompt. Typing echoes
     // characters; Ctrl+E launches the emojig picker (the TUI). Picking an emoji
@@ -541,31 +547,81 @@ class EmojigSimulator {
   }
 
   get promptHtml() {
-    return `<span class="sim-shell-user">you@emojig</span>` +
-      `<span class="sim-shell-path">:${this.cwdString()}</span>` +
-      `<span class="sim-shell-sym">$</span> `;
+    const cwd  = this.cwdString();
+    const subs = {
+      "user@host": ["sim-shell-user", `${this.shellUser}@${this.shellHost}`],
+      "user":      ["sim-shell-user", this.shellUser],
+      "host":      ["sim-shell-user", this.shellHost],
+      "cwd":       ["sim-shell-path", cwd],
+      "sym":       ["sim-shell-sym",  "$"],
+    };
+    const clsOf = { user: "sim-shell-user", host: "sim-shell-user",
+                    cwd:  "sim-shell-path",  path: "sim-shell-path",
+                    sym:  "sim-shell-sym" };
+    return this.promptTpl.split(/(\{[^}]+\})/).map(part => {
+      const m = part.match(/^\{([^}]+)\}$/);
+      if (m) {
+        const key = m[1], col = key.indexOf(":");
+        if (col !== -1) {
+          const cls = clsOf[key.slice(0, col)] ?? "sim-shell-sym";
+          return `<span class="${cls}">${this.escapeHtml(key.slice(col + 1))}</span>`;
+        }
+        const [cls, val] = subs[key] ?? ["sim-shell-sym", part];
+        return `<span class="${cls}">${this.escapeHtml(val)}</span>`;
+      }
+      return part ? `<span class="sim-shell-sym">${this.escapeHtml(part)}</span>` : "";
+    }).join("");
   }
 
-  _makeFs() {
+  _makeFs(entries, cwdParts) {
     const F = (m) => ({ type: "file", perms: "-rw-r--r--", size: "   0", date: "Jun  9 12:00", owner: "you", ...m });
     const D = (children, m={}) => ({ type: "dir",  perms: "drwxr-xr-x", size: "4096", date: "Jun  9 12:00", owner: "you", children, ...m });
-    return D({
-      "home": D({ "you": D({ "projects": D({ "emojig": D({
-        "README.md":  F({ size: "1.2K", date: "Jun  9 11:55" }),
-        "Makefile":   F({ size: " 567", date: "Jun  9 11:55" }),
-        "emojig":     F({ perms: "-rwxr-xr-x", size: " 42K", date: "Jun  9 12:30", owner: "root" }),
-        "src": D({
-          "main.zig":  F({ size: "8.1K", date: "Jun  9 12:00" }),
-          "input.zig": F({ size: "3.4K", date: "Jun  9 11:30" }),
-        }, { size: "  96", date: "Jun  9 10:00" }),
-        "notes.txt":  F({ size: " 128", date: "Jun  9 09:15" }),
-        ".secret":    F({ perms: "-rw-------", size: "  42", date: "Jun  9 09:00" }),
-      }) }) }) }, { owner: "root" }),
+    const parts = cwdParts ?? ["home", "you", "projects", "emojig"];
+
+    // Build the project dir — from spec entries if provided, else hardcoded fallback.
+    const projectChildren = {};
+    const specEntries = entries ?? [
+      { path: "README.md",     size: "1.2K", date: "Jun  9 11:55" },
+      { path: "Makefile",      size: " 567", date: "Jun  9 11:55" },
+      { path: "emojig",        perms: "-rwxr-xr-x", size: " 42K", date: "Jun  9 12:30", owner: "root" },
+      { path: "src/",          size: "  96", date: "Jun  9 10:00" },
+      { path: "src/main.zig",  size: "8.1K", date: "Jun  9 12:00" },
+      { path: "src/input.zig", size: "3.4K", date: "Jun  9 11:30" },
+      { path: "notes.txt",     size: " 128", date: "Jun  9 09:15" },
+      { path: ".secret",       perms: "-rw-------", size: "  42", date: "Jun  9 09:00" },
+    ];
+    for (const e of specEntries) {
+      const { path, ...meta } = e;
+      const parts = path.replace(/\/$/, "").split("/").filter(Boolean);
+      const isDir = path.endsWith("/");
+      let cur = projectChildren;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]]) cur[parts[i]] = D({});
+        cur = cur[parts[i]].children;
+      }
+      const name = parts.at(-1);
+      if (isDir) {
+        cur[name] = cur[name] ? Object.assign(cur[name], meta) : D({}, meta);
+      } else {
+        cur[name] = F(meta);
+      }
+    }
+
+    // Build nested intermediate dirs from root down to the project dir.
+    const rootChildren = {
       "etc":  D({}, { owner: "root" }),
       "tmp":  D({}, { owner: "root", perms: "drwxrwxrwt" }),
       "usr":  D({ "bin": D({}, { owner: "root" }), "local": D({}, { owner: "root" }) }, { owner: "root" }),
       "var":  D({}, { owner: "root" }),
-    }, { owner: "root" });
+    };
+    let cur = rootChildren;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      if (!cur[p]) cur[p] = D({}, i === 0 ? { owner: "root" } : {});
+      cur = cur[p].children;
+    }
+    cur[parts.at(-1)] = D(projectChildren);
+    return D(rootChildren, { owner: "root" });
   }
 
   resolvePath(path) {
@@ -594,22 +650,27 @@ class EmojigSimulator {
 
   cwdString() {
     const full = "/" + this.cwd.join("/");
-    const home = "/home/you";
-    return full.startsWith(home) ? "~" + full.slice(home.length) : full;
+    const home = this.fakeEnv?.HOME ?? "/home/" + this.shellUser;
+    return full === home ? "~" : full.startsWith(home + "/") ? "~" + full.slice(home.length) : full;
   }
 
   seedShell() {
-    this.fsRoot = this._makeFs();
-    this.cwd    = ["home", "you", "projects", "emojig"];
-    this.shellLines = [
-      { kind: "cmd", text: "git status" },
-      { kind: "out", text: "On branch main — 3 files changed" },
-      { kind: "cmd", text: "git add ." },
-    ];
-    this.shellHistory = ["git status", "git add ."];
+    const spec = (typeof jsdemoSpec !== "undefined") ? jsdemoSpec : null;
+    this.cwd    = spec?.cwd
+      ? spec.cwd.replace(/^\//, "").split("/").filter(Boolean)
+      : ["home", "you", "projects", "emojig"];
+    this.fsRoot = this._makeFs(spec?.entries ?? null, this.cwd);
+    const history = spec?.seed?.history ?? ["git status", "git add ."];
+    const input   = spec?.seed?.input   ?? "git commit -m 'release: v1.2 ";
+    this.shellLines = history.flatMap((cmd, i) => {
+      const lines = [{ kind: "cmd", text: cmd }];
+      if (i === 0) lines.push({ kind: "out", text: "On branch main — 3 files changed" });
+      return lines;
+    });
+    this.shellHistory = [...history];
     this.historyIdx = null;
     this.shellDraft = "";
-    this.setInput("git commit -m 'release: v1.2 ");
+    this.setInput(input);
   }
 
   // --- Line editing (code-point safe, so the cursor never splits an emoji) ---
@@ -791,6 +852,72 @@ class EmojigSimulator {
     return text.replace(/\$([A-Z_][A-Z0-9_]*)/g, (_, name) => this.fakeEnv[name] ?? "");
   }
 
+  expandGlobs(argStr) {
+    return argStr.trim().split(/\s+/).flatMap(token => {
+      if (!token.includes("*")) return [token];
+      const lastSlash = token.lastIndexOf("/");
+      const dirStr  = lastSlash <= 0 ? (lastSlash === 0 ? "/" : ".") : token.slice(0, lastSlash);
+      const pattern = lastSlash === -1 ? token : token.slice(lastSlash + 1);
+      const pfx     = lastSlash === -1 ? "" : token.slice(0, lastSlash + 1);
+      const r = this.resolvePath(dirStr);
+      if (!r || r.node.type !== "dir") return [token];
+      const re = new RegExp("^" +
+        pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+      const showHidden = pattern.startsWith(".");
+      const hits = Object.keys(r.node.children)
+        .filter(n => re.test(n) && (showHidden || !n.startsWith(".")))
+        .sort();
+      return hits.length ? hits.map(n => pfx + n) : [token];
+    }).join(" ");
+  }
+
+  _nowDate() {
+    const now = new Date();
+    const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${MON[now.getMonth()]} ${String(now.getDate()).padStart(2," ")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  }
+
+  _fakeCatContent(name, ext) {
+    const known = {
+      "README.md": [
+        "# emojig", "",
+        "A Zig terminal emoji picker. Pick any emoji with Ctrl+E.", "",
+        "## Install", "  make && make install", "",
+        "## Usage", "  emojig [query]    # standalone", "  # or press Ctrl+E in your shell",
+      ],
+      "Makefile": [
+        "BIN := emojig", "SRC := $(wildcard src/*.zig)", "",
+        "all: $(BIN)", "",
+        "$(BIN): $(SRC)", "\tzig build-exe -O ReleaseSafe src/main.zig -o $(BIN)", "",
+        "install: $(BIN)", "\tcp $(BIN) ~/.local/bin/", "",
+        "clean:", "\trm -f $(BIN)",
+      ],
+      "notes.txt": [
+        "TODO:", "  - skin-tone modifiers", "  - frecency sorting", "  - AUR package", "",
+        "done: fuzzy search, Ctrl+E hook, tab completion 🎉",
+      ],
+      ".secret": ["hunter2"],
+    };
+    if (known[name]) return known[name];
+    if (ext === "zig") return [
+      `// ${name}`, `const std = @import("std");`, "",
+      `pub fn main() !void {`,
+      `    const out = std.io.getStdOut().writer();`,
+      `    try out.print("emojig\\n", .{});`,
+      `}`,
+    ];
+    if (ext === "md") return [`# ${name.replace(/\.md$/, "")}`, "", "(no content)"];
+    if (ext === "json") return ["{", `  "${name.replace(/\.json$/, "")}": true`, "}"];
+    return [`(${name}: empty)`];
+  }
+
+  _cloneNode(node) {
+    if (node.type === "file") return { ...node };
+    return { ...node, children: Object.fromEntries(
+      Object.entries(node.children).map(([k, v]) => [k, this._cloneNode(v)])
+    )};
+  }
+
   executeShell() {
     const raw = this.shellInput;
     this.shellLines.push({ kind: "cmd", text: raw });
@@ -823,164 +950,252 @@ class EmojigSimulator {
       args = sp2 === -1 ? "" : args.slice(sp2 + 1);
     }
 
+    args = this.expandGlobs(args);
+
     switch (cmd) {
       case "echo":
         this.shellLines.push({ kind: "out", text: this.expandVars(this.parseEchoArgs(args)) });
         break;
+
       case "clear":
         this.shellLines = [];
         break;
+
       case "pwd":
         this.shellLines.push({ kind: "out", text: "/" + this.cwd.join("/") });
         break;
+
       case "cd": {
-        const target = args.trim();
-        if (!target || target === "~") {
-          this.cwd = ["home", "you"];
-          this.fakeEnv.PWD = "/home/you";
-          break;
+        const homeParts = this.fakeEnv.HOME.replace(/^\//, "").split("/").filter(Boolean);
+        let cdTarget = args.trim();
+        if (!cdTarget || cdTarget === "~") {
+          this.cwd = homeParts; this.fakeEnv.PWD = this.fakeEnv.HOME; break;
         }
-        const cdResult = this.resolvePath(target);
-        if (!cdResult) {
-          this.shellLines.push({ kind: "out", text: `cd: no such file or directory: ${target}` });
-          break;
-        }
-        if (cdResult.node.type !== "dir") {
-          this.shellLines.push({ kind: "out", text: `cd: not a directory: ${target}` });
-          break;
-        }
+        if (cdTarget.startsWith("~/")) cdTarget = this.fakeEnv.HOME + "/" + cdTarget.slice(2);
+        const cdResult = this.resolvePath(cdTarget);
+        if (!cdResult) { this.shellLines.push({ kind:"out", text:`cd: no such file or directory: ${args.trim()}` }); break; }
+        if (cdResult.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`cd: not a directory: ${args.trim()}` }); break; }
         this.cwd = cdResult.components;
         this.fakeEnv.PWD = "/" + this.cwd.join("/");
         break;
       }
-      case "env":
-        for (const [k, v] of Object.entries(this.fakeEnv)) {
-          this.shellLines.push({ kind: "out", text: `${k}=${v}` });
-        }
-        break;
-      case "neofetch": {
-        const lines = [
-          `you@emojig 🔍`,
-          `──────────────────────────────`,
-          `OS:       EmojiOS 6.9 🐧`,
-          `Host:     TerminalBook Pro`,
-          `Kernel:   6.9.0-emojig`,
-          `Shell:    zsh 5.9`,
-          `Terminal: emojig-tui`,
-          `CPU:      EmojiCore™ @ 4.2 GHz`,
-          `Memory:   420 MiB / 6969 MiB 🧠`,
-          `Uptime:   42 mins ⏱️`,
-          `Colors:   🟥🟧🟨🟩🟦🟪⬛⬜`,
-        ];
-        for (const l of lines) this.shellLines.push({ kind: "out", text: l });
-        break;
-      }
+
       case "ls":
       case "ll": {
-        const longFmt    = cmd === "ll" || args.includes("-l");
-        const showHidden = cmd === "ll" || args.includes("-a");
-        const pathArg    = args.trim().split(/\s+/).filter(a => !a.startsWith("-"))[0] ?? ".";
-        const lsResult   = this.resolvePath(pathArg);
-        if (!lsResult) {
-          this.shellLines.push({ kind: "out", text: `ls: cannot access '${pathArg}': No such file or directory` });
-          break;
-        }
-        let entries;
-        if (lsResult.node.type === "file") {
-          entries = [{ name: pathArg.split("/").at(-1), node: lsResult.node }];
-        } else {
-          entries = Object.entries(lsResult.node.children)
-            .filter(([n]) => showHidden || !n.startsWith("."))
-            .map(([n, nd]) => ({ name: n, node: nd }));
-        }
-        if (longFmt) {
-          this.shellLines.push({ kind: "out", text: `total ${entries.length * 8}` });
-          for (const { name, node } of entries) {
-            const ow = node.owner.padEnd(4);
-            const sz = String(node.size).padStart(4);
-            this.shellLines.push({ kind: "out", text: `${node.perms} 1 ${ow} ${ow} ${sz} ${node.date} ${name}` });
+        const lsParts    = args.trim().split(/\s+/).filter(Boolean);
+        const lsFlags    = lsParts.filter(a => a.startsWith("-")).join("");
+        const longFmt    = cmd === "ll" || lsFlags.includes("l");
+        const showHidden = cmd === "ll" || lsFlags.includes("a");
+        const oneLine    = lsFlags.includes("1");
+        const lsTargets  = lsParts.filter(a => !a.startsWith("-"));
+        const paths      = lsTargets.length ? lsTargets : ["."];
+        const sortEnts   = (ents) => ents.sort(([na, a], [nb, b]) =>
+          a.type !== b.type ? (a.type === "dir" ? -1 : 1) : na.localeCompare(nb));
+
+        for (let ti = 0; ti < paths.length; ti++) {
+          const pathArg  = paths[ti];
+          const lsResult = this.resolvePath(pathArg);
+          if (!lsResult) { this.shellLines.push({ kind:"out", text:`ls: cannot access '${pathArg}': No such file or directory` }); continue; }
+          if (paths.length > 1) {
+            if (ti > 0) this.shellLines.push({ kind:"out", text:"" });
+            this.shellLines.push({ kind:"out", text:`${pathArg}:` });
           }
-        } else {
-          const names = entries.map(({ name, node }) => node.type === "dir" ? name + "/" : name);
-          if (names.length > 0) this.shellLines.push({ kind: "out", text: names.join("  ") });
+          const entries = lsResult.node.type === "file"
+            ? [[pathArg.split("/").at(-1), lsResult.node]]
+            : sortEnts(Object.entries(lsResult.node.children).filter(([n]) => showHidden || !n.startsWith(".")));
+          if (longFmt) {
+            if (lsResult.node.type === "dir") this.shellLines.push({ kind:"out", text:`total ${entries.length * 8}` });
+            for (const [name, node] of entries) {
+              const ow = node.owner.padEnd(4);
+              const sz = String(node.size).padStart(5);
+              this.shellLines.push({ kind:"out", text:`${node.perms} 1 ${ow} ${ow} ${sz} ${node.date} ${name}${node.type === "dir" ? "/" : ""}` });
+            }
+          } else if (oneLine) {
+            for (const [name, node] of entries)
+              this.shellLines.push({ kind:"out", text: name + (node.type === "dir" ? "/" : "") });
+          } else {
+            const names = entries.map(([name, node]) => name + (node.type === "dir" ? "/" : ""));
+            if (names.length) this.shellLines.push({ kind:"out", text: names.join("  ") });
+          }
         }
         break;
       }
-      case "ps":
-        this.shellLines.push({ kind: "out", text: "  PID TTY          TIME CMD" });
-        this.shellLines.push({ kind: "out", text: " 1234 pts/0    00:00:02 zsh" });
-        this.shellLines.push({ kind: "out", text: " 5678 pts/0    00:00:00 emojig" });
-        this.shellLines.push({ kind: "out", text: " 9012 pts/0    00:00:00 ps" });
+
+      case "tree": {
+        const treeParts     = args.trim().split(/\s+/).filter(Boolean);
+        const treeFlags     = treeParts.filter(a => a.startsWith("-")).join("");
+        const showHiddenTree = treeFlags.includes("a");
+        const treePathArg   = treeParts.find(a => !a.startsWith("-")) ?? ".";
+        const treeResult    = this.resolvePath(treePathArg);
+        if (!treeResult || treeResult.node.type !== "dir") {
+          this.shellLines.push({ kind:"out", text:`tree: '${treePathArg}': No such directory` }); break;
+        }
+        this.shellLines.push({ kind:"out", text: treePathArg });
+        let treeFiles = 0, treeDirs = 0;
+        const walkTree = (node, prefix) => {
+          const ents = Object.entries(node.children)
+            .filter(([n]) => showHiddenTree || !n.startsWith("."))
+            .sort(([na, a], [nb, b]) => a.type !== b.type ? (a.type === "dir" ? -1 : 1) : na.localeCompare(nb));
+          ents.forEach(([name, child], i) => {
+            const last = i === ents.length - 1;
+            this.shellLines.push({ kind:"out", text: prefix + (last ? "└── " : "├── ") + name + (child.type === "dir" ? "/" : "") });
+            if (child.type === "dir") { treeDirs++; walkTree(child, prefix + (last ? "    " : "│   ")); }
+            else treeFiles++;
+          });
+        };
+        walkTree(treeResult.node, "");
+        this.shellLines.push({ kind:"out", text:"" });
+        this.shellLines.push({ kind:"out", text:`${treeDirs} director${treeDirs === 1 ? "y" : "ies"}, ${treeFiles} file${treeFiles === 1 ? "" : "s"}` });
         break;
+      }
+
+      case "cat": {
+        for (const target of args.trim().split(/\s+/).filter(Boolean)) {
+          const r = this.resolvePath(target);
+          if (!r) { this.shellLines.push({ kind:"out", text:`cat: ${target}: No such file or directory` }); continue; }
+          if (r.node.type === "dir") { this.shellLines.push({ kind:"out", text:`cat: ${target}: Is a directory` }); continue; }
+          const fname = target.split("/").at(-1);
+          const ext   = fname.includes(".") ? fname.split(".").pop() : "";
+          for (const l of this._fakeCatContent(fname, ext)) this.shellLines.push({ kind:"out", text: l });
+        }
+        break;
+      }
+
+      case "mkdir": {
+        const mkParts      = args.trim().split(/\s+/).filter(Boolean);
+        const mkFlags      = mkParts.filter(a => a.startsWith("-")).join("");
+        const makeParents  = mkFlags.includes("p");
+        const d            = this._nowDate();
+        for (const target of mkParts.filter(a => !a.startsWith("-"))) {
+          if (makeParents) {
+            const segs = target.replace(/^\//, "").split("/").filter(Boolean);
+            let cur = target.startsWith("/") ? this.fsRoot : this.cwdNode();
+            for (const seg of segs) {
+              if (!cur.children[seg]) cur.children[seg] = { type:"dir", perms:"drwxr-xr-x", size:"4096", date:d, owner:"you", children:{} };
+              else if (cur.children[seg].type !== "dir") { this.shellLines.push({ kind:"out", text:`mkdir: cannot create directory '${target}': Not a directory` }); break; }
+              cur = cur.children[seg];
+            }
+          } else {
+            const ls = target.lastIndexOf("/");
+            const parentStr = ls <= 0 ? (ls === 0 ? "/" : ".") : target.slice(0, ls);
+            const newName   = target.slice(ls + 1);
+            const pr = ls === 0 ? { node: this.fsRoot } : this.resolvePath(parentStr);
+            if (!pr || pr.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`mkdir: cannot create directory '${target}': No such file or directory` }); continue; }
+            if (pr.node.children[newName]) { this.shellLines.push({ kind:"out", text:`mkdir: cannot create directory '${target}': File exists` }); continue; }
+            pr.node.children[newName] = { type:"dir", perms:"drwxr-xr-x", size:"4096", date:d, owner:"you", children:{} };
+          }
+        }
+        break;
+      }
+
+      case "rmdir": {
+        for (const target of args.trim().split(/\s+/).filter(Boolean)) {
+          const r = this.resolvePath(target);
+          if (!r) { this.shellLines.push({ kind:"out", text:`rmdir: failed to remove '${target}': No such file or directory` }); continue; }
+          if (r.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`rmdir: failed to remove '${target}': Not a directory` }); continue; }
+          if (Object.keys(r.node.children).length) { this.shellLines.push({ kind:"out", text:`rmdir: failed to remove '${target}': Directory not empty` }); continue; }
+          if (r.node.owner === "root" && !isSudo) { this.shellLines.push({ kind:"out", text:`rmdir: failed to remove '${target}': Permission denied` }); continue; }
+          if (r.parent) delete r.parent.children[r.name];
+        }
+        break;
+      }
+
+      case "cp": {
+        const cpParts   = args.trim().split(/\s+/).filter(Boolean);
+        const cpFlags   = cpParts.filter(a => a.startsWith("-")).join("");
+        const recursive = cpFlags.includes("r") || cpFlags.includes("R");
+        const cpArgs    = cpParts.filter(a => !a.startsWith("-"));
+        if (cpArgs.length < 2) { this.shellLines.push({ kind:"out", text:"cp: missing destination" }); break; }
+        const cpDest       = cpArgs.at(-1);
+        const cpDestResult = this.resolvePath(cpDest);
+        const d            = this._nowDate();
+        for (const src of cpArgs.slice(0, -1)) {
+          const srcResult = this.resolvePath(src);
+          if (!srcResult) { this.shellLines.push({ kind:"out", text:`cp: cannot stat '${src}': No such file or directory` }); continue; }
+          if (srcResult.node.type === "dir" && !recursive) { this.shellLines.push({ kind:"out", text:`cp: -r not specified; omitting directory '${src}'` }); continue; }
+          const srcName = src.split("/").at(-1);
+          let destParent, destName;
+          if (cpDestResult && cpDestResult.node.type === "dir") {
+            destParent = cpDestResult.node; destName = srcName;
+          } else {
+            const ls = cpDest.lastIndexOf("/");
+            const pr = ls === 0 ? { node: this.fsRoot } : this.resolvePath(ls <= 0 ? "." : cpDest.slice(0, ls));
+            if (!pr || pr.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`cp: cannot create '${cpDest}': No such file or directory` }); continue; }
+            destParent = pr.node; destName = cpDest.slice(ls + 1);
+          }
+          destParent.children[destName] = this._cloneNode({ ...srcResult.node, date: d });
+        }
+        break;
+      }
+
+      case "mv": {
+        const mvParts = args.trim().split(/\s+/).filter(a => !a.startsWith("-")).filter(Boolean);
+        if (mvParts.length < 2) { this.shellLines.push({ kind:"out", text:"mv: missing destination" }); break; }
+        const mvDest       = mvParts.at(-1);
+        const mvDestResult = this.resolvePath(mvDest);
+        for (const src of mvParts.slice(0, -1)) {
+          const srcResult = this.resolvePath(src);
+          if (!srcResult) { this.shellLines.push({ kind:"out", text:`mv: cannot stat '${src}': No such file or directory` }); continue; }
+          if (srcResult.node.owner === "root" && !isSudo) { this.shellLines.push({ kind:"out", text:`mv: cannot move '${src}': Permission denied` }); continue; }
+          const { parent: srcParent, name: srcName, node: srcNode } = srcResult;
+          let destParent, destName;
+          if (mvDestResult && mvDestResult.node.type === "dir") {
+            destParent = mvDestResult.node; destName = srcName;
+          } else {
+            const ls = mvDest.lastIndexOf("/");
+            const pr = ls === 0 ? { node: this.fsRoot } : this.resolvePath(ls <= 0 ? "." : mvDest.slice(0, ls));
+            if (!pr || pr.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`mv: cannot move '${src}' to '${mvDest}': No such directory` }); continue; }
+            destParent = pr.node; destName = mvDest.slice(ls + 1);
+          }
+          destParent.children[destName] = srcNode;
+          if (srcParent) delete srcParent.children[srcName];
+        }
+        break;
+      }
+
       case "touch": {
-        const touchTargets = args.trim().split(/\s+/).filter(Boolean);
-        const now = new Date();
-        const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const tDate = `${MON[now.getMonth()]} ${String(now.getDate()).padStart(2," ")} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-        for (const t of touchTargets) {
-          const parts  = t.split("/");
-          const tName  = parts.pop();
-          const dirStr = parts.length ? parts.join("/") : ".";
-          const dr = this.resolvePath(dirStr);
-          if (!dr || dr.node.type !== "dir") {
-            this.shellLines.push({ kind: "out", text: `touch: cannot touch '${t}': No such file or directory` });
-            continue;
-          }
-          if (!dr.node.children[tName]) {
-            dr.node.children[tName] = { type: "file", perms: "-rw-r--r--", size: "   0", date: tDate, owner: "you" };
-          }
+        const d = this._nowDate();
+        for (const t of args.trim().split(/\s+/).filter(Boolean)) {
+          const ls    = t.lastIndexOf("/");
+          const tName = t.slice(ls + 1);
+          const pr    = ls === 0 ? { node: this.fsRoot } : this.resolvePath(ls <= 0 ? "." : t.slice(0, ls));
+          if (!pr || pr.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`touch: cannot touch '${t}': No such file or directory` }); continue; }
+          if (pr.node.children[tName]) pr.node.children[tName].date = d;
+          else pr.node.children[tName] = { type:"file", perms:"-rw-r--r--", size:"   0", date:d, owner:"you" };
         }
         break;
       }
+
       case "rm": {
         const rmParts   = args.trim().split(/\s+/);
         const rmFlags   = rmParts.filter(p => p.startsWith("-")).join("");
         const rmTargets = rmParts.filter(p => !p.startsWith("-"));
-        const hasR      = rmFlags.includes("r");
+        const hasR      = rmFlags.includes("r") || rmFlags.includes("R");
 
         rmLoop: for (const target of rmTargets) {
           if (!target) continue;
           const rr = this.resolvePath(target);
-          if (!rr) {
-            this.shellLines.push({ kind: "out", text: `rm: cannot remove '${target}': No such file or directory` });
-            continue;
-          }
+          if (!rr) { this.shellLines.push({ kind:"out", text:`rm: cannot remove '${target}': No such file or directory` }); continue; }
           const { node, parent, name } = rr;
-
-          if (node.type === "dir" && !hasR) {
-            this.shellLines.push({ kind: "out", text: `rm: cannot remove '${target}': Is a directory` });
-            continue;
-          }
+          if (node.type === "dir" && !hasR) { this.shellLines.push({ kind:"out", text:`rm: cannot remove '${target}': Is a directory` }); continue; }
           if (node.owner === "root" && !isSudo) {
-            this.shellLines.push({ kind: "out", text: `rm: cannot remove '${target}': Permission denied` });
-            if (rr.components.length === 0)
-              this.shellLines.push({ kind: "out", text: "hint: try sudo rm -rf /" });
+            this.shellLines.push({ kind:"out", text:`rm: cannot remove '${target}': Permission denied` });
+            if (rr.components.length === 0) this.shellLines.push({ kind:"out", text:"hint: try sudo rm -rf /" });
             continue;
           }
-          // Nuclear: sudo rm -r /
           if (rr.components.length === 0 && hasR) {
             const boom = [
-              "rm: descending into '/'…",
-              "rm: removing '/usr'… 💥",
-              "rm: removing '/home'… 💥",
-              "rm: removing '/etc'… 💥",
-              "rm: removing '/var'… 💥",
-              "rm: removing '/tmp'… 💥",
-              "rm: this is fine 🔥",
-              "💥💥💥",
+              "rm: descending into '/'…", "rm: removing '/usr'… 💥", "rm: removing '/home'… 💥",
+              "rm: removing '/etc'… 💥", "rm: removing '/var'… 💥", "rm: removing '/tmp'… 💥",
+              "rm: this is fine 🔥", "💥💥💥",
             ];
             boom.forEach((msg, i) => {
               setTimeout(() => {
-                this.shellLines.push({ kind: "out", text: msg });
+                this.shellLines.push({ kind:"out", text: msg });
                 this.render();
-                if (i === boom.length - 1) {
-                  setTimeout(() => {
-                    document.body.innerHTML =
-                      '<div style="display:flex;align-items:center;justify-content:center;' +
-                      'height:100vh;font-size:50vw;background:#000;margin:0;cursor:pointer" ' +
-                      'title="refresh to recover" onclick="location.reload()">💀</div>';
-                  }, 600);
-                }
+                if (i === boom.length - 1) setTimeout(() => {
+                  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:50vw;background:#000;margin:0;cursor:pointer" title="refresh to recover" onclick="location.reload()">💀</div>';
+                }, 600);
               }, i * 350);
             });
             break rmLoop;
@@ -989,40 +1204,195 @@ class EmojigSimulator {
         }
         break;
       }
-      case "help":
-        this.shellLines.push({
-          kind: "out",
-          text: "commands: echo $VAR, ls/ll, cd, pwd, ps, env, touch, rm, git, neofetch, clear, help",
-        });
-        this.shellLines.push({
-          kind: "out",
-          text: "press Ctrl+E to launch the emoji picker",
-        });
-        break;
-      case "git": {
-        const sub = args.trim().split(/\s+/)[0];
-        if (sub === "status") {
-          this.shellLines.push({ kind: "out", text: "On branch main" });
-          this.shellLines.push({ kind: "out", text: "Changes to be committed:" });
-          this.shellLines.push({ kind: "out", text: "  modified: src/main.zig" });
-        } else if (sub === "add") {
-          // silent like the real thing
-        } else if (sub === "commit") {
-          const m = args.match(/-m\s+['"](.+)['"]/s);
-          const msg = m ? m[1] : args.replace(/^commit\s*/, "").trim() || "update";
-          const hash = Math.random().toString(16).slice(2, 9);
-          this.shellLines.push({ kind: "out", text: `[main ${hash}] ${msg}` });
-          this.shellLines.push({ kind: "out", text: " 3 files changed, 42 insertions(+), 7 deletions(-)" });
-        } else {
-          this.shellLines.push({ kind: "out", text: `git: '${sub}' not supported in demo` });
+
+      case "grep": {
+        const grepParts = args.trim().split(/\s+/).filter(Boolean);
+        const grepFlags = grepParts.filter(a => a.startsWith("-")).join("");
+        const grepRest  = grepParts.filter(a => !a.startsWith("-"));
+        const pattern   = grepRest[0];
+        const grepFiles = grepRest.slice(1);
+        if (!pattern) { this.shellLines.push({ kind:"out", text:"grep: missing pattern" }); break; }
+        if (!grepFiles.length) { this.shellLines.push({ kind:"out", text:"grep: (standard input): not supported in demo" }); break; }
+        let re;
+        try { re = new RegExp(pattern, grepFlags.includes("i") ? "i" : ""); } catch { re = null; }
+        if (!re) { this.shellLines.push({ kind:"out", text:`grep: invalid pattern: ${pattern}` }); break; }
+        for (const file of grepFiles) {
+          const r = this.resolvePath(file);
+          if (!r) { this.shellLines.push({ kind:"out", text:`grep: ${file}: No such file or directory` }); continue; }
+          if (r.node.type === "dir") { this.shellLines.push({ kind:"out", text:`grep: ${file}: Is a directory` }); continue; }
+          const fname = file.split("/").at(-1);
+          const ext   = fname.includes(".") ? fname.split(".").pop() : "";
+          const hits  = this._fakeCatContent(fname, ext).filter(l => re.test(l));
+          for (const l of hits) this.shellLines.push({ kind:"out", text: grepFiles.length > 1 ? `${file}:${l}` : l });
         }
         break;
       }
+
+      case "wc": {
+        const wcParts = args.trim().split(/\s+/).filter(Boolean);
+        const wcFlags = wcParts.filter(a => a.startsWith("-")).join("");
+        const wcFiles = wcParts.filter(a => !a.startsWith("-"));
+        const lOnly = wcFlags.includes("l"), wOnly = wcFlags.includes("w"), cOnly = wcFlags.includes("c");
+        const showAll = !lOnly && !wOnly && !cOnly;
+        for (const file of wcFiles) {
+          const r = this.resolvePath(file);
+          if (!r) { this.shellLines.push({ kind:"out", text:`wc: ${file}: No such file or directory` }); continue; }
+          if (r.node.type === "dir") { this.shellLines.push({ kind:"out", text:`wc: ${file}: Is a directory` }); continue; }
+          const fname = file.split("/").at(-1);
+          const ext   = fname.includes(".") ? fname.split(".").pop() : "";
+          const lines = this._fakeCatContent(fname, ext);
+          const lc = lines.length, wc = lines.join(" ").split(/\s+/).filter(Boolean).length, cc = lines.join("\n").length;
+          const parts = [...(showAll || lOnly ? [String(lc).padStart(4)] : []),
+                         ...(showAll || wOnly ? [String(wc).padStart(4)] : []),
+                         ...(showAll || cOnly ? [String(cc).padStart(5)] : []), file];
+          this.shellLines.push({ kind:"out", text: parts.join(" ") });
+        }
+        break;
+      }
+
+      case "find": {
+        const findParts  = args.trim().split(/\s+/).filter(Boolean);
+        const findPath   = findParts[0] && !findParts[0].startsWith("-") ? findParts[0] : ".";
+        const nameIdx    = findParts.indexOf("-name");
+        const typeIdx    = findParts.indexOf("-type");
+        const nameGlob   = nameIdx !== -1 ? findParts[nameIdx + 1] : null;
+        const typeFilter = typeIdx !== -1 ? findParts[typeIdx + 1] : null;
+        const findResult = this.resolvePath(findPath);
+        if (!findResult || findResult.node.type !== "dir") { this.shellLines.push({ kind:"out", text:`find: '${findPath}': No such file or directory` }); break; }
+        const nameRe = nameGlob
+          ? new RegExp("^" + nameGlob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$")
+          : null;
+        this.shellLines.push({ kind:"out", text: findPath });
+        const walkFind = (node, base) => {
+          for (const [name, child] of Object.entries(node.children)) {
+            if (typeFilter === "d" && child.type !== "dir") continue;
+            if (typeFilter === "f" && child.type !== "file") continue;
+            const p = base + "/" + name;
+            if (!nameRe || nameRe.test(name)) this.shellLines.push({ kind:"out", text: p });
+            if (child.type === "dir") walkFind(child, p);
+          }
+        };
+        walkFind(findResult.node, findPath === "." ? "." : findPath);
+        break;
+      }
+
+      case "which": {
+        const bins = {
+          emojig:"/home/you/.local/bin/emojig", zsh:"/usr/bin/zsh", bash:"/usr/bin/bash",
+          git:"/usr/bin/git", ls:"/usr/bin/ls", cat:"/usr/bin/cat", tree:"/usr/bin/tree",
+          grep:"/usr/bin/grep", find:"/usr/bin/find", make:"/usr/bin/make",
+          zig:"/usr/local/bin/zig", touch:"/usr/bin/touch", rm:"/usr/bin/rm",
+          cp:"/usr/bin/cp", mv:"/usr/bin/mv", mkdir:"/usr/bin/mkdir", wc:"/usr/bin/wc",
+        };
+        for (const bin of args.trim().split(/\s+/).filter(Boolean)) {
+          const p = bins[bin] ?? (this.resolvePath(bin) ? bin : null);
+          this.shellLines.push({ kind:"out", text: p ?? `${bin} not found` });
+        }
+        break;
+      }
+
+      case "ps":
+        this.shellLines.push({ kind: "out", text: "  PID TTY          TIME CMD" });
+        this.shellLines.push({ kind: "out", text: " 1234 pts/0    00:00:02 zsh" });
+        this.shellLines.push({ kind: "out", text: " 5678 pts/0    00:00:00 emojig" });
+        this.shellLines.push({ kind: "out", text: " 9012 pts/0    00:00:00 ps" });
+        break;
+
+      case "env":
+        for (const [k, v] of Object.entries(this.fakeEnv)) {
+          this.shellLines.push({ kind: "out", text: `${k}=${v}` });
+        }
+        break;
+
+      case "neofetch": {
+        const neofetchLines = [
+          `${this.shellUser}@${this.shellHost} 🔍`, `──────────────────────────────`,
+          `OS:       EmojiOS 6.9 🐧`, `Host:     TerminalBook Pro`,
+          `Kernel:   6.9.0-emojig`, `Shell:    zsh 5.9`,
+          `Terminal: emojig-tui`, `CPU:      EmojiCore™ @ 4.2 GHz`,
+          `Memory:   420 MiB / 6969 MiB 🧠`, `Uptime:   42 mins ⏱️`,
+          `Colors:   🟥🟧🟨🟩🟦🟪⬛⬜`,
+        ];
+        for (const l of neofetchLines) this.shellLines.push({ kind: "out", text: l });
+        break;
+      }
+
+      case "git": {
+        const gitParts = args.trim().split(/\s+/);
+        const sub      = gitParts[0];
+        const gitRest  = gitParts.slice(1).join(" ");
+        if (sub === "status") {
+          this.shellLines.push({ kind:"out", text:"On branch main" });
+          this.shellLines.push({ kind:"out", text:"Your branch is up to date with 'origin/main'." });
+          this.shellLines.push({ kind:"out", text:"" });
+          this.shellLines.push({ kind:"out", text:"Changes to be committed:" });
+          this.shellLines.push({ kind:"out", text:'  (use "git restore --staged <file>..." to unstage)' });
+          this.shellLines.push({ kind:"out", text:"\tmodified:   src/main.zig" });
+        } else if (sub === "add") {
+          // silent like real git
+        } else if (sub === "commit") {
+          const m    = args.match(/-m\s+['"](.+)['"]/s);
+          const msg  = m ? m[1] : gitRest.trim() || "update";
+          const hash = Math.random().toString(16).slice(2, 9);
+          this.shellLines.push({ kind:"out", text:`[main ${hash}] ${msg}` });
+          this.shellLines.push({ kind:"out", text:" 3 files changed, 42 insertions(+), 7 deletions(-)" });
+        } else if (sub === "log") {
+          const logs = [
+            ["a1b2c3d", "feat: add Ctrl+E shell hook"],
+            ["e4f5a6b", "fix: cursor position after emoji insert"],
+            ["7c8d9e0", "refactor: tree-based filesystem sim"],
+            ["1f2a3b4", "feat: tab completion for relative paths"],
+            ["5c6d7e8", "chore: initial commit"],
+          ];
+          for (const [h, msg] of logs) {
+            this.shellLines.push({ kind:"out", text:`commit ${h}...` });
+            this.shellLines.push({ kind:"out", text:`Author: ${this.shellUser} <${this.shellUser}@${this.shellHost}>` });
+            this.shellLines.push({ kind:"out", text:`Date:   Jun  9 12:00 2026` });
+            this.shellLines.push({ kind:"out", text:`    ${msg}` });
+            this.shellLines.push({ kind:"out", text:"" });
+          }
+        } else if (sub === "diff") {
+          this.shellLines.push({ kind:"out", text:"diff --git a/src/main.zig b/src/main.zig" });
+          this.shellLines.push({ kind:"out", text:"index e4f5a6b..a1b2c3d 100644" });
+          this.shellLines.push({ kind:"out", text:"--- a/src/main.zig" });
+          this.shellLines.push({ kind:"out", text:"+++ b/src/main.zig" });
+          this.shellLines.push({ kind:"out", text:"@@ -1,4 +1,6 @@" });
+          this.shellLines.push({ kind:"out", text:' const std = @import("std");' });
+          this.shellLines.push({ kind:"out", text:'+const emoji = @import("emoji.zig");' });
+          this.shellLines.push({ kind:"out", text:"+" });
+          this.shellLines.push({ kind:"out", text:" pub fn main() !void {" });
+        } else if (sub === "branch") {
+          this.shellLines.push({ kind:"out", text:"* main" });
+          this.shellLines.push({ kind:"out", text:"  feat/skin-tones" });
+          this.shellLines.push({ kind:"out", text:"  fix/cursor-pos" });
+        } else if (sub === "push") {
+          this.shellLines.push({ kind:"out", text:"Enumerating objects: 5, done." });
+          this.shellLines.push({ kind:"out", text:"Counting objects: 100% (5/5), done." });
+          this.shellLines.push({ kind:"out", text:"Writing objects: 100% (3/3), 312 bytes | 312.00 KiB/s, done." });
+          this.shellLines.push({ kind:"out", text:"To github.com:you/emojig.git" });
+          this.shellLines.push({ kind:"out", text:"   e4f5a6b..a1b2c3d  main -> main" });
+        } else if (sub === "pull") {
+          this.shellLines.push({ kind:"out", text:"Already up to date." });
+        } else if (sub === "clone") {
+          const repoName = gitRest.split("/").at(-1).replace(/\.git$/, "").replace(/\s.*/, "");
+          this.shellLines.push({ kind:"out", text:`Cloning into '${repoName || "repo"}'...` });
+          this.shellLines.push({ kind:"out", text:"remote: Enumerating objects: 42, done." });
+          this.shellLines.push({ kind:"out", text:"Receiving objects: 100% (42/42), 18.5 KiB | 1.2 MiB/s, done." });
+        } else if (sub === "init") {
+          this.shellLines.push({ kind:"out", text:`Initialized empty Git repository in ${this.fakeEnv.PWD}/.git/` });
+        } else {
+          this.shellLines.push({ kind:"out", text:`git: '${sub}' not supported in demo` });
+        }
+        break;
+      }
+
+      case "help":
+        this.shellLines.push({ kind:"out", text:"commands: echo, ls/ll, cd, pwd, tree, cat, mkdir, rmdir, cp, mv, touch, rm, grep, wc, find, which, ps, env, git, neofetch, clear" });
+        this.shellLines.push({ kind:"out", text:"Ctrl+E → emoji picker  |  Tab → completion  |  ↑↓ → history  |  Ctrl+K → clear" });
+        break;
+
       default:
-        this.shellLines.push({
-          kind: "out",
-          text: `zsh: command not found: ${cmd}`,
-        });
+        this.shellLines.push({ kind: "out", text: `zsh: command not found: ${cmd}` });
     }
     this.render();
   }
@@ -1337,31 +1707,59 @@ document.addEventListener("DOMContentLoaded", () => {
   const themeOpt = document.getElementById("sim-opt-theme");
   const focusBadge = document.getElementById("sim-focus-badge");
 
+  // Middle-click paste anchor: a hidden off-screen textarea kept focused in
+  // shell mode so Firefox doesn't intercept bare keystrokes (e.g. ' / /) as
+  // Quick Find triggers.  Also used as the paste target for X11 PRIMARY paste.
+  const pasteEl = document.createElement("textarea");
+  pasteEl.setAttribute("aria-hidden", "true");
+  pasteEl.style.cssText =
+    "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+  document.body.appendChild(pasteEl);
+
+  // Route DOM focus to the right element based on current sim mode.
+  function syncFocus() {
+    if (!sim.isFocused) return;
+    if (sim.mode === "tui") { if (inputEl) inputEl.focus(); }
+    else                    { pasteEl.focus(); }
+  }
+
   // Seed the shell and open the picker inline — demonstrating the inline TUI USP.
   sim.seedShell();
   sim.openTui();
+  sim.isFocused = true;
+  updateFocusBadge(true);
+  sim.updateThemeClass();
+  syncFocus();
 
-  // Keyboard stays inactive until the user clicks the terminal (matching the
-  // focus badge). We capture keys at the document level rather than via a
-  // focused <input>, so activating on load would otherwise swallow page-wide
-  // keystrokes (e.g. Space to scroll) before the user touches the demo.
+  // When the TUI search input loses focus, hand it to pasteEl if in shell mode
+  // (covers Esc/Enter closing the TUI without a click).
+  if (inputEl) {
+    inputEl.addEventListener("blur", () => {
+      setTimeout(() => { if (sim.isFocused && sim.mode === "shell") pasteEl.focus(); }, 0);
+    });
+  }
 
   // Event binding: Terminal screen focus
   screenEl.addEventListener("click", () => {
+    // Clicking anywhere on the terminal dismisses the TUI if no emoji cell was
+    // clicked — cell clicks call selectEmoji() first (child event, bubbles up),
+    // so by the time we get here mode is already "shell" in that case.
+    if (sim.mode === "tui") sim.closeTui();
     sim.isFocused = true;
     sim.updateThemeClass();
     updateFocusBadge(true);
-    // In picker (TUI) mode, hand focus to the panel input so touch devices get
-    // a soft keyboard for fuzzy search. In shell mode keep DOM focus off the
-    // input so keystrokes flow to the command line.
-    if (sim.mode === "tui" && inputEl) inputEl.focus();
+    syncFocus();
   });
 
   document.addEventListener("click", (e) => {
-    const insideTerminal = screenEl.contains(e.target);
-    const insidePanel = document
-      .getElementById("sim-panel")
-      ?.contains(e.target);
+    // Use composedPath() instead of contains(e.target): if a TUI cell click
+    // triggers a re-render, the cell is detached from the DOM before this
+    // handler fires, so contains() returns false even though the click was
+    // inside the terminal.
+    const path = e.composedPath();
+    const insideTerminal = path.includes(screenEl);
+    const panelEl = document.getElementById("sim-panel");
+    const insidePanel = panelEl ? path.includes(panelEl) : false;
     if (!insideTerminal && !insidePanel) {
       sim.isFocused = false;
       sim.updateThemeClass();
@@ -1428,6 +1826,25 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     sim.handleKeydown(e);
+  });
+
+  // Middle-click paste (X11 PRIMARY selection).
+  // pasteEl is already focused in shell mode; on middle-mousedown just clear it
+  // so the browser's PRIMARY paste lands cleanly, then the input event picks it up.
+  screenEl.addEventListener("mousedown", (e) => {
+    if (e.button !== 1 || !sim.isFocused || sim.mode !== "shell") return;
+    pasteEl.value = "";
+    pasteEl.focus();
+  });
+
+  pasteEl.addEventListener("input", () => {
+    const text = pasteEl.value;
+    pasteEl.value = "";
+    // Keep pasteEl focused — don't blur, it's our Quick Find shield.
+    if (text) {
+      sim.insertAtCursor(text);
+      sim.render();
+    }
   });
 
   // A real pointer movement re-enables hover selection in the picker grid.

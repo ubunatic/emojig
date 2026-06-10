@@ -3,6 +3,7 @@
   "binary": "zig-out/bin/emojig",
   "bitrate": "2M",
   "fps": 30,
+  "record_fps": 30,
   "scene_width": 850,
   "scene_height": 480,
   "gui_font_size": 12,
@@ -17,8 +18,8 @@
     { "type": "<C-A-space>", "desc": "fake gui hotkey", "show_keys": true },
     { "next": "emojig" },
     { "type": "<S-ins>", "desc": "(fake) paste hotkey", "show_keys": true },
-    { "type": "🖥️", "desc": "(fake) paste" },
-    { "pause": "1s" }
+    { "type": "🖥️", "desc": "(fake) paste", "speed": 0.5 },
+    { "pause": "2s" }
   ],
   "gui_apps": {
     "emojig": {
@@ -26,9 +27,9 @@
       "app_id": "emojig-picker",
       "env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
       "script": [
-        { "type": "compu", "desc": "search query" },
+        { "type": "compu", "desc": "search query", "speed": 0.4 },
         { "pause": "1s" },
-        { "type": " desk", "desc": "search query" },
+        { "type": " desk", "desc": "search query", "speed": 0.4 },
         { "pause": "1s" },
         { "type": "<cr>", "desc": "select first result", "show_keys": true }
       ]

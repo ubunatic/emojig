@@ -87,8 +87,8 @@
     background-color: var(--term-bg, #1c1c1c);
     color: var(--term-fg, #a8a8a8);
     padding: 14px;
-    user-select: none;
-    cursor: default;
+    user-select: text;
+    cursor: text;
     position: relative;
     overflow: hidden;
     min-height: 416px;
@@ -147,6 +147,7 @@
 
 .sim-theme-icon {
     cursor: pointer;
+    user-select: none;
     font-size: 11px;
     transition: background-color 0.1s ease;
 }
@@ -159,6 +160,7 @@
 /* Emoji Grid Cells */
 .sim-cell {
     cursor: pointer;
+    user-select: none;
     display: inline-block;
     transition: background-color 0.1s ease;
 }

@@ -16,15 +16,19 @@
     { "text": " " }
   ],
   "tui_shell_init": ["source $(pwd)/src/shell/emojig.zsh"],
-  "tui_env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12", "EMOJIG_THEME=light"],
+  "tui_env": [
+    "EMOJIG_TERMINAL=foot",
+    "EMOJIG_GUI_FONT_SIZE=12",
+    "EMOJIG_THEME=light"
+  ],
   "tui_script": [
     { "type": "echo Hello TUI ", "desc": "simple echo - no CR yet" },
     { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
     { "pause": "1s" },
-    { "type": "car", "desc": "search for 'car'" },
+    { "type": "car", "desc": "search for 'car'", "speed": 0.4 },
     { "pause": "1s" },
     { "type": "<bs><bs><bs>", "desc": "delete search" },
-    { "type": "cat", "desc": "search for cat" },
+    { "type": "cat", "desc": "search for cat", "speed": 0.4 },
     { "pause": "1s" },
     { "type": "<cr>", "desc": "select cat", "show_keys": true },
     { "pause": "1s" },
