@@ -41,6 +41,10 @@ type App struct {
 	regY     int // 1-based top row of the reserved region
 	regH     int // region height in rows (constant footprint)
 	boxWidth int // max drawn width (cols-1) so an h-shrink can't wrap rows
+
+	// Simple (fzf/sk-like) mode: list view with bottom prompt instead of grid.
+	simple   bool
+	termRows int // terminal height, stored on Run entry for listCap
 }
 
 // New builds an App from the loaded data and specs.
@@ -55,6 +59,10 @@ func New(db *emoji.DB, specs spec.Specs) *App {
 // SetHeight enables inline rendering with the given height spec (see
 // ParseHeight). The zero Height leaves the App in its default alt-screen mode.
 func (a *App) SetHeight(h Height) { a.height = h }
+
+// SetSimple switches the picker to a fzf/sk-like list layout with a bottom
+// prompt and linear up/down navigation instead of the default emoji grid.
+func (a *App) SetSimple(v bool) { a.simple = v }
 
 func fg(n int) string { return fmt.Sprintf("\x1b[38;5;%dm", n) }
 func bg(n int) string { return fmt.Sprintf("\x1b[48;5;%dm", n) }
@@ -75,6 +83,8 @@ func (a *App) Run() (string, error) {
 
 	a.out = t.TTY()
 	a.in = t.TTY()
+
+	_, a.termRows = t.Size()
 
 	if a.height.set {
 		a.enterInline(t)
@@ -124,8 +134,13 @@ func (a *App) Run() (string, error) {
 
 // refresh re-runs the search and resets the selection.
 func (a *App) refresh() {
-	cells := a.specs.Layout.TUI.Cells()
-	a.top, a.total = a.db.Search(string(a.query), cells)
+	var cap int
+	if a.simple {
+		cap = a.listCap()
+	} else {
+		cap = a.specs.Layout.TUI.Cells()
+	}
+	a.top, a.total = a.db.Search(string(a.query), cap)
 	if len(a.top) > 0 {
 		a.selected = 0
 	} else {
@@ -133,7 +148,20 @@ func (a *App) refresh() {
 	}
 }
 
-// navigate moves the selection within the grid, wrapping like src/main.zig.
+// listCap returns how many list items to fetch in simple mode:
+// the reserved region height minus the 2 fixed rows (count + prompt).
+func (a *App) listCap() int {
+	if a.regH > 2 {
+		return a.regH - 2
+	}
+	if a.termRows > 2 {
+		return a.termRows - 2
+	}
+	return 1
+}
+
+// navigate moves the selection, wrapping like src/main.zig.
+// In simple mode all directions collapse to prev/next in the list.
 func (a *App) navigate(action string) {
 	count := len(a.top)
 	if count == 0 {
@@ -144,9 +172,27 @@ func (a *App) navigate(action string) {
 		a.selected = 0
 		return
 	}
+	sel := a.selected
+	if a.simple {
+		switch action {
+		case "nav_up", "nav_left":
+			if sel > 0 {
+				sel--
+			} else {
+				sel = count - 1
+			}
+		case "nav_down", "nav_right":
+			if sel < count-1 {
+				sel++
+			} else {
+				sel = 0
+			}
+		}
+		a.selected = sel
+		return
+	}
 	cols := a.specs.Layout.TUI.Cols
 	rows := a.specs.Layout.TUI.Rows
-	sel := a.selected
 	switch action {
 	case "nav_up":
 		if sel >= cols {
@@ -210,10 +256,17 @@ func (a *App) render() {
 	a.out.WriteString(b.String())
 }
 
-// frame returns the picker's logical rows with no positioning or newlines:
-// search bar, a spacer, the grid (or help) body, and the status row. Both the
-// alt-screen and inline render paths consume this.
+// frame returns the picker's logical rows with no positioning or newlines.
+// In simple mode it delegates to simpleFrame for the fzf/sk list layout.
 func (a *App) frame() []string {
+	if a.simple {
+		return a.simpleFrame()
+	}
+	return a.gridFrame()
+}
+
+// gridFrame is the original frame implementation: search bar, spacer, grid, status.
+func (a *App) gridFrame() []string {
 	pal := a.specs.Theme.Themes[a.themeName]
 	str := a.specs.Strings
 	width := a.specs.Layout.TUI.Width
@@ -293,6 +346,35 @@ func (a *App) helpRows(rows []string, pal spec.Palette, width int) []string {
 	for _, line := range lines {
 		rows = append(rows, bgOpt(pal.GridBg)+fg(pal.GridFg)+" "+truncate(line, width-1)+term.Reset)
 	}
+	return rows
+}
+
+// simpleFrame builds the fzf/sk-style layout: list rows above, count line,
+// then the search prompt at the very bottom.
+func (a *App) simpleFrame() []string {
+	pal := a.specs.Theme.Themes[a.themeName]
+	listH := a.listCap()
+	rows := make([]string, 0, listH+2)
+
+	for i := 0; i < listH; i++ {
+		if i < len(a.top) {
+			e := a.db.Entries[a.top[i].Index]
+			if i == a.selected {
+				rows = append(rows, bgOpt(pal.SelectionBg)+fg(pal.SelectionFg)+"  > "+e.Emoji+" "+e.Name+term.Reset)
+			} else {
+				rows = append(rows, fg(pal.GridFg)+"    "+e.Emoji+" "+e.Name+term.Reset)
+			}
+		} else {
+			rows = append(rows, "")
+		}
+	}
+
+	// Count row.
+	count := fmt.Sprintf("  %d/%d", len(a.top), a.total)
+	rows = append(rows, fg(pal.StatusFg)+count+term.Reset)
+
+	// Prompt row at bottom.
+	rows = append(rows, fg(pal.SearchFg)+"> "+string(a.query)+term.Reset)
 	return rows
 }
 
@@ -378,7 +460,12 @@ func reserveRegion(cy, rows, want int) (y, toScroll int) {
 
 // footprint returns the picker's natural height in rows: the larger of the grid
 // view and the help view, so the reserved region never overflows either.
+// In simple mode the list fills whatever region is reserved, so return a large
+// sentinel that never caps the --height request.
 func (a *App) footprint() int {
+	if a.simple {
+		return 1000
+	}
 	// grid view: search bar + spacer + grid rows + spacer + desc + status
 	grid := a.specs.Layout.TUI.Rows + 5
 	// help view: search bar + spacer + (title + help lines) + status

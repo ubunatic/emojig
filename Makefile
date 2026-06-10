@@ -3,6 +3,8 @@
 SHELL = bash
 VERSION = $(shell grep '\.version' build.zig.zon | grep -o '[0-9][0-9.]*')
 
+export WAYREEL_FAST ?= 3
+
 help: ⚙️
 	@printf "Emojig Makefile Targets:\n\n"
 	@awk -F':.*# ' '/^[a-zA-Z0-9_-]+:.*# / { printf "  %-18s %s\n", $$1, $$2 }' Makefile

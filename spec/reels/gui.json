@@ -1,4 +1,6 @@
 {
+  "$schema": "../../../wayreel/reel.schema.json",
+  "mode": "gui",
   "build": ["zig", "build", "-Doptimize=ReleaseSmall"],
   "binary": "zig-out/bin/emojig",
   "bitrate": "2M",
@@ -6,14 +8,14 @@
   "record_fps": 30,
   "scene_width": 850,
   "scene_height": 480,
-  "gui_font_size": 12,
-  "gui_output": "website/emojig-gui-light.webm",
-  "gui_app_cmd": ["gedit", "$demo_file"],
-  "gui_app_id": "gedit",
-  "gui_app_width": 530,
-  "gui_app_height": 400,
-  "gui_app_env": ["GTK_THEME=Adwaita:light"],
-  "gui_app_script": [
+  "font_size": 12,
+  "output": "website/emojig-gui-light.webm",
+  "app_cmd": ["gedit", "$demo_file"],
+  "app_id": "gedit",
+  "app_width": 530,
+  "app_height": 400,
+  "env": ["GTK_THEME=Adwaita:light"],
+  "script": [
     { "type": "Hello GUI ", "desc": "pre-emoji text" },
     { "type": "<C-A-space>", "desc": "fake gui hotkey", "show_keys": true },
     { "next": "emojig" },
@@ -21,7 +23,7 @@
     { "type": "🖥️", "desc": "(fake) paste", "speed": 0.5 },
     { "pause": "2s" }
   ],
-  "gui_apps": {
+  "apps": {
     "emojig": {
       "args": ["--gui", "--theme", "light"],
       "app_id": "emojig-picker",
