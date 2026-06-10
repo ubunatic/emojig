@@ -1702,8 +1702,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const screenEl = document.getElementById("sim-screen");
   const inputEl = document.getElementById("sim-query-input");
-  const borderOpt = document.getElementById("sim-opt-border");
-  const safeOpt = document.getElementById("sim-opt-safe");
   const themeOpt = document.getElementById("sim-opt-theme");
   const focusBadge = document.getElementById("sim-focus-badge");
 
@@ -1797,20 +1795,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Setup Options Toggle
-  if (borderOpt) {
-    borderOpt.addEventListener("change", (e) => {
-      sim.showBorder = e.target.checked;
-      sim.render();
-    });
-  }
-
-  if (safeOpt) {
-    safeOpt.addEventListener("change", (e) => {
-      sim.safeMode = e.target.checked;
-      sim.render();
-    });
-  }
-
   if (themeOpt) {
     themeOpt.addEventListener("change", (e) => {
       sim.theme = e.target.value;
