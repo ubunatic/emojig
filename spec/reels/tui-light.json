@@ -12,7 +12,7 @@
   "theme": "light",
   "font_size": 12,
   "output": "website/emojig-tui-light.webm",
-  "title": "Any Terminal",
+  "title": "emojig terminal",
   "prompt": [
     { "text": "➜", "color": "green" },
     { "text": "  " },

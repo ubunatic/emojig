@@ -62,18 +62,22 @@ wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
 
 record: ⚙️ wayreel-install  # record all three demos (tui-dark, tui-light, gui)
-	$(WAYREEL) record spec/reels/tui-dark.json --mode tui
-	$(WAYREEL) record spec/reels/tui-light.json --mode tui
-	$(WAYREEL) record spec/reels/gui.json --mode gui
+	$(WAYREEL) record spec/reels/tui-dark.json
+	$(WAYREEL) record spec/reels/tui-light.json
+	$(WAYREEL) record spec/reels/gui.json
+	open website
 
-record-tui: ⚙️ wayreel-install  # record TUI demo (dark theme)
-	$(WAYREEL) record spec/reels/tui-dark.json --mode tui
+record-dark: ⚙️ wayreel-install  # record TUI demo (dark theme)
+	$(WAYREEL) record spec/reels/tui-dark.json
+	open website/emojig-tui-dark.webm
 
-record-tui-light: ⚙️ wayreel-install  # record TUI demo (light theme)
-	$(WAYREEL) record spec/reels/tui-light.json --mode tui
+record-light: ⚙️ wayreel-install  # record TUI demo (light theme)
+	$(WAYREEL) record spec/reels/tui-light.json
+	open website/emojig-tui-light.webm
 
 record-gui: ⚙️ wayreel-install  # record GUI desktop scenario
-	$(WAYREEL) record spec/reels/gui.json --mode gui
+	$(WAYREEL) record spec/reels/gui.json
+	open website/emojig-gui-light.webm
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."

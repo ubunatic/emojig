@@ -3,12 +3,12 @@
   "mode": "gui",
   "build": ["zig", "build", "-Doptimize=ReleaseSmall"],
   "binary": "zig-out/bin/emojig",
-  "bitrate": "2M",
+  "bitrate": "1M",
   "fps": 30,
   "record_fps": 30,
   "scene_width": 850,
   "scene_height": 480,
-  "font_size": 12,
+  "font_size": 15,
   "output": "website/emojig-gui-light.webm",
   "app_cmd": ["gedit", "$demo_file"],
   "app_id": "gedit",
@@ -26,11 +26,12 @@
   "apps": {
     "emojig": {
       "args": ["--gui", "--theme", "light"],
-      "app_id": "emojig-picker",
+      "app_id": "emojig-picker",   
       "env": [
         "EMOJIG_TERMINAL=foot",
-        "EMOJIG_GUI_FONT_SIZE=12",
-        "EMOJIG_THEME=dark"
+        "EMOJIG_GUI_FONT_SIZE=14",
+        "EMOJIG_COLS=9",
+        "EMOJIG_ROWS=8"
       ],
       "script": [
         { "type": "compu", "desc": "search query", "speed": 0.4 },

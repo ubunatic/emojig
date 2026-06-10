@@ -50,6 +50,7 @@ type Palette struct {
 	InfoBg        *int   `json:"info_bg"`
 	BorderBg      *int   `json:"border_bg"`
 	BorderShadeFg int    `json:"border_shade_fg"`
+	TerminalBg2   string `json:"terminal_bg2"`
 	TerminalBg    string `json:"terminal_bg"`
 	TerminalFg    string `json:"terminal_fg"`
 }

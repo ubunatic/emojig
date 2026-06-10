@@ -344,17 +344,27 @@ pub fn spawnGuiWindow(
     // GUI window colors come from spec/theme.json (foot wants bare hex, so we
     // strip the leading '#'). `system` falls back to the dark palette here.
     const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
-    const foot_bg = if (gui_pal.terminal_bg) |bg| (if (bg.len > 0) bg[1..] else "") else "";
+    const foot_bg_raw = gui_pal.terminal_bg2 orelse gui_pal.terminal_bg;
+    const foot_bg = if (foot_bg_raw) |bg| (if (bg.len > 0) bg[1..] else "") else "";
     const foot_fg = if (gui_pal.terminal_fg) |fg| (if (fg.len > 0) fg[1..] else "") else "";
     const foot_border = if (gui_pal.terminal_border) |border_color| (if (border_color.len > 0) border_color[1..] else "") else "";
 
-    // Derive the window height from the GUI grid rows configured in spec/layout.json.
-    const gui_content_rows: usize = spec.layout.gui.rows + spec.layout.layout_overhead;
+    // GUI grid dimensions: respect environment overrides if present, otherwise fallback to layout spec defaults.
+    const env_cols_val = init.environ_map.get("EMOJIG_COLS");
+    const cols_val = if (env_cols_val) |v| std.fmt.parseInt(usize, v, 10) catch spec.layout.gui.cols else spec.layout.gui.cols;
+
+    const env_rows_val = init.environ_map.get("EMOJIG_ROWS");
+    const rows_val = if (env_rows_val) |v| std.fmt.parseInt(usize, v, 10) catch spec.layout.gui.rows else spec.layout.gui.rows;
+
+    const width_val = if (cols_val == spec.layout.gui.cols) spec.layout.gui.width else if (cols_val == spec.layout.tui.cols) spec.layout.tui.width else cols_val * 4;
+
+    // Derive the window height from the GUI grid rows.
+    const gui_content_rows: usize = rows_val + spec.layout.layout_overhead;
     var final_h = if (border) gui_content_rows + 2 else gui_content_rows;
     if (debug) final_h += 2;
 
     var size_buf: [64]u8 = undefined;
-    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ spec.layout.gui.width + 2, final_h });
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width_val + 2, final_h });
 
     var bg_buf: [64]u8 = undefined;
     const bg_arg = if (foot_bg.len > 0)
@@ -375,7 +385,7 @@ pub fn spawnGuiWindow(
         "";
 
     var env_w: [64]u8 = undefined;
-    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{spec.layout.gui.width});
+    const env_w_arg = try std.fmt.bufPrint(&env_w, "EMOJIG_WIDTH={d}", .{width_val});
 
     var env_h: [64]u8 = undefined;
     const env_h_arg = try std.fmt.bufPrint(&env_h, "EMOJIG_HEIGHT={d}", .{gui_content_rows});
@@ -401,12 +411,11 @@ pub fn spawnGuiWindow(
     var font_buf: [64]u8 = undefined;
     const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={s}", .{font_size_val});
 
-    // GUI grid dimensions from spec/layout.json (runtime, formerly comptime).
     var env_cols: [64]u8 = undefined;
-    const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{spec.layout.gui.cols});
+    const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});
 
     var env_rows: [64]u8 = undefined;
-    const env_rows_arg = try std.fmt.bufPrint(&env_rows, "EMOJIG_ROWS={d}", .{spec.layout.gui.rows});
+    const env_rows_arg = try std.fmt.bufPrint(&env_rows, "EMOJIG_ROWS={d}", .{rows_val});
 
     // Propagate the GUI exit-preview default from spec/layout.json → animation.exit_preview_gui.
     // The child process (running --tui inside the spawned window) will see this env var and

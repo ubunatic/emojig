@@ -16,13 +16,13 @@ SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["build.zig.zon", ".gitignore", "Makefile", "go.mod", "go.sum", "spec/*.json", "Cargo.lock"]
+path = ["build.zig.zon", ".gitignore", ".gitattributes", "Makefile", "go.mod", "go.sum", "spec/*.json", "spec/reels/*.json", "Cargo.lock"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["docs/media/*.png", "docs/media/*.mp4", "website/*.html", "website/*.png", "website/*.svg", "website/*.webm", "minisign.pub"]
+path = ["docs/media/*.png", "docs/media/*.mp4", "website/*.html", "website/*.js", "website/*.png", "website/*.svg", "website/*.webm", "minisign.pub"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

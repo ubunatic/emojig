@@ -73,6 +73,7 @@ pub const PaletteSpec = struct {
     status_shade_fg: u8,
     border_bg: ?u8 = null,
     border_shade_fg: u8,
+    terminal_bg2: ?[]const u8 = null,
     terminal_bg: ?[]const u8 = null,
     terminal_fg: ?[]const u8 = null,
     terminal_border: ?[]const u8 = null,
@@ -147,7 +148,7 @@ pub const Spec = struct {
     pub fn terminalColors(self: *const Spec, t: term.Theme, sys: term.Theme) struct { bg: ?[]const u8, fg: ?[]const u8 } {
         const eff = if (t == .system) sys else t;
         const p = if (eff == .light) self.theme.themes.light else self.theme.themes.dark;
-        return .{ .bg = p.terminal_bg, .fg = p.terminal_fg };
+        return .{ .bg = p.terminal_bg2 orelse p.terminal_bg, .fg = p.terminal_fg };
     }
 };
 
