@@ -120,3 +120,16 @@ Spawning external clipboard utilities in Zig requires careful management of file
 
 * **Pipe Lifecycle**: Do not double-close file descriptors. When you spawn a child process, writing the selected emoji sequence to the process's standard input pipe must be done by explicitly closing the write end after sending, signaling an EOF to the clipboard utility.
 * **Non-blocking Execution**: Clipboard tools should be spawned asynchronously, allowing the main TUI binary to exit immediately once the copy command is handed off.
+
+---
+
+## 5. Terminal State Restoration on Exit
+
+Tearing down the inline TUI without leaving artifacts (orphaned rows, a
+displaced cursor, leaked mouse events, wiped scrollback) is its own minefield,
+and the failure modes are **terminal-specific** — e.g. an unmatched
+`\x1b[?1049l` is harmless in foot/tmux but displaces the cursor in every VTE
+terminal (Tilix, GNOME Terminal, Ptyxis).
+
+See [`TerminalRestore.md`](./TerminalRestore.md) for the teardown contract,
+the cross-terminal pitfalls we hit, and the test matrix for teardown changes.

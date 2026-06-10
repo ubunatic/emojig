@@ -39,13 +39,18 @@ const icon_png = @embedFile("assets/emojig-icon.png");
 
 const Theme = term_lib.Theme;
 const Palette = term_lib.Palette;
-const RESTORE = term_lib.RESTORE;
-
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 var global_tui_start_row: ?i32 = null;
 var global_tui_height: usize = 0;
 var global_row_off: i32 = 0;
+// True while the alt screen (?1049h) is active; selects RESTORE_ALT (which
+// leaves the alt screen) over RESTORE (which must not touch ?1049 — see term.zig).
+var global_alt_screen: bool = false;
+
+inline fn restoreSeq() []const u8 {
+    return if (global_alt_screen) term_lib.RESTORE_ALT else term_lib.RESTORE;
+}
 
 inline fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     try term_lib.writeAll(fd, bytes);
@@ -204,7 +209,8 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
         _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
     }
     clearTuiRows(global_tty_fd, global_tui_height, global_row_off);
-    _ = std.posix.system.write(global_tty_fd, RESTORE, RESTORE.len);
+    const seq = restoreSeq();
+    _ = std.posix.system.write(global_tty_fd, seq.ptr, seq.len);
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
 }
@@ -667,8 +673,7 @@ fn installShellIntegration(io: std.Io, home: []const u8, shell: []const u8, rc_o
             writeAll(std.posix.STDOUT_FILENO, "Already in ~/.bashrc — press Ctrl+E at any prompt.\n") catch {};
         }
     } else {
-        writeAll(std.posix.STDOUT_FILENO,
-            "\nAdd one line to your shell rc file:\n\n" ++
+        writeAll(std.posix.STDOUT_FILENO, "\nAdd one line to your shell rc file:\n\n" ++
             "  zsh/bash  (~/.zshrc or ~/.bashrc):\n" ++
             "    source ~/.local/share/emojig/shell/emojig.sh\n\n" ++
             "  fish (~/.config/fish/config.fish):\n" ++
@@ -1004,8 +1009,6 @@ pub fn main(init: std.process.Init) !void {
         break :blk term != null and std.mem.eql(u8, term.?, "linux");
     };
 
-
-
     if (is_linux_vt and !opt_gui and !opt_tui) {
         try writeAll(std.posix.STDERR_FILENO,
             \\emojig: Linux virtual console detected (TERM=linux).
@@ -1312,16 +1315,18 @@ pub fn main(init: std.process.Init) !void {
                     }
                 }
             }
-            writeAll(stdout_fd, RESTORE) catch {};
+            writeAll(stdout_fd, restoreSeq()) catch {};
+            global_alt_screen = false;
             logMemoryUsage();
         }
 
         // Disable line wrap (7l), enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
         // Switch to alternate screen (1049h) if configured.
         if (final_alt_screen) {
-            try writeAll(stdout_fd, "\x1b[?1049h\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            global_alt_screen = true;
+            try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
         } else {
-            try writeAll(stdout_fd, "\x1b[7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
         }
 
         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);

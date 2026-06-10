@@ -150,10 +150,18 @@ pub fn logMemoryUsage() void {
     _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
 }
 
-// Escape sequence to disable all mouse tracking + alt screen + cursor restore.
+// Escape sequence to disable all mouse tracking + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well.
 pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
-pub const RESTORE = MOUSE_OFF ++ "\x1b[?1049l\x1b[0q\x1b[?25h\x1b[7h\x1b]111\x1b\\\x1b]110\x1b\\";
+// RESTORE must NOT emit "\x1b[?1049l" in inline (non-alt-screen) mode: VTE
+// terminals (Tilix, GNOME Terminal, Ptyxis) execute the "restore saved cursor"
+// half of ?1049l even when the alt screen was never entered, yanking the cursor
+// away from the parked position and leaving blank lines before the next prompt
+// (foot/tmux ignore the unmatched ?1049l, masking the bug there).
+// "\x1b[?7h" re-enables auto-wrap (DECAWM) — the '?' is required; plain
+// "\x1b[7h" is ANSI mode 7, which terminals don't implement.
+pub const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b[?7h\x1b]111\x1b\\\x1b]110\x1b\\";
+pub const RESTORE_ALT = MOUSE_OFF ++ "\x1b[?1049l" ++ "\x1b[0q\x1b[?25h\x1b[?7h\x1b]111\x1b\\\x1b]110\x1b\\";
 
 /// Query the terminal background colour via OSC 11, detect dark/light.
 pub fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {

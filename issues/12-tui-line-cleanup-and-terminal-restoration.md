@@ -1,5 +1,31 @@
 # TUI Line Cleanup & Terminal Restoration
 
+## Update 2026-06-10 — residual "extra lines on close" root-caused (VTE terminals)
+
+After the per-row cleanup landed, the TUI still closed with blank lines between
+the launching command and the next prompt — but **only in VTE terminals**
+(Tilix, GNOME Terminal, Ptyxis). Not reproducible in foot or tmux, in any size,
+on any exit path (Enter/Esc/Ctrl-C/mouse click, top/bottom of screen).
+
+**Root cause:** the shared `RESTORE` sequence unconditionally emitted
+`\x1b[?1049l` (leave alt screen) on every exit — including `--tui` inline mode,
+which never enters the alt screen. VTE executes the "restore saved cursor" half
+of `?1049l` even when the alt screen is not active, yanking the cursor away
+from the position the cleanup just parked it at. foot and tmux ignore the
+unmatched `?1049l`, masking the bug there. The Go `mojigo` inline mode was
+immune because its `Restore` never touches `?1049` (the correct behavior —
+see `internal/term/term.go`).
+
+**Secondary finding (confirmed by foot's stderr `SM with unimplemented mode: 7`):**
+startup sent `\x1b[7l` and RESTORE sent `\x1b[7h` — ANSI mode 7, a no-op
+everywhere. The intent was DECAWM: `\x1b[?7l` / `\x1b[?7h`. Auto-wrap was
+therefore never actually disabled during rendering.
+
+**Fix:** `term.zig` now has `RESTORE` (no `?1049` — inline mode) and
+`RESTORE_ALT` (with `?1049l` — alt-screen mode), selected via a
+`global_alt_screen` flag set when `?1049h` is emitted, on all exit paths
+(defer, panic). DECAWM sequences corrected to `?7l`/`?7h`.
+
 ## Problem
 
 After the TUI closes (via emoji selection, Ctrl-C, or the Ctrl-E zsh keybind),
