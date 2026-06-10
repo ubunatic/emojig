@@ -976,10 +976,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             <span class="mockup-dot expand"></span>
                         </div>
                         <div class="mockup-title">emojig --tui</div>
-                        <span class="mockup-tab-indicator">Ctrl+E Widget</span>
+                        <button
+                            id="tui-theme-toggle"
+                            class="mockup-tab-indicator"
+                            style="cursor:pointer;border:none;background:rgba(255,255,255,0.06);font-family:'Outfit',sans-serif;font-size:0.75rem;font-weight:600;padding:4px 10px;border-radius:6px;color:#fff;"
+                            onclick="
+                                var v = document.getElementById('tui-video');
+                                var src = v.querySelector('source');
+                                var dark = src.src.endsWith('tui-dark.webm');
+                                src.src = dark ? 'emojig-tui-light.webm' : 'emojig-tui-dark.webm';
+                                this.textContent = dark ? '☀️ Light' : '🌙 Dark';
+                                v.load();
+                                v.play();
+                            "
+                        >🌙 Dark</button>
                     </div>
                     <div class="mockup-content">
                         <video
+                            id="tui-video"
                             class="mockup-video"
                             autoplay
                             loop
