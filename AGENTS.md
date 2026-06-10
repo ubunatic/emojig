@@ -30,8 +30,9 @@ This document details the architectural decisions, coding standards, and safety 
   * **Zero Dependencies**: Go scripts must rely purely on the Go Standard Library without external module requirements.
   * **Zig Scripts**: Written as executable Zig source files. Execute them using `zig run scripts/<name>.zig`.
   * **Shell Scripts** (e.g., `scripts/install.sh`): Written for POSIX compatibility.
-    * Use the `test` command (e.g., `if test "$OS" != "linux"`) instead of the bracket syntax `[` / `]`.
-    * Place the `then` keyword on its own line immediately following the `if` condition, rather than on the same line with a semicolon (`; then`).
+    Follow **@docs/Bash.md** for all style rules. Key points:
+    * Use `test` instead of `[` / `]` or `[[` / `]]`.
+    * 3-line if-then-fi: `then stmt` on the same line as `then`, never a semicolon before `then`.
 * **Licensing & Compliance**:
   * Every source file, helper script, utility, and shell script must include compliant SPDX copyright and licensing headers (e.g., `SPDX-FileCopyrightText` and `SPDX-License-Identifier`).
   * Ensure that the `make preflight` task (which validates REUSE compliance via `reuse lint` and checks formatting via `zig fmt`) passes successfully before finalizing any modifications.
@@ -196,3 +197,17 @@ When running parallel branches or spawning agents with `isolation: "worktree"`, 
   agents may have uncommitted changes in the shared `main` tree at the same time.
 
 
+<!-- claudeconfig:begin Language Conventions -->
+Adhere to the following conventions.
+
+- Rust @docs/Rust.md,
+  cargo fmt + clippy; safe Rust; avoid .unwrap() in library code
+- Go/Golang @docs/Go.md,
+  Modern Go, avoid deps but use Cobra, add tests
+- Bash/Shell @docs/Bash.md,
+  No ";", break before then/else/docs
+  No "if [[]]", No "if []", Use "if test"
+  smart indent!
+- Make/Makefile @docs/Make.md,
+  ⚙️ phony sentinel, self-doc help, build dependency pattern
+<!-- claudeconfig:end Language Conventions -->

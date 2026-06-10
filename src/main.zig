@@ -22,6 +22,7 @@ var g_spec: spec_mod.Spec = undefined;
 // Embedded shell integration scripts
 // ---------------------------------------------------------------------------
 
+const shell_sh = @embedFile("shell/emojig.sh");
 const shell_zsh = @embedFile("shell/emojig.zsh");
 const shell_bash = @embedFile("shell/emojig.bash");
 const shell_fish = @embedFile("shell/emojig.fish");
@@ -455,8 +456,37 @@ fn ensureDesktopIntegration(io: std.Io, home: []const u8, exe_path: []const u8) 
 }
 
 // ---------------------------------------------------------------------------
-// Shell integration install
+// Shell integration print / install
 // ---------------------------------------------------------------------------
+
+fn printCompletion(shell: []const u8, key: ?[]const u8) void {
+    if (key) |k| {
+        var buf: [256]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "EMOJIG_KEY='{s}'\n", .{k}) catch return;
+        writeAll(std.posix.STDOUT_FILENO, line) catch {};
+    }
+    const script = if (std.mem.eql(u8, shell, "bash"))
+        shell_bash
+    else if (std.mem.eql(u8, shell, "fish"))
+        shell_fish
+    else if (std.mem.eql(u8, shell, "sh"))
+        shell_sh
+    else
+        shell_zsh;
+    writeAll(std.posix.STDOUT_FILENO, script) catch {};
+}
+
+fn detectShell(environ: anytype) []const u8 {
+    const shell_env = environ.get("SHELL") orelse return "zsh";
+    var it = std.mem.splitScalar(u8, shell_env, '/');
+    var last: []const u8 = shell_env;
+    while (it.next()) |part| {
+        if (part.len > 0) last = part;
+    }
+    if (std.mem.eql(u8, last, "bash")) return "bash";
+    if (std.mem.eql(u8, last, "fish")) return "fish";
+    return "zsh";
+}
 
 fn writeFile(path_buf: []u8, path: []const u8, content: []const u8) bool {
     if (path.len + 1 > path_buf.len) return false;
@@ -501,7 +531,49 @@ fn copyBinary(io: std.Io, home: []const u8) bool {
     return true;
 }
 
-fn installShellIntegration(io: std.Io, home: []const u8) void {
+/// Appends `line` to the file at `path` unless `marker` already appears in
+/// the first 16 KiB.  Returns true when written, false when already present or
+/// on error.
+fn fileExists(home: []const u8, rel: []const u8) bool {
+    var path_buf: [512]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, rel }) catch return false;
+    if (path.len + 1 > path_buf.len) return false;
+    path_buf[path.len] = 0;
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path_buf[0..path.len :0], rf, 0) catch return false;
+    _ = std.posix.system.close(fd);
+    return true;
+}
+
+fn sourceRcFileAbs(path: []const u8, line: []const u8, marker: []const u8) bool {
+    var path_buf: [512]u8 = undefined;
+    if (path.len + 1 > path_buf.len) return false;
+    @memcpy(path_buf[0..path.len], path);
+    path_buf[path.len] = 0;
+    const path_z = path_buf[0..path.len :0];
+
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    if (std.posix.openat(std.posix.AT.FDCWD, path_z, rf, 0)) |rfd| {
+        defer _ = std.posix.system.close(rfd);
+        var content: [16384]u8 = undefined;
+        const n = std.posix.read(rfd, &content) catch 0;
+        if (std.mem.indexOf(u8, content[0..n], marker) != null) return false;
+    } else |_| {}
+
+    const af = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
+    const afd = std.posix.openat(std.posix.AT.FDCWD, path_z, af, 0o644) catch return false;
+    defer _ = std.posix.system.close(afd);
+    _ = std.posix.system.write(afd, line.ptr, line.len);
+    return true;
+}
+
+fn sourceRcFile(home: []const u8, rc_rel: []const u8, line: []const u8, marker: []const u8) bool {
+    var path_buf: [512]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, rc_rel }) catch return false;
+    return sourceRcFileAbs(path, line, marker);
+}
+
+fn installShellIntegration(io: std.Io, home: []const u8, shell: []const u8, rc_override: ?[]const u8) void {
     ensureDirExists(home, ".local");
     ensureDirExists(home, ".local/bin");
     ensureDirExists(home, ".local/share");
@@ -511,6 +583,9 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
     const bin_ok = copyBinary(io, home);
 
     var buf: [512]u8 = undefined;
+
+    const sh_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.sh", .{home}) catch return;
+    _ = writeFile(&buf, sh_path, shell_sh);
 
     const zsh_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.zsh", .{home}) catch return;
     _ = writeFile(&buf, zsh_path, shell_zsh);
@@ -533,15 +608,73 @@ fn installShellIntegration(io: std.Io, home: []const u8) void {
         writeAll(std.posix.STDOUT_FILENO, "Warning: could not copy binary to ~/.local/bin/emojig\n") catch {};
     }
 
-    writeAll(std.posix.STDOUT_FILENO, "Installed shell integration to ~/.local/share/emojig/shell/\n\n" ++
-        "Add one line to your shell rc file:\n\n" ++
-        "  zsh  (~/.zshrc):\n" ++
-        "    source ~/.local/share/emojig/shell/emojig.zsh\n\n" ++
-        "  bash (~/.bashrc):\n" ++
-        "    source ~/.local/share/emojig/shell/emojig.bash\n\n" ++
-        "  fish (~/.config/fish/config.fish):\n" ++
-        "    source ~/.local/share/emojig/shell/emojig.fish\n\n" ++
-        "Then reload your shell and press Ctrl+E at any prompt.\n") catch {};
+    writeAll(std.posix.STDOUT_FILENO, "Installed shell integration to ~/.local/share/emojig/shell/\n") catch {};
+
+    // Fish cannot source POSIX sh — use emojig.fish directly in config.fish.
+    // All other shells (zsh, bash, unknown) use the generic emojig.sh dispatcher.
+    const is_fish = std.mem.eql(u8, shell, "fish");
+    const sh_source_line = "\nif test -f ~/.local/share/emojig/shell/emojig.sh\nthen source ~/.local/share/emojig/shell/emojig.sh\nfi\n";
+    const sh_marker = "emojig/shell/emojig.sh";
+    const fish_source_line = "\nif test -f ~/.local/share/emojig/shell/emojig.fish\n  source ~/.local/share/emojig/shell/emojig.fish\nend\n";
+    const fish_marker = "emojig/shell/emojig.fish";
+
+    if (rc_override) |rc| {
+        // --rc always uses the sh dispatcher (fish users don't set --rc to a sh file).
+        var abs_buf: [512]u8 = undefined;
+        const abs_path = if (rc[0] == '/')
+            rc
+        else
+            (std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ home, rc }) catch return);
+        const added = sourceRcFileAbs(abs_path, sh_source_line, sh_marker);
+        var msg_buf: [512]u8 = undefined;
+        const display = if (rc[0] == '/') rc else (std.fmt.bufPrint(&msg_buf, "~/{s}", .{rc}) catch rc);
+        var out_buf: [600]u8 = undefined;
+        if (added) {
+            const out = std.fmt.bufPrint(&out_buf, "Added to {s} — reload your shell and press Ctrl+E.\n", .{display}) catch return;
+            writeAll(std.posix.STDOUT_FILENO, out) catch {};
+        } else {
+            const out = std.fmt.bufPrint(&out_buf, "Already in {s} — press Ctrl+E at any prompt.\n", .{display}) catch return;
+            writeAll(std.posix.STDOUT_FILENO, out) catch {};
+        }
+    } else if (is_fish) {
+        ensureDirExists(home, ".config");
+        ensureDirExists(home, ".config/fish");
+        const added = sourceRcFile(home, ".config/fish/config.fish", fish_source_line, fish_marker);
+        if (added) {
+            writeAll(std.posix.STDOUT_FILENO, "Added to ~/.config/fish/config.fish — reload your shell and press Ctrl+E.\n") catch {};
+        } else {
+            writeAll(std.posix.STDOUT_FILENO, "Already in ~/.config/fish/config.fish — press Ctrl+E at any prompt.\n") catch {};
+        }
+    } else if (fileExists(home, ".userrc")) {
+        const added = sourceRcFile(home, ".userrc", sh_source_line, sh_marker);
+        if (added) {
+            writeAll(std.posix.STDOUT_FILENO, "Added to ~/.userrc — reload your shell and press Ctrl+E.\n") catch {};
+        } else {
+            writeAll(std.posix.STDOUT_FILENO, "Already in ~/.userrc — press Ctrl+E at any prompt.\n") catch {};
+        }
+    } else if (std.mem.eql(u8, shell, "zsh")) {
+        const added = sourceRcFile(home, ".zshrc", sh_source_line, sh_marker);
+        if (added) {
+            writeAll(std.posix.STDOUT_FILENO, "Added to ~/.zshrc — reload your shell and press Ctrl+E.\n") catch {};
+        } else {
+            writeAll(std.posix.STDOUT_FILENO, "Already in ~/.zshrc — press Ctrl+E at any prompt.\n") catch {};
+        }
+    } else if (std.mem.eql(u8, shell, "bash")) {
+        const added = sourceRcFile(home, ".bashrc", sh_source_line, sh_marker);
+        if (added) {
+            writeAll(std.posix.STDOUT_FILENO, "Added to ~/.bashrc — reload your shell and press Ctrl+E.\n") catch {};
+        } else {
+            writeAll(std.posix.STDOUT_FILENO, "Already in ~/.bashrc — press Ctrl+E at any prompt.\n") catch {};
+        }
+    } else {
+        writeAll(std.posix.STDOUT_FILENO,
+            "\nAdd one line to your shell rc file:\n\n" ++
+            "  zsh/bash  (~/.zshrc or ~/.bashrc):\n" ++
+            "    source ~/.local/share/emojig/shell/emojig.sh\n\n" ++
+            "  fish (~/.config/fish/config.fish):\n" ++
+            "    source ~/.local/share/emojig/shell/emojig.fish\n\n" ++
+            "Then reload your shell and press Ctrl+E at any prompt.\n") catch {};
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +686,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_gui = false;
     var opt_wait = false;
     var opt_install = false;
+    var opt_rc: ?[]const u8 = null;
     var opt_list = false;
     var opt_theme: ?Theme = null;
     var opt_width: ?usize = null;
@@ -561,6 +695,10 @@ pub fn main(init: std.process.Init) !void {
     var opt_safe = false;
     var opt_debug = false;
     var opt_alt_screen = false;
+    var opt_simple = false;
+    var opt_completion = false;
+    var opt_completion_shell: ?[]const u8 = null;
+    var opt_key: ?[]const u8 = null;
     var opt_borderless = true; // spawn the GUI host terminal without decorations (default)
     var opt_lang: ?[]const u8 = null;
 
@@ -571,6 +709,15 @@ pub fn main(init: std.process.Init) !void {
             opt_tui = true;
         } else if (std.mem.eql(u8, arg, "--install")) {
             opt_install = true;
+        } else if (std.mem.eql(u8, arg, "--rc")) {
+            if (args_it.next()) |v| {
+                opt_rc = v;
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --rc requires a filename (e.g. .userrc).\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--rc=")) {
+            opt_rc = arg["--rc=".len..];
         } else if (std.mem.eql(u8, arg, "--list")) {
             opt_list = true;
         } else if (std.mem.eql(u8, arg, "--gui")) {
@@ -583,6 +730,26 @@ pub fn main(init: std.process.Init) !void {
             opt_debug = true;
         } else if (std.mem.eql(u8, arg, "--alt-screen")) {
             opt_alt_screen = true;
+        } else if (std.mem.eql(u8, arg, "--simple")) {
+            opt_simple = true;
+        } else if (std.mem.eql(u8, arg, "--completion")) {
+            opt_completion = true;
+        } else if (std.mem.startsWith(u8, arg, "--completion=")) {
+            opt_completion = true;
+            const v = arg["--completion=".len..];
+            if (std.mem.eql(u8, v, "zsh") or std.mem.eql(u8, v, "bash") or std.mem.eql(u8, v, "fish") or std.mem.eql(u8, v, "sh")) {
+                opt_completion_shell = v;
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --completion= accepts sh, zsh, bash, or fish.\n");
+                std.process.exit(1);
+            }
+        } else if (std.mem.eql(u8, arg, "--key")) {
+            if (args_it.next()) |v| {
+                opt_key = v;
+            } else {
+                try writeAll(std.posix.STDERR_FILENO, "Error: --key requires an argument (e.g. '^E').\n");
+                std.process.exit(1);
+            }
         } else if (std.mem.eql(u8, arg, "--borderless")) {
             opt_borderless = true;
         } else if (std.mem.eql(u8, arg, "--no-borderless")) {
@@ -668,8 +835,12 @@ pub fn main(init: std.process.Init) !void {
                 "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
                 "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
+                "  --simple                     Simple fzf/sk-like list picker (use with --height)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
-                "  --install                    Install shell integration scripts to ~/.local/share/emojig/shell/\n" ++
+                "  --completion[=sh|zsh|bash|fish]  Print shell integration to stdout (auto-detects $SHELL)\n" ++
+                "  --key KEY                    Key binding to embed in --completion output (e.g. '^E')\n" ++
+                "  --install                    Install shell integration and source it in your shell rc file\n" ++
+                "  --rc FILE                    RC file for --install (e.g. .userrc); default: .zshrc/.bashrc/config.fish\n" ++
                 "  --list                       Print all emojis as 'emoji<TAB>name' for rofi/wofi/dmenu\n" ++
                 "  -v, --version                Show version and exit\n" ++
                 "  -h, --help                   Show this help message\n");
@@ -702,12 +873,19 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
+    if (opt_completion) {
+        const shell = opt_completion_shell orelse detectShell(init.environ_map);
+        printCompletion(shell, opt_key);
+        std.process.exit(0);
+    }
+
     if (opt_install) {
         const home = std.mem.span(std.c.getenv("HOME") orelse {
             try writeAll(std.posix.STDERR_FILENO, "Error: HOME not set.\n");
             std.process.exit(1);
         });
-        installShellIntegration(init.io, home);
+        const install_shell = detectShell(init.environ_map);
+        installShellIntegration(init.io, home, install_shell, opt_rc);
         std.process.exit(0);
     }
 
@@ -805,6 +983,7 @@ pub fn main(init: std.process.Init) !void {
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
     const final_alt_screen = (resize_mode == .altscreen);
+    const final_simple = opt_simple;
 
     const has_gui_session = blk: {
         const wayland = init.environ_map.get("WAYLAND_DISPLAY");
@@ -825,9 +1004,7 @@ pub fn main(init: std.process.Init) !void {
         break :blk term != null and std.mem.eql(u8, term.?, "linux");
     };
 
-    const is_ssh = init.environ_map.get("SSH_CONNECTION") != null or init.environ_map.get("SSH_CLIENT") != null or init.environ_map.get("SSH_TTY") != null;
 
-    const force_stdout = is_ssh or is_linux_vt or (std.c.isatty(std.posix.STDOUT_FILENO) == 0);
 
     if (is_linux_vt and !opt_gui and !opt_tui) {
         try writeAll(std.posix.STDERR_FILENO,
@@ -981,9 +1158,15 @@ pub fn main(init: std.process.Init) !void {
             if (height_override) |h| break :blk if (h > g_spec.layout.layout_overhead) h - g_spec.layout.layout_overhead else 1;
             break :blk g_spec.layout.tui.rows;
         };
-        const content_rows: usize = rows + g_spec.layout.layout_overhead;
-        var final_h = if (show_border) content_rows + 2 else content_rows;
-        if (final_debug) final_h += 2;
+        // In simple mode: list_rows of results + 1 count row + 1 prompt row.
+        // Derive list_rows from height_override if given, else use the grid row count as default.
+        const list_rows: usize = if (final_simple) blk: {
+            if (height_override) |h| break :blk if (h > 2) h - 2 else 1;
+            break :blk g_spec.layout.tui.rows;
+        } else rows;
+        const content_rows: usize = if (final_simple) list_rows + 2 else rows + g_spec.layout.layout_overhead;
+        var final_h = if (final_simple) content_rows else if (show_border) content_rows + 2 else content_rows;
+        if (final_debug and !final_simple) final_h += 2;
         global_tui_height = final_h;
 
         // Query the cursor position first (before drawing or writing any newlines).
@@ -1125,13 +1308,7 @@ pub fn main(init: std.process.Init) !void {
                         const abs_seq = std.fmt.bufPrint(&abs_move_buf, "\x1b[{d};1H", .{start_row}) catch "";
                         _ = std.posix.system.write(stdout_fd, abs_seq.ptr, abs_seq.len);
                     } else if (last_drawn_h > 1) {
-                        if (force_stdout) {
-                            // If stdout is piped/captured, leave cursor below TUI for the output.
-                            _ = std.posix.system.write(stdout_fd, "\r\n", 2);
-                        } else {
-                            const move_up = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{last_drawn_h - 1}) catch "";
-                            _ = std.posix.system.write(stdout_fd, move_up.ptr, move_up.len);
-                        }
+                        _ = std.posix.system.write(stdout_fd, "\r\n", 2);
                     }
                 }
             }
@@ -1154,11 +1331,14 @@ pub fn main(init: std.process.Init) !void {
         // Effective query cap from the spec, never exceeding the stack buffer.
         const max_query_len: usize = @min(g_spec.layout.max_query_len, query_buf.len);
 
-        const total_cells = cols * rows;
+        // In simple mode we cap at MAX_CELLS list items; grid mode uses cols*rows.
+        const total_cells: usize = if (final_simple) @min(list_rows, defaults.MAX_CELLS) else cols * rows;
 
         // The spec grid must fit the compile-time scratch buffers (defaults.zig).
-        std.debug.assert(cols <= defaults.MAX_COLS);
-        std.debug.assert(rows <= defaults.MAX_ROWS);
+        if (!final_simple) {
+            std.debug.assert(cols <= defaults.MAX_COLS);
+            std.debug.assert(rows <= defaults.MAX_ROWS);
+        }
         std.debug.assert(total_cells <= defaults.MAX_CELLS);
 
         var selected_idx: ?usize = null;
@@ -1261,16 +1441,20 @@ pub fn main(init: std.process.Init) !void {
 
                 var current_total_rows: usize = 0;
                 if (!rctx.is_hidden) {
-                    if (show_top_border) current_total_rows += 1;
-                    current_total_rows += 1; // Top padding
-                    current_total_rows += 1; // Search bar
-                    current_total_rows += 1; // Spacer
-                    current_total_rows += rows; // Grid rows
-                    current_total_rows += 1; // Spacer between grid and description
-                    current_total_rows += 1; // Description
-                    current_total_rows += 1; // Status bar
-                    if (show_bottom_border) current_total_rows += 1;
-                    if (show_debug) current_total_rows += 2;
+                    if (final_simple) {
+                        current_total_rows = total_cells + 2; // list rows + count + prompt
+                    } else {
+                        if (show_top_border) current_total_rows += 1;
+                        current_total_rows += 1; // Top padding
+                        current_total_rows += 1; // Search bar
+                        current_total_rows += 1; // Spacer
+                        current_total_rows += rows; // Grid rows
+                        current_total_rows += 1; // Spacer between grid and description
+                        current_total_rows += 1; // Description
+                        current_total_rows += 1; // Status bar
+                        if (show_bottom_border) current_total_rows += 1;
+                        if (show_debug) current_total_rows += 2;
+                    }
                 } else {
                     current_total_rows = 1;
                 }
@@ -1301,7 +1485,9 @@ pub fn main(init: std.process.Init) !void {
                             if (rctx.was_hidden) {
                                 try writeAll(stdout_fd, "\r\x1b[J");
                             } else {
-                                const up_rows = if (exit_preview and last_drawn_h > 1) last_drawn_h - 1 else @as(usize, @intCast(1 + row_off));
+                                // In simple mode the cursor ends on the prompt (last row), so move
+                                // up by the full height - 1 to return to the first list row.
+                                const up_rows = if ((exit_preview or final_simple) and last_drawn_h > 1) last_drawn_h - 1 else @as(usize, @intCast(1 + row_off));
                                 const seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{up_rows});
                                 try writeAll(stdout_fd, seq);
                             }
@@ -1340,6 +1526,39 @@ pub fn main(init: std.process.Init) !void {
 
                 if (rctx.is_hidden) {
                     try writeAll(stdout_fd, "\x1b[2K\r");
+                    try rw.endRow();
+                } else if (final_simple) {
+                    // -------------------------------------------------------
+                    // Simple (fzf/sk-style) layout: list rows, count, prompt
+                    // -------------------------------------------------------
+                    var si: usize = 0;
+                    while (si < total_cells) : (si += 1) {
+                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        if (si < top_count) {
+                            const entry = emojig.EmojiDb.getEntry(top_matches[si].index);
+                            var strip_buf: [32]u8 = undefined;
+                            const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
+                            if (selected_idx != null and si == selected_idx.?) {
+                                // selection_bg includes both bg and fg color sequences.
+                                const row_line = try std.fmt.bufPrint(&line_buf, "{s}  > {s} {s}\x1b[0m", .{ palette.selection_bg, render_emoji, entry.name });
+                                try writeAll(stdout_fd, row_line);
+                            } else {
+                                const row_line = try std.fmt.bufPrint(&line_buf, "{s}    {s} {s}\x1b[0m", .{ palette.grid_fg, render_emoji, entry.name });
+                                try writeAll(stdout_fd, row_line);
+                            }
+                        }
+                        try rw.endRow();
+                    }
+                    // Count row (status_bg includes bg + fg sequences).
+                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    var count_buf: [64]u8 = undefined;
+                    const count_line = try std.fmt.bufPrint(&count_buf, "{s}  {d}/{d}\x1b[0m", .{ palette.status_bg, top_count, total_matches });
+                    try writeAll(stdout_fd, count_line);
+                    try rw.endRow();
+                    // Prompt row (search_bg includes bg + fg sequences).
+                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    const prompt_line = try std.fmt.bufPrint(&line_buf, "{s}> {s}\x1b[0m", .{ palette.search_bg, query_buf[0..query_len] });
+                    try writeAll(stdout_fd, prompt_line);
                     try rw.endRow();
                 } else {
                     // Optional top border row.
@@ -1712,16 +1931,17 @@ pub fn main(init: std.process.Init) !void {
                     else
                         @as(usize, 0);
 
-                    const cursor_seq: []const u8 = if (is_too_small or exit_preview or should_copy_and_exit) blk: {
-                        if (is_too_small) {
-                            if (cursor_up > 0) {
-                                break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
-                            } else {
-                                break :blk "\x1b[1G\x1b[?25l";
-                            }
+                    const cursor_seq: []const u8 = if (exit_preview or should_copy_and_exit) blk: {
+                        // Exit or preview: hide cursor and leave it at the bottom to prevent drift!
+                        break :blk "\x1b[?25l";
+                    } else if (final_simple) blk: {
+                        // Simple mode: prompt is already the last row; just position cursor after "> ".
+                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{3 + query_len});
+                    } else if (is_too_small) blk: {
+                        if (cursor_up > 0) {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
                         } else {
-                            // Exit or preview: hide cursor and leave it at the bottom to prevent drift!
-                            break :blk "\x1b[?25l";
+                            break :blk "\x1b[1G\x1b[?25l";
                         }
                     } else blk: {
                         // Normal full TUI: move up, position cursor, enable blink.
@@ -1764,23 +1984,11 @@ pub fn main(init: std.process.Init) !void {
                     if (sel < top_count) {
                         const selected = emojig.EmojiDb.getEntry(top_matches[sel].index);
                         mru.save(selected.emoji);
-                        if (!force_stdout) {
-                            // Standalone: stdout is the terminal — copy to clipboard only.
-                            copyToClipboard(init, selected.emoji, final_safe) catch {
-                                // If copy fails (e.g. over SSH/VT, or without clipboard tools), fall back to printing to stdout
-                                result_emoji = if (final_safe)
-                                    emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
-                                else
-                                    selected.emoji;
-                            };
-                        } else {
-                            // SSH, VT, or piped/captured: print to stdout, also try clipboard in background.
-                            result_emoji = if (final_safe)
-                                emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
-                            else
-                                selected.emoji;
-                            copyToClipboard(init, selected.emoji, final_safe) catch {};
-                        }
+                        result_emoji = if (final_safe)
+                            emojig.stripVariationSelectors(selected.emoji, &result_safe_buf)
+                        else
+                            selected.emoji;
+                        copyToClipboard(init, selected.emoji, final_safe) catch {};
 
                         // Decide whether to show exit preview frame.
                         if (preview_enabled and !is_too_small and top_count > 0) {
@@ -2016,6 +2224,15 @@ pub fn main(init: std.process.Init) !void {
                 } else if (std.mem.startsWith(u8, action, "nav_")) {
                     if (selected_idx == null) {
                         if (top_count > 0) selected_idx = 0;
+                    } else if (final_simple) {
+                        // In simple mode all directions are linear prev/next.
+                        const sel = selected_idx.?;
+                        const count = top_count;
+                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
+                            selected_idx = if (sel > 0) sel - 1 else if (count > 0) count - 1 else 0;
+                        } else {
+                            selected_idx = if (sel + 1 < count) sel + 1 else 0;
+                        }
                     } else {
                         selected_idx = navSelect(action, selected_idx.?, top_count, cols, rows);
                     }

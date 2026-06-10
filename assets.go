@@ -37,3 +37,23 @@ var StringsJSON []byte
 //
 //go:embed spec/synonyms.json
 var SynonymsJSON []byte
+
+// ShellSh is the generic shell integration dispatcher (zsh + bash).
+//
+//go:embed src/shell/emojig.sh
+var ShellSh []byte
+
+// ShellZsh is the zsh shell integration script.
+//
+//go:embed src/shell/emojig.zsh
+var ShellZsh []byte
+
+// ShellBash is the bash shell integration script.
+//
+//go:embed src/shell/emojig.bash
+var ShellBash []byte
+
+// ShellFish is the fish shell integration script.
+//
+//go:embed src/shell/emojig.fish
+var ShellFish []byte

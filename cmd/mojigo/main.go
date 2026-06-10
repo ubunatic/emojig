@@ -9,18 +9,29 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	emojig "codeberg.org/ubunatic/emojig"
 	"codeberg.org/ubunatic/emojig/internal/emoji"
 	"codeberg.org/ubunatic/emojig/internal/spec"
 	"codeberg.org/ubunatic/emojig/internal/tui"
 )
 
 func main() {
-	height, err := parseArgs(os.Args[1:])
+	opts, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mojigo:", err)
 		os.Exit(2)
+	}
+
+	if opts.completion {
+		shell := opts.completionShell
+		if shell == "" {
+			shell = detectShell()
+		}
+		printCompletion(shell, opts.key)
+		os.Exit(0)
 	}
 
 	specs, err := spec.Load()
@@ -35,8 +46,11 @@ func main() {
 	}
 
 	app := tui.New(db, specs)
-	if height.Set() {
-		app.SetHeight(height)
+	if opts.height.Set() {
+		app.SetHeight(opts.height)
+	}
+	if opts.simple {
+		app.SetSimple(true)
 	}
 	chosen, err := app.Run()
 	if err != nil {
@@ -48,27 +62,92 @@ func main() {
 	}
 }
 
-// parseArgs handles the only flag mojigo accepts: --height. Forms supported,
-// mirroring the Rust demo (src/main.rs): --height N, --height N%, --height=N,
-// -H N. With no flag the picker runs in its default alt-screen mode.
-func parseArgs(args []string) (tui.Height, error) {
+type options struct {
+	height          tui.Height
+	simple          bool
+	completion      bool
+	completionShell string
+	key             string
+}
+
+// parseArgs handles mojigo's flags.
+func parseArgs(args []string) (options, error) {
+	var opts options
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--height" || a == "-H":
 			i++
 			if i >= len(args) {
-				return tui.Height{}, fmt.Errorf("%s requires a value (e.g. 8 or 40%%)", a)
+				return opts, fmt.Errorf("%s requires a value (e.g. 8 or 40%%)", a)
 			}
-			return tui.ParseHeight(args[i])
+			h, err := tui.ParseHeight(args[i])
+			if err != nil {
+				return opts, err
+			}
+			opts.height = h
 		case strings.HasPrefix(a, "--height="):
-			return tui.ParseHeight(strings.TrimPrefix(a, "--height="))
+			h, err := tui.ParseHeight(strings.TrimPrefix(a, "--height="))
+			if err != nil {
+				return opts, err
+			}
+			opts.height = h
+		case a == "--simple":
+			opts.simple = true
+		case a == "--completion":
+			opts.completion = true
+		case strings.HasPrefix(a, "--completion="):
+			v := strings.TrimPrefix(a, "--completion=")
+			if v != "sh" && v != "zsh" && v != "bash" && v != "fish" {
+				return opts, fmt.Errorf("--completion= accepts sh, zsh, bash, or fish")
+			}
+			opts.completion = true
+			opts.completionShell = v
+		case a == "--key":
+			i++
+			if i >= len(args) {
+				return opts, fmt.Errorf("--key requires a value (e.g. '^E')")
+			}
+			opts.key = args[i]
+		case strings.HasPrefix(a, "--key="):
+			opts.key = strings.TrimPrefix(a, "--key=")
 		case a == "-h" || a == "--help":
-			fmt.Println("usage: mojigo [--height N|N%]")
+			fmt.Println("usage: mojigo [--height N|N%] [--simple] [--completion[=sh|zsh|bash|fish]] [--key KEY]")
 			os.Exit(0)
 		default:
-			return tui.Height{}, fmt.Errorf("unknown argument: %q", a)
+			return opts, fmt.Errorf("unknown argument: %q", a)
 		}
 	}
-	return tui.Height{}, nil
+	return opts, nil
+}
+
+func detectShell() string {
+	s := os.Getenv("SHELL")
+	base := filepath.Base(s)
+	switch base {
+	case "bash":
+		return "bash"
+	case "fish":
+		return "fish"
+	default:
+		return "zsh"
+	}
+}
+
+func printCompletion(shell, key string) {
+	if key != "" {
+		fmt.Printf("EMOJIG_KEY='%s'\n", key)
+	}
+	var script []byte
+	switch shell {
+	case "bash":
+		script = emojig.ShellBash
+	case "fish":
+		script = emojig.ShellFish
+	case "sh":
+		script = emojig.ShellSh
+	default:
+		script = emojig.ShellZsh
+	}
+	os.Stdout.Write(script)
 }
