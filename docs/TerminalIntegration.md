@@ -39,49 +39,60 @@ When invoked from a desktop hotkey or launcher shortcut, standard input is non-i
 
 ## 2. Shell Integrations (Bash, Zsh, Fish)
 
-To make emoji search accessible at the command line, Emojig embeds shell keybindings that inject the selected emoji directly into the active prompt buffer (defaulting to `Ctrl+E`).
+Shell integration scripts live in `src/shell/` and are embedded in the binary.
+The key binding defaults to `Ctrl+E`; override with `EMOJIG_KEY`.
 
-The shell configuration scripts are embedded inside the binary and can be output using `emojig --init [bash|zsh|fish]`.
+### Generic dispatcher: `emojig.sh`
 
-### Zsh Integration
-Zsh uses a custom Widget and Zle (Zsh Line Editor) command:
-```zsh
-__emojig_widget() {
-  local selected=$(emojig)
-  if [ -n "$selected" ]; then
-    LBUFFER+="$selected"
-  fi
-  zle reset-prompt
-}
-zle -N emojig-widget __emojig_widget
-bindkey '^E' emojig-widget
+`emojig.sh` is a POSIX-compatible dispatcher that sources the right
+shell-specific script at runtime:
+
+```sh
+if test -n "$ZSH_VERSION"
+then source ~/.local/share/emojig/shell/emojig.zsh
+elif test -n "$BASH_VERSION"
+then source ~/.local/share/emojig/shell/emojig.bash
+fi
 ```
 
-### Bash Integration
-Bash reads standard input using `readline` bindings:
-```bash
-__emojig_inject() {
-  local selected=$(emojig)
-  if [ -n "$selected" ]; then
-    READLINE_LINE="${READLINE_LINE:0:$READLINE_POINT}${selected}${READLINE_LINE:$READLINE_POINT}"
-    READLINE_POINT=$((READLINE_POINT + ${#selected}))
-  fi
-}
-bindkey -x '"\C-e": __emojig_inject'
+**Fish cannot parse POSIX `if/then/fi`** — fish always gets a direct
+`source emojig.fish` line, never via `emojig.sh`.
+
+### Installing
+
+`--install` auto-detects `$SHELL`, writes an `if test -f` guard to the
+appropriate rc file, and exits:
+
+```
+emojig --install
+# → detects zsh, writes to ~/.zshrc (or ~/.userrc if it exists):
+#   if test -f ~/.local/share/emojig/shell/emojig.sh
+#   then source ~/.local/share/emojig/shell/emojig.sh
+#   fi
 ```
 
-### Fish Integration
-Fish handles insertion via command bindings:
-```fish
-function __emojig_inject
-  set -l selected (emojig)
-  if test -n "$selected"
-    commandline -i $selected
-  end
-  commandline -f repaint
-end
-bind \ce __emojig_inject
+**RC file resolution order** (non-fish):
+1. `--rc FILE` override (relative to `$HOME` or absolute)
+2. `~/.userrc` if it exists
+3. `~/.zshrc` (zsh) or `~/.bashrc` (bash)
+
+Fish always writes to `~/.config/fish/config.fish` (ignores `~/.userrc`).
+
+`--install` is idempotent — it scans the first 16 KiB of the target file for
+the marker string (`emojig/shell/emojig.sh` or `emojig/shell/emojig.fish`)
+before appending.
+
+### Eval workflow
+
+As an alternative to `--install`, print the script to stdout for `eval`:
+
+```sh
+eval "$(emojig --completion)"            # auto-detect from $SHELL
+eval "$(emojig --completion=zsh)"        # explicit shell
+eval "$(emojig --completion --key '^Y')" # custom key: prepends EMOJIG_KEY='^Y'
 ```
+
+`--completion` accepts `sh`, `zsh`, `bash`, or `fish`.
 
 ---
 

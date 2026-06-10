@@ -71,3 +71,15 @@ grid/help renderers (`gridRows`/`helpRows`) are otherwise unchanged.
 `footprint()` reserves `max(grid, help)` rows so the region never overflows
 either view; the requested `--height` is then capped to that and to `rows-1`
 (keep the initiating line visible).
+
+## Extending to `--simple` mode
+
+`--simple` adds a fzf/sk-like flat list layout on top of the same inline
+mechanics. See [`SimpleListMode.md`](./SimpleListMode.md) for implementation
+details. Key deltas from the grid mode:
+
+- `footprint()` returns 1000 so `--height` is never artificially capped.
+- `listCap()` = `regH - 2` (inline) or `termRows - 2` (alt-screen), min 1.
+  Search is capped at this count instead of `cols × rows`.
+- `simpleFrame()` renders list rows + count row + prompt row.
+- Navigation collapses to linear prev/next for all four directions.
