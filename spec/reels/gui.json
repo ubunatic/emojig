@@ -27,7 +27,11 @@
     "emojig": {
       "args": ["--gui", "--theme", "light"],
       "app_id": "emojig-picker",
-      "env": ["EMOJIG_TERMINAL=foot", "EMOJIG_GUI_FONT_SIZE=12"],
+      "env": [
+        "EMOJIG_TERMINAL=foot",
+        "EMOJIG_GUI_FONT_SIZE=12",
+        "EMOJIG_THEME=dark"
+      ],
       "script": [
         { "type": "compu", "desc": "search query", "speed": 0.4 },
         { "pause": "1s" },
