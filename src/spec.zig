@@ -77,6 +77,8 @@ pub const PaletteSpec = struct {
     terminal_bg: ?[]const u8 = null,
     terminal_fg: ?[]const u8 = null,
     terminal_border: ?[]const u8 = null,
+    warning_fg: u8 = 9,
+    success_fg: u8 = 10,
 };
 
 pub const Theme = struct {
@@ -102,9 +104,10 @@ pub const Strings = struct {
     status_matches: []const u8,
     status_help_hint_wide: []const u8,
     status_matches_wide: []const u8,
-    help_title: []const u8,
     help_lines: []const []const u8,
     help_lines_wide: []const []const u8,
+    focus_lost_startup_lines: []const []const u8 = &[_][]const u8{ "⚠️  Cannot steal Wayland", "popup focus?", "", "Click window to focus!" },
+    focus_lost_runtime_lines: []const []const u8 = &[_][]const u8{ "⚠️  Picker unfocused.", "", "", "Click window to focus!" },
 };
 
 // ---------------------------------------------------------------------------
@@ -119,6 +122,8 @@ pub const Spec = struct {
     // term.Palette escape strings built at load from the color indices above.
     dark_palette: term.Palette,
     light_palette: term.Palette,
+    dark_palette_dim: term.Palette,
+    light_palette_dim: term.Palette,
 
     /// Logical key name -> action ("quit", "select", ...), or null if unbound.
     /// The input layer decodes raw terminal bytes into the logical names.
@@ -135,12 +140,12 @@ pub const Spec = struct {
         };
     }
 
-    /// Rendering palette for an effective (non-system) theme.
-    pub fn paletteFor(self: *const Spec, t: term.Theme, sys: term.Theme) term.Palette {
+    /// Rendering palette for an effective (non-system) theme, optionally dimmed.
+    pub fn paletteFor(self: *const Spec, t: term.Theme, sys: term.Theme, dim: bool) term.Palette {
         const eff = if (t == .system) sys else t;
         return switch (eff) {
-            .light => self.light_palette,
-            .dark, .system => self.dark_palette,
+            .light => if (dim) self.light_palette_dim else self.light_palette,
+            .dark, .system => if (dim) self.dark_palette_dim else self.dark_palette,
         };
     }
 
@@ -199,15 +204,20 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .theme = theme,
         .keys = keys,
         .strings = strings,
-        .dark_palette = try buildPalette(arena, theme.themes.dark),
-        .light_palette = try buildPalette(arena, theme.themes.light),
+        .dark_palette = try buildPalette(arena, theme.themes.dark, false),
+        .light_palette = try buildPalette(arena, theme.themes.light, false),
+        .dark_palette_dim = try buildPalette(arena, theme.themes.dark, true),
+        .light_palette_dim = try buildPalette(arena, theme.themes.light, true),
     };
 }
 
 /// Build a `term.Palette` (ANSI escape strings) from a `PaletteSpec`'s
 /// xterm-256 color indices. Mirrors the former compile-time palettes in
 /// src/term.zig: `bg`/`border_bg` are intentionally empty.
-fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec) !term.Palette {
+fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, dim: bool) !term.Palette {
+    const dim_suffix = if (dim) ";2" else "";
+    const dim_suffix_bold = if (dim) ";2" else ";1";
+
     const g_bg = if (p.grid_bg) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -225,9 +235,9 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec) !term.Palette {
     else
         "";
     const sel_bg = if (p.selection_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ bg_val, p.selection_fg })
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}{s}m", .{ bg_val, p.selection_fg, dim_suffix })
     else
-        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.selection_fg});
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.selection_fg, dim_suffix });
     const b_bg = if (p.border_bg) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -235,15 +245,17 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec) !term.Palette {
 
     return .{
         .grid_bg = g_bg,
-        .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ g_bg, p.grid_fg }),
+        .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ g_bg, p.grid_fg, dim_suffix }),
         .selection_bg = sel_bg,
-        .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ s_bg, p.search_fg }),
-        .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ st_bg, p.status_fg }),
+        .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ s_bg, p.search_fg, dim_suffix }),
+        .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ st_bg, p.status_fg, dim_suffix }),
         .info_bg = i_bg,
-        .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}m", .{ i_bg, p.info_fg }),
+        .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ i_bg, p.info_fg, dim_suffix }),
         .border_bg = b_bg,
-        .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.search_shade_fg}),
-        .status_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.status_shade_fg}),
-        .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{p.border_shade_fg}),
+        .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.search_shade_fg, dim_suffix }),
+        .status_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.status_shade_fg, dim_suffix }),
+        .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.border_shade_fg, dim_suffix }),
+        .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.warning_fg, dim_suffix_bold }),
+        .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.success_fg, dim_suffix_bold }),
     };
 }

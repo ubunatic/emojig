@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:hulp e:afb t:tekst  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:afb t:tekst  ↕↔|↵|Esc",
-  "help_title": "Hulp & Sneltoetsen:",
   "help_lines": [
+    "Hulp & Sneltoetsen:",
     "  Typen: Zoeken",
     "  Pijlen: Navigeren",
     "  Enter: Kopieer & Sluit",
@@ -15,11 +15,24 @@
     "  Esc:   Sluiten"
   ],
   "help_lines_wide": [
+    "Hulp & Sneltoetsen:",
     "  Typen       Fuzzy zoeken naar emoji's",
     "  Pijlen      Navigeren door het raster",
     "  Hover       Voorbeeld van emoji onder muis",
     "  Klik/Enter  Kopieer geselecteerde emoji & sluit",
     "  Tab         Wissel thema (licht/donker)",
     "  Esc/Ctrl-C  Sluit kiezer"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Kan Wayland popup-fokus",
+    "niet stelen?",
+    "",
+    "Klik om te focussen!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Kiezer niet gefocust.",
+    "",
+    "",
+    "Klik om te focussen!"
   ]
 }

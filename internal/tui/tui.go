@@ -338,13 +338,11 @@ func (a *App) gridRows(rows []string, pal spec.Palette, width int) []string {
 	return append(rows, bgOpt(pal.InfoBg)+fg(pal.InfoFg)+" "+truncate(name, width-1)+term.Reset)
 }
 
-// helpRows appends the help overlay in place of the grid: the title and each
-// help line on its own row.
+// helpRows appends the help overlay in place of the grid: each help line on its own row.
 func (a *App) helpRows(rows []string, pal spec.Palette, width int) []string {
 	str := a.specs.Strings
-	lines := append([]string{str.HelpTitle}, str.HelpLines...)
-	for _, line := range lines {
-		rows = append(rows, bgOpt(pal.GridBg)+fg(pal.GridFg)+" "+truncate(line, width-1)+term.Reset)
+	for _, line := range str.HelpLines {
+		rows = append(rows, bgOpt(pal.GridBg)+fg(pal.GridFg)+" "+clampANSI(line, width-1)+term.Reset)
 	}
 	return rows
 }
@@ -468,8 +466,8 @@ func (a *App) footprint() int {
 	}
 	// grid view: search bar + spacer + grid rows + spacer + desc + status
 	grid := a.specs.Layout.TUI.Rows + 5
-	// help view: search bar + spacer + (title + help lines) + status
-	help := 4 + len(a.specs.Strings.HelpLines)
+	// help view: search bar + spacer + help lines + status
+	help := 3 + len(a.specs.Strings.HelpLines)
 	if help > grid {
 		return help
 	}
@@ -544,6 +542,22 @@ func clampANSI(s string, max int) string {
 					c := runes[i]
 					b.WriteRune(c)
 					if c >= 0x40 && c <= 0x7e { // final byte ends the CSI
+						break
+					}
+					i++
+				}
+			} else if i < len(runes) && runes[i] == ']' { // OSC
+				b.WriteRune(runes[i])
+				i++
+				for i < len(runes) {
+					c := runes[i]
+					b.WriteRune(c)
+					if c == 0x07 { // BEL
+						break
+					}
+					if c == 0x1b && i+1 < len(runes) && runes[i+1] == '\\' {
+						b.WriteRune(runes[i+1])
+						i++
 						break
 					}
 					i++

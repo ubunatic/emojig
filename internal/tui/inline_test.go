@@ -127,8 +127,7 @@ func minimalApp() *App {
 			SearchPrompt:   "> ",
 			StatusHelpHint: "help",
 			StatusMatches:  "{count} matches",
-			HelpTitle:      "Help",
-			HelpLines:      []string{"a", "b", "c"},
+			HelpLines:      []string{"Help", "a", "b", "c"},
 		},
 	}
 	return &App{db: nil, specs: specs, themeName: "dark", selected: -1}
@@ -136,7 +135,7 @@ func minimalApp() *App {
 
 func TestFootprint(t *testing.T) {
 	a := minimalApp()
-	// grid = Rows+5 = 8; help = 4+len(HelpLines)=7; max = 8.
+	// grid = Rows+5 = 8; help = 3+len(HelpLines)=7; max = 8.
 	if got := a.footprint(); got != 8 {
 		t.Errorf("footprint() = %d, want 8", got)
 	}

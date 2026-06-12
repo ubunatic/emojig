@@ -6,20 +6,37 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:help e:img t:txt  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
-  "help_title": "Help & Keybindings:",
   "help_lines": [
-    "  Typing: Search",
-    "  Arrows: Navigate",
-    "  Enter:  Copy & Exit",
-    "  Tab:    Toggle Theme",
-    "  Esc:    Exit"
+    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
+    "",
+    " ⌨️|abc|↕↔ Search, Navigate",
+    " 🖱️|↵|Esc  Select, Exit",
+    " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
+    " ??        More…"
   ],
   "help_lines_wide": [
-    "  Typing      Fuzzy search emojis",
-    "  Arrows      Navigate the grid",
+    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
+    "  ⌨️ Typing: Search",
+    "  ↕↔ Arrows: Navigate",
+    "  ↩  Enter:  Copy & Exit",
+    "  ⎋  Escape: Exit",
+    "  ⭾  Tab: Toggle Theme",    
     "  Hover       Preview emoji under mouse",
     "  Click/Enter Copy selected emoji & exit",
     "  Tab         Toggle theme (light/dark)",
     "  Esc/Ctrl-C  Exit picker"
+  ],
+  "focus_lost_startup_lines": [
+    "🛡️ OS prevented focus change.",
+    "   Click or switch window",
+    "   to change focus!",
+    "",
+    "💡 GTK apps have native picker.",
+    "   Try Ctrl + '.' to open."
+  ],
+  "focus_lost_runtime_lines": [
+    "🕵️ Picker unfocused.",
+    "   Click or switch window",
+    "   to focus!"
   ]
 }

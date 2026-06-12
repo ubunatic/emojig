@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:Hilfe e:Bild t:Text  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:Bild t:Text  ↕↔|↵|Esc",
-  "help_title": "Hilfe & Tastenbelegung:",
   "help_lines": [
+    "Hilfe & Tastenbelegung:",
     "  Tippen: Suchen",
     "  Pfeile: Navigieren",
     "  Enter:  Kopieren & Beenden",
@@ -15,11 +15,24 @@
     "  Esc:    Beenden"
   ],
   "help_lines_wide": [
+    "Hilfe & Tastenbelegung:",
     "  Tippen      Fuzzy-Suche nach Emojis",
     "  Pfeile      Navigieren im Gitter",
     "  Hover       Vorschau des Emojis unter der Maus",
     "  Klick/Enter Ausgewähltes Emoji kopieren & beenden",
     "  Tab         Design umschalten (hell/dunkel)",
     "  Esc/Strg-C  Auswahl beenden"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Wayland-Popup-Fokus",
+    "fehlgeschlagen?",
+    "",
+    "Klicken zum Fokussieren!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Auswahl nicht fokussiert.",
+    "",
+    "",
+    "Klicken zum Fokussieren!"
   ]
 }

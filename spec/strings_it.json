@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:aiuto e:img t:txt  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
-  "help_title": "Aiuto e Scorciatoie da Tastiera:",
   "help_lines": [
+    "Aiuto e Scorciatoie da Tastiera:",
     "  Scrivere: Cerca",
     "  Frecce:   Naviga",
     "  Invio:    Copia ed Esci",
@@ -15,11 +15,24 @@
     "  Esc:      Esci"
   ],
   "help_lines_wide": [
+    "Aiuto e Scorciatoie da Tastiera:",
     "  Scrivere    Ricerca fuzzy di emoji",
     "  Frecce      Naviga nella griglia",
     "  Passaggio   Anteprima emoji sotto il mouse",
     "  Click/Invio Copia emoji selezionata ed esci",
     "  Tab         Cambia tema (chiaro/scuro)",
     "  Esc/Ctrl-C  Esci dal selettore"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Impossibile attivare",
+    "il focus del popup?",
+    "",
+    "Clicca per focalizzare!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Selettore non focalizzato.",
+    "",
+    "",
+    "Clicca per focalizzare!"
   ]
 }

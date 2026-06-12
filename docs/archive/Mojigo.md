@@ -62,7 +62,7 @@ rather than baked escape sequences, so any renderer emits its own escapes.
 | -------------------------------- | ------------------------------------------------- |
 | Default TUI / GUI grid size      | `spec/layout.json` → `tui.*` / `gui.*`            |
 | Status bar text & nav hint       | `spec/strings.json` → `status_help_hint`, `status_matches` (`{count}` = live count) |
-| Help screen title & lines        | `spec/strings.json` → `help_title`, `help_lines`  |
+| Help screen lines                | `spec/strings.json` → `help_lines`                |
 | Search prompt icon               | `spec/strings.json` → `search_prompt`             |
 | Colors / theme icons             | `spec/theme.json`                                 |
 | Key → action bindings            | `spec/keys.json`                                  |

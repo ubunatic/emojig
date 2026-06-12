@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:ayuda e:img t:txt  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
-  "help_title": "Ayuda y Atajos de Teclado:",
   "help_lines": [
+    "Ayuda y Atajos de Teclado:",
     "  Escribir: Buscar",
     "  Flechas:  Navegar",
     "  Enter:    Copiar y Salir",
@@ -15,11 +15,24 @@
     "  Esc:      Salir"
   ],
   "help_lines_wide": [
+    "Ayuda y Atajos de Teclado:",
     "  Escribir    Búsqueda difusa de emojis",
     "  Flechas     Navegar por la cuadrícula",
     "  Mover       Previsualizar emoji bajo el cursor",
     "  Clic/Enter  Copiar emoji seleccionado y salir",
     "  Tab         Cambiar tema (claro/oscuro)",
     "  Esc/Ctrl-C  Salir del selector"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  ¿No se puede enfocar",
+    "el menú desplegable?",
+    "",
+    "¡Haz clic para enfocar!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Menú sin enfoque.",
+    "",
+    "",
+    "¡Haz clic para enfocar!"
   ]
 }

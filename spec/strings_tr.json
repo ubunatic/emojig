@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:yardım e:gör t:metin  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:gör t:metin  ↕↔|↵|Esc",
-  "help_title": "Yardım ve Kısayol Tuşları:",
   "help_lines": [
+    "Yardım ve Kısayol Tuşları:",
     "  Yazma: Arama",
     "  Oklar: Gezinme",
     "  Enter: Kopyala ve Çık",
@@ -15,11 +15,24 @@
     "  Esc:   Çıkış"
   ],
   "help_lines_wide": [
+    "Yardım ve Kısayol Tuşları:",
     "  Yazma       Bulanık emoji araması",
     "  Oklar       Izgarada gezinme",
     "  Üzerine Gel İmleç altındaki emojiyi önizle",
     "  Tıkla/Enter Seçili emojiyi kopyala ve çık",
     "  Tab         Temayı değiştir (açık/koyu)",
     "  Esc/Ctrl-C  Seçiciden çık"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Odaklanma sorunu",
+    "mu yaşanıyor?",
+    "",
+    "Odaklanmak için tıklayın!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Seçici odaksız.",
+    "",
+    "",
+    "Odaklanmak için tıklayın!"
   ]
 }

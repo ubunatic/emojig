@@ -102,8 +102,8 @@ pub fn hostKindFromName(name: []const u8) HostKind {
 }
 
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
-/// plus a 14-token tail (24 total); 28 gives safe headroom.
-pub const MAX_ARGV = 28;
+/// plus a 15-token tail (25 total); 32 gives safe headroom.
+pub const MAX_ARGV = 32;
 
 /// Assemble the full launch argv into `out[0..N]` and return the live slice.
 /// All string arguments must have lifetimes at least as long as `out`.
@@ -441,6 +441,7 @@ pub fn spawnGuiWindow(
         env_cols_arg,
         env_rows_arg,
         env_exit_preview_arg,
+        "EMOJIG_GUI_SPAWNED=1",
         exe_path,
         "--tui",
     };

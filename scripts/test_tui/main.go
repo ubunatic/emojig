@@ -256,11 +256,6 @@ func main() {
 	}
 	fmt.Println("PASS: process exited cleanly (exit code 0).")
 
-	// With preview disabled the post-Enter output should not contain the lone fire emoji
-	// in a blanked-chrome frame.  We verify by checking there is no lone fire emoji
-	// separated from all chrome (i.e. the plain-text output should not contain the fire
-	// emoji at all, since clipboard-only mode doesn't print to stdout and force_stdout is
-	// false in a normal PTY).
 	plainNoPreview := stripANSI(noPreview)
 	fmt.Println("--- No-preview output (ANSI-stripped) ---")
 	fmt.Println(plainNoPreview)
@@ -270,5 +265,140 @@ func main() {
 	fmt.Println("PASS: EMOJIG_EXIT_PREVIEW=0 exited cleanly without preview.")
 
 	fmt.Println()
+	fmt.Println("=== Test 3: GUI Focus reporting test ===")
+	runFocusTest(binaryPath)
+	fmt.Println("PASS: GUI Focus reporting test passed.")
+
+	fmt.Println()
 	fmt.Println("All TUI tests passed.")
 }
+
+func runFocusTest(binaryPath string) {
+	master, slaveName := spawnPTY()
+	defer master.Close()
+
+	slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+		os.Exit(1)
+	}
+	defer slave.Close()
+
+	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+	ws := winsize{Row: 24, Col: 80}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+	cmd := exec.Command(binaryPath, "--tui")
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
+	cmd.Env = append(os.Environ(), "EMOJIG_GUI_SPAWNED=1", "EMOJIG_PICKER_TIMEOUT=10")
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error starting command: %v\n", err)
+		os.Exit(1)
+	}
+	slave.Close()
+
+	chunksChan := make(chan string, 100)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				s := string(buf[:n])
+				chunksChan <- s
+				if strings.Contains(s, "\x1b[6n") {
+					master.Write([]byte("\x1b[24;80R"))
+				}
+			}
+			if err != nil {
+				close(chunksChan)
+				return
+			}
+		}
+	}()
+
+	collectAvailable := func() string {
+		var s strings.Builder
+		for {
+			select {
+			case chunk, ok := <-chunksChan:
+				if !ok {
+					return s.String()
+				}
+				s.WriteString(chunk)
+			default:
+				return s.String()
+			}
+		}
+	}
+
+	// Wait for initial render. It should start unfocused since we did not write focus-in yet, and EMOJIG_GUI_SPAWNED=1.
+	time.Sleep(500 * time.Millisecond)
+	out1 := stripANSI(collectAvailable())
+	if !strings.Contains(out1, "prevented focus") {
+		fmt.Printf("FAIL: expected initial output to show 'OS prevented focus change'. Got:\n%s\n", out1)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: correctly started unfocused.")
+
+	// Send focus-in sequence \x1b[I.
+	fmt.Println("Sending focus-in sequence...")
+	if _, err := master.Write([]byte("\x1b[I")); err != nil {
+		fmt.Printf("Error writing focus-in: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(300 * time.Millisecond)
+	out2 := stripANSI(collectAvailable())
+	if !strings.Contains(out2, "search") {
+		fmt.Printf("FAIL: expected normal GUI to be restored after focus-in. Got:\n%s\n", out2)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: correctly restored to search GUI after focus-in.")
+
+	// Send focus-out sequence \x1b[O.
+	fmt.Println("Sending focus-out sequence...")
+	if _, err := master.Write([]byte("\x1b[O")); err != nil {
+		fmt.Printf("Error writing focus-out: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(300 * time.Millisecond)
+	out3 := stripANSI(collectAvailable())
+	if !strings.Contains(out3, "unfocused") {
+		fmt.Printf("FAIL: expected focus lost screen after focus-out. Got:\n%s\n", out3)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: correctly transitioned to focus lost screen.")
+
+	// Send focus-in sequence \x1b[I again.
+	fmt.Println("Sending focus-in sequence again...")
+	if _, err := master.Write([]byte("\x1b[I")); err != nil {
+		fmt.Printf("Error writing focus-in 2: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(300 * time.Millisecond)
+	out4 := stripANSI(collectAvailable())
+	if !strings.Contains(out4, "search") {
+		fmt.Printf("FAIL: expected normal GUI to be restored after focus-in 2. Got:\n%s\n", out4)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: correctly restored to search GUI after focus-in 2.")
+
+	// Clean exit: send Ctrl-C.
+	master.Write([]byte("\x03"))
+	cmd.Wait()
+}
+

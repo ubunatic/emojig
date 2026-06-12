@@ -21,6 +21,8 @@ pub const Palette = struct {
     search_shade_fg: []const u8, // foreground color sequence for search bar shading
     status_shade_fg: []const u8, // foreground color sequence for status bar shading
     border_shade_fg: []const u8, // foreground color sequence for border shading
+    warning_fg: []const u8, // warning foreground color sequence
+    success_fg: []const u8, // success/action foreground color sequence
 };
 
 // Palettes, the theme icon, and terminal color values now live in the
@@ -150,9 +152,9 @@ pub fn logMemoryUsage() void {
     _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
 }
 
-// Escape sequence to disable all mouse tracking + cursor restore.
-// Uses 1003l (any-motion off) which covers 1000 as well.
-pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l";
+// Escape sequence to disable all mouse tracking + focus reporting + cursor restore.
+// Uses 1003l (any-motion off) which covers 1000 as well, and 1004l to disable focus events.
+pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l\x1b[?1004l";
 // RESTORE must NOT emit "\x1b[?1049l" in inline (non-alt-screen) mode: VTE
 // terminals (Tilix, GNOME Terminal, Ptyxis) execute the "restore saved cursor"
 // half of ?1049l even when the alt screen was never entered, yanking the cursor

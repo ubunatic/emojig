@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:ajuda e:img t:txt  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
-  "help_title": "Ajuda e Atalhos do Teclado:",
   "help_lines": [
+    "Ajuda e Atalhos do Teclado:",
     "  Digitar: Buscar",
     "  Setas:   Navegar",
     "  Enter:   Copiar e Sair",
@@ -15,11 +15,24 @@
     "  Esc:     Sair"
   ],
   "help_lines_wide": [
+    "Ajuda e Atalhos do Teclado:",
     "  Digitar     Busca difusa de emojis",
     "  Setas       Navegar pela grade",
     "  Mover       Visualizar emoji sob o ponteiro",
     "  Clique/Entr Copiar emoji selecionado e sair",
     "  Tab         Alternar tema (claro/escuro)",
     "  Esc/Ctrl-C  Sair do seletor"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Não focar popup",
+    "do Wayland?",
+    "",
+    "Clique para focar!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Seletor sem foco.",
+    "",
+    "",
+    "Clique para focar!"
   ]
 }

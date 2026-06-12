@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:pomoc e:obr t:tekst  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:obr t:tekst  ↕↔|↵|Esc",
-  "help_title": "Pomoc i Skróty Klawiszowe:",
   "help_lines": [
+    "Pomoc i Skróty Klawiszowe:",
     "  Pisanie: Szukaj",
     "  Strzałki: Nawigacja",
     "  Enter:   Kopiuj i Wyjdź",
@@ -15,11 +15,24 @@
     "  Esc:     Wyjdź"
   ],
   "help_lines_wide": [
+    "Pomoc i Skróty Klawiszowe:",
     "  Pisanie     Wyszukiwanie rozmyte emoji",
     "  Strzałki    Nawigacja po siatce",
     "  Najechanie  Podgląd emoji pod kursorem",
     "  Klik/Enter  Kopiuj wybrane emoji i wyjdź",
     "  Tab         Przełącz motyw (jasny/ciemny)",
     "  Esc/Ctrl-C  Wyjdź z programu"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Brak fokusu popupu",
+    "Wayland?",
+    "",
+    "Kliknij, aby skupić!"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Brak fokusu.",
+    "",
+    "",
+    "Kliknij, aby skupić!"
   ]
 }

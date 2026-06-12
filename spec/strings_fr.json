@@ -6,8 +6,8 @@
   "status_matches": " {count}  ↕↔|↵|Échap",
   "status_help_hint_wide": " ?:aide e:img t:txt  ↕↔|↵|Échap",
   "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Échap",
-  "help_title": "Aide et Raccourcis Clavier :",
   "help_lines": [
+    "Aide et Raccourcis Clavier :",
     "  Saisir : Rechercher",
     "  Flèches : Naviguer",
     "  Entrée :  Copier & Quitter",
@@ -15,11 +15,24 @@
     "  Échap :   Quitter"
   ],
   "help_lines_wide": [
+    "Aide et Raccourcis Clavier :",
     "  Saisir      Recherche floue d'émojis",
     "  Flèches     Naviguer dans la grille",
     "  Survoler    Aperçu de l'émoji sous le curseur",
     "  Clic/Entrée Copier l'émoji sélectionné & quitter",
     "  Tab         Changer de thème (clair/sombre)",
     "  Échap/Ctrl-C Quitter le sélecteur"
+  ],
+  "focus_lost_startup_lines": [
+    "⚠️  Impossible d'obtenir",
+    "le focus du popup ?",
+    "",
+    "Cliquez pour focaliser !"
+  ],
+  "focus_lost_runtime_lines": [
+    "⚠️  Sélecteur non focalisé.",
+    "",
+    "",
+    "Cliquez pour focaliser !"
   ]
 }

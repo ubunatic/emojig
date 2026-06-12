@@ -53,6 +53,8 @@ type Palette struct {
 	TerminalBg2   string `json:"terminal_bg2"`
 	TerminalBg    string `json:"terminal_bg"`
 	TerminalFg    string `json:"terminal_fg"`
+	WarningFg     int    `json:"warning_fg"`
+	SuccessFg     int    `json:"success_fg"`
 }
 
 // Theme mirrors spec/theme.json.
@@ -71,12 +73,13 @@ type Keys struct {
 // Strings mirrors spec/strings.json: editable UI text. {count} in StatusMatches
 // is substituted with the live match count by the renderer.
 type Strings struct {
-	Description    string   `json:"description"`
-	SearchPrompt   string   `json:"search_prompt"`
-	StatusHelpHint string   `json:"status_help_hint"`
-	StatusMatches  string   `json:"status_matches"`
-	HelpTitle      string   `json:"help_title"`
-	HelpLines      []string `json:"help_lines"`
+	Description            string   `json:"description"`
+	SearchPrompt           string   `json:"search_prompt"`
+	StatusHelpHint         string   `json:"status_help_hint"`
+	StatusMatches          string   `json:"status_matches"`
+	HelpLines              []string `json:"help_lines"`
+	FocusLostStartupLines []string `json:"focus_lost_startup_lines"`
+	FocusLostRuntimeLines []string `json:"focus_lost_runtime_lines"`
 }
 
 // Specs bundles all loaded declarative specs.

@@ -34,6 +34,8 @@ learned wiring it up.
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
 | Search prompt, status bar, help text    | `spec/strings.json`               | see §4 |
+| Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
+| Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
 
 The compile-time file `src/defaults.zig` is **not** a layout copy anymore — it only
 holds spec-independent upper bounds (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`,
@@ -130,12 +132,18 @@ carries both variants with the exact existing wording:
 | `search_prompt`            | both (Zig trims the leading margin space, which mojigo needs for layout) |
 | `status_help_hint` / `status_matches` | mojigo + Zig narrow |
 | `status_help_hint_wide` / `status_matches_wide` | Zig wide only |
-| `help_title` + `help_lines` | mojigo + Zig narrow |
+| `help_lines`               | mojigo + Zig narrow |
 | `help_lines_wide`          | Zig wide only |
 
 `{count}` in the status templates is substituted with the live match count
 (`formatStatus`, which returns the template unchanged when there's no placeholder).
 Adding the `*_wide` fields is safe for Go: `encoding/json` ignores unknown fields.
+
+### Focus Warnings
+
+The strings for focus warning screens are also declaratively configured:
+- `focus_lost_startup_lines`: Shown on startup when the launcher fails to grab focus (Wayland focus stealing prevention).
+- `focus_lost_runtime_lines`: Shown during runtime when focus is lost.
 
 ---
 
@@ -203,18 +211,26 @@ Runtime escape-stream tells too: `\x1b[9A` (height 10 = `rows` 4 + `layout_overh
 
 ---
 
-## 8. Files touched
+## 8. Dynamic Unfocused Dimming in GUI Mode
+
+To provide a clear visual indication that the floating GUI window is inactive, the entire app dims when focus is lost:
+- **Detection**: The render loop checks `!has_focus and gui_spawned`.
+- **Faint Escape Sequences**: When loading the theme spec at startup, `buildPalette` creates a dimmed copy of the palette (`dark_palette_dim`, `light_palette_dim`). If dimming is active, the builder appends the SGR code `;2` (faint/dimmed intensity) to the 256-color escape sequences (e.g. `\x1b[38;5;<col>;2m`).
+- **Performance**: Pre-building the dimmed palettes at startup preserves zero heap allocations in the hot picker rendering loop.
+
+---
+
+## 9. Files touched
 
 ```
 build.zig            anonymous imports for the four spec files
-src/spec.zig         embed + parse + palette/binding builders; Animation struct
+src/spec.zig         embed + parse + palette/binding builders; Animation struct; constructs dark_palette_dim and light_palette_dim
 src/defaults.zig     reduced to comptime MAX_* bounds
-src/term.zig         palettes/icon/colors removed; applyTerminalColors takes hex args
-src/main.zig         g_spec load; layout/theme/strings/keys consumed; navSelect/formatStatus;
-                     preview_enabled consults g_spec.layout.animation.exit_preview_tui
-src/host.zig         GUI dims + colors from spec; injects EMOJIG_EXIT_PREVIEW from
-                     g_spec.layout.animation.exit_preview_gui into the child env
+src/term.zig         palettes/icon/colors removed; Palette fields warning_fg and success_fg
+src/main.zig         g_spec load; layout/theme/strings/keys consumed; passes !has_focus and gui_spawned to effectivePalette; renders warnings with palette.info_fg
+src/root.zig         updated test Strings struct to mirror focus fields
+internal/spec/spec.go updated Go structs to mirror new theme and strings fields
 spec/layout.json     added animation.{exit_preview_tui,exit_preview_gui}
-spec/theme.json      added terminal_border
-spec/strings.json    added help_lines_wide + status_*_wide
+spec/theme.json      added terminal_border, warning_fg, success_fg
+spec/strings.json    added help_lines_wide + status_*_wide, focus_lost_startup_lines, focus_lost_runtime_lines
 ```

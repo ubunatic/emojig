@@ -432,8 +432,8 @@ class EmojigSimulator {
 
     if (isHelpMode) {
       // Help screen: rows+3 rows replace spacer+grid+spacer+desc (spec/strings.json)
-      const helpTitle = "Help & Keybindings:";
       const helpLines = [
+        "Help & Keybindings:",
         "  Typing: Search",
         "  Arrows: Navigate",
         "  Enter:  Copy & Exit",
@@ -442,8 +442,8 @@ class EmojigSimulator {
       ];
       for (let i = 0; i < this.rows + 3; i++) {
         let text = "";
-        if (i < helpLines.length + 1) {
-          text = i === 0 ? helpTitle : helpLines[i - 1];
+        if (i < helpLines.length) {
+          text = helpLines[i];
         }
         html += `<div class="sim-row sim-help"> ${text}</div>`;
       }

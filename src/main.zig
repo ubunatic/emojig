@@ -13,6 +13,11 @@ const defaults = @import("defaults.zig");
 const spec_mod = @import("spec.zig");
 const tui = @import("tui.zig");
 
+extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+extern fn getuid() c_uint;
+extern fn time(t: ?*c_long) c_long;
+extern fn unlink(path: [*:0]const u8) c_int;
+
 // The declarative UI spec (spec/*.json), parsed once at startup in main().
 // Holds layout dims, theme palettes, key bindings, and UI strings. Lives in a
 // process-lifetime arena; read-only after load.
@@ -64,6 +69,12 @@ inline fn themeIcon(t: Theme) []const u8 {
     return g_spec.iconFor(t);
 }
 
+inline fn getMonotonicMs() i64 {
+    var ts = std.mem.zeroes(std.posix.system.timespec);
+    _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
+    return ts.sec * 1000 + @divTrunc(ts.nsec, 1000000);
+}
+
 /// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
 /// returning the new index. Wrapping mirrors the historical arrow-key behavior.
 fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
@@ -87,6 +98,62 @@ fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows:
     return sel;
 }
 
+fn ansiDisplayWidth(text: []const u8) usize {
+    var width: usize = 0;
+    var i: usize = 0;
+    while (i < text.len) {
+        const b = text[i];
+        if (b == 0x1b) {
+            i += 1;
+            if (i < text.len) {
+                const next = text[i];
+                if (next == '[') { // CSI
+                    i += 1;
+                    while (i < text.len) : (i += 1) {
+                        const c = text[i];
+                        if (c >= 0x40 and c <= 0x7e) {
+                            i += 1;
+                            break;
+                        }
+                    }
+                } else if (next == ']') { // OSC
+                    i += 1;
+                    while (i < text.len) {
+                        if (text[i] == 0x07) {
+                            i += 1;
+                            break;
+                        }
+                        if (text[i] == 0x1b and i + 1 < text.len and text[i + 1] == '\\') {
+                            i += 2;
+                            break;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+        } else {
+            const len = std.unicode.utf8ByteSequenceLength(b) catch 1;
+            if (i + len <= text.len) {
+                const cp_bytes = text[i .. i + len];
+                const cp = std.unicode.utf8Decode(cp_bytes) catch '?';
+                if (cp == 0xFE0F) {
+                    // Variation Selector-16: 0 width
+                } else if (cp >= 0x2000) {
+                    width += 2;
+                } else if (cp >= 0x20) {
+                    width += 1;
+                }
+                i += len;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    return width;
+}
+
 /// Render a status-bar template from spec/strings.json, substituting the live
 /// match count for a "{count}" placeholder. Templates without the placeholder
 /// (the help hints) are returned unchanged, avoiding a copy.
@@ -98,8 +165,8 @@ fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
     return tmpl;
 }
 
-inline fn effectivePalette(t: Theme, sys: Theme) Palette {
-    return g_spec.paletteFor(t, sys);
+inline fn effectivePalette(t: Theme, sys: Theme, dim: bool) Palette {
+    return g_spec.paletteFor(t, sys, dim);
 }
 
 inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme, alt_screen: bool) void {
@@ -1057,6 +1124,83 @@ pub fn main(init: std.process.Init) !void {
         if (std.c.getenv("HOME")) |home_c| {
             const home = std.mem.span(home_c);
             ensureDesktopIntegration(init.io, home, exe_path);
+
+            // Relaunch workaround for Wayland/X11 focus stealing prevention when launched from raw shortcuts.
+            // If we are in a GUI session and have neither XDG_ACTIVATION_TOKEN nor DESKTOP_STARTUP_ID set,
+            // it means we were likely launched via a raw keybinding. Re-executing via gtk-launch or gio launch
+            // uses GAppLaunchContext, generating the proper activation token so that the spawned window gets focus.
+            if (has_gui_session) {
+                const has_token = std.c.getenv("XDG_ACTIVATION_TOKEN") != null or std.c.getenv("DESKTOP_STARTUP_ID") != null;
+                if (!has_token) {
+                    const uid = getuid();
+                    const current_ts = time(null);
+                    var lock_path_buf: [128]u8 = undefined;
+                    const lock_path = std.fmt.bufPrint(&lock_path_buf, "/tmp/emojig-relaunch-{d}.lock", .{uid}) catch "";
+
+                    var already_relaunched = false;
+
+                    if (lock_path.len > 0) {
+                        lock_path_buf[lock_path.len] = 0;
+                        const rf = std.posix.O{ .ACCMODE = .RDONLY };
+                        if (std.posix.openat(std.posix.AT.FDCWD, lock_path, rf, 0)) |fd| {
+                            defer _ = std.posix.system.close(fd);
+                            var read_buf: [32]u8 = undefined;
+                            const n = std.posix.system.read(fd, &read_buf, read_buf.len);
+                            if (n > 0) {
+                                const read_str = read_buf[0..@intCast(n)];
+                                if (std.fmt.parseInt(i64, read_str, 10)) |read_ts| {
+                                    if (current_ts - read_ts >= 0 and current_ts - read_ts < 5) {
+                                        already_relaunched = true;
+                                    }
+                                } else |_| {}
+                            }
+                        } else |_| {}
+                    }
+
+                    if (!already_relaunched) {
+                        if (lock_path.len > 0) {
+                            const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+                            if (std.posix.openat(std.posix.AT.FDCWD, lock_path, wf, 0o600)) |fd| {
+                                defer _ = std.posix.system.close(fd);
+                                var val_buf: [32]u8 = undefined;
+                                const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{current_ts}) catch "";
+                                if (val_str.len > 0) {
+                                    _ = std.posix.system.write(fd, val_str.ptr, val_str.len);
+                                }
+                            } else |_| {}
+                        }
+
+                        const relaunch_argv = [_][]const u8{ "gtk-launch", "emojig-picker" };
+                        var relaunch_child = std.process.spawn(init.io, .{
+                            .argv = &relaunch_argv,
+                            .stdin = .ignore,
+                            .stdout = .ignore,
+                            .stderr = .ignore,
+                        }) catch blk: {
+                            var desktop_path_buf: [512]u8 = undefined;
+                            const desktop_path = std.fmt.bufPrint(&desktop_path_buf, "{s}/.local/share/applications/emojig-picker.desktop", .{home}) catch "";
+                            if (desktop_path.len > 0) {
+                                const gio_argv = [_][]const u8{ "gio", "launch", desktop_path };
+                                break :blk std.process.spawn(init.io, .{
+                                    .argv = &gio_argv,
+                                    .stdin = .ignore,
+                                    .stdout = .ignore,
+                                    .stderr = .ignore,
+                                }) catch null;
+                            }
+                            break :blk null;
+                        };
+                        if (relaunch_child) |*c| {
+                            _ = c.wait(init.io) catch {};
+                            std.process.exit(0);
+                        }
+                    } else {
+                        if (lock_path.len > 0) {
+                            _ = unlink(lock_path_buf[0..lock_path.len :0]);
+                        }
+                    }
+                }
+            }
         }
 
         host.spawnGuiWindow(
@@ -1088,6 +1232,15 @@ pub fn main(init: std.process.Init) !void {
 
     var result_emoji: ?[]const u8 = null;
     var result_safe_buf: [64]u8 = undefined;
+    var has_focus = true;
+    var started_unfocused = false;
+    var last_focus_gain_ms: i64 = 0;
+    const gui_spawned = blk: {
+        if (init.environ_map.get("EMOJIG_GUI_SPAWNED")) |v| {
+            break :blk std.mem.eql(u8, v, "1");
+        }
+        break :blk false;
+    };
 
     const tty_flags = std.posix.O{ .ACCMODE = .RDWR };
     const tty_fd = try std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0);
@@ -1152,6 +1305,43 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.MIN)] = 1;
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
+
+        // Check for startup focus if spawned inside a GUI terminal window.
+        if (gui_spawned) {
+            // Enable focus reporting
+            try writeAll(stdout_fd, "\x1b[?1004h");
+
+            // Read focus reports from stdin with a 200ms timeout.
+            var focus_raw = raw;
+            focus_raw.cc[@intFromEnum(system.V.MIN)] = 0;
+            focus_raw.cc[@intFromEnum(system.V.TIME)] = 2;
+            try std.posix.tcsetattr(stdin_fd, .NOW, focus_raw);
+
+            var focus_buf: [128]u8 = undefined;
+            const n = std.posix.read(stdin_fd, &focus_buf) catch 0;
+
+            // Restore standard TUI raw mode
+            try std.posix.tcsetattr(stdin_fd, .NOW, raw);
+
+            if (n > 0) {
+                const last_in = std.mem.lastIndexOf(u8, focus_buf[0..n], "\x1b[I");
+                const last_out = std.mem.lastIndexOf(u8, focus_buf[0..n], "\x1b[O");
+                if (last_out) |out_idx| {
+                    if (last_in) |in_idx| {
+                        if (out_idx > in_idx) {
+                            has_focus = false;
+                            started_unfocused = true;
+                        }
+                    } else {
+                        has_focus = false;
+                        started_unfocused = true;
+                    }
+                }
+            } else {
+                has_focus = false;
+                started_unfocused = true;
+            }
+        }
 
         const cols: usize = if (init.environ_map.get("EMOJIG_COLS")) |v| std.fmt.parseInt(usize, v, 10) catch g_spec.layout.tui.cols else g_spec.layout.tui.cols;
         const rows: usize = blk: {
@@ -1324,9 +1514,17 @@ pub fn main(init: std.process.Init) !void {
         // Switch to alternate screen (1049h) if configured.
         if (final_alt_screen) {
             global_alt_screen = true;
-            try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            if (gui_spawned) {
+                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l\x1b[?1004h");
+            } else {
+                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            }
         } else {
-            try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            if (gui_spawned) {
+                try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l\x1b[?1004h");
+            } else {
+                try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+            }
         }
 
         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
@@ -1409,7 +1607,7 @@ pub fn main(init: std.process.Init) !void {
                 total_matches = 0;
                 selected_idx = null;
             }
-            const palette = effectivePalette(theme, system_theme);
+            const palette = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
 
             // ----------------------------------------------------------------
             // Render
@@ -1654,26 +1852,49 @@ pub fn main(init: std.process.Init) !void {
                     }
                     try rw.endRow();
 
+                    const is_focus_lost = !has_focus;
                     const is_help_mode = (query_len > 0 and query_buf[0] == '?');
-                    if (is_help_mode and !is_too_small) {
+                    if (is_focus_lost and !is_too_small) {
+                        const warning_rows = rows + 3;
+
+                        const focus_lines = if (started_unfocused) g_spec.strings.focus_lost_startup_lines else g_spec.strings.focus_lost_runtime_lines;
+
+                        var h_idx: usize = 0;
+                        while (h_idx < warning_rows) : (h_idx += 1) {
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            var text: []const u8 = "";
+                            const offset = if (warning_rows >= focus_lines.len + 3) @as(usize, 2) else 0;
+                            if (h_idx >= offset and h_idx - offset < focus_lines.len) {
+                                text = focus_lines[h_idx - offset];
+                            }
+                            const vis_w = ansiDisplayWidth(text);
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+
+                            const color_fg = palette.info_fg;
+
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}\x1b[0m", .{ palette.grid_bg, color_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, line);
+                            try rw.endRow();
+                        }
+                    } else if (is_help_mode and !is_too_small) {
                         const help_rows = rows + 3;
                         const is_wide = (content_width >= 35);
                         var h_idx: usize = 0;
                         while (h_idx < help_rows) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
-                            // Help text comes from spec/strings.json: the title plus a
+                            // Help text comes from spec/strings.json: a
                             // width-dependent line set (wide >=35 cols, else narrow).
                             var text: []const u8 = "";
                             const help_lines = if (is_wide) g_spec.strings.help_lines_wide else g_spec.strings.help_lines;
                             // Vertically center when there is spare room (mirrors the
                             // former >=9 wide / >=8 narrow offset thresholds).
-                            const center_threshold: usize = help_lines.len + 3;
+                            const center_threshold: usize = help_lines.len + 2;
                             const offset = if (help_rows >= center_threshold) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < help_lines.len + 1) {
-                                const k = h_idx - offset;
-                                text = if (k == 0) g_spec.strings.help_title else help_lines[k - 1];
+                            if (h_idx >= offset and h_idx - offset < help_lines.len) {
+                                text = help_lines[h_idx - offset];
                             }
-                            const pad_len = if (content_width > text.len) content_width - text.len else 0;
+                            const vis_w = ansiDisplayWidth(text);
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
@@ -2061,6 +2282,27 @@ pub fn main(init: std.process.Init) !void {
 
             const bytes = read_buf[0..n];
 
+            // Check for focus events
+            var focus_event = false;
+            if (std.mem.indexOf(u8, bytes, "\x1b[I") != null) {
+                has_focus = true;
+                focus_event = true;
+                started_unfocused = false;
+                last_focus_gain_ms = getMonotonicMs();
+            }
+            if (std.mem.indexOf(u8, bytes, "\x1b[O") != null) {
+                has_focus = false;
+                focus_event = true;
+            }
+            if (!focus_event and !has_focus and bytes.len > 0) {
+                has_focus = true;
+                started_unfocused = false;
+                last_focus_gain_ms = getMonotonicMs();
+            }
+            if (focus_event and n <= 3) {
+                continue;
+            }
+
             // Decode the raw byte sequence into a logical key name; the binding
             // table in spec/keys.json maps that name to an action below. Mouse
             // events and printable text are handled inline (not via bindings).
@@ -2113,7 +2355,7 @@ pub fn main(init: std.process.Init) !void {
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
 
-                        if (is_motion and term_char == 'M') {
+                        if (is_motion and term_char == 'M' and has_focus) {
                             // Theme button hover.
                             const search_row_m: i32 = 2 + row_off;
                             theme_hovered = (click_row == search_row_m and
@@ -2131,33 +2373,36 @@ pub fn main(init: std.process.Init) !void {
                                     if (hovered < top_count) selected_idx = hovered;
                                 }
                             }
-                        } else if (!is_motion and btn_id == 0 and term_char == 'M') {
+                        } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
                             // Left click press.
-                            const search_row: i32 = 2 + row_off;
-                            const grid_first_row: i32 = 4 + row_off;
-                            const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
+                            const now = getMonotonicMs();
+                            if (now - last_focus_gain_ms > 200) {
+                                const search_row: i32 = 2 + row_off;
+                                const grid_first_row: i32 = 4 + row_off;
+                                const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
 
-                            if (click_row == search_row and
-                                local_col >= @as(i32, @intCast(content_width)) - 4)
-                            {
-                                // Theme toggle icon — cycle and persist to config.
-                                theme = switch (theme) {
-                                    .dark => .light,
-                                    .light => .system,
-                                    .system => .dark,
-                                };
-                                saveThemeToConfig(init.io, theme);
-                                if (theme == .system)
-                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                            } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
-                                const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                                if (grid_col < cols) {
-                                    const clicked_idx = grid_row * cols + grid_col;
-                                    if (clicked_idx < top_count) {
-                                        selected_idx = clicked_idx;
-                                        should_copy_and_exit = true;
+                                if (click_row == search_row and
+                                    local_col >= @as(i32, @intCast(content_width)) - 4)
+                                {
+                                    // Theme toggle icon — cycle and persist to config.
+                                    theme = switch (theme) {
+                                        .dark => .light,
+                                        .light => .system,
+                                        .system => .dark,
+                                    };
+                                    saveThemeToConfig(init.io, theme);
+                                    if (theme == .system)
+                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                                    const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                    const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                    if (grid_col < cols) {
+                                        const clicked_idx = grid_row * cols + grid_col;
+                                        if (clicked_idx < top_count) {
+                                            selected_idx = clicked_idx;
+                                            should_copy_and_exit = true;
+                                        }
                                     }
                                 }
                             }
@@ -2192,12 +2437,14 @@ pub fn main(init: std.process.Init) !void {
                 };
             } else {
                 // Printable text — append to the query (not a bound key).
-                for (bytes) |b| {
-                    if (b >= 32 and b <= 126 and query_len < max_query_len) {
-                        query_buf[query_len] = b;
-                        query_len += 1;
-                        selected_idx = 0;
-                        total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                if (has_focus) {
+                    for (bytes) |b| {
+                        if (b >= 32 and b <= 126 and query_len < max_query_len) {
+                            query_buf[query_len] = b;
+                            query_len += 1;
+                            selected_idx = 0;
+                            total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
+                        }
                     }
                 }
             }
@@ -2207,39 +2454,41 @@ pub fn main(init: std.process.Init) !void {
                 const action = g_spec.actionFor(name) orelse "";
                 if (std.mem.eql(u8, action, "quit")) {
                     break;
-                } else if (std.mem.eql(u8, action, "select")) {
-                    should_copy_and_exit = true;
-                } else if (std.mem.eql(u8, action, "delete")) {
-                    if (query_len > 0) {
-                        query_len -= 1;
-                        selected_idx = if (query_len == 0) null else 0;
-                        total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
-                    }
-                } else if (std.mem.eql(u8, action, "cycle_theme")) {
-                    theme = switch (theme) {
-                        .dark => .light,
-                        .light => .system,
-                        .system => .dark,
-                    };
-                    saveThemeToConfig(init.io, theme);
-                    if (theme == .system) {
-                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                    }
-                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                } else if (std.mem.startsWith(u8, action, "nav_")) {
-                    if (selected_idx == null) {
-                        if (top_count > 0) selected_idx = 0;
-                    } else if (final_simple) {
-                        // In simple mode all directions are linear prev/next.
-                        const sel = selected_idx.?;
-                        const count = top_count;
-                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
-                            selected_idx = if (sel > 0) sel - 1 else if (count > 0) count - 1 else 0;
-                        } else {
-                            selected_idx = if (sel + 1 < count) sel + 1 else 0;
+                } else if (has_focus) {
+                    if (std.mem.eql(u8, action, "select")) {
+                        should_copy_and_exit = true;
+                    } else if (std.mem.eql(u8, action, "delete")) {
+                        if (query_len > 0) {
+                            query_len -= 1;
+                            selected_idx = if (query_len == 0) null else 0;
+                            total_matches = emojig.search(query_buf[0..query_len], &top_matches, &top_count, total_cells);
                         }
-                    } else {
-                        selected_idx = navSelect(action, selected_idx.?, top_count, cols, rows);
+                    } else if (std.mem.eql(u8, action, "cycle_theme")) {
+                        theme = switch (theme) {
+                            .dark => .light,
+                            .light => .system,
+                            .system => .dark,
+                        };
+                        saveThemeToConfig(init.io, theme);
+                        if (theme == .system) {
+                            system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                        }
+                        applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                    } else if (std.mem.startsWith(u8, action, "nav_")) {
+                        if (selected_idx == null) {
+                            if (top_count > 0) selected_idx = 0;
+                        } else if (final_simple) {
+                            // In simple mode all directions are linear prev/next.
+                            const sel = selected_idx.?;
+                            const count = top_count;
+                            if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
+                                selected_idx = if (sel > 0) sel - 1 else if (count > 0) count - 1 else 0;
+                            } else {
+                                selected_idx = if (sel + 1 < count) sel + 1 else 0;
+                            }
+                        } else {
+                            selected_idx = navSelect(action, selected_idx.?, top_count, cols, rows);
+                        }
                     }
                 }
             }

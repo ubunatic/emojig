@@ -52,7 +52,9 @@
       "terminal_bg2": "#2c2c2c",
       "terminal_bg": null,
       "terminal_fg": "#a8a8a8",
-      "terminal_border": "#5c5c5c"
+      "terminal_border": "#5c5c5c",
+      "warning_fg": 9,
+      "success_fg": 10
     },
     "light": {
       "grid_bg": null,
@@ -72,7 +74,9 @@
       "terminal_bg2": "#eeeeee",
       "terminal_bg": null,
       "terminal_fg": "#444444",
-      "terminal_border": "#cccccc"
+      "terminal_border": "#cccccc",
+      "warning_fg": 1,
+      "success_fg": 2
     }
   }
 }
