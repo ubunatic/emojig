@@ -490,14 +490,3 @@
     color: #10b981;
     font-weight: bold;
 }
-
-/* In-picker help link (paged help, "?" / "??") */
-.sim-link {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-}
-
-.sim-link:hover {
-    opacity: 0.8;
-}

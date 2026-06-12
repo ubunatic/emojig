@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── GUI Single-Instance Toggle ───────────────────────────────────────
+# What will be reeled:
+#   - a desktop with an editor; `emojig --gui` opens the floating picker
+#   - the SAME command (think: same hotkey) closes it again — toggle,
+#     not window-stacking; pidfile + /proc cmdline check, no daemon
+#   - third invocation re-opens; pick an emoji, it lands in the editor
+#   - point of the reel: bind one hotkey, get open/close for free
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+# NOTE: needs gui mode app orchestration like spec/reels/gui.json
+#       (editor app + emojig-picker app block) — port when fleshing out.
+
+REEL main
+  mode = gui
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — single-instance GUI toggle
+  output = website/reels/gui-toggle.webm
+  pause = 1s
+
+  ## One hotkey: open, close, open — never two windows
+  # REEL: spawn editor, run `emojig --gui` (window opens)
+  # REEL: run `emojig --gui` again (window closes — toggle)
+  # REEL: run once more, search, Enter, paste into editor
+  P 2s

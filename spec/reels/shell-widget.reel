@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── Ctrl+E Shell Widget ──────────────────────────────────────────────
+# What will be reeled:
+#   - a real zsh prompt; user types half a commit message
+#   - Ctrl+E opens the picker INLINE (no window, no altscreen jump)
+#   - fuzzy search "rock", Enter — the 🚀 lands in the command line
+#   - command is executed; prompt is pristine afterwards (no TUI residue)
+#   - point of the reel: zero context disruption, terminal left intact
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+
+REEL main
+  mode = tui
+  theme = dark
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — Ctrl+E shell widget
+  output = website/reels/shell-widget.webm
+  shell_init = ["source $(pwd)/src/shell/emojig.sh"]
+  pause = 1s
+
+  ## The shell widget: emoji land in your command line
+  T git commit -m 'ship it  desc="type a commit message" speed=0.5
+  Ctrl+E desc="open emojig inline" show_keys
+  T rock desc="fuzzy search" speed=0.4
+  Enter desc="pick 🚀" show_keys
+  # REEL: finish the quote, run the command, show the clean prompt
+  P 2s

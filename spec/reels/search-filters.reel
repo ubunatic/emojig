@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── Search Tricks: e:/t: filters, multi-word AND, stem fallbacks ─────
+# What will be reeled:
+#   - "racing" matches via -ing stem fallback (racing → rac/race)
+#   - "cars" matches via plural fallback (cars → car)
+#   - multi-word AND: "fire truck" narrows to 🚒
+#   - "t:arrow" shows text-width symbols only (→ ↕ ⇒ …)
+#   - "e:arrow" shows wide emoji only (⬆️ ↗️ …)
+#   - point of the reel: the search engine is smarter than a substring
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+
+REEL main
+  mode = tui
+  theme = dark
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — search tricks
+  output = website/reels/search-filters.webm
+  shell_init = ["source $(pwd)/src/shell/emojig.sh"]
+  pause = 1s
+
+  ## Stems, plurals, AND-terms, and width filters
+  Ctrl+E desc="open emojig" show_keys
+  T racing desc="-ing stem fallback finds 🏎️" speed=0.4
+  P 1s
+  # REEL: clear query, type "fire truck" (multi-word AND → 🚒)
+  # REEL: clear query, type "t:arrow" (symbols only), then "e:arrow"
+  Escape desc="exit picker" show_keys
+  P 1s

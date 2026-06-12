@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── Themes: Tab cycling & OSC 11 auto-detect ─────────────────────────
+# What will be reeled:
+#   - picker opens matching the terminal: system theme via OSC 11
+#     (the picker asks the terminal for its background color — no
+#     desktop APIs, no config guessing)
+#   - Tab cycles dark → light → system, live, with the 🌙/🌞/🔆 icon
+#   - choice is persisted via a plain POSIX file write (no daemon)
+#   - point of the reel: correct colors in any terminal, automatically
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+
+REEL main
+  mode = tui
+  theme = light
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — themes & OSC 11
+  output = website/reels/themes.webm
+  shell_init = ["source $(pwd)/src/shell/emojig.sh"]
+  pause = 1s
+
+  ## Tab cycles themes; OSC 11 picks the right one for you
+  Ctrl+E desc="open emojig (auto-detects light bg)" show_keys
+  Tab desc="cycle to dark" show_keys pause="1500ms"
+  Tab desc="cycle to light" show_keys pause="1500ms"
+  # REEL: cycle to system 🔆, show the OSC 11 match with the terminal
+  Escape desc="exit picker" show_keys
+  P 1s

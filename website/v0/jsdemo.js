@@ -1,0 +1,41 @@
+// generated from spec/jsdemo.json — do not edit by hand
+const jsdemoSpec = {
+  "description": "JS browser demo simulator config — filesystem layout, env overrides, and shell seed.",
+
+  "user": "you",
+  "host": "emojig",
+  "prompt": "{user:➜}  {cwd} ",
+  "cwd": "/home/you/emojig",
+
+  "env": {
+    "EDITOR": "emojig",
+    "EMOJIG_THEME": "dark",
+    "GREETING": "Hello 👋"
+  },
+
+  "entries": [
+    { "path": "README.md", "size": "1.2K", "date": "Jun  9 11:55" },
+    { "path": "Makefile", "size": " 567", "date": "Jun  9 11:55" },
+    {
+      "path": "emojig",
+      "perms": "-rwxr-xr-x",
+      "size": " 42K",
+      "date": "Jun  9 12:30"
+    },
+    { "path": "src/", "size": "  96", "date": "Jun  9 10:00" },
+    { "path": "src/main.zig", "size": "8.1K", "date": "Jun  9 12:00" },
+    { "path": "src/input.zig", "size": "3.4K", "date": "Jun  9 11:30" },
+    { "path": "notes.txt", "size": " 128", "date": "Jun  9 09:15" },
+    {
+      "path": ".secret",
+      "perms": "-rw-------",
+      "size": "  42",
+      "date": "Jun  9 09:00"
+    }
+  ],
+
+  "seed": {
+    "history": ["git status", "git add ."],
+    "input": "git commit -m 'release: v1.2 "
+  }
+};

@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── Paged Help: "?" and "??" ─────────────────────────────────────────
+# What will be reeled:
+#   - typing "?" flips the grid into help page 1 (keys, nav, theme)
+#   - typing a second "?" shows page 2: the e:/t: width filters and
+#     multi-word AND search (the stuff nobody finds in a README)
+#   - backspace walks back: page 2 → page 1 → grid
+#   - point of the reel: the picker documents itself, in 25 columns
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+
+REEL main
+  mode = tui
+  theme = dark
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — paged help
+  output = website/reels/help-pages.webm
+  shell_init = ["source $(pwd)/src/shell/emojig.sh"]
+  pause = 1s
+
+  ## Help lives inside the picker: ? and ??
+  Ctrl+E desc="open emojig" show_keys
+  T ? desc="page 1: keys & navigation" pause="2s"
+  T ? desc="page 2: search filters" pause="2s"
+  # REEL: backspace back to the grid, pick an emoji to close the loop
+  Escape desc="exit picker" show_keys
+  P 1s

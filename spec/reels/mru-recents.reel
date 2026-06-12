@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ── Recents First (MRU) ──────────────────────────────────────────────
+# What will be reeled:
+#   - pick 🔥 once, reopen the picker: 🔥 now sits in cell #1
+#   - empty query = most-recently-used emojis first, then the full set
+#   - MRU survives restarts: stored with a plain zero-allocation POSIX
+#     file write at exit — no cache daemon, no database
+#   - point of the reel: your top 5 emojis are always one Enter away
+#
+# STATUS: placeholder — steps are a sketch, flesh out before recording.
+
+REEL main
+  mode = tui
+  theme = dark
+  build = zig build -Doptimize=ReleaseSmall
+  binary = zig-out/bin/emojig
+  title = emojig — recents first
+  output = website/reels/mru-recents.webm
+  shell_init = ["source $(pwd)/src/shell/emojig.sh"]
+  pause = 1s
+
+  ## Pick once, find it first forever
+  Ctrl+E desc="open emojig" show_keys
+  T fire desc="search 🔥" speed=0.4
+  Enter desc="pick it" show_keys
+  # REEL: reopen picker, show 🔥 promoted to the first grid cell
+  # REEL: pick 2-3 more, reopen, show the MRU row order
+  P 2s

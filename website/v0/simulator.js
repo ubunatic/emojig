@@ -428,31 +428,18 @@ class EmojigSimulator {
       `<span class="sim-theme-icon" id="sim-theme-toggle" title="Cycle Theme (Tab)"> ${themeIcon} </span>` +
       `</div>`;
 
-    const isHelpMode = this.query.startsWith("?");
+    const isHelpMode = this.query === "?";
 
     if (isHelpMode) {
-      // Paged help, mirroring spec/strings.json: "?" shows page 1
-      // (help_lines), "??" shows page 2 (help_lines_more: e:/t: filters).
-      const isMorePage = this.query.startsWith("??");
-      const linkLine =
-        `😀 <a class="sim-link" href="https://ubunatic.com/emojig">ubunatic.com/emojig</a>`;
-      const helpLines = isMorePage
-        ? [
-            linkLine,
-            "",
-            " e:abc 🔍 Emojis only",
-            " t:abc 🔍 Symbols only",
-            " a b 🔍   Match all words",
-            " ⌫        Back…",
-          ]
-        : [
-            linkLine,
-            "",
-            " ⌨️|abc|↕↔ Search, Navigate",
-            " 🖱️|↵|Esc  Select, Exit",
-            " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
-            " ??        More…",
-          ];
+      // Help screen: rows+3 rows replace spacer+grid+spacer+desc (spec/strings.json)
+      const helpLines = [
+        "Help & Keybindings:",
+        "  Typing: Search",
+        "  Arrows: Navigate",
+        "  Enter:  Copy & Exit",
+        "  Tab:    Toggle Theme",
+        "  Esc:    Exit",
+      ];
       for (let i = 0; i < this.rows + 3; i++) {
         let text = "";
         if (i < helpLines.length) {
@@ -1789,17 +1776,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // The badge says "Click here to focus keys" — make the click deliver.
-  if (focusBadge) {
-    focusBadge.style.cursor = "pointer";
-    focusBadge.addEventListener("click", () => {
-      sim.isFocused = true;
-      sim.updateThemeClass();
-      updateFocusBadge(true);
-      syncFocus();
-    });
-  }
-
   // Sync search input box — only drives the query when the picker is already open.
   if (inputEl) {
     inputEl.addEventListener("input", (e) => {
@@ -1879,7 +1855,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const matches = sim.getFilteredMatches();
-    const topCount = Math.min(sim.cols * sim.rows, matches.length);
+    const topCount = Math.min(this.cols * this.rows, matches.length);
     if (sim.selectedIdx === null) {
       if (topCount > 0) sim.selectedIdx = 0;
     } else {
@@ -1902,7 +1878,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const matches = sim.getFilteredMatches();
-    const topCount = Math.min(sim.cols * sim.rows, matches.length);
+    const topCount = Math.min(this.cols * this.rows, matches.length);
     if (sim.selectedIdx === null) {
       if (topCount > 0) sim.selectedIdx = 0;
     } else {
@@ -1921,7 +1897,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const matches = sim.getFilteredMatches();
-    const topCount = Math.min(sim.cols * sim.rows, matches.length);
+    const topCount = Math.min(this.cols * this.rows, matches.length);
     if (sim.selectedIdx === null) {
       if (topCount > 0) sim.selectedIdx = 0;
     } else {
@@ -1939,7 +1915,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const matches = sim.getFilteredMatches();
-    const topCount = Math.min(sim.cols * sim.rows, matches.length);
+    const topCount = Math.min(this.cols * this.rows, matches.length);
     if (sim.selectedIdx === null) {
       if (topCount > 0) sim.selectedIdx = 0;
     } else {
