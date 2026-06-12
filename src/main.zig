@@ -15,6 +15,7 @@ const tui = @import("tui.zig");
 
 extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 extern fn getuid() c_uint;
+extern fn getpid() c_int;
 extern fn time(t: ?*c_long) c_long;
 extern fn unlink(path: [*:0]const u8) c_int;
 
@@ -52,6 +53,10 @@ var global_row_off: i32 = 0;
 // True while the alt screen (?1049h) is active; selects RESTORE_ALT (which
 // leaves the alt screen) over RESTORE (which must not touch ?1049 — see term.zig).
 var global_alt_screen: bool = false;
+// Set while this (GUI-spawned) picker owns the single-instance pidfile, so
+// every exit path (defer, sigHandler, panic) can unlink it signal-safely.
+var global_picker_pid_path_buf: [64]u8 = undefined;
+var global_picker_pid_path: ?[:0]const u8 = null;
 
 inline fn restoreSeq() []const u8 {
     return if (global_alt_screen) term_lib.RESTORE_ALT else term_lib.RESTORE;
@@ -266,6 +271,7 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     if (global_orig_termios) |orig| {
         _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
     }
+    removePickerPidFile();
     logMemoryUsage();
     std.process.exit(1);
 }
@@ -278,8 +284,79 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
     clearTuiRows(global_tty_fd, global_tui_height, global_row_off);
     const seq = restoreSeq();
     _ = std.posix.system.write(global_tty_fd, seq.ptr, seq.len);
+    removePickerPidFile();
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
+}
+
+// ---------------------------------------------------------------------------
+// GUI single-instance pidfile  (/tmp/emojig-picker-<uid>.pid)
+//
+// A GUI-spawned picker records its PID so that a second `emojig --gui`
+// (e.g. the same desktop hotkey pressed again) toggles the open window
+// closed instead of stacking another one. No daemon, no IPC — just one
+// POSIX file write at startup and an unlink on every exit path (§8).
+// ---------------------------------------------------------------------------
+
+fn pickerPidPath(buf: []u8) ?[:0]const u8 {
+    const path = std.fmt.bufPrint(buf, "/tmp/emojig-picker-{d}.pid", .{getuid()}) catch return null;
+    if (path.len + 1 > buf.len) return null;
+    buf[path.len] = 0;
+    return buf[0..path.len :0];
+}
+
+fn writePickerPidFile() void {
+    const path = pickerPidPath(&global_picker_pid_path_buf) orelse return;
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o600) catch return;
+    defer _ = std.posix.system.close(fd);
+    var pid_buf: [16]u8 = undefined;
+    const pid_str = std.fmt.bufPrint(&pid_buf, "{d}", .{getpid()}) catch return;
+    _ = std.posix.system.write(fd, pid_str.ptr, pid_str.len);
+    global_picker_pid_path = path;
+}
+
+fn removePickerPidFile() void {
+    if (global_picker_pid_path) |path| {
+        _ = unlink(path);
+        global_picker_pid_path = null;
+    }
+}
+
+/// If a previously spawned GUI picker is still alive (live PID recorded in
+/// the pidfile), terminate it and return true so the launcher exits instead
+/// of opening a second window. Stale pidfiles (dead or recycled PID) are
+/// removed and ignored.
+fn toggleRunningPicker() bool {
+    var path_buf: [64]u8 = undefined;
+    const path = pickerPidPath(&path_buf) orelse return false;
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, rf, 0) catch return false;
+    var pid_buf: [16]u8 = undefined;
+    const n = std.posix.system.read(fd, &pid_buf, pid_buf.len);
+    _ = std.posix.system.close(fd);
+    if (n <= 0) return false;
+    const pid_str = std.mem.trim(u8, pid_buf[0..@intCast(n)], &std.ascii.whitespace);
+    const pid = std.fmt.parseInt(std.posix.pid_t, pid_str, 10) catch return false;
+    if (pid <= 1) return false;
+
+    // Guard against PID reuse: the recorded PID must still be an emojig process.
+    var proc_buf: [48]u8 = undefined;
+    const proc_path = std.fmt.bufPrint(&proc_buf, "/proc/{d}/cmdline", .{pid}) catch return false;
+    const pfd = std.posix.openat(std.posix.AT.FDCWD, proc_path, rf, 0) catch {
+        _ = unlink(path);
+        return false;
+    };
+    var cmd_buf: [256]u8 = undefined;
+    const cn = std.posix.system.read(pfd, &cmd_buf, cmd_buf.len);
+    _ = std.posix.system.close(pfd);
+    if (cn <= 0 or std.mem.indexOf(u8, cmd_buf[0..@intCast(cn)], "emojig") == null) {
+        _ = unlink(path);
+        return false;
+    }
+
+    std.posix.kill(pid, .TERM) catch return false;
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,6 +1198,12 @@ pub fn main(init: std.process.Init) !void {
         };
         const exe_path = exe_path_buf[0..exe_path_len];
 
+        // Single-instance toggle: if a GUI picker is already open, close it
+        // and exit — the same hotkey/command opens and closes the window.
+        if (toggleRunningPicker()) {
+            std.process.exit(0);
+        }
+
         if (std.c.getenv("HOME")) |home_c| {
             const home = std.mem.span(home_c);
             ensureDesktopIntegration(init.io, home, exe_path);
@@ -1241,6 +1324,8 @@ pub fn main(init: std.process.Init) !void {
         }
         break :blk false;
     };
+    // Record this picker's PID for the `--gui` single-instance toggle.
+    if (gui_spawned) writePickerPidFile();
 
     const tty_flags = std.posix.O{ .ACCMODE = .RDWR };
     const tty_fd = try std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0);
@@ -1507,6 +1592,7 @@ pub fn main(init: std.process.Init) !void {
             }
             writeAll(stdout_fd, restoreSeq()) catch {};
             global_alt_screen = false;
+            removePickerPidFile();
             logMemoryUsage();
         }
 
