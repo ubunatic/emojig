@@ -656,6 +656,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             margin-bottom: 8px;
         }
 
+        /* bg bloom following the mouse cursor (adopted from the wayreel site) */
+        .cursor-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(
+                circle,
+                rgba(124, 227, 139, 0.05) 0%,
+                rgba(255, 180, 84, 0.03) 40%,
+                transparent 70%
+            );
+            /* behind all content: paints above the body background only */
+            z-index: -1;
+        }
+
         /* box-drawing section divider */
         .divider {
             color: var(--line-bright);
@@ -668,6 +688,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </style>
 </head>
 <body>
+    <div class="cursor-glow" id="cursor-glow"></div>
     <div class="container">
         <!-- ── header ── -->
         <header>
@@ -1261,6 +1282,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <script>
+        const cursorGlow = document.getElementById("cursor-glow");
+        if (cursorGlow) {
+            document.addEventListener("mousemove", (e) => {
+                cursorGlow.style.left = e.clientX + "px";
+                cursorGlow.style.top = e.clientY + "px";
+            });
+        }
+
         function copyInstall() {
             const text = document.getElementById("install-cmd").textContent;
             navigator.clipboard.writeText(text).then(() => {

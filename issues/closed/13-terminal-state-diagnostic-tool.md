@@ -1,5 +1,9 @@
 # Terminal State Diagnostic Tool
 
+**Status:** Closed (Implemented) — `scripts/termstate.sh` exists and reports
+per-mode `OK` / `⚠ LEAKED` / unknown states via DECRQM/DECRQSS queries
+against `/dev/tty`, as specified below.
+
 ## Problem
 
 When investigating terminal state corruption (e.g. scroll region leak, stale

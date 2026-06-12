@@ -1,5 +1,12 @@
 # Synonym Support for Better Search Ranking
 
+**Status:** Closed (Implemented) — `spec/synonyms.json` is loaded by both
+engines (`src/root.zig`, `internal/emoji/fuzzy.go`, packed via
+`scripts/pack_emojis`), and both test suites assert that 🚗 outranks 🚋 for
+the query "car" (`src/root.zig`, `internal/emoji/search_test.go`).
+Follow-up ranking work is tracked on the website roadmap under
+"better search, MRU & ranking".
+
 ## Problem
 
 Typing "car" surfaces `🚋 tram car` before `🚗 automobile` because the fuzzy
