@@ -19,13 +19,13 @@ docs: [WebSandbox.md](WebSandbox.md) (WASM demo), [HeadlessRecording.md](Headles
 | `website/simulator.js` / `simulator.css` | Interactive shell + picker simulator (see §3). |
 | `website/emojis.js` | Generated emoji DB for the simulator (mirror of the packed binary DB). |
 | `website/jsdemo.js` | **Generated** from `spec/jsdemo.json` via `make jsdemo` — do not edit by hand. |
-| `website/*.webm`, `*.png` | Shared recordings/screenshots, written by the reel pipeline. Referenced by the main site and by `v0/` via `../`. |
+| `website/*.webm`, `*.png` | Shared recordings/screenshots, written by the reel pipeline. |
 | `website/reels/` | Output directory for the newer `.reel`-scripted recordings. |
-| `website/v0/` | Archived previous site (own copies of the JS/CSS/SVG; media via `../`). |
 
-Site versioning convention: the live site is always `website/index.html`;
-superseded sites are archived whole into `website/vN/` with their asset
-copies, only the heavy media stays shared at the root.
+The live site is always `website/index.html`. Superseded sites are not
+kept in-tree (the previous `website/v0/` archive was removed because it
+loaded Google Fonts, breaking the no-external-requests policy — git
+history has it if ever needed).
 
 `make browse` opens the live site (and regenerates `jsdemo.js` first).
 
@@ -99,7 +99,7 @@ then `convert -crop` to inspect sections.
 ## 5. REUSE / licensing
 
 * `REUSE.toml` globs do **not** recurse: `website/*.js` does not cover
-  `website/v0/*.js` or `website/reels/*.webm` — each subdirectory needs its
+  `website/reels/*.webm` — each subdirectory needs its
   own annotation entries. `make preflight` catches misses (generated files
   like `jsdemo.js` carry no header and rely on the annotations).
 * **Codeberg branding:** the official logo artwork is CC0 and linking to
