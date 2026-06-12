@@ -137,9 +137,32 @@ class EmojigSimulator {
     return score;
   }
 
+  // matchTerm scores a term with plural/stem fallbacks plus synonym
+  // matching (max score across all attempts) — mirrors src/root.zig and
+  // internal/emoji/fuzzy.go. The synonym map is emitted into emojis.js
+  // by scripts/pack_emojis from spec/synonyms.json.
   matchTerm(term, target) {
     if (term.length === 0) return 0;
 
+    let best = this.matchTermSelf(term, target);
+
+    const synonyms =
+      typeof EMOJI_SYNONYMS !== "undefined" ? EMOJI_SYNONYMS : null;
+    if (synonyms) {
+      const synList = synonyms[term.toLowerCase()];
+      if (synList) {
+        for (const syn of synList) {
+          const s = this.matchTermDirect(syn, target);
+          if (s !== null && (best === null || s > best)) best = s;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  // matchTermSelf: direct match with plural/stem/trailing-e fallbacks.
+  matchTermSelf(term, target) {
     let score = this.matchTermDirect(term, target);
     if (score !== null) return score;
 

@@ -301,6 +301,19 @@ func main() {
 	}
 	webJSBuilder.WriteString("];\n")
 
+	// Synonym map for the JS simulator's match-time synonym expansion,
+	// mirroring the embedded synonym table used by the Zig and Go engines.
+	webJSBuilder.WriteString("\nconst EMOJI_SYNONYMS = {\n")
+	for _, from := range synKeys {
+		tos := synJSON.Synonyms[from]
+		quoted := make([]string, len(tos))
+		for i, to := range tos {
+			quoted[i] = fmt.Sprintf("%q", to)
+		}
+		webJSBuilder.WriteString(fmt.Sprintf("  %q: [%s],\n", from, strings.Join(quoted, ", ")))
+	}
+	webJSBuilder.WriteString("};\n")
+
 	if err := os.WriteFile(webJSPath, []byte(webJSBuilder.String()), 0644); err != nil {
 		fmt.Printf("Error writing website/emojis.js: %v\n", err)
 		os.Exit(1)
