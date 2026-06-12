@@ -120,7 +120,41 @@ func Load() (*DB, error) {
 			}
 		}
 	}
+
+	// Append box-drawing / block-element entries (spec/boxart.json), after
+	// all emojis so they also sort last on equal scores. Mirrors
+	// scripts/pack_emojis.
+	type boxartEntry struct {
+		Char string   `json:"char"`
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	type boxartFile struct {
+		Entries []boxartEntry `json:"entries"`
+	}
+	var boxart boxartFile
+	if err := json.Unmarshal(emojig.BoxartJSON, &boxart); err != nil {
+		return nil, err
+	}
+	for _, b := range boxart.Entries {
+		if b.Char == "" || existing[b.Char] {
+			continue
+		}
+		db.Entries = append(db.Entries, Entry{
+			Emoji:  b.Char,
+			Name:   b.Name,
+			Search: b.Name + " " + strings.Join(b.Tags, " ") + " box ascii art",
+		})
+	}
 	return db, nil
+}
+
+// IsBoxArt reports whether the entry glyph is a box-drawing or
+// block-element character (U+2500–U+259F). Used by the b: filter and to
+// rank box art below emojis in general searches.
+func IsBoxArt(emoji string) bool {
+	cp, _ := utf8.DecodeRuneInString(emoji)
+	return cp >= 0x2500 && cp <= 0x259F
 }
 
 // Count returns the number of entries.
@@ -172,9 +206,15 @@ func buildSearch(r rawEmoji) string {
 // number of matches. Empty query yields the database order (MRU is not part of
 // the minimal core). Non-empty query uses fuzzy scoring with insertion sort,
 // mirroring src/root.zig:search. ZWJ entries are skipped when DisableZWJ is set.
+// boxArtPenalty lowers box-art scores in general searches so borders and
+// blocks rank below genuine emoji matches; the b: filter shows them on
+// their own (where the uniform penalty does not affect ordering).
+const boxArtPenalty = 150
+
 func (db *DB) Search(query string, limit int) (top []Match, total int) {
 	actualQuery := query
 	filterWidth := 0
+	filterBox := false
 	if len(query) >= 2 {
 		if (query[0] == 'e' || query[0] == 'E') && query[1] == ':' {
 			actualQuery = query[2:]
@@ -182,6 +222,9 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 		} else if (query[0] == 't' || query[0] == 'T') && query[1] == ':' {
 			actualQuery = query[2:]
 			filterWidth = 1
+		} else if (query[0] == 'b' || query[0] == 'B') && query[1] == ':' {
+			actualQuery = query[2:]
+			filterBox = true
 		}
 	}
 
@@ -192,6 +235,9 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 				continue
 			}
 			if filterWidth > 0 && Width(db.Entries[i].Emoji) != filterWidth {
+				continue
+			}
+			if filterBox && !IsBoxArt(db.Entries[i].Emoji) {
 				continue
 			}
 			total++
@@ -210,9 +256,15 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 		if filterWidth > 0 && Width(db.Entries[i].Emoji) != filterWidth {
 			continue
 		}
+		if filterBox && !IsBoxArt(db.Entries[i].Emoji) {
+			continue
+		}
 		score, ok := fuzzyMatch(actualQuery, db.Entries[i].Search, db.Synonyms)
 		if !ok {
 			continue
+		}
+		if IsBoxArt(db.Entries[i].Emoji) {
+			score -= boxArtPenalty
 		}
 		total++
 		m := Match{Index: i, Score: score}

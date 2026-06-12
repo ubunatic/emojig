@@ -19,6 +19,7 @@
     "",
     " e:abc 🔍 Emojis only",
     " t:abc 🔍 Symbols only",
+    " b:abc 🔍 Box art only",
     " a b 🔍   Match all words",
     " ⌫        Back…"
   ],

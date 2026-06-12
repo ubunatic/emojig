@@ -16,9 +16,9 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 
 ## Features
 
-* **🏎️ Zero-Allocation Performance**: Built in Zig, compile-time optimized (`ReleaseSmall`) to keep the static binary under 600 KB and Resident Set Size (RSS) under 2.5 MB.
+* **🏎️ Zero-Allocation Performance**: Built in Zig, compile-time optimized (`ReleaseSmall`) to keep the static binary under 650 KB and Resident Set Size (RSS) under 2.5 MB.
 * **🌐 Universal Launch Modes**: Runs in-place in active terminals (TUI) or automatically spawns a borderless popup window (GUI) via `foot`, `kitty`, `alacritty`, `ghostty`, or other standard terminals when triggered from hotkeys or desktop environments.
-* **📦 Embedded Database**: 2,181 emojis packed directly at compile time via `@embedFile("emojis.bin")` for zero-allocation, instant runtime access.
+* **📦 Embedded Database**: 2,249 emojis packed directly at compile time via `@embedFile("emojis.bin")` for zero-allocation, instant runtime access.
 * **🔍 Intelligent Fuzzy Search**: Multi-term space-separated search with automatic plural (`cars` -> `car`), stem (`running` -> `run`), and query-stem (trailing `e`) fallbacks.
 * **↔️ 2D Grid & Mouse Navigation**: Navigate the borderless 2D grid using arrow keys or standard mouse interactions (hover to select, click to confirm, click theme button to toggle).
 * **🌓 Automatic Theming**: Sleek light, dark, and system themes. OSC 11 terminal background detection selects the correct theme automatically, while <kbd>Tab</kbd> toggles and persists choice.
@@ -185,9 +185,9 @@ saves your choice to `~/.config/emojig/config`. Override with `--theme` or
 
 ## Performance
 
-- Binary: **596 KB** (static musl, no runtime deps; ~535 KB native dynamic)
+- Binary: **603 KB** (static musl, no runtime deps; ~540 KB native dynamic)
 - RAM: **< 2.5 MB RSS** during operation (self-reported to `/tmp/emojig.log` at exit), 0 when idle (excl. launcher/foot memory usage, which adds ~16 MB for foot)
-- Database: 2,181 emojis embedded at compile time — no data files
+- Database: 2,249 emojis embedded at compile time — no data files
 
 ## License
 

@@ -142,3 +142,37 @@ func TestPlainTwinsDiscoverable(t *testing.T) {
 		t.Errorf("expected 'gear' to still surface the color emoji ⚙️")
 	}
 }
+
+func TestBoxArtFilterAndRank(t *testing.T) {
+	db, err := Load()
+	if err != nil {
+		t.Fatalf("failed to load db: %v", err)
+	}
+
+	// b: with empty query lists only box art.
+	top, total := db.Search("b:", 24)
+	if len(top) == 0 || total == 0 {
+		t.Fatalf("expected box art entries for 'b:'")
+	}
+	for _, m := range top {
+		if !IsBoxArt(db.Entries[m.Index].Emoji) {
+			t.Errorf("expected only box art for 'b:', got %q", db.Entries[m.Index].Emoji)
+		}
+	}
+
+	// Systematic names hit the exact glyph.
+	top, _ = db.Search("b:top left double border", 24)
+	if len(top) == 0 || db.Entries[top[0].Index].Emoji != "╔" {
+		t.Errorf("expected 'b:top left double border' to rank ╔ first")
+	}
+	top, _ = db.Search("bottom right border round", 24)
+	if len(top) == 0 || db.Entries[top[0].Index].Emoji != "╯" {
+		t.Errorf("expected 'bottom right border round' to rank ╯ first")
+	}
+
+	// General searches rank box art below genuine emoji matches.
+	top, _ = db.Search("left", 24)
+	if len(top) == 0 || IsBoxArt(db.Entries[top[0].Index].Emoji) {
+		t.Errorf("expected non-box-art first result for 'left'")
+	}
+}

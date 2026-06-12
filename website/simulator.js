@@ -224,6 +224,13 @@ class EmojigSimulator {
 
   // --- Search Logic ---
 
+  // Box-drawing / block-element glyphs (U+2500–U+259F, spec/boxart.json).
+  isBoxArt(emoji) {
+    if (!emoji) return false;
+    const cp = emoji.codePointAt(0);
+    return cp >= 0x2500 && cp <= 0x259f;
+  }
+
   getEmojiWidth(emoji) {
     if (!emoji) return 0;
     // VS15 explicitly requests text presentation: single-width.
@@ -279,6 +286,7 @@ class EmojigSimulator {
 
     let actualQuery = this.query;
     let filterWidth = null;
+    let filterBox = false;
     if (this.query.length >= 2) {
       if ((this.query[0] === 'e' || this.query[0] === 'E') && this.query[1] === ':') {
         actualQuery = this.query.slice(2);
@@ -286,6 +294,9 @@ class EmojigSimulator {
       } else if ((this.query[0] === 't' || this.query[0] === 'T') && this.query[1] === ':') {
         actualQuery = this.query.slice(2);
         filterWidth = 1;
+      } else if ((this.query[0] === 'b' || this.query[0] === 'B') && this.query[1] === ':') {
+        actualQuery = this.query.slice(2);
+        filterBox = true;
       }
     }
 
@@ -294,6 +305,9 @@ class EmojigSimulator {
       for (let i = 0; i < db.length; i++) {
         const item = db[i];
         if (filterWidth !== null && this.getEmojiWidth(item[0]) !== filterWidth) {
+          continue;
+        }
+        if (filterBox && !this.isBoxArt(item[0])) {
           continue;
         }
         filtered.push({
@@ -312,8 +326,13 @@ class EmojigSimulator {
       if (filterWidth !== null && this.getEmojiWidth(item[0]) !== filterWidth) {
         continue;
       }
-      const score = this.fuzzyMatch(actualQuery, item[2]);
+      if (filterBox && !this.isBoxArt(item[0])) {
+        continue;
+      }
+      let score = this.fuzzyMatch(actualQuery, item[2]);
       if (score !== null) {
+        // Box art ranks below genuine emoji matches in general searches.
+        if (this.isBoxArt(item[0])) score -= 150;
         matches.push({
           emoji: item[0],
           description: item[1],
@@ -446,6 +465,7 @@ class EmojigSimulator {
             "",
             " e:abc 🔍 Emojis only",
             " t:abc 🔍 Symbols only",
+            " b:abc 🔍 Box art only",
             " a b 🔍   Match all words",
             " ⌫        Back…",
           ]

@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <title>emojig — a terminal emoji picker that respects your terminal</title>
     <meta
         name="description"
-        content="emojig is a zero-allocation TUI/GUI emoji picker for Linux. One static binary under 600 KB, under 2.5 MB RSS, no daemon, no Electron. It even logs its own memory usage so you can check the claims."
+        content="emojig is a zero-allocation TUI/GUI emoji picker for Linux. One static binary under 650 KB, under 2.5 MB RSS, no daemon, no Electron. It even logs its own memory usage so you can check the claims."
     />
 
     <!-- No external fonts, no trackers, no frameworks.
@@ -739,7 +739,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="sub">Measured, not marketed.</p>
             <div class="stats">
                 <div class="stat">
-                    <div class="num">&lt; 600 KB</div>
+                    <div class="num">&lt; 650 KB</div>
                     <div class="lbl">static binary (ReleaseSmall, musl)</div>
                 </div>
                 <div class="stat">
@@ -747,7 +747,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     <div class="lbl">RSS, self-reported at exit</div>
                 </div>
                 <div class="stat">
-                    <div class="num">2,181</div>
+                    <div class="num">2,249</div>
                     <div class="lbl">emojis, compiled into the binary</div>
                 </div>
                 <div class="stat">
@@ -865,7 +865,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <h3>Zero-allocation core</h3>
                         <p>
                             The interactive loop performs no heap
-                            allocations. Search scores 2,181 entries per
+                            allocations. Search scores 2,249 entries per
                             keystroke against an <code>@embedFile</code>'d
                             database and returns slices into read-only
                             binary memory. Written in Zig, compiled with
@@ -996,6 +996,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         </td>
                     </tr>
                     <tr>
+                        <td class="q">b:double corner</td>
+                        <td class="why">
+                            box-drawing &amp; block art: ╔ ╗ ╚ ╝ ░ ▓ … —
+                            systematic names ("top left double border"),
+                            ranked below emojis unless asked for with
+                            <code>b:</code>
+                        </td>
+                    </tr>
+                    <tr>
                         <td class="q">?&nbsp;&nbsp;then&nbsp;??</td>
                         <td class="why">
                             paged help inside the picker — page 1: keys,
@@ -1123,19 +1132,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div class="roadmap">
                 <h3 class="group">high priority</h3>
                 <div class="roadmap-item">
-                    <h3>Search box-drawing &amp; ASCII art <span class="prio high">high</span></h3>
-                    <p>
-                        Find ┌ ╔ ─ ▓ ░ by name: "box", "double corner",
-                        "shade". The picker should be the fastest way to
-                        build terminal UI art — not just emoji.
-                    </p>
-                </div>
-                <div class="roadmap-item">
                     <h3>Many more emojis <span class="prio high">high</span></h3>
                     <p>
-                        2,181 is the curated core; the full Unicode set is
+                        2,249 is the curated core; the full Unicode set is
                         much bigger. Grow the database without giving up the
-                        compile-time packing or the &lt;600 KB budget.
+                        compile-time packing or the &lt;650 KB budget.
                     </p>
                 </div>
                 <div class="roadmap-item">

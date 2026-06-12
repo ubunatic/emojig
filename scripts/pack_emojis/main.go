@@ -165,6 +165,39 @@ func main() {
 	}
 	fmt.Printf("Derived %d plain text-presentation twins.\n", plainTwins)
 
+	// Append box-drawing / block-element entries from spec/boxart.json.
+	// They share the emoji entry format; search engines rank them below
+	// emojis and the b: query prefix filters to them (see internal/emoji
+	// and src/root.zig).
+	boxartPath := "spec/boxart.json"
+	fmt.Printf("Reading %s...\n", boxartPath)
+	boxartData, err := os.ReadFile(boxartPath)
+	if err != nil {
+		fmt.Printf("Error reading boxart file: %v\n", err)
+		os.Exit(1)
+	}
+	type BoxartEntry struct {
+		Char string   `json:"char"`
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	type BoxartJSON struct {
+		Entries []BoxartEntry `json:"entries"`
+	}
+	var boxart BoxartJSON
+	if err := json.Unmarshal(boxartData, &boxart); err != nil {
+		fmt.Printf("Error unmarshaling boxart JSON: %v\n", err)
+		os.Exit(1)
+	}
+	for _, b := range boxart.Entries {
+		if b.Char == "" || existing[b.Char] {
+			continue
+		}
+		searchStr := b.Name + " " + strings.Join(b.Tags, " ") + " box ascii art"
+		addEntry(b.Char, b.Name, searchStr)
+	}
+	fmt.Printf("Added %d box art entries.\n", len(boxart.Entries))
+
 	// Read synonyms from spec/synonyms.json
 	synonymsPath := "spec/synonyms.json"
 	fmt.Printf("Reading %s...\n", synonymsPath)

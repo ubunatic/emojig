@@ -19,7 +19,7 @@ This document details the architectural decisions, coding standards, and safety 
 
 * **Core TUI Application**: Written in **Zig** (`src/main.zig`, `src/root.zig`, `src/mru.zig`).
   * Aim for zero-allocation performance in the main interactive loop.
-  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 600 KB and Resident Set Size (RSS) under 2.5 MB (measured June 2026: 596 KB musl-static, 2.3–2.4 MB RSS, 2,181 embedded emojis).
+  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 650 KB and Resident Set Size (RSS) under 2.5 MB (measured June 2026: 603 KB musl-static, 2.3-2.4 MB RSS, 2,249 embedded emojis).
 * **Helper Scripts & Utilities**: Located under `./scripts/`.
   * **No Python, No Perl, No Heredocs**:
     All helpers must be written in Go or Zig (or POSIX-compliant Shell for installers).
@@ -103,6 +103,8 @@ Implemented at query time in `src/root.zig` with **zero heap allocations**:
 * **Word Stem Fallback** (`matchTerm`): If a term ending in `ing` fails, the engine retries with the bare stem (`rac`) and stem + `e` form (`race`). Double-consonant stems are also handled (`running` → `run`).
 * **Query Stem Fallback** (`matchTerm`): If a term ending in `e` fails, the engine retries without the trailing `e`.
 * **Multi-term Support** (`fuzzyMatch`): Space-separated terms must all match (AND semantics).
+* **Width Filters**: `e:` restricts to double-width emojis, `t:` to single-width text symbols (incl. the VS15 plain twins).
+* **Box Art & `b:` Filter**: `spec/boxart.json` adds 68 box-drawing/block glyphs (U+2500–U+259F) with systematic names (`top left double border`, `bottom right border round`, `dark shade`, …). The `b:` prefix filters to them; in general searches a fixed score penalty (`box_art_penalty`) ranks them below genuine emoji matches. `isBoxArt` (Zig) / `IsBoxArt` (Go) classify by codepoint range; the Go port appends the entries in `internal/emoji.Load()`.
 
 ---
 

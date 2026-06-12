@@ -19,6 +19,7 @@
     "",
     " e:abc 🔍 Tylko emoji",
     " t:abc 🔍 Tylko symbole",
+    " b:abc 🔍 Tylko ramki",
     " a b 🔍   Wszystkie słowa",
     " ⌫        Wstecz…"
   ],

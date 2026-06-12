@@ -19,6 +19,7 @@
     "",
     " e:abc 🔍 Sadece emojiler",
     " t:abc 🔍 Sadece semboller",
+    " b:abc 🔍 Sadece çerçeveler",
     " a b 🔍   Tüm kelimeler",
     " ⌫        Geri…"
   ],

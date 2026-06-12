@@ -19,6 +19,7 @@
     "",
     " e:abc 🔍 Alleen emoji's",
     " t:abc 🔍 Alleen symbolen",
+    " b:abc 🔍 Alleen randen",
     " a b 🔍   Alle woorden",
     " ⌫        Terug…"
   ],

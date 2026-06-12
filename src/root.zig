@@ -38,6 +38,7 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
 
     var actual_query = query;
     var filter_width: ?usize = null;
+    var filter_box = false;
     if (query.len >= 2) {
         if ((query[0] == 'e' or query[0] == 'E') and query[1] == ':') {
             actual_query = query[2..];
@@ -45,6 +46,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         } else if ((query[0] == 't' or query[0] == 'T') and query[1] == ':') {
             actual_query = query[2..];
             filter_width = 1;
+        } else if ((query[0] == 'b' or query[0] == 'B') and query[1] == ':') {
+            actual_query = query[2..];
+            filter_box = true;
         }
     }
 
@@ -59,6 +63,7 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             if (filter_width) |fw| {
                 if (getEmojiWidth(mru_emoji) != fw) continue;
             }
+            if (filter_box and !isBoxArt(mru_emoji)) continue;
 
             var db_idx: usize = 0;
             while (db_idx < EmojiDb.count) : (db_idx += 1) {
@@ -80,6 +85,7 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             if (filter_width) |fw| {
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
+            if (filter_box and !isBoxArt(entry.emoji)) continue;
 
             var already_shown = false;
             var k: usize = 0;
@@ -102,6 +108,7 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             if (filter_width) |fw| {
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
+            if (filter_box and !isBoxArt(entry.emoji)) continue;
             total += 1;
         }
         return total;
@@ -115,8 +122,12 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         if (filter_width) |fw| {
             if (getEmojiWidth(entry.emoji) != fw) continue;
         }
+        if (filter_box and !isBoxArt(entry.emoji)) continue;
 
-        if (fuzzyMatch(actual_query, entry.search)) |score| {
+        if (fuzzyMatch(actual_query, entry.search)) |raw_score| {
+            // Box art ranks below genuine emoji matches in general searches;
+            // under b: the uniform penalty does not affect ordering.
+            const score = if (isBoxArt(entry.emoji)) raw_score - box_art_penalty else raw_score;
             total += 1;
             const match = Match{ .index = i, .score = score };
             var insert_pos: usize = 0;
@@ -397,6 +408,19 @@ pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
         }
     }
     return out_buf[0..out_idx];
+}
+
+/// Box-art scores drop by this much in general searches so borders and
+/// blocks rank below genuine emoji matches; b: shows them on their own.
+const box_art_penalty: i32 = 150;
+
+/// True for box-drawing and block-element glyphs (U+2500–U+259F), the
+/// entries from spec/boxart.json. Used by the b: filter and ranking.
+pub fn isBoxArt(emoji: []const u8) bool {
+    const view = std.unicode.Utf8View.init(emoji) catch return false;
+    var iterator = view.iterator();
+    const cp = iterator.nextCodepoint() orelse return false;
+    return cp >= 0x2500 and cp <= 0x259F;
 }
 
 pub fn getEmojiWidth(emoji: []const u8) usize {
@@ -703,6 +727,35 @@ test "plain (VS15) twins are discoverable via t: and plain search" {
         }
     }
     try std.testing.expect(found_color);
+}
+
+test "box art entries: b: filter, names, and low rank" {
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+
+    // b: with empty query lists only box art.
+    _ = search("b:", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        try std.testing.expect(isBoxArt(EmojiDb.getEntry(m.index).emoji));
+    }
+
+    // Systematic names hit the exact glyph.
+    top_count = 0;
+    _ = search("b:top left double border", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    try std.testing.expect(std.mem.eql(u8, EmojiDb.getEntry(top_matches[0].index).emoji, "╔"));
+
+    top_count = 0;
+    _ = search("bottom right border round", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    try std.testing.expect(std.mem.eql(u8, EmojiDb.getEntry(top_matches[0].index).emoji, "╯"));
+
+    // General searches rank box art below genuine emoji matches.
+    top_count = 0;
+    _ = search("left", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    try std.testing.expect(!isBoxArt(EmojiDb.getEntry(top_matches[0].index).emoji));
 }
 
 test "synonym search ranking" {

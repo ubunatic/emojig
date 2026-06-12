@@ -38,6 +38,11 @@ var StringsJSON []byte
 //go:embed spec/synonyms.json
 var SynonymsJSON []byte
 
+// BoxartJSON is the box-drawing / block-element character set (spec/boxart.json).
+//
+//go:embed spec/boxart.json
+var BoxartJSON []byte
+
 // ShellSh is the generic shell integration dispatcher (zsh + bash).
 //
 //go:embed src/shell/emojig.sh
