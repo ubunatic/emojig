@@ -248,6 +248,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         }
 
         /* ── install line ───────────────────────────────────────── */
+        .install-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .release {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--green);
+            border: 1px solid rgba(124, 227, 139, 0.4);
+            border-radius: 9999px;
+            padding: 7px 16px;
+            white-space: nowrap;
+        }
+
+        .release:hover {
+            text-decoration: none;
+            background: rgba(124, 227, 139, 0.1);
+        }
+
         .install {
             display: flex;
             align-items: center;
@@ -726,10 +748,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <code>/tmp/emojig.log</code> on every exit — you can check
                 the numbers below on your machine.
             </p>
-            <div class="install">
-                <span class="ps1">$</span>
-                <span class="cmd" id="install-cmd">curl -fsSL https://ubunatic.com/emojig/install.sh | sh</span>
-                <button id="copy-btn" onclick="copyInstall()" aria-label="Copy install command">copy</button>
+            <div class="install-row">
+                <div class="install">
+                    <span class="ps1">$</span>
+                    <span class="cmd" id="install-cmd">curl -fsSL https://ubunatic.com/emojig/install.sh | sh</span>
+                    <button id="copy-btn" onclick="copyInstall()" aria-label="Copy install command">copy</button>
+                </div>
+                <a
+                    class="release"
+                    href="https://codeberg.org/ubunatic/emojig/releases/latest"
+                    target="_blank"
+                    rel="noopener"
+                    title="Latest release on Codeberg"
+                >⭣ v0.1.6</a>
             </div>
         </section>
 

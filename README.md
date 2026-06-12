@@ -1,7 +1,7 @@
 # <img src="src/assets/emojig-icon.web.svg" width="38" height="38" align="center" alt="emojig logo" /> emojig - *all your emoji are belong to us!*
 
 [![Codeberg](https://img.shields.io/badge/Codeberg-Repository-3a8fcb?logo=codeberg&logoColor=white)](https://codeberg.org/ubunatic/emojig)
-[![Release](https://img.shields.io/badge/Release-v0.1.5-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
+[![Release](https://img.shields.io/badge/Release-v0.1.6-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-brightgreen?logo=open-source-initiative&logoColor=white)](https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES)
 [![Language](https://img.shields.io/badge/Language-Zig_0.16-orange?logo=zig&logoColor=white)](https://ziglang.org)
 [![Memory Usage](https://img.shields.io/badge/RAM-%3C%202.5%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
