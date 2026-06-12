@@ -17,6 +17,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**14**](14-gui-desktop-scenario-recording.md) | [GUI desktop scenario recording](14-gui-desktop-scenario-recording.md) | **P3** | New `recordScenarioDemo` records a full desktop story (nested sway + gedit + foot popup + paste) to a webm. Documents headless gotchas: wf-recorder vs x11grab (black frame), wtype modifier no-ops, middle-click PRIMARY paste. Implemented. |
 | [**15**](15-mojigo-inline-height-mode.md) | [mojigo inline `--height` mode + `/dev/tty` I/O](15-mojigo-inline-height-mode.md) | **P2** | Ports skim's four inline-TUI mechanics (cursor query, scroll-by-deficit, fixed absolute-coordinate region, clean teardown) into mojigo as an opt-in `--height N\|N%`; routes UI/input through `/dev/tty` so `e=$(mojigo)` is clean. Implemented. |
 | [**16**](16-tui-flicker.md) | [Zig TUI flickering during rapid redraws](16-tui-flicker.md) | **P2** | Redundant pre-clearing of lines (`\x1b[2K\r`) at the start of drawing each row causes visual flicker. Rely entirely on trailing clear (`\x1b[K`) instead. |
+| [**17**](17-screenshot-keys-and-go-fd-blocking.md) | [Screenshot harness: typed keys + Go `Fd()` blocking gotcha](17-screenshot-keys-and-go-fd-blocking.md) | **P3** | `scripts/screenshot` now types an optional keys arg (e.g. `'??'` for help page 2) before capturing. Documents two Go PTY traps: poller-parked `os.File.Read` and `Fd()` resetting the fd to blocking. Implemented. |
 
 ---
 

@@ -14,14 +14,13 @@
     "  Tab:     Zmień Motyw",
     "  Esc:     Wyjdź"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Pomoc i Skróty Klawiszowe:",
-    "  Pisanie     Wyszukiwanie rozmyte emoji",
-    "  Strzałki    Nawigacja po siatce",
-    "  Najechanie  Podgląd emoji pod kursorem",
-    "  Klik/Enter  Kopiuj wybrane emoji i wyjdź",
-    "  Tab         Przełącz motyw (jasny/ciemny)",
-    "  Esc/Ctrl-C  Wyjdź z programu"
+    "",
+    " e:abc 🔍 Tylko emoji",
+    " t:abc 🔍 Tylko symbole",
+    " a b 🔍   Wszystkie słowa",
+    " ⌫        Wstecz…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Brak fokusu popupu",

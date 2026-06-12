@@ -14,14 +14,13 @@
     "  Tab:      Cambiar Tema",
     "  Esc:      Salir"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Ayuda y Atajos de Teclado:",
-    "  Escribir    Búsqueda difusa de emojis",
-    "  Flechas     Navegar por la cuadrícula",
-    "  Mover       Previsualizar emoji bajo el cursor",
-    "  Clic/Enter  Copiar emoji seleccionado y salir",
-    "  Tab         Cambiar tema (claro/oscuro)",
-    "  Esc/Ctrl-C  Salir del selector"
+    "",
+    " e:abc 🔍 Solo emojis",
+    " t:abc 🔍 Solo símbolos",
+    " a b 🔍   Todas las palabras",
+    " ⌫        Atrás…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  ¿No se puede enfocar",

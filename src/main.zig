@@ -1878,14 +1878,14 @@ pub fn main(init: std.process.Init) !void {
                         }
                     } else if (is_help_mode and !is_too_small) {
                         const help_rows = rows + 3;
-                        const is_wide = (content_width >= 35);
+                        const is_more = (query_len > 1 and query_buf[1] == '?');
                         var h_idx: usize = 0;
                         while (h_idx < help_rows) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
-                            // Help text comes from spec/strings.json: a
-                            // width-dependent line set (wide >=35 cols, else narrow).
+                            // Help text comes from spec/strings.json: "?" shows the
+                            // first page, "??" the second (search filters etc.).
                             var text: []const u8 = "";
-                            const help_lines = if (is_wide) g_spec.strings.help_lines_wide else g_spec.strings.help_lines;
+                            const help_lines = if (is_more) g_spec.strings.help_lines_more else g_spec.strings.help_lines;
                             // Vertically center when there is spare room (mirrors the
                             // former >=9 wide / >=8 narrow offset thresholds).
                             const center_threshold: usize = help_lines.len + 2;

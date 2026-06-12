@@ -118,22 +118,22 @@ A side benefit: the two duplicated arrow-key navigation blocks (CSI `\x1b[A` and
 
 ---
 
-## 5. Strings: the wide/narrow divergence
+## 5. Strings: status-bar width variants and help pages
 
-The Zig picker renders **two** help screens and **two** status bars depending on the
-rendered content width (≥35 cols → "wide", else "narrow"); the wide forms carry
-richer wording and extra clipboard hints. `mojigo` only renders the narrow form.
-
-To make the spec authoritative *without* changing either app's UX, `strings.json`
-carries both variants with the exact existing wording:
+The Zig picker renders **two** status bars depending on the rendered content width
+(≥35 cols → "wide", else "narrow"); the wide forms carry the extra `e:`/`t:` filter
+hints. `mojigo` only renders the narrow form. The help overlay is paged instead of
+width-dependent: a query starting with `?` shows the first page (`help_lines`), a
+query starting with `??` shows the second page (`help_lines_more`, documenting the
+`e:`/`t:` width filters and multi-word AND search) in both apps.
 
 | Field                      | Used by |
 |----------------------------|---------|
 | `search_prompt`            | both (Zig trims the leading margin space, which mojigo needs for layout) |
 | `status_help_hint` / `status_matches` | mojigo + Zig narrow |
 | `status_help_hint_wide` / `status_matches_wide` | Zig wide only |
-| `help_lines`               | mojigo + Zig narrow |
-| `help_lines_wide`          | Zig wide only |
+| `help_lines`               | both (help page 1, query `?`) |
+| `help_lines_more`          | both (help page 2, query `??`) |
 
 `{count}` in the status templates is substituted with the live match count
 (`formatStatus`, which returns the template unchanged when there's no placeholder).
@@ -232,5 +232,5 @@ src/root.zig         updated test Strings struct to mirror focus fields
 internal/spec/spec.go updated Go structs to mirror new theme and strings fields
 spec/layout.json     added animation.{exit_preview_tui,exit_preview_gui}
 spec/theme.json      added terminal_border, warning_fg, success_fg
-spec/strings.json    added help_lines_wide + status_*_wide, focus_lost_startup_lines, focus_lost_runtime_lines
+spec/strings.json    added status_*_wide, focus_lost_startup_lines, focus_lost_runtime_lines; help_lines_more (page 2, query "??") later replaced the width-based help_lines_wide
 ```

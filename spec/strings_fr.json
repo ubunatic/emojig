@@ -14,14 +14,13 @@
     "  Tab :     Changer de Thème",
     "  Échap :   Quitter"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Aide et Raccourcis Clavier :",
-    "  Saisir      Recherche floue d'émojis",
-    "  Flèches     Naviguer dans la grille",
-    "  Survoler    Aperçu de l'émoji sous le curseur",
-    "  Clic/Entrée Copier l'émoji sélectionné & quitter",
-    "  Tab         Changer de thème (clair/sombre)",
-    "  Échap/Ctrl-C Quitter le sélecteur"
+    "",
+    " e:abc 🔍 Émojis seulement",
+    " t:abc 🔍 Symboles seulement",
+    " a b 🔍   Tous les mots",
+    " ⌫        Retour…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Impossible d'obtenir",

@@ -14,14 +14,13 @@
     "  Tab:     Alternar Tema",
     "  Esc:     Sair"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Ajuda e Atalhos do Teclado:",
-    "  Digitar     Busca difusa de emojis",
-    "  Setas       Navegar pela grade",
-    "  Mover       Visualizar emoji sob o ponteiro",
-    "  Clique/Entr Copiar emoji selecionado e sair",
-    "  Tab         Alternar tema (claro/escuro)",
-    "  Esc/Ctrl-C  Sair do seletor"
+    "",
+    " e:abc 🔍 Só emojis",
+    " t:abc 🔍 Só símbolos",
+    " a b 🔍   Todas as palavras",
+    " ⌫        Voltar…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Não focar popup",

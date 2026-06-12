@@ -78,6 +78,7 @@ type Strings struct {
 	StatusHelpHint         string   `json:"status_help_hint"`
 	StatusMatches          string   `json:"status_matches"`
 	HelpLines              []string `json:"help_lines"`
+	HelpLinesMore          []string `json:"help_lines_more"`
 	FocusLostStartupLines []string `json:"focus_lost_startup_lines"`
 	FocusLostRuntimeLines []string `json:"focus_lost_runtime_lines"`
 }

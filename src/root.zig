@@ -710,7 +710,7 @@ test "localization strings JSON files match spec.Strings struct" {
         status_help_hint_wide: []const u8,
         status_matches_wide: []const u8,
         help_lines: []const []const u8,
-        help_lines_wide: []const []const u8,
+        help_lines_more: []const []const u8,
         focus_lost_startup_lines: []const []const u8,
         focus_lost_runtime_lines: []const []const u8,
     };

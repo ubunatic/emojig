@@ -14,14 +14,13 @@
     "  Tab:    Design umschalten",
     "  Esc:    Beenden"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Hilfe & Tastenbelegung:",
-    "  Tippen      Fuzzy-Suche nach Emojis",
-    "  Pfeile      Navigieren im Gitter",
-    "  Hover       Vorschau des Emojis unter der Maus",
-    "  Klick/Enter Ausgewähltes Emoji kopieren & beenden",
-    "  Tab         Design umschalten (hell/dunkel)",
-    "  Esc/Strg-C  Auswahl beenden"
+    "",
+    " e:abc 🔍 Nur Emojis",
+    " t:abc 🔍 Nur Symbole",
+    " a b 🔍   Alle Wörter",
+    " ⌫        Zurück…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Wayland-Popup-Fokus",

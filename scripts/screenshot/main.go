@@ -4,7 +4,9 @@
 // screenshot.go — capture an initial rendered frame of emojig in a PTY.
 // Outputs a plain-text (ANSI-stripped) frame to stdout and saves the raw
 // ANSI frame to /tmp/emojig_frame.ansi for agent inspection.
-// Usage: go run scripts/screenshot.go [binary-path]
+// An optional second argument is typed into the picker before capturing,
+// e.g. "??" to capture the second help page.
+// Usage: go run ./scripts/screenshot [binary-path [keys]]
 package main
 
 import (
@@ -21,6 +23,10 @@ func main() {
 	binaryPath := "./zig-out/bin/emojig"
 	if len(os.Args) > 1 {
 		binaryPath = os.Args[1]
+	}
+	keys := ""
+	if len(os.Args) > 2 {
+		keys = os.Args[2]
 	}
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "binary not found: %s — building first\n", binaryPath)
@@ -79,10 +85,27 @@ func main() {
 	// Wait for initial render.
 	time.Sleep(800 * time.Millisecond)
 
-	syscall.SetNonblock(int(master.Fd()), true)
-	buf := make([]byte, 16384)
-	n, _ := master.Read(buf)
-	syscall.SetNonblock(int(master.Fd()), false)
+	// Type the optional keys and wait for the re-render.
+	if keys != "" {
+		master.Write([]byte(keys))
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Drain with raw syscall.Read: os.File.Read would park in the Go poller
+	// on EAGAIN instead of returning once the buffered frames are consumed.
+	// Fd() must be called once only — every call flips the fd back to blocking.
+	masterFd := int(master.Fd())
+	syscall.SetNonblock(masterFd, true)
+	buf := make([]byte, 32768)
+	n := 0
+	for n < len(buf) {
+		r, _ := syscall.Read(masterFd, buf[n:])
+		if r <= 0 {
+			break
+		}
+		n += r
+	}
+	syscall.SetNonblock(masterFd, false)
 
 	// Kill the app.
 	cmd.Process.Signal(syscall.SIGTERM)

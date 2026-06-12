@@ -14,14 +14,13 @@
     "  Tab:   Temayı Değiştir",
     "  Esc:   Çıkış"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Yardım ve Kısayol Tuşları:",
-    "  Yazma       Bulanık emoji araması",
-    "  Oklar       Izgarada gezinme",
-    "  Üzerine Gel İmleç altındaki emojiyi önizle",
-    "  Tıkla/Enter Seçili emojiyi kopyala ve çık",
-    "  Tab         Temayı değiştir (açık/koyu)",
-    "  Esc/Ctrl-C  Seçiciden çık"
+    "",
+    " e:abc 🔍 Sadece emojiler",
+    " t:abc 🔍 Sadece semboller",
+    " a b 🔍   Tüm kelimeler",
+    " ⌫        Geri…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Odaklanma sorunu",

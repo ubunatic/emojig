@@ -14,14 +14,13 @@
     "  Tab:   Thema Wisselen",
     "  Esc:   Sluiten"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Hulp & Sneltoetsen:",
-    "  Typen       Fuzzy zoeken naar emoji's",
-    "  Pijlen      Navigeren door het raster",
-    "  Hover       Voorbeeld van emoji onder muis",
-    "  Klik/Enter  Kopieer geselecteerde emoji & sluit",
-    "  Tab         Wissel thema (licht/donker)",
-    "  Esc/Ctrl-C  Sluit kiezer"
+    "",
+    " e:abc 🔍 Alleen emoji's",
+    " t:abc 🔍 Alleen symbolen",
+    " a b 🔍   Alle woorden",
+    " ⌫        Terug…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Kan Wayland popup-fokus",

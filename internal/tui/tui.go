@@ -338,10 +338,15 @@ func (a *App) gridRows(rows []string, pal spec.Palette, width int) []string {
 	return append(rows, bgOpt(pal.InfoBg)+fg(pal.InfoFg)+" "+truncate(name, width-1)+term.Reset)
 }
 
-// helpRows appends the help overlay in place of the grid: each help line on its own row.
+// helpRows appends the help overlay in place of the grid: each help line on its
+// own row. "?" shows the first page, "??" the second (search filters etc.).
 func (a *App) helpRows(rows []string, pal spec.Palette, width int) []string {
 	str := a.specs.Strings
-	for _, line := range str.HelpLines {
+	lines := str.HelpLines
+	if len(a.query) > 1 && a.query[1] == '?' && len(str.HelpLinesMore) > 0 {
+		lines = str.HelpLinesMore
+	}
+	for _, line := range lines {
 		rows = append(rows, bgOpt(pal.GridBg)+fg(pal.GridFg)+" "+clampANSI(line, width-1)+term.Reset)
 	}
 	return rows

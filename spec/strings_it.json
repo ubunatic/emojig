@@ -14,14 +14,13 @@
     "  Tab:      Cambia Tema",
     "  Esc:      Esci"
   ],
-  "help_lines_wide": [
+  "help_lines_more": [
     "Aiuto e Scorciatoie da Tastiera:",
-    "  Scrivere    Ricerca fuzzy di emoji",
-    "  Frecce      Naviga nella griglia",
-    "  Passaggio   Anteprima emoji sotto il mouse",
-    "  Click/Invio Copia emoji selezionata ed esci",
-    "  Tab         Cambia tema (chiaro/scuro)",
-    "  Esc/Ctrl-C  Esci dal selettore"
+    "",
+    " e:abc 🔍 Solo emoji",
+    " t:abc 🔍 Solo simboli",
+    " a b 🔍   Tutte le parole",
+    " ⌫        Indietro…"
   ],
   "focus_lost_startup_lines": [
     "⚠️  Impossibile attivare",
