@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/badge/Release-v0.1.5-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-brightgreen?logo=open-source-initiative&logoColor=white)](https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES)
 [![Language](https://img.shields.io/badge/Language-Zig_0.16-orange?logo=zig&logoColor=white)](https://ziglang.org)
-[![Memory Usage](https://img.shields.io/badge/RAM-%3C%202.0%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
+[![Memory Usage](https://img.shields.io/badge/RAM-%3C%202.5%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
 
 Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free GUI+TUI emoji picker on all your Linux systems.
 
@@ -16,9 +16,9 @@ Emojig is your zig-based, low-memory, instant-popup, terminal-based, daemon-free
 
 ## Features
 
-* **🏎️ Zero-Allocation Performance**: Built in Zig, compile-time optimized (`ReleaseSmall`) to keep the static binary under 350 KB and Resident Set Size (RSS) under 2.0 MB.
+* **🏎️ Zero-Allocation Performance**: Built in Zig, compile-time optimized (`ReleaseSmall`) to keep the static binary under 600 KB and Resident Set Size (RSS) under 2.5 MB.
 * **🌐 Universal Launch Modes**: Runs in-place in active terminals (TUI) or automatically spawns a borderless popup window (GUI) via `foot`, `kitty`, `alacritty`, `ghostty`, or other standard terminals when triggered from hotkeys or desktop environments.
-* **📦 Embedded Database**: 1,870 emojis packed directly at compile time via `@embedFile("emojis.bin")` for zero-allocation, instant runtime access.
+* **📦 Embedded Database**: 2,181 emojis packed directly at compile time via `@embedFile("emojis.bin")` for zero-allocation, instant runtime access.
 * **🔍 Intelligent Fuzzy Search**: Multi-term space-separated search with automatic plural (`cars` -> `car`), stem (`running` -> `run`), and query-stem (trailing `e`) fallbacks.
 * **↔️ 2D Grid & Mouse Navigation**: Navigate the borderless 2D grid using arrow keys or standard mouse interactions (hover to select, click to confirm, click theme button to toggle).
 * **🌓 Automatic Theming**: Sleek light, dark, and system themes. OSC 11 terminal background detection selects the correct theme automatically, while <kbd>Tab</kbd> toggles and persists choice.
@@ -185,9 +185,9 @@ saves your choice to `~/.config/emojig/config`. Override with `--theme` or
 
 ## Performance
 
-- Binary: **340 KB** (static, no runtime deps)
-- RAM: **< 2.0 MB RSS** during operation, 0 when idle (excl. launcher/foot memory usage, which adds ~16 MB for foot)
-- Database: 1,870 emojis embedded at compile time — no data files
+- Binary: **596 KB** (static musl, no runtime deps; ~535 KB native dynamic)
+- RAM: **< 2.5 MB RSS** during operation (self-reported to `/tmp/emojig.log` at exit), 0 when idle (excl. launcher/foot memory usage, which adds ~16 MB for foot)
+- Database: 2,181 emojis embedded at compile time — no data files
 
 ## License
 

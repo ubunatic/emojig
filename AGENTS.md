@@ -19,7 +19,7 @@ This document details the architectural decisions, coding standards, and safety 
 
 * **Core TUI Application**: Written in **Zig** (`src/main.zig`, `src/root.zig`, `src/mru.zig`).
   * Aim for zero-allocation performance in the main interactive loop.
-  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 350 KB and Resident Set Size (RSS) under 2.0 MB.
+  * Optimize compilation for minimal size (`-Doptimize=ReleaseSmall`) to keep the binary under 600 KB and Resident Set Size (RSS) under 2.5 MB (measured June 2026: 596 KB musl-static, 2.3–2.4 MB RSS, 2,181 embedded emojis).
 * **Helper Scripts & Utilities**: Located under `./scripts/`.
   * **No Python, No Perl, No Heredocs**:
     All helpers must be written in Go or Zig (or POSIX-compliant Shell for installers).
@@ -114,6 +114,7 @@ Implemented at query time in `src/root.zig` with **zero heap allocations**:
   * Translates raw JSON in `data/emoji.json` into a compressed layout.
   * Uses a unified, deduplicated string table containing all names, keywords, and emoji characters.
   * Employs a fixed-size index array of offsets pointing into the string table.
+  * **Plain twins**: for every simple VS16 entry (single base codepoint + `U+FE0F`, no ZWJ/keycaps), the packer derives a text-presentation twin (`base + U+FE0E`/VS15) named `<name> plain` with extra `plain text` keywords. VS15 means width 1 in all three width functions (Zig/Go/JS), so the `t:` filter lists the twins. The Go port mirrors this derivation in `internal/emoji.Load()` because it builds its DB from the embedded `data/emoji.json`, not from `emojis.bin`.
 * **Zero-Allocation Queries**:
   * Querying entries from the embedded `EmojiDb` must return direct string slices pointing straight into the embedded binary memory segment without any heap allocations.
 

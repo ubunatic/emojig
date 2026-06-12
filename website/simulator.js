@@ -226,6 +226,10 @@ class EmojigSimulator {
 
   getEmojiWidth(emoji) {
     if (!emoji) return 0;
+    // VS15 explicitly requests text presentation: single-width.
+    if (emoji.includes("\ufe0e")) {
+      return 1;
+    }
     if (emoji.includes("\ufe0f")) {
       return 2;
     }

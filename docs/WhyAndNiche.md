@@ -20,7 +20,7 @@ Standard emoji pickers on Linux (like `ibus-emoji`, `rofi`, `wofi`, or web-based
 
 * **Sub-100ms Startup**: Launches instantly in-place or as a borderless window, keeping the developer's fingers on the keyboard.
 * **Inline Cohabitation**: Sits cleanly below the active prompt without alternate screen buffer switches, maintaining prompt visibility.
-* **Minimal Memory Budget**: Operates with a Resident Set Size (RSS) under **2.0 MB** and a statically compiled binary size under **350 KB**.
+* **Minimal Memory Budget**: Operates with a Resident Set Size (RSS) under **2.5 MB** and a statically compiled binary size under **600 KB**.
 * **Zero Background Daemons**: The picker runs as a self-contained, fire-and-forget process. State (such as Most Recently Used lists or theme selections) is persisted to local files on disk at exit rather than keeping a daemon running.
 
 ---
@@ -51,7 +51,7 @@ flowchart TD
     subgraph Compilation (Zig)
         C --> D["zig build"]
         E["src/main.zig"] --> D
-        D --> F["dist/emojig (Static Binary <350KB)"]
+        D --> F["dist/emojig (Static Binary <600KB)"]
     end
     
     subgraph Validation (Go)
@@ -62,7 +62,7 @@ flowchart TD
 ### Why Zig for the Runtime?
 * **Zero-Allocation Execution Loop**: Stack-only allocations in the interactive rendering loop prevent heap fragmentation.
 * **Exact POSIX System Call Control**: The ability to override Zig's panic handler ensures the terminal uncooked mode is restored even when a low-level crash occurs.
-* **Tiny Binary Footprint**: Zig does not compile garbage collection or complex scheduler bookkeeping into the target binary, allowing the release executable to fit within 350 KB.
+* **Tiny Binary Footprint**: Zig does not compile garbage collection or complex scheduler bookkeeping into the target binary, allowing the release executable to fit within 600 KB.
 
 ### Why Go for the Tooling?
 * **High-Level Standard Libraries**: Writing deduplicated string tables and parsing complex JSON structures is highly efficient in Go using `encoding/json` and `bytes.Buffer`.

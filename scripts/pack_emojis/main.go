@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type EmojiItem struct {
@@ -78,6 +79,30 @@ func main() {
 	}
 	var webEmojis []WebEmoji
 
+	// Set of all emoji strings in the source data, to avoid emitting a
+	// derived plain twin that already exists as its own entry.
+	existing := make(map[string]bool, len(emojis))
+	for _, item := range emojis {
+		existing[item.Emoji] = true
+	}
+
+	addEntry := func(emoji, name, searchStr string) {
+		emojiOff := getOrAddString(emoji)
+		nameOff := getOrAddString(name)
+		searchOff := getOrAddString(searchStr)
+		entries = append(entries, Entry{
+			EmojiOff:  emojiOff,
+			NameOff:   nameOff,
+			SearchOff: searchOff,
+		})
+		webEmojis = append(webEmojis, WebEmoji{
+			Emoji:       emoji,
+			Description: name,
+			SearchStr:   searchStr,
+		})
+	}
+
+	plainTwins := 0
 	for _, item := range emojis {
 		if item.Emoji == "" {
 			continue
@@ -117,22 +142,28 @@ func main() {
 
 		searchStr := strings.Join(searchWords, " ")
 
-		emojiOff := getOrAddString(item.Emoji)
-		nameOff := getOrAddString(item.Description)
-		searchOff := getOrAddString(searchStr)
+		addEntry(item.Emoji, item.Description, searchStr)
 
-		entries = append(entries, Entry{
-			EmojiOff:  emojiOff,
-			NameOff:   nameOff,
-			SearchOff: searchOff,
-		})
-
-		webEmojis = append(webEmojis, WebEmoji{
-			Emoji:       item.Emoji,
-			Description: item.Description,
-			SearchStr:   searchStr,
-		})
+		// Derive a plain (text-presentation) twin for simple VS16 emojis:
+		// a single base codepoint + U+FE0F. The twin keeps the base rune and
+		// appends U+FE0E (VS15), which explicitly requests the monochrome
+		// text glyph and survives pasting into emoji-happy apps. It renders
+		// single-width (see getEmojiWidth/Width), so the t: filter finds it.
+		// ZWJ sequences and keycaps (multi-rune after stripping) are skipped.
+		const (
+			vs15 = "\ufe0e" // text presentation selector
+			vs16 = "\ufe0f" // emoji presentation selector
+			zwj  = "\u200d" // zero-width joiner
+		)
+		if strings.Contains(item.Emoji, vs16) && !strings.Contains(item.Emoji, zwj) {
+			bare := strings.ReplaceAll(item.Emoji, vs16, "")
+			if utf8.RuneCountInString(bare) == 1 && !existing[bare] && !existing[bare+vs15] {
+				addEntry(bare+vs15, item.Description+" plain", searchStr+" plain text")
+				plainTwins++
+			}
+		}
 	}
+	fmt.Printf("Derived %d plain text-presentation twins.\n", plainTwins)
 
 	// Read synonyms from spec/synonyms.json
 	synonymsPath := "spec/synonyms.json"

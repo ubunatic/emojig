@@ -402,6 +402,12 @@ pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
 pub fn getEmojiWidth(emoji: []const u8) usize {
     if (emoji.len == 0) return 0;
 
+    // Variation Selector 15 (\xef\xb8\x8e) explicitly requests the
+    // monochrome text glyph: single-width.
+    if (std.mem.indexOf(u8, emoji, "\xef\xb8\x8e") != null) {
+        return 1;
+    }
+
     // If it contains the Variation Selector 16 (\xef\xb8\x8f), it is always rendered as double-width
     if (std.mem.indexOf(u8, emoji, "\xef\xb8\x8f") != null) {
         return 2;
@@ -658,6 +664,45 @@ test "prefix filtering by emoji width (e: and t:)" {
         const entry = EmojiDb.getEntry(m.index);
         try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(entry.emoji));
     }
+}
+
+test "plain (VS15) twins are discoverable via t: and plain search" {
+    const gear_plain = "\xe2\x9a\x99\xef\xb8\x8e"; // ⚙ + VS15
+    const gear_emoji = "\xe2\x9a\x99\xef\xb8\x8f"; // ⚙ + VS16
+
+    // VS15 forces text presentation: single-width, so t: lists it.
+    try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(gear_plain));
+    try std.testing.expectEqual(@as(usize, 2), getEmojiWidth(gear_emoji));
+
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+
+    // "t:gear" must surface the plain twin.
+    _ = search("t:gear", &top_matches, &top_count, 24);
+    var found_plain = false;
+    for (top_matches[0..top_count]) |m| {
+        if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, gear_plain)) {
+            found_plain = true;
+        }
+    }
+    try std.testing.expect(found_plain);
+
+    // The "plain" keyword narrows a general search to the twin.
+    top_count = 0;
+    _ = search("gear plain", &top_matches, &top_count, 24);
+    try std.testing.expect(top_count > 0);
+    try std.testing.expect(std.mem.eql(u8, EmojiDb.getEntry(top_matches[0].index).emoji, gear_plain));
+
+    // The color twin is still there for the general query.
+    top_count = 0;
+    _ = search("gear", &top_matches, &top_count, 24);
+    var found_color = false;
+    for (top_matches[0..top_count]) |m| {
+        if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, gear_emoji)) {
+            found_color = true;
+        }
+    }
+    try std.testing.expect(found_color);
 }
 
 test "synonym search ranking" {

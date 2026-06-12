@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <title>emojig — a terminal emoji picker that respects your terminal</title>
     <meta
         name="description"
-        content="emojig is a zero-allocation TUI/GUI emoji picker for Linux. One static binary under 350 KB, under 2 MB RSS, no daemon, no Electron. It even logs its own memory usage so you can check the claims."
+        content="emojig is a zero-allocation TUI/GUI emoji picker for Linux. One static binary under 600 KB, under 2.5 MB RSS, no daemon, no Electron. It even logs its own memory usage so you can check the claims."
     />
 
     <!-- No external fonts, no trackers, no frameworks.
@@ -739,15 +739,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="sub">Measured, not marketed.</p>
             <div class="stats">
                 <div class="stat">
-                    <div class="num">&lt; 350 KB</div>
-                    <div class="lbl">static binary (ReleaseSmall)</div>
+                    <div class="num">&lt; 600 KB</div>
+                    <div class="lbl">static binary (ReleaseSmall, musl)</div>
                 </div>
                 <div class="stat">
-                    <div class="num">&lt; 2.0 MB</div>
+                    <div class="num">&lt; 2.5 MB</div>
                     <div class="lbl">RSS, self-reported at exit</div>
                 </div>
                 <div class="stat">
-                    <div class="num">1,870</div>
+                    <div class="num">2,181</div>
                     <div class="lbl">emojis, compiled into the binary</div>
                 </div>
                 <div class="stat">
@@ -865,7 +865,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <h3>Zero-allocation core</h3>
                         <p>
                             The interactive loop performs no heap
-                            allocations. Search scores 1,870 entries per
+                            allocations. Search scores 2,181 entries per
                             keystroke against an <code>@embedFile</code>'d
                             database and returns slices into read-only
                             binary memory. Written in Zig, compiled with
@@ -1133,9 +1133,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <div class="roadmap-item">
                     <h3>Many more emojis <span class="prio high">high</span></h3>
                     <p>
-                        1,870 is the curated core; the full Unicode set is
+                        2,181 is the curated core; the full Unicode set is
                         much bigger. Grow the database without giving up the
-                        compile-time packing or the &lt;350 KB budget.
+                        compile-time packing or the &lt;600 KB budget.
                     </p>
                 </div>
                 <div class="roadmap-item">

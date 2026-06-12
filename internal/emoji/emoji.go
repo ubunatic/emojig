@@ -92,15 +92,33 @@ func Load() (*DB, error) {
 		DisableZWJ: detectDisableZWJ(),
 		Synonyms:   rawSyn.Synonyms,
 	}
+	existing := make(map[string]bool, len(raw))
+	for _, r := range raw {
+		existing[r.Emoji] = true
+	}
 	for _, r := range raw {
 		if r.Emoji == "" {
 			continue
 		}
+		search := buildSearch(r)
 		db.Entries = append(db.Entries, Entry{
 			Emoji:  r.Emoji,
 			Name:   r.Description,
-			Search: buildSearch(r),
+			Search: search,
 		})
+		// Derive a plain (text-presentation) twin for simple VS16 emojis:
+		// base codepoint + VS15 renders as the single-width monochrome text
+		// glyph, so the t: filter lists it. Mirrors scripts/pack_emojis.
+		if strings.Contains(r.Emoji, vs16) && !strings.Contains(r.Emoji, zwj) {
+			bare := strings.ReplaceAll(r.Emoji, vs16, "")
+			if utf8.RuneCountInString(bare) == 1 && !existing[bare] && !existing[bare+vs15] {
+				db.Entries = append(db.Entries, Entry{
+					Emoji:  bare + vs15,
+					Name:   r.Description + " plain",
+					Search: search + " plain text",
+				})
+			}
+		}
 	}
 	return db, nil
 }
@@ -223,6 +241,10 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 func Width(emoji string) int {
 	if len(emoji) == 0 {
 		return 0
+	}
+	// VS15 explicitly requests text presentation: single-width.
+	if strings.Contains(emoji, vs15) {
+		return 1
 	}
 	// VS16 forces double-width presentation.
 	if strings.Contains(emoji, vs16) {
