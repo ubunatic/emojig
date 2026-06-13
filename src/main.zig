@@ -3442,7 +3442,14 @@ pub fn main(init: std.process.Init) !void {
                         popup_msg = null;
                     }
                 } else if (std.mem.eql(u8, action, "quit")) {
-                    break;
+                    if (current_screen != .search) {
+                        current_screen = .search;
+                        query_len = 0;
+                        selected_idx = null;
+                        total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                    } else {
+                        break;
+                    }
                 } else if (has_focus) {
                     if (std.mem.eql(u8, action, "open_settings")) {
                         current_screen = .settings;
