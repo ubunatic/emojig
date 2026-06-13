@@ -189,6 +189,10 @@ install: ⚙️  # install binary, shell integrations, and desktop launcher
 
 SSH_ARCH ?= aarch64-linux-musl
 
+update: ⚙️  # update emojig from source: git pull + rebuild + reinstall
+	git pull
+	$(MAKE) install
+
 install-ssh: ⚙️  # install to remote host via SSH (usage: make install-ssh HOST=hostname [SSH_ARCH=aarch64-linux-musl])
 	zig build -Doptimize=ReleaseSmall -Dtarget=$(SSH_ARCH)
 	test -n "$(HOST)"  # ensure HOST var is set

@@ -25,6 +25,11 @@
       "name": "multi",
       "short": "m",
       "action": "start_multi_selection"
+    },
+    {
+      "name": "update",
+      "short": "u",
+      "action": "run_update"
     }
   ]
 }

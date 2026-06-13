@@ -31,6 +31,7 @@ extern fn unlink(path: [*:0]const u8) c_int;
 // Holds layout dims, theme palettes, key bindings, and UI strings. Lives in a
 // process-lifetime arena; read-only after load.
 var g_spec: spec_mod.Spec = undefined;
+var g_wide_ambiguous: bool = true;
 
 // ---------------------------------------------------------------------------
 // Embedded shell integration scripts
@@ -153,8 +154,12 @@ fn ansiDisplayWidth(text: []const u8) usize {
                 const cp = std.unicode.utf8Decode(cp_bytes) catch '?';
                 if (cp == 0xFE0F) {
                     // Variation Selector-16: 0 width
-                } else if (cp >= 0x2000) {
+                } else if (cp >= 0x2E80) {
+                    // CJK and beyond: always double-width
                     width += 2;
+                } else if (cp >= 0x2000) {
+                    // Ambiguous-width range (arrows, math, symbols, box-drawing…)
+                    width += if (g_wide_ambiguous) @as(usize, 2) else @as(usize, 1);
                 } else if (cp >= 0x20) {
                     width += 1;
                 }
@@ -715,6 +720,70 @@ fn fileExists(home: []const u8, rel: []const u8) bool {
     return true;
 }
 
+fn fileExistsAbs(comptime path: [:0]const u8) bool {
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, rf, 0) catch return false;
+    _ = std.posix.system.close(fd);
+    return true;
+}
+
+fn captureShellCmd(io: std.Io, cmd: []const u8, out: []u8) []const u8 {
+    const log = "/tmp/emojig-update.log";
+    var sh_buf: [1024]u8 = undefined;
+    const sh_cmd = std.fmt.bufPrint(&sh_buf, "{s} >{s} 2>&1", .{ cmd, log }) catch {
+        const msg = "Command string too long.";
+        @memcpy(out[0..msg.len], msg);
+        return out[0..msg.len];
+    };
+    var child = std.process.spawn(io, .{
+        .argv = &.{ "sh", "-c", sh_cmd },
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch {
+        const msg = "Failed to start update process.";
+        @memcpy(out[0..msg.len], msg);
+        return out[0..msg.len];
+    };
+    _ = child.wait(io) catch {};
+
+    const rf = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, log, rf, 0) catch {
+        const msg = "Update complete (no log).";
+        @memcpy(out[0..msg.len], msg);
+        return out[0..msg.len];
+    };
+    defer _ = std.posix.system.close(fd);
+    const n = std.posix.system.read(fd, out.ptr, out.len);
+    const read_len = if (n > 0) @as(usize, @intCast(n)) else 0;
+    if (read_len == 0) {
+        const msg = "Update complete.";
+        @memcpy(out[0..msg.len], msg);
+        return out[0..msg.len];
+    }
+    return out[0..read_len];
+}
+
+fn runUpdate(io: std.Io, home: []const u8, out: []u8) []const u8 {
+    var cmd_buf: [512]u8 = undefined;
+    var cmd: ?[]const u8 = null;
+
+    if (fileExists(home, "projects/emojig")) {
+        cmd = std.fmt.bufPrint(&cmd_buf, "make -C '{s}/projects/emojig' update", .{home}) catch null;
+    } else if (fileExistsAbs("/var/lib/dpkg/info/emojig.list")) {
+        cmd = "sudo apt-get install -y emojig";
+    } else if (fileExists(home, ".local/bin/emojig")) {
+        cmd = "curl -sSf https://ubunatic.com/emojig/install.sh | sh";
+    }
+
+    if (cmd) |c| return captureShellCmd(io, c, out);
+
+    const msg = "Unknown install mode.\nSee ~/.local/share/emojig/ for details.";
+    const len = @min(msg.len, out.len);
+    @memcpy(out[0..len], msg[0..len]);
+    return out[0..len];
+}
+
 fn sourceRcFileAbs(path: []const u8, line: []const u8, marker: []const u8) bool {
     var path_buf: [512]u8 = undefined;
     if (path.len + 1 > path_buf.len) return false;
@@ -866,7 +935,14 @@ fn installShellIntegration(io: std.Io, home: []const u8, shell: []const u8, rc_o
     }
 }
 
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, show_cats: bool, amb_chars: []const u8, palette: term_lib.Palette) ![]const u8 {
+fn rcFileHint(home: []const u8, shell_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, shell_name, "fish")) return "~/.config/fish/config.fish";
+    if (fileExists(home, ".userrc")) return "~/.userrc";
+    if (std.mem.eql(u8, shell_name, "bash")) return "~/.bashrc";
+    return "~/.zshrc";
+}
+
+fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, show_cats: bool, amb_chars: []const u8, theme: Theme, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
 
@@ -885,6 +961,9 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
         3 => {
             return std.fmt.bufPrint(buf, " {s}{s}[{s}|narrow] ambiguous chars\x1b[0m", .{ bg, sel_prefix, amb_chars });
         },
+        4 => {
+            return std.fmt.bufPrint(buf, " {s}{s}[{s}]        theme\x1b[0m", .{ bg, sel_prefix, @tagName(theme) });
+        },
         else => unreachable,
     }
 }
@@ -898,6 +977,8 @@ fn toggleSetting(
     amb_chars: *[]const u8,
     popup_msg: *?[]const u8,
     popup_buf: []u8,
+    home: []const u8,
+    shell_name: []const u8,
 ) !void {
     const io = init.io;
     switch (idx) {
@@ -905,14 +986,14 @@ fn toggleSetting(
             shell_int.* = !shell_int.*;
             saveKeyToConfig(io, "shell_integration", if (shell_int.*) "true" else "false");
             if (shell_int.*) {
-                const home = std.mem.span(std.c.getenv("HOME") orelse return);
-                const install_shell = detectShell(init.environ_map);
                 var pos: usize = 0;
                 const writer = BufferWriter{ .buf = popup_buf, .pos = &pos };
-                installShellIntegration(io, home, install_shell, null, writer);
-                if (pos > 0) {
-                    popup_msg.* = popup_buf[0..pos];
-                }
+                installShellIntegration(io, home, shell_name, null, writer);
+                if (pos > 0) popup_msg.* = popup_buf[0..pos];
+            } else {
+                const rc = rcFileHint(home, shell_name);
+                const msg = try std.fmt.bufPrint(popup_buf, "Shell integration disabled.\nRemove the source line from {s}\nand restart your shell.", .{rc});
+                popup_msg.* = msg;
             }
         },
         1 => {
@@ -922,10 +1003,25 @@ fn toggleSetting(
                 key_bind.* = "C-e";
             }
             saveKeyToConfig(io, "shell_key_binding", key_bind.*);
+
+            const rc = rcFileHint(home, shell_name);
+            const msg = if (std.mem.eql(u8, key_bind.*, "C-e"))
+                try std.fmt.bufPrint(popup_buf, "Key binding changed to Ctrl-e.\nRun: source {s}", .{rc})
+            else
+                try std.fmt.bufPrint(popup_buf, "Key binding disabled.\nRun: source {s}", .{rc});
+            popup_msg.* = msg;
         },
         2 => {
             show_cats.* = !show_cats.*;
             saveKeyToConfig(io, "show_all_categories", if (show_cats.*) "true" else "false");
+
+            const msg = if (show_cats.*)
+                "Show all categories enabled.\nCategories list will show all filters."
+            else
+                "Show all categories disabled.\nOnly matching/used categories will show.";
+            const len = @min(msg.len, popup_buf.len);
+            @memcpy(popup_buf[0..len], msg[0..len]);
+            popup_msg.* = popup_buf[0..len];
         },
         3 => {
             if (std.mem.eql(u8, amb_chars.*, "wide")) {
@@ -934,8 +1030,43 @@ fn toggleSetting(
                 amb_chars.* = "wide";
             }
             saveKeyToConfig(io, "ambiguous_chars", amb_chars.*);
+            g_wide_ambiguous = !std.mem.eql(u8, amb_chars.*, "narrow");
+
+            const msg = if (std.mem.eql(u8, amb_chars.*, "wide"))
+                "Ambiguous chars: wide (2 cols)\nwide:   \u{2192}_ \u{2248}_ \u{2605}_\nnarrow: \u{2192} \u{2248} \u{2605}"
+            else
+                "Ambiguous chars: narrow (1 col)\nnarrow: \u{2192} \u{2248} \u{2605}\nwide:   \u{2192}_ \u{2248}_ \u{2605}_";
+            const len = @min(msg.len, popup_buf.len);
+            @memcpy(popup_buf[0..len], msg[0..len]);
+            popup_msg.* = popup_buf[0..len];
         },
         else => unreachable,
+    }
+}
+
+fn buildThemePopup(buf: []u8, t: Theme, pal: Palette) []const u8 {
+    return std.fmt.bufPrint(
+        buf,
+        "Theme: {s}\n" ++
+            "{s}{s}  😀 emoji grid text\x1b[0m\n" ++
+            "{s} > 🔥 fire (selected)\x1b[0m\n" ++
+            "{s} 🔍 search…\x1b[0m",
+        .{ @tagName(t), pal.grid_bg, pal.grid_fg, pal.selection_bg, pal.search_bg },
+    ) catch buf[0..0];
+}
+
+fn adjustScrollTop(selected_idx: usize, scroll_top: *usize, viewport_h: usize, total_items: usize) void {
+    if (total_items <= viewport_h) {
+        scroll_top.* = 0;
+        return;
+    }
+    if (selected_idx < scroll_top.*) {
+        scroll_top.* = selected_idx;
+    } else if (selected_idx >= scroll_top.* + viewport_h) {
+        scroll_top.* = selected_idx - viewport_h + 1;
+    }
+    if (scroll_top.* + viewport_h > total_items) {
+        scroll_top.* = total_items - viewport_h;
     }
 }
 
@@ -1763,6 +1894,8 @@ pub fn main(init: std.process.Init) !void {
         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
 
         var current_screen: ScreenState = .search;
+        var cat_scroll_top: usize = 0;
+        var settings_scroll_top: usize = 0;
         var multi_select_active: bool = false;
         var multi_selected_emojis = std.ArrayList([]const u8).empty;
         defer multi_selected_emojis.deinit(spec_arena.allocator());
@@ -1783,6 +1916,7 @@ pub fn main(init: std.process.Init) !void {
         var shell_key_binding = cfg.shell_key_binding orelse "C-e";
         var show_all_categories = cfg.show_all_categories orelse true;
         var ambiguous_chars = cfg.ambiguous_chars orelse "wide";
+        g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
 
         var popup_msg: ?[]const u8 = null;
         var popup_buf: [1024]u8 = undefined;
@@ -2193,16 +2327,6 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
-
-                        // Render status bar row
-                        try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.status_bg);
-                        const status_text = " Space/Enter/Esc:close";
-                        try writeAll(stdout_fd, status_text);
-                        const pad_len_status = if (content_width > status_text.len) content_width - status_text.len else 0;
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
-                        try rw.endRow();
                     } else if (is_focus_lost and !is_too_small) {
                         const warning_rows = rows + 3;
 
@@ -2266,16 +2390,6 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
-
-                        // Render status bar row
-                        try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.status_bg);
-                        const status_text = " Esc:back";
-                        try writeAll(stdout_fd, status_text);
-                        const pad_len_status = if (content_width > status_text.len) content_width - status_text.len else 0;
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
-                        try rw.endRow();
                     } else if (current_screen == .about and !is_too_small) {
                         const help_rows = rows + 3;
                         var h_idx: usize = 0;
@@ -2294,16 +2408,6 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
-
-                        // Render status bar row
-                        try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.status_bg);
-                        const status_text = " Esc:back";
-                        try writeAll(stdout_fd, status_text);
-                        const pad_len_status = if (content_width > status_text.len) content_width - status_text.len else 0;
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
-                        try rw.endRow();
                     } else if (current_screen == .settings and !is_too_small) {
                         const settings_rows = rows + 3;
                         var h_idx: usize = 0;
@@ -2314,15 +2418,18 @@ pub fn main(init: std.process.Init) !void {
 
                             if (h_idx == 0) {
                                 text = "⚙️ emojig settings";
-                            } else if (h_idx >= 2 and h_idx - 2 < 4) {
-                                const opt_idx = h_idx - 2;
-                                const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, show_all_categories, ambiguous_chars, palette);
-                                try writeAll(stdout_fd, row);
-                                const vis_w = ansiDisplayWidth(row);
-                                const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
-                                custom_rendered = true;
+                            } else if (h_idx >= 2 and h_idx - 2 < rows) {
+                                const slot_idx = h_idx - 2;
+                                const opt_idx = settings_scroll_top + slot_idx;
+                                if (opt_idx < 5) {
+                                    const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
+                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, show_all_categories, ambiguous_chars, theme, palette);
+                                    try writeAll(stdout_fd, row);
+                                    const vis_w = ansiDisplayWidth(row);
+                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    custom_rendered = true;
+                                }
                             }
 
                             if (!custom_rendered) {
@@ -2333,16 +2440,6 @@ pub fn main(init: std.process.Init) !void {
                             }
                             try rw.endRow();
                         }
-
-                        // Render status bar row
-                        try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.status_bg);
-                        const status_text = " ↕:navigate Space:toggle Esc:back";
-                        try writeAll(stdout_fd, status_text);
-                        const pad_len_status = if (content_width > status_text.len) content_width - status_text.len else 0;
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
-                        try rw.endRow();
                     } else if (current_screen == .categories and !is_too_small) {
                         const cats_rows = rows + 3;
                         var h_idx: usize = 0;
@@ -2353,22 +2450,25 @@ pub fn main(init: std.process.Init) !void {
 
                             if (h_idx == 0) {
                                 text = "📁 emojig categories";
-                            } else if (h_idx >= 2 and h_idx - 2 < g_spec.categories.categories.len) {
-                                const cat_idx = h_idx - 2;
-                                const is_sel = (selected_idx != null and selected_idx.? == cat_idx);
-                                const cat = g_spec.categories.categories[cat_idx];
-                                const is_enabled = !disabled_cats[cat_idx];
+                            } else if (h_idx >= 2 and h_idx - 2 < rows) {
+                                const slot_idx = h_idx - 2;
+                                const cat_idx = cat_scroll_top + slot_idx;
+                                if (cat_idx < g_spec.categories.categories.len) {
+                                    const is_sel = (selected_idx != null and selected_idx.? == cat_idx);
+                                    const cat = g_spec.categories.categories[cat_idx];
+                                    const is_enabled = !disabled_cats[cat_idx];
 
-                                const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
-                                const sel_prefix = if (is_sel) "> " else "  ";
-                                const cb = if (is_enabled) "✔" else " ";
+                                    const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+                                    const sel_prefix = if (is_sel) "> " else "  ";
+                                    const cb = if (is_enabled) "✔" else " ";
 
-                                const row = try std.fmt.bufPrint(&line_buf, " {s}{s}[{s}] {s}\x1b[0m", .{ bg, sel_prefix, cb, cat.name });
-                                try writeAll(stdout_fd, row);
-                                const vis_w = ansiDisplayWidth(row);
-                                const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
-                                custom_rendered = true;
+                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}[{s}] {s}\x1b[0m", .{ bg, sel_prefix, cb, cat.name });
+                                    try writeAll(stdout_fd, row);
+                                    const vis_w = ansiDisplayWidth(row);
+                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    custom_rendered = true;
+                                }
                             }
 
                             if (!custom_rendered) {
@@ -2379,16 +2479,6 @@ pub fn main(init: std.process.Init) !void {
                             }
                             try rw.endRow();
                         }
-
-                        // Render status bar row
-                        try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.status_bg);
-                        const status_text = " ↕:navigate Space:toggle Esc:back";
-                        try writeAll(stdout_fd, status_text);
-                        const pad_len_status = if (content_width > status_text.len) content_width - status_text.len else 0;
-                        try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
-                        try rw.endRow();
                     } else {
                         // Blank spacer row.
                         try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2703,7 +2793,17 @@ pub fn main(init: std.process.Init) !void {
 
                         var status_text_buf: [256]u8 = undefined;
                         const status_text = blk: {
-                            if (is_cmd_autocomplete) {
+                            if (popup_msg != null) {
+                                break :blk " Space/Enter/Esc:close";
+                            } else if (current_screen == .help) {
+                                break :blk " Esc:back";
+                            } else if (current_screen == .about) {
+                                break :blk " Esc:back";
+                            } else if (current_screen == .settings) {
+                                break :blk " ↕:navigate Space:toggle Esc:back";
+                            } else if (current_screen == .categories) {
+                                break :blk " ↕:navigate Space:toggle Esc:back";
+                            } else if (is_cmd_autocomplete) {
                                 break :blk " ↕:navigate Enter:run Esc:back";
                             } else if (is_cat_autocomplete) {
                                 break :blk " ↕:navigate Enter/Space:select Esc:back";
@@ -2785,9 +2885,16 @@ pub fn main(init: std.process.Init) !void {
                     else
                         @as(usize, 0);
 
-                    const cursor_seq: []const u8 = if (exit_preview or should_copy_and_exit or current_screen != .search) blk: {
-                        // Exit or preview or non-search screen: hide cursor and leave it at the bottom to prevent drift!
+                    const cursor_seq: []const u8 = if (exit_preview or should_copy_and_exit) blk: {
+                        // Exit or preview: hide cursor and leave it at the bottom
                         break :blk "\x1b[?25l";
+                    } else if (current_screen != .search) blk: {
+                        // Non-search screen: park at the search bar (row 2 + row_off) but hide cursor
+                        if (cursor_up > 0) {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + display_query_len });
+                        } else {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?25l", .{5 + display_query_len});
+                        }
                     } else if (final_simple) blk: {
                         // Simple mode: prompt is already the last row; just position cursor after "> ".
                         break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{3 + query_len});
@@ -2993,17 +3100,28 @@ pub fn main(init: std.process.Init) !void {
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
 
-                        if (is_motion and term_char == 'M' and has_focus) {
+                        if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
                             // Theme button hover.
                             const search_row_m: i32 = 2 + row_off;
                             theme_hovered = (click_row == search_row_m and
                                 local_col >= @as(i32, @intCast(content_width)) - 4);
 
-                            // Grid hover: update selection to cell under cursor (no copy).
-                            // Each cell is 4 display columns wide: leading-space + emoji(2) + trailing-space.
+                            // Hover: update selection to item under cursor (no copy/action).
                             const grid_first_row: i32 = 4 + row_off;
                             const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
-                            if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                            // Settings/categories have title+blank before first item → offset +1.
+                            const list_first_row: i32 = grid_first_row + 1;
+                            if (current_screen == .settings) {
+                                if (click_row >= list_first_row) {
+                                    const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                    if (opt_idx < 5) selected_idx = opt_idx;
+                                }
+                            } else if (current_screen == .categories) {
+                                if (click_row >= list_first_row) {
+                                    const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                    if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
+                                }
+                            } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
                                 const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                 const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                                 if (grid_col < cols) {
@@ -3013,6 +3131,10 @@ pub fn main(init: std.process.Init) !void {
                             }
                         } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
                             // Left click press.
+                            if (popup_msg != null) {
+                                popup_msg = null;
+                                continue;
+                            }
                             const now = getMonotonicMs();
                             if (now - last_focus_gain_ms > 200) {
                                 const search_row: i32 = 2 + row_off;
@@ -3032,21 +3154,54 @@ pub fn main(init: std.process.Init) !void {
                                     if (theme == .system)
                                         system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                     applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
-                                    const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                    const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                                    if (grid_col < cols) {
-                                        const clicked_idx = grid_row * cols + grid_col;
-                                        if (clicked_idx < top_count) {
-                                            selected_idx = clicked_idx;
-                                            if (multi_select_active) {
-                                                const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
-                                                const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
-                                                try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
-                                                const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                try copyToClipboard(init, joined, final_safe);
+                                    // Settings/categories have title+blank before first item → offset +1.
+                                } else {
+                                    const list_first_row: i32 = grid_first_row + 1;
+                                    if (current_screen == .settings and click_row >= list_first_row) {
+                                        const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                        if (opt_idx < 5) {
+                                            selected_idx = opt_idx;
+                                            if (opt_idx == 4) {
+                                                theme = switch (theme) {
+                                                    .dark => .light,
+                                                    .light => .system,
+                                                    .system => .dark,
+                                                };
+                                                saveThemeToConfig(init.io, theme);
+                                                if (theme == .system)
+                                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                                const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
+                                                popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
                                             } else {
-                                                should_copy_and_exit = true;
+                                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                                const shell_s = detectShell(init.environ_map);
+                                                try toggleSetting(init, opt_idx, &shell_integration, &shell_key_binding, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                                            }
+                                        }
+                                    } else if (current_screen == .categories and click_row >= list_first_row) {
+                                        const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                        if (cat_idx < g_spec.categories.categories.len) {
+                                            selected_idx = cat_idx;
+                                            disabled_cats[cat_idx] = !disabled_cats[cat_idx];
+                                            saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
+                                        }
+                                    } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                                        const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                        const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                        if (grid_col < cols) {
+                                            const clicked_idx = grid_row * cols + grid_col;
+                                            if (clicked_idx < top_count) {
+                                                selected_idx = clicked_idx;
+                                                if (multi_select_active) {
+                                                    const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
+                                                    const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                                                    try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                                                    const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                    try copyToClipboard(init, joined, final_safe);
+                                                } else {
+                                                    should_copy_and_exit = true;
+                                                }
                                             }
                                         }
                                     }
@@ -3073,6 +3228,8 @@ pub fn main(init: std.process.Init) !void {
                 logical = "enter";
             } else if (bytes[0] == 9) {
                 logical = "tab";
+            } else if (bytes[0] == ' ' and current_screen != .search) {
+                logical = "space";
             } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
                 logical = switch (bytes[0]) {
                     3 => "ctrl-c",
@@ -3109,13 +3266,33 @@ pub fn main(init: std.process.Init) !void {
                     if (std.mem.eql(u8, action, "open_settings")) {
                         current_screen = .settings;
                         selected_idx = 0;
+                        settings_scroll_top = 0;
                     } else if (current_screen == .settings) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
-                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else 3;
+                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else 4;
+                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
-                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < 4) selected_idx.? + 1 else 0;
+                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < 5) selected_idx.? + 1 else 0;
+                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
-                            try toggleSetting(init, selected_idx orelse 0, &shell_integration, &shell_key_binding, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf);
+                            const opt_idx = selected_idx orelse 0;
+                            if (opt_idx == 4) {
+                                theme = switch (theme) {
+                                    .dark => .light,
+                                    .light => .system,
+                                    .system => .dark,
+                                };
+                                saveThemeToConfig(init.io, theme);
+                                if (theme == .system)
+                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
+                                popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
+                            } else {
+                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                const shell_s = detectShell(init.environ_map);
+                                try toggleSetting(init, opt_idx, &shell_integration, &shell_key_binding, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                            }
                         } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
@@ -3125,8 +3302,10 @@ pub fn main(init: std.process.Init) !void {
                     } else if (current_screen == .categories) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else g_spec.categories.categories.len - 1;
+                            adjustScrollTop(selected_idx.?, &cat_scroll_top, rows, g_spec.categories.categories.len);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < g_spec.categories.categories.len) selected_idx.? + 1 else 0;
+                            adjustScrollTop(selected_idx.?, &cat_scroll_top, rows, g_spec.categories.categories.len);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
                             const idx = selected_idx orelse 0;
                             if (idx < disabled_cats.len) {
@@ -3188,14 +3367,22 @@ pub fn main(init: std.process.Init) !void {
                                 } else if (std.mem.eql(u8, cmd.action, "open_settings")) {
                                     current_screen = .settings;
                                     selected_idx = 0;
+                                    settings_scroll_top = 0;
                                 } else if (std.mem.eql(u8, cmd.action, "open_categories")) {
                                     current_screen = .categories;
                                     selected_idx = 0;
+                                    cat_scroll_top = 0;
                                 } else if (std.mem.eql(u8, cmd.action, "start_multi_selection")) {
                                     multi_select_active = true;
                                     query_len = 0;
                                     selected_idx = null;
                                     total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                } else if (std.mem.eql(u8, cmd.action, "run_update")) {
+                                    const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                    popup_msg = runUpdate(init.io, home_s, &popup_buf);
+                                    query_len = 0;
+                                    current_screen = .search;
+                                    selected_idx = null;
                                 }
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
