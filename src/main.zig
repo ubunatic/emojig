@@ -1950,6 +1950,9 @@ pub fn main(init: std.process.Init) !void {
         var current_screen: ScreenState = .search;
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
+        var help_scroll_top: usize = 0;
+        var about_scroll_top: usize = 0;
+        var status_scroll_top: usize = 0;
         var multi_select_active: bool = false;
         var multi_selected_emojis = std.ArrayList([]const u8).empty;
         defer multi_selected_emojis.deinit(spec_arena.allocator());
@@ -2440,20 +2443,28 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else if (current_screen == .help and !is_too_small) {
-                        const help_rows = rows + 3;
+                        const help_lines = g_spec.strings.help_lines_more;
+                        const viewport_h = rows + 3;
+                        const needs_scroll = help_lines.len > viewport_h;
+                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / help_lines.len) else 0;
+                        const thumb_start = if (needs_scroll) help_scroll_top * viewport_h / help_lines.len else 0;
+                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
-                        while (h_idx < help_rows) : (h_idx += 1) {
+                        while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             var text: []const u8 = "";
-                            const help_lines = g_spec.strings.help_lines_more;
-                            const center_threshold: usize = help_lines.len + 2;
-                            const offset = if (help_rows >= center_threshold) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < help_lines.len) {
-                                text = help_lines[h_idx - offset];
+                            if (needs_scroll) {
+                                const li = help_scroll_top + h_idx;
+                                if (li < help_lines.len) text = help_lines[li];
+                            } else {
+                                const center_threshold: usize = help_lines.len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < help_lines.len) text = help_lines[h_idx - offset];
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -2467,20 +2478,28 @@ pub fn main(init: std.process.Init) !void {
                             .{ .key = "version", .val = build_options.version },
                             .{ .key = "theme", .val = theme_str },
                         };
-                        const help_rows = rows + 3;
+                        const about_lines = g_spec.strings.about_lines;
+                        const viewport_h = rows + 3;
+                        const needs_scroll = about_lines.len > viewport_h;
+                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about_lines.len) else 0;
+                        const thumb_start = if (needs_scroll) about_scroll_top * viewport_h / about_lines.len else 0;
+                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
-                        while (h_idx < help_rows) : (h_idx += 1) {
+                        while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             var text: []const u8 = "";
-                            const about_lines = g_spec.strings.about_lines;
-                            const center_threshold: usize = about_lines.len + 2;
-                            const offset = if (help_rows >= center_threshold) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < about_lines.len) {
-                                text = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
+                            if (needs_scroll) {
+                                const li = about_scroll_top + h_idx;
+                                if (li < about_lines.len) text = expandVars(&var_expand_buf, about_lines[li], &spec_vars);
+                            } else {
+                                const center_threshold: usize = about_lines.len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < about_lines.len) text = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -2501,20 +2520,28 @@ pub fn main(init: std.process.Init) !void {
                             .{ .key = "shell", .val = detectShell(init.environ_map) },
                             .{ .key = "theme", .val = theme_str },
                         };
-                        const status_rows = rows + 3;
+                        const status_lines = g_spec.strings.status_lines;
+                        const viewport_h = rows + 3;
+                        const needs_scroll = status_lines.len > viewport_h;
+                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / status_lines.len) else 0;
+                        const thumb_start = if (needs_scroll) status_scroll_top * viewport_h / status_lines.len else 0;
+                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
-                        while (h_idx < status_rows) : (h_idx += 1) {
+                        while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             var text: []const u8 = "";
-                            const status_lines = g_spec.strings.status_lines;
-                            const center_threshold: usize = status_lines.len + 2;
-                            const offset = if (status_rows >= center_threshold) @as(usize, 1) else 0;
-                            if (h_idx >= offset and h_idx - offset < status_lines.len) {
-                                text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
+                            if (needs_scroll) {
+                                const li = status_scroll_top + h_idx;
+                                if (li < status_lines.len) text = expandVars(&var_expand_buf, status_lines[li], &spec_vars);
+                            } else {
+                                const center_threshold: usize = status_lines.len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < status_lines.len) text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -3485,6 +3512,15 @@ pub fn main(init: std.process.Init) !void {
                             query_len = 0;
                             selected_idx = null;
                             total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                        } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
+                            if (sp.* > 0) sp.* -= 1;
+                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                            const viewport_h = rows + 3;
+                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
+                            const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
+                            if (sp.* < max_scroll) sp.* += 1;
                         }
                     } else if (is_cmd_autocomplete) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -3521,12 +3557,15 @@ pub fn main(init: std.process.Init) !void {
                             if (opt_cmd) |cmd| {
                                 if (std.mem.eql(u8, cmd.action, "open_help")) {
                                     current_screen = .help;
+                                    help_scroll_top = 0;
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_about")) {
                                     current_screen = .about;
+                                    about_scroll_top = 0;
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_status")) {
                                     current_screen = .status;
+                                    status_scroll_top = 0;
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_settings")) {
                                     current_screen = .settings;
