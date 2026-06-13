@@ -997,3 +997,81 @@ test "localization strings JSON files match spec.Strings struct" {
         parsed.deinit();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Search benchmarks
+// ---------------------------------------------------------------------------
+//
+// Run with default 10ms per query (part of the normal test suite):
+//   zig build test
+//
+// Run in extended bench mode (e.g. 5 s per query):
+//   EMOJIG_BENCH=5000 zig build test
+
+fn benchNowNs() u64 {
+    var ts = std.mem.zeroes(std.posix.system.timespec);
+    _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec));
+}
+
+/// Run `search(query)` in a tight loop for `duration_ms` milliseconds.
+/// Prints one result line to stderr and returns the measured ns/search.
+/// The deadline is checked after every search so the reported duration is
+/// accurate even in Debug builds where a single search can take many ms.
+fn runBench(query: []const u8, duration_ms: u64) u64 {
+    var top_matches: [48]Match = undefined;
+    var top_count: usize = 0;
+    const t0 = benchNowNs();
+    const deadline_ns = t0 + duration_ms * 1_000_000;
+    var iters: u64 = 0;
+    while (benchNowNs() < deadline_ns) {
+        _ = search(query, &top_matches, &top_count, 48);
+        iters += 1;
+    }
+    const elapsed_ns = benchNowNs() - t0;
+    const ns_per_iter = if (iters > 0) elapsed_ns / iters else 0;
+    const ops_per_sec = if (elapsed_ns > 0) iters * 1_000_000_000 / elapsed_ns else 0;
+    std.debug.print(
+        "  bench [{s:<18}] {d:>9} iters  {d:>7} ns/search  {d:>9} searches/s\n",
+        .{ query, iters, ns_per_iter, ops_per_sec },
+    );
+    return ns_per_iter;
+}
+
+test "benchmark: search throughput" {
+    // Duration per query: 10ms in normal test runs, more in bench mode.
+    // Override: EMOJIG_BENCH=5000 zig build test  (5 s per query)
+    const duration_ms: u64 = blk: {
+        const env = std.c.getenv("EMOJIG_BENCH") orelse break :blk 10;
+        const val = std.mem.sliceTo(env, 0);
+        break :blk std.fmt.parseInt(u64, val, 10) catch 10;
+    };
+    std.debug.print("\nsearch benchmarks ({d} ms per query, {d} emojis):\n", .{ duration_ms, EmojiDb.count });
+
+    const is_bench = duration_ms > 10;
+
+    // --- representative query set ---
+    // empty: returns top-48 results in score order — exercises ranking only
+    _ = runBench("", duration_ms);
+    // single char: large result set, full scan with scoring
+    const ns_a = runBench("a", duration_ms);
+    // common short word: typical interactive query
+    const ns_fire = runBench("fire", duration_ms);
+    // multi-word AND: two-term intersection scoring
+    const ns_multi = runBench("red heart", duration_ms);
+    // plural: exercises the fallback stem/plural matching paths
+    const ns_plural = runBench("hearts", duration_ms);
+    // no match: exercises the early-exit / zero-score path
+    _ = runBench("xyzxyz", duration_ms);
+
+    // In bench mode (release build) enforce a hard latency ceiling:
+    // >500 searches/s means every keystroke is processed in <2 ms.
+    // Debug builds are unoptimised and intentionally excluded.
+    if (is_bench) {
+        const max_ns: u64 = 2_000_000; // 2 ms per search
+        try std.testing.expect(ns_a < max_ns);
+        try std.testing.expect(ns_fire < max_ns);
+        try std.testing.expect(ns_multi < max_ns);
+        try std.testing.expect(ns_plural < max_ns);
+    }
+}

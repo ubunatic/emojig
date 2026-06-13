@@ -32,6 +32,9 @@ test: ⚙️  # run the unit tests
 	go vet ./...
 	go test ./...
 
+bench: ⚙️  # run search benchmarks in extended mode (5 s per query)
+	EMOJIG_BENCH=5000 zig build test
+
 tui: ⚙️  # run TUI mode (stdout path: prints selected emoji to terminal)
 	zig build && zig-out/bin/emojig --tui | cat
 
