@@ -395,6 +395,7 @@ const Config = struct {
     show_all_categories: ?bool = null,
     ambiguous_chars: ?[]const u8 = null,
     disabled_categories: ?[]const u8 = null,
+    update_cmd: ?[]const u8 = null,
 };
 
 /// Look up the default value for a setting by ID from the loaded spec.
@@ -448,6 +449,8 @@ fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.ambiguous_chars = arena.dupe(u8, val) catch null;
             } else if (std.mem.eql(u8, key, "disabled_categories")) {
                 cfg.disabled_categories = arena.dupe(u8, val) catch null;
+            } else if (std.mem.eql(u8, key, "update_cmd") or std.mem.eql(u8, key, "upd_cmd")) {
+                cfg.update_cmd = arena.dupe(u8, val) catch null;
             }
         }
     }
@@ -740,10 +743,16 @@ fn fileExistsAbs(comptime path: [:0]const u8) bool {
     return true;
 }
 
-fn captureShellCmd(io: std.Io, cmd: []const u8, out: []u8) []const u8 {
+fn captureShellCmd(io: std.Io, home: []const u8, cmd: []const u8, out: []u8) []const u8 {
     const log = "/tmp/emojig-update.log";
-    var sh_buf: [1024]u8 = undefined;
-    const sh_cmd = std.fmt.bufPrint(&sh_buf, "{s} >{s} 2>&1", .{ cmd, log }) catch {
+    var sh_buf: [2048]u8 = undefined;
+    // Prepend well-known tool directories so the command finds zig/brew/etc.
+    // even when launched from a desktop GUI with a stripped PATH.
+    const sh_cmd = std.fmt.bufPrint(
+        &sh_buf,
+        "export PATH=\"/home/linuxbrew/.linuxbrew/bin:{s}/.linuxbrew/bin:{s}/.local/bin:/usr/local/bin:$PATH\"; {s} >{s} 2>&1",
+        .{ home, home, cmd, log },
+    ) catch {
         const msg = "Command string too long.";
         @memcpy(out[0..msg.len], msg);
         return out[0..msg.len];
@@ -777,11 +786,14 @@ fn captureShellCmd(io: std.Io, cmd: []const u8, out: []u8) []const u8 {
     return out[0..read_len];
 }
 
-fn runUpdate(io: std.Io, home: []const u8, out: []u8) []const u8 {
+fn runUpdate(io: std.Io, home: []const u8, cfg_cmd: ?[]const u8, spec_cmd: ?[]const u8, out: []u8) []const u8 {
     var cmd_buf: [512]u8 = undefined;
-    var cmd: ?[]const u8 = null;
+    // Priority: config file > spec/commands.json cmd > auto-detect.
+    var cmd: ?[]const u8 = if (cfg_cmd != null) cfg_cmd else spec_cmd;
 
-    if (fileExists(home, "projects/emojig")) {
+    if (cmd != null) {
+        // Explicit command configured — skip auto-detection.
+    } else if (fileExists(home, "projects/emojig")) {
         cmd = std.fmt.bufPrint(&cmd_buf, "make -C '{s}/projects/emojig' update", .{home}) catch null;
     } else if (fileExistsAbs("/var/lib/dpkg/info/emojig.list")) {
         cmd = "sudo apt-get install -y emojig";
@@ -789,7 +801,7 @@ fn runUpdate(io: std.Io, home: []const u8, out: []u8) []const u8 {
         cmd = "curl -sSf https://ubunatic.com/emojig/install.sh | sh";
     }
 
-    if (cmd) |c| return captureShellCmd(io, c, out);
+    if (cmd) |c| return captureShellCmd(io, home, c, out);
 
     const msg = "Unknown install mode.\nSee ~/.local/share/emojig/ for details.";
     const len = @min(msg.len, out.len);
@@ -955,7 +967,7 @@ fn rcFileHint(home: []const u8, shell_name: []const u8) []const u8 {
     return "~/.zshrc";
 }
 
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, show_cats: bool, amb_chars: []const u8, theme: Theme, palette: term_lib.Palette) ![]const u8 {
+fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
 
@@ -965,7 +977,10 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             return std.fmt.bufPrint(buf, " {s}{s}[{s}]           shell integration\x1b[0m", .{ bg, sel_prefix, cb });
         },
         1 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}|none]    shell key binding\x1b[0m", .{ bg, sel_prefix, key_bind });
+            if (key_bind_editing) {
+                return std.fmt.bufPrint(buf, " {s}{s}[{s}▋]       shell key binding\x1b[0m", .{ bg, sel_prefix, key_bind });
+            }
+            return std.fmt.bufPrint(buf, " {s}{s}[{s}]         shell key binding\x1b[0m", .{ bg, sel_prefix, key_bind });
         },
         2 => {
             const cb = if (show_cats) "✔" else " ";
@@ -985,7 +1000,6 @@ fn toggleSetting(
     init: std.process.Init,
     idx: usize,
     shell_int: *bool,
-    key_bind: *[]const u8,
     show_cats: *bool,
     amb_chars: *[]const u8,
     popup_msg: *?[]const u8,
@@ -1009,21 +1023,7 @@ fn toggleSetting(
                 popup_msg.* = msg;
             }
         },
-        1 => {
-            if (std.mem.eql(u8, key_bind.*, "C-e")) {
-                key_bind.* = "none";
-            } else {
-                key_bind.* = "C-e";
-            }
-            saveKeyToConfig(io, "shell_key_binding", key_bind.*);
-
-            const rc = rcFileHint(home, shell_name);
-            const msg = if (std.mem.eql(u8, key_bind.*, "C-e"))
-                try std.fmt.bufPrint(popup_buf, "Key binding changed to Ctrl-e.\nRun: source {s}", .{rc})
-            else
-                try std.fmt.bufPrint(popup_buf, "Key binding disabled.\nRun: source {s}", .{rc});
-            popup_msg.* = msg;
-        },
+        1 => {}, // text input — handled inline in the event loop
         2 => {
             show_cats.* = !show_cats.*;
             saveKeyToConfig(io, "show_all_categories", if (show_cats.*) "true" else "false");
@@ -1931,6 +1931,12 @@ pub fn main(init: std.process.Init) !void {
         var ambiguous_chars = cfg.ambiguous_chars orelse settingDefault("ambiguous_chars");
         g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
 
+        var keybind_editing: bool = false;
+        var keybind_input_buf: [32]u8 = undefined;
+        var keybind_input_len: usize = 0;
+        var keybind_committed_buf: [32]u8 = undefined;
+        var keybind_committed_len: usize = 0;
+
         var popup_msg: ?[]const u8 = null;
         var popup_buf: [1024]u8 = undefined;
 
@@ -2436,7 +2442,7 @@ pub fn main(init: std.process.Init) !void {
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < 5) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, show_all_categories, ambiguous_chars, theme, palette);
+                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2812,6 +2818,8 @@ pub fn main(init: std.process.Init) !void {
                                 break :blk " Esc:back";
                             } else if (current_screen == .about) {
                                 break :blk " Esc:back";
+                            } else if (current_screen == .settings and keybind_editing) {
+                                break :blk " Type binding  Enter:save  Esc:cancel";
                             } else if (current_screen == .settings) {
                                 break :blk " ↕:navigate Space:toggle Esc:back";
                             } else if (current_screen == .categories) {
@@ -3174,7 +3182,13 @@ pub fn main(init: std.process.Init) !void {
                                         const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
                                         if (opt_idx < 5) {
                                             selected_idx = opt_idx;
-                                            if (opt_idx == 4) {
+                                            if (opt_idx == 1) {
+                                                keybind_editing = true;
+                                                keybind_input_len = shell_key_binding.len;
+                                                const len = @min(shell_key_binding.len, keybind_input_buf.len);
+                                                @memcpy(keybind_input_buf[0..len], shell_key_binding[0..len]);
+                                                shell_key_binding = keybind_input_buf[0..len];
+                                            } else if (opt_idx == 4) {
                                                 theme = switch (theme) {
                                                     .dark => .light,
                                                     .light => .system,
@@ -3189,7 +3203,7 @@ pub fn main(init: std.process.Init) !void {
                                             } else {
                                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                                 const shell_s = detectShell(init.environ_map);
-                                                try toggleSetting(init, opt_idx, &shell_integration, &shell_key_binding, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                                                try toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
                                             }
                                         }
                                     } else if (current_screen == .categories and click_row >= list_first_row) {
@@ -3252,8 +3266,16 @@ pub fn main(init: std.process.Init) !void {
                     else => unreachable,
                 };
             } else {
-                // Printable text — append to the query (not a bound key).
-                if (has_focus and current_screen == .search) {
+                // Printable text — append to keybind input or search query.
+                if (has_focus and keybind_editing) {
+                    for (bytes) |b| {
+                        if (b >= 32 and b <= 126 and keybind_input_len < keybind_input_buf.len) {
+                            keybind_input_buf[keybind_input_len] = b;
+                            keybind_input_len += 1;
+                            shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                        }
+                    }
+                } else if (has_focus and current_screen == .search) {
                     for (bytes) |b| {
                         if (b >= 32 and b <= 126 and query_len < max_query_len) {
                             query_buf[query_len] = b;
@@ -3281,15 +3303,44 @@ pub fn main(init: std.process.Init) !void {
                         selected_idx = 0;
                         settings_scroll_top = 0;
                     } else if (current_screen == .settings) {
-                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                        if (keybind_editing) {
+                            if (std.mem.eql(u8, name, "backspace")) {
+                                if (keybind_input_len > 0) {
+                                    keybind_input_len -= 1;
+                                    shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                                }
+                            } else if (std.mem.eql(u8, name, "enter")) {
+                                keybind_editing = false;
+                                keybind_committed_len = @min(keybind_input_len, keybind_committed_buf.len);
+                                @memcpy(keybind_committed_buf[0..keybind_committed_len], keybind_input_buf[0..keybind_committed_len]);
+                                shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
+                                saveKeyToConfig(init.io, "shell_key_binding", shell_key_binding);
+                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                const shell_s = detectShell(init.environ_map);
+                                const rc = rcFileHint(home_s, shell_s);
+                                popup_msg = try std.fmt.bufPrint(&popup_buf, "Key binding set to: {s}\nRun: source {s}", .{ shell_key_binding, rc });
+                            } else if (std.mem.eql(u8, name, "esc")) {
+                                keybind_editing = false;
+                                shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
+                            }
+                        } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                            keybind_editing = false;
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else 4;
                             adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                            keybind_editing = false;
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < 5) selected_idx.? + 1 else 0;
                             adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
                             const opt_idx = selected_idx orelse 0;
-                            if (opt_idx == 4) {
+                            if (opt_idx == 1) {
+                                keybind_editing = true;
+                                keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
+                                @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
+                                keybind_input_len = keybind_committed_len;
+                                @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
+                                shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                            } else if (opt_idx == 4) {
                                 theme = switch (theme) {
                                     .dark => .light,
                                     .light => .system,
@@ -3304,9 +3355,10 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
-                                try toggleSetting(init, opt_idx, &shell_integration, &shell_key_binding, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                                try toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
                             }
                         } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
+                            keybind_editing = false;
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
@@ -3392,10 +3444,11 @@ pub fn main(init: std.process.Init) !void {
                                     total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                                 } else if (std.mem.eql(u8, cmd.action, "run_update")) {
                                     const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                    popup_msg = runUpdate(init.io, home_s, &popup_buf);
+                                    popup_msg = runUpdate(init.io, home_s, cfg.update_cmd, cmd.cmd, &popup_buf);
                                     query_len = 0;
                                     current_screen = .search;
                                     selected_idx = null;
+                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                                 }
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {

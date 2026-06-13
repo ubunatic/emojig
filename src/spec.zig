@@ -104,6 +104,8 @@ pub const CommandSpec = struct {
     name: []const u8,
     short: []const u8,
     action: []const u8,
+    /// Optional shell command to run when action is "run_update".
+    cmd: ?[]const u8 = null,
 };
 
 pub const Commands = struct {

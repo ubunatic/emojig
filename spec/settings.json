@@ -10,9 +10,8 @@
     },
     {
       "id": "shell_key_binding",
-      "type": "choice",
+      "type": "text",
       "label": "shell key binding",
-      "choices": ["C-e", "C-.", "C-A-<space>", "none"],
       "default": "C-e"
     },
     {

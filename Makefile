@@ -5,6 +5,9 @@ VERSION = $(shell grep '\.version' build.zig.zon | grep -o '[0-9][0-9.]*')
 
 export WAYREEL_FAST ?= 3
 
+# Override to speed up iterative installs: make install OPTIMIZE=Debug
+OPTIMIZE ?= ReleaseSmall
+
 help: ⚙️
 	@printf "Emojig Makefile Targets:\n\n"
 	@awk -F':.*# ' '/^[a-zA-Z0-9_-]+:.*# / { printf "  %-18s %s\n", $$1, $$2 }' Makefile
@@ -15,8 +18,8 @@ zig-help: ⚙️  # show zig build targets
 	@echo "ℹ️ 'zig build <step>' is used internally to manage building and testing."
 	@echo "   Most zig build steps have a convenience Makefile target (see 'make help')."
 
-build: ⚙️  # compile the application in ReleaseSmall mode
-	zig build -Doptimize=ReleaseSmall
+build: ⚙️  # compile the application (OPTIMIZE=ReleaseSmall by default)
+	zig build -Doptimize=$(OPTIMIZE)
 
 run: ⚙️  # run the inline TUI picker in current terminal
 	zig build run
@@ -178,9 +181,12 @@ uninstall: ⚙️  # remove binary, shell integration, and desktop entry
 	@rm -f  ~/.local/share/applications/emojig-picker.desktop
 	@echo "✅ emojig uninstalled"
 
+install-debug: ⚙️  # fast install with debug build (no LLVM optimization)
+	@$(MAKE) install OPTIMIZE=Debug
+
 install: ⚙️  # install binary, shell integrations, and desktop launcher
 	@go install ./cmd/mojigo
-	@zig build shell-install -Doptimize=ReleaseSmall >/dev/null || (zig build shell-install -Doptimize=ReleaseSmall && exit 1)
+	@zig build shell-install -Doptimize=$(OPTIMIZE) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) && exit 1)
 	@echo "✅ Emojig installed successfully!"
 	@echo "   - Binary:    ~/.local/bin/emojig"
 	@echo "   - Go Binary: $$GOPATH/bin/mojigo"
@@ -190,7 +196,7 @@ install: ⚙️  # install binary, shell integrations, and desktop launcher
 SSH_ARCH ?= aarch64-linux-musl
 
 update: ⚙️  # update emojig from source: git pull + rebuild + reinstall
-	git pull
+	@git pull 2>/dev/null && echo "✅ pulled changes" || echo "⚠️ ignoring failed pull"
 	$(MAKE) install
 
 install-ssh: ⚙️  # install to remote host via SSH (usage: make install-ssh HOST=hostname [SSH_ARCH=aarch64-linux-musl])
