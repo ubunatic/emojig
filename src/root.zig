@@ -13,12 +13,71 @@ pub const Match = struct {
     score: i32,
 };
 
-/// Search for emojis matching `query` and populate `top_matches[0..top_count.*]`.
-///
-/// When query is empty, MRU emojis are placed first, then the full DB list
-/// fills remaining cells (skipping duplicates). When non-empty, standard
-/// fuzzy scoring applies.
+pub const CategorySpec = struct {
+    name: []const u8,
+    short: []const u8,
+    synonyms: []const []const u8,
+};
+
+pub const CategoriesSpec = struct {
+    categories: []const CategorySpec,
+};
+
+fn isWordInSearch(search_str: []const u8, word: []const u8) bool {
+    var pos: usize = 0;
+    while (true) {
+        const idx = std.mem.indexOfPos(u8, search_str, pos, word) orelse return false;
+        const start_ok = (idx == 0 or search_str[idx - 1] == ' ');
+        const end_ok = (idx + word.len == search_str.len or search_str[idx + word.len] == ' ');
+        if (start_ok and end_ok) return true;
+        pos = idx + 1;
+    }
+}
+
+fn emojiMatchesCategory(entry_search: []const u8, cat: CategorySpec) bool {
+    if (isWordInSearch(entry_search, cat.name)) return true;
+    if (isWordInSearch(entry_search, cat.short)) return true;
+    for (cat.synonyms) |syn| {
+        if (isWordInSearch(entry_search, syn)) return true;
+    }
+    return false;
+}
+
+fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategorySpec {
+    const cats = cats_spec orelse return null;
+    if (term.len == 0) return null;
+    for (cats.categories) |cat| {
+        if (std.mem.eql(u8, cat.name, term) or std.mem.eql(u8, cat.short, term)) {
+            return cat;
+        }
+    }
+    for (cats.categories) |cat| {
+        if (std.mem.startsWith(u8, cat.name, term) or std.mem.startsWith(u8, cat.short, term)) {
+            return cat;
+        }
+    }
+    for (cats.categories) |cat| {
+        for (cat.synonyms) |syn| {
+            if (std.mem.startsWith(u8, syn, term)) {
+                return cat;
+            }
+        }
+    }
+    return null;
+}
+
 pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) usize {
+    return searchOptions(query, top_matches, top_count, limit, null, &[_][]const u8{});
+}
+
+pub fn searchOptions(
+    query: []const u8,
+    top_matches: []Match,
+    top_count: *usize,
+    limit: usize,
+    categories_spec: ?*const CategoriesSpec,
+    disabled_categories: []const []const u8,
+) usize {
     top_count.* = 0;
 
     const disable_zwj = blk: {
@@ -52,6 +111,18 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
         }
     }
 
+    var filter_category: ?[]const u8 = null;
+    if (std.mem.startsWith(u8, actual_query, "c:") or std.mem.startsWith(u8, actual_query, "C:")) {
+        const after_c = actual_query[2..];
+        if (std.mem.indexOfScalar(u8, after_c, ' ')) |space_idx| {
+            filter_category = after_c[0..space_idx];
+            actual_query = after_c[space_idx + 1 ..];
+        } else {
+            filter_category = after_c;
+            actual_query = "";
+        }
+    }
+
     if (actual_query.len == 0) {
         var mru_indices: [mru.MAX_MRU]usize = undefined;
         var mru_resolved: usize = 0;
@@ -69,6 +140,29 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             while (db_idx < EmojiDb.count) : (db_idx += 1) {
                 const entry = EmojiDb.getEntry(db_idx);
                 if (std.mem.eql(u8, entry.emoji, mru_emoji)) {
+                    const matches_cat = blk: {
+                        if (filter_category) |fc| {
+                            if (findCategorySpec(categories_spec, fc)) |cat| {
+                                break :blk emojiMatchesCategory(entry.search, cat);
+                            } else {
+                                break :blk false;
+                            }
+                        }
+                        if (disabled_categories.len > 0 and categories_spec != null) {
+                            for (disabled_categories) |dc_name| {
+                                for (categories_spec.?.categories) |cat| {
+                                    if (std.mem.eql(u8, cat.name, dc_name)) {
+                                        if (emojiMatchesCategory(entry.search, cat)) {
+                                            break :blk false;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break :blk true;
+                    };
+                    if (!matches_cat) break;
+
                     top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
                     mru_indices[mru_resolved] = db_idx;
                     mru_resolved += 1;
@@ -86,6 +180,29 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
             if (filter_box and !isBoxArt(entry.emoji)) continue;
+
+            const matches_cat = blk: {
+                if (filter_category) |fc| {
+                    if (findCategorySpec(categories_spec, fc)) |cat| {
+                        break :blk emojiMatchesCategory(entry.search, cat);
+                    } else {
+                        break :blk false;
+                    }
+                }
+                if (disabled_categories.len > 0 and categories_spec != null) {
+                    for (disabled_categories) |dc_name| {
+                        for (categories_spec.?.categories) |cat| {
+                            if (std.mem.eql(u8, cat.name, dc_name)) {
+                                if (emojiMatchesCategory(entry.search, cat)) {
+                                    break :blk false;
+                                }
+                            }
+                        }
+                    }
+                }
+                break :blk true;
+            };
+            if (!matches_cat) continue;
 
             var already_shown = false;
             var k: usize = 0;
@@ -109,6 +226,30 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
             if (filter_box and !isBoxArt(entry.emoji)) continue;
+
+            const matches_cat = blk: {
+                if (filter_category) |fc| {
+                    if (findCategorySpec(categories_spec, fc)) |cat| {
+                        break :blk emojiMatchesCategory(entry.search, cat);
+                    } else {
+                        break :blk false;
+                    }
+                }
+                if (disabled_categories.len > 0 and categories_spec != null) {
+                    for (disabled_categories) |dc_name| {
+                        for (categories_spec.?.categories) |cat| {
+                            if (std.mem.eql(u8, cat.name, dc_name)) {
+                                if (emojiMatchesCategory(entry.search, cat)) {
+                                    break :blk false;
+                                }
+                            }
+                        }
+                    }
+                }
+                break :blk true;
+            };
+            if (!matches_cat) continue;
+
             total += 1;
         }
         return total;
@@ -123,6 +264,29 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
             if (getEmojiWidth(entry.emoji) != fw) continue;
         }
         if (filter_box and !isBoxArt(entry.emoji)) continue;
+
+        const matches_cat = blk: {
+            if (filter_category) |fc| {
+                if (findCategorySpec(categories_spec, fc)) |cat| {
+                    break :blk emojiMatchesCategory(entry.search, cat);
+                } else {
+                    break :blk false;
+                }
+            }
+            if (disabled_categories.len > 0 and categories_spec != null) {
+                for (disabled_categories) |dc_name| {
+                    for (categories_spec.?.categories) |cat| {
+                        if (std.mem.eql(u8, cat.name, dc_name)) {
+                            if (emojiMatchesCategory(entry.search, cat)) {
+                                break :blk false;
+                            }
+                        }
+                    }
+                }
+            }
+            break :blk true;
+        };
+        if (!matches_cat) continue;
 
         if (fuzzyMatch(actual_query, entry.search)) |raw_score| {
             // Box art ranks below genuine emoji matches in general searches;

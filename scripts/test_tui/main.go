@@ -270,6 +270,16 @@ func main() {
 	fmt.Println("PASS: GUI Focus reporting test passed.")
 
 	fmt.Println()
+	fmt.Println("=== Test 4: Category autocompletion test ===")
+	runCategoryAutocompleteTest(binaryPath)
+	fmt.Println("PASS: Category autocompletion test passed.")
+
+	fmt.Println()
+	fmt.Println("=== Test 5: Multi-selection mode test ===")
+	runMultiSelectTest(binaryPath)
+	fmt.Println("PASS: Multi-selection mode test passed.")
+
+	fmt.Println()
 	fmt.Println("All TUI tests passed.")
 }
 
@@ -401,4 +411,294 @@ func runFocusTest(binaryPath string) {
 	master.Write([]byte("\x03"))
 	cmd.Wait()
 }
+
+func runCategoryAutocompleteTest(binaryPath string) {
+	master, slaveName := spawnPTY()
+	defer master.Close()
+
+	slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+		os.Exit(1)
+	}
+	defer slave.Close()
+
+	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+	ws := winsize{Row: 24, Col: 80}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+	cmd := exec.Command(binaryPath, "--tui")
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
+	cmd.Env = append(os.Environ(), "EMOJIG_EXIT_PREVIEW=0")
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error starting command: %v\n", err)
+		os.Exit(1)
+	}
+	slave.Close()
+
+	chunksChan := make(chan string, 100)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				s := string(buf[:n])
+				chunksChan <- s
+				if strings.Contains(s, "\x1b[6n") {
+					master.Write([]byte("\x1b[24;80R"))
+				}
+			}
+			if err != nil {
+				close(chunksChan)
+				return
+			}
+		}
+	}()
+
+	collectAvailable := func() string {
+		var s strings.Builder
+		for {
+			select {
+			case chunk, ok := <-chunksChan:
+				if !ok {
+					return s.String()
+				}
+				s.WriteString(chunk)
+			default:
+				return s.String()
+			}
+		}
+	}
+
+	// Wait for initial render.
+	time.Sleep(300 * time.Millisecond)
+	_ = collectAvailable()
+
+	// Type "c:" to trigger category autocomplete
+	if _, err := master.Write([]byte("c:")); err != nil {
+		fmt.Printf("Error writing c:: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	out := stripANSI(collectAvailable())
+
+	// The output should display the categories, for example, "clocks"
+	if !strings.Contains(out, "clocks") && !strings.Contains(out, "flags") {
+		fmt.Printf("FAIL: expected category autocomplete list to show clocks/flags. Got:\n%s\n", out)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: category list is visible in autocomplete grid.")
+
+	// Press Enter to select the first category ("clocks")
+	if _, err := master.Write([]byte("\n")); err != nil {
+		fmt.Printf("Error writing Enter: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	out2 := stripANSI(collectAvailable())
+
+	// The query should now be "c:clock "
+	if !strings.Contains(out2, "c:clock") {
+		fmt.Printf("FAIL: expected query to be updated to 'c:clock '. Got:\n%s\n", out2)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: query updated to category query prefix.")
+
+	// Press Enter again to select the clock emoji and exit
+	if _, err := master.Write([]byte("\n")); err != nil {
+		fmt.Printf("Error writing Enter: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("FAIL: process exited with error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("PASS: process exited cleanly after selecting emoji from category.")
+}
+
+func runMultiSelectTest(binaryPath string) {
+	master, slaveName := spawnPTY()
+	defer master.Close()
+
+	slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+		os.Exit(1)
+	}
+	defer slave.Close()
+
+	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+	ws := winsize{Row: 24, Col: 80}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+	cmd := exec.Command(binaryPath, "--tui")
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
+	cmd.Env = append(os.Environ(), "EMOJIG_EXIT_PREVIEW=0")
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error starting command: %v\n", err)
+		os.Exit(1)
+	}
+	slave.Close()
+
+	chunksChan := make(chan string, 100)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				s := string(buf[:n])
+				chunksChan <- s
+				if strings.Contains(s, "\x1b[6n") {
+					master.Write([]byte("\x1b[24;80R"))
+				}
+			}
+			if err != nil {
+				close(chunksChan)
+				return
+			}
+		}
+	}()
+
+	collectAvailable := func() string {
+		var s strings.Builder
+		for {
+			select {
+			case chunk, ok := <-chunksChan:
+				if !ok {
+					return s.String()
+				}
+				s.WriteString(chunk)
+			default:
+				return s.String()
+			}
+		}
+	}
+
+	// Wait for initial render.
+	time.Sleep(300 * time.Millisecond)
+	_ = collectAvailable()
+
+	// Type ":multi"
+	if _, err := master.Write([]byte(":multi")); err != nil {
+		fmt.Printf("Error typing :multi: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Press Enter to activate multi selection mode
+	if _, err := master.Write([]byte("\n")); err != nil {
+		fmt.Printf("Error starting multi-select: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	out := stripANSI(collectAvailable())
+
+	// The status/layout should display "[Multi: 0 sel]"
+	if !strings.Contains(out, "[Multi: 0 sel]") {
+		fmt.Printf("FAIL: expected TUI to indicate multi-selection active with 0 selected. Got:\n%s\n", out)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: multi-selection mode is active.")
+
+	// Type "robot" to search for robot
+	if _, err := master.Write([]byte("robot")); err != nil {
+		fmt.Printf("Error typing robot: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	_ = collectAvailable()
+
+	// Press Enter to select the robot emoji (🤖)
+	if _, err := master.Write([]byte("\n")); err != nil {
+		fmt.Printf("Error writing Enter: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	out2 := stripANSI(collectAvailable())
+
+	// The status/layout should display "[Multi: 1 sel]"
+	if !strings.Contains(out2, "[Multi: 1 sel]") {
+		fmt.Printf("FAIL: expected TUI to show 1 selected. Got:\n%s\n", out2)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: selected first emoji (🤖) in multi-selection mode.")
+
+	// Clear search term by sending 5 backspaces
+	if _, err := master.Write([]byte("\x7f\x7f\x7f\x7f\x7f")); err != nil {
+		fmt.Printf("Error writing Backspaces: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	_ = collectAvailable()
+
+	// Type "heart" to search for heart
+	if _, err := master.Write([]byte("heart")); err != nil {
+		fmt.Printf("Error typing heart: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	_ = collectAvailable()
+
+	// Press Enter to select the heart emoji
+	if _, err := master.Write([]byte("\n")); err != nil {
+		fmt.Printf("Error writing Enter: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	time.Sleep(200 * time.Millisecond)
+	out3 := stripANSI(collectAvailable())
+
+	// The status/layout should display "[Multi: 2 sel]"
+	if !strings.Contains(out3, "[Multi: 2 sel]") {
+		fmt.Printf("FAIL: expected TUI to show 2 selected. Got:\n%s\n", out3)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+	fmt.Println("PASS: selected second emoji in multi-selection mode.")
+
+	// Send Shift-Enter (using CSI sequence for shift-enter "\x1b[27;2;13~")
+	if _, err := master.Write([]byte("\x1b[27;2;13~")); err != nil {
+		fmt.Printf("Error writing Shift-Enter: %v\n", err)
+		cmd.Process.Kill()
+		os.Exit(1)
+	}
+
+	// The process should exit with 0
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("FAIL: process exited with error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("PASS: process exited cleanly on Shift-Enter.")
+}
+
 

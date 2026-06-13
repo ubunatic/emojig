@@ -20,6 +20,9 @@ const layout_json = @embedFile("spec_layout");
 const theme_json = @embedFile("spec_theme");
 const keys_json = @embedFile("spec_keys");
 const strings_json = @embedFile("spec_strings");
+const commands_json = @embedFile("spec_commands");
+const settings_json = @embedFile("spec_settings");
+const categories_json = @embedFile("spec_categories");
 const strings_es = @embedFile("spec_strings_es");
 const strings_pt = @embedFile("spec_strings_pt");
 const strings_fr = @embedFile("spec_strings_fr");
@@ -97,6 +100,33 @@ pub const Keys = struct {
     bindings: std.json.ArrayHashMap([]const u8),
 };
 
+pub const CommandSpec = struct {
+    name: []const u8,
+    short: []const u8,
+    action: []const u8,
+};
+
+pub const Commands = struct {
+    commands: []const CommandSpec,
+};
+
+pub const SettingOption = struct {
+    id: []const u8,
+    type: []const u8,
+    label: []const u8,
+    choices: ?[]const []const u8 = null,
+    default: []const u8,
+};
+
+pub const SettingsSpec = struct {
+    title: []const u8,
+    options: []const SettingOption,
+};
+
+const emojig_mod = @import("emojig");
+pub const CategorySpec = emojig_mod.CategorySpec;
+pub const CategoriesSpec = emojig_mod.CategoriesSpec;
+
 pub const Strings = struct {
     search_prompt: []const u8,
     search_placeholder: []const u8,
@@ -106,6 +136,7 @@ pub const Strings = struct {
     status_matches_wide: []const u8,
     help_lines: []const []const u8,
     help_lines_more: []const []const u8,
+    about_lines: []const []const u8 = &[_][]const u8{},
     focus_lost_startup_lines: []const []const u8 = &[_][]const u8{ "⚠️  Cannot steal Wayland", "popup focus?", "", "Click window to focus!" },
     focus_lost_runtime_lines: []const []const u8 = &[_][]const u8{ "⚠️  Picker unfocused.", "", "", "Click window to focus!" },
 };
@@ -119,6 +150,9 @@ pub const Spec = struct {
     theme: Theme,
     keys: Keys,
     strings: Strings,
+    commands: Commands,
+    settings: SettingsSpec,
+    categories: CategoriesSpec,
     // term.Palette escape strings built at load from the color indices above.
     dark_palette: term.Palette,
     light_palette: term.Palette,
@@ -198,12 +232,18 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     }
 
     const strings = try std.json.parseFromSliceLeaky(Strings, arena, strings_content, parse_opts);
+    const commands = try std.json.parseFromSliceLeaky(Commands, arena, commands_json, parse_opts);
+    const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
+    const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
 
     return .{
         .layout = layout,
         .theme = theme,
         .keys = keys,
         .strings = strings,
+        .commands = commands,
+        .settings = settings,
+        .categories = categories,
         .dark_palette = try buildPalette(arena, theme.themes.dark, false),
         .light_palette = try buildPalette(arena, theme.themes.light, false),
         .dark_palette_dim = try buildPalette(arena, theme.themes.dark, true),

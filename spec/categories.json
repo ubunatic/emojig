@@ -1,0 +1,30 @@
+{
+  "description": "Category synonyms and keywords for filtering.",
+  "categories": [
+    {
+      "name": "clocks",
+      "short": "clock",
+      "synonyms": ["clock", "time", "watch"]
+    },
+    {
+      "name": "flags",
+      "short": "flag",
+      "synonyms": ["flag", "banner"]
+    },
+    {
+      "name": "blocks",
+      "short": "block",
+      "synonyms": ["block", "square"]
+    },
+    {
+      "name": "borders",
+      "short": "border",
+      "synonyms": ["border", "frame"]
+    },
+    {
+      "name": "shades",
+      "short": "shade",
+      "synonyms": ["shade", "gradient"]
+    }
+  ]
+}

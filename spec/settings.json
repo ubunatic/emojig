@@ -1,0 +1,32 @@
+{
+  "description": "Interactive settings configuration options for the picker.",
+  "title": "⚙️ emojig settings",
+  "options": [
+    {
+      "id": "shell_integration",
+      "type": "boolean",
+      "label": "shell integration",
+      "default": "false"
+    },
+    {
+      "id": "shell_key_binding",
+      "type": "choice",
+      "label": "shell key binding",
+      "choices": ["C-e", "none"],
+      "default": "C-e"
+    },
+    {
+      "id": "show_all_categories",
+      "type": "boolean",
+      "label": "show all categories",
+      "default": "true"
+    },
+    {
+      "id": "ambiguous_chars",
+      "type": "choice",
+      "label": "ambiguous chars",
+      "choices": ["wide", "narrow"],
+      "default": "wide"
+    }
+  ]
+}

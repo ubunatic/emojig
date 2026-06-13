@@ -14,6 +14,14 @@
     " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
     " ??        More…"
   ],
+  "about_lines": [
+    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
+    "",
+    " Emojig is a lightning-fast, zero-allocation",
+    " emoji picker built in Zig.",
+    "",
+    " Made with 💙+🤖 in Dresden, DE"
+  ],
   "help_lines_more": [
     "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
     "",

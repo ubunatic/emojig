@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # emojig bash integration — source this from ~/.bashrc
-# Ctrl+E inserts the selected emoji at the cursor position.
 
 _emojig_widget() {
   local emoji
@@ -12,10 +11,29 @@ _emojig_widget() {
     READLINE_POINT=$(( READLINE_POINT + ${#emoji} ))
   fi
 }
-_emojig_key="${EMOJIG_KEY:-\\C-e}"
-case "$_emojig_key" in
-  *'"'*|*':'*|*$'\n'*) echo "emojig: unsafe EMOJIG_KEY value ignored, using default" >&2
-    _emojig_key="\\C-e" ;;
-esac
-bind -x "\"${_emojig_key}\": _emojig_widget"
+
+_emojig_integration="true"
+_emojig_key="\\C-e"
+
+if test -f ~/.config/emojig/config; then
+  _cfg_int=$(grep "^shell_integration=" ~/.config/emojig/config | cut -d= -f2)
+  if test "$_cfg_int" = "false" || test "$_cfg_int" = "0"; then
+    _emojig_integration="false"
+  fi
+  _cfg_key=$(grep "^shell_key_binding=" ~/.config/emojig/config | cut -d= -f2)
+  if test "$_cfg_key" = "none"; then
+    _emojig_key="none"
+  elif test -n "$_cfg_key"; then
+    _emojig_key="$_cfg_key"
+  fi
+fi
+
+if test "$_emojig_integration" = "true" && test "$_emojig_key" != "none"; then
+  if test "$_emojig_key" = "C-e"; then
+    _emojig_key="\\C-e"
+  fi
+  bind -x "\"${_emojig_key}\": _emojig_widget"
+fi
+
 unset _emojig_key
+unset _emojig_integration

@@ -8,7 +8,7 @@
   "gui": {
     "cols": 8,
     "rows": 8,
-    "width": 32
+    "width": 36
   },
   "layout_overhead": 6,
   "max_query_len": 63,

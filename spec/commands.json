@@ -1,0 +1,30 @@
+{
+  "description": "Custom commands mapping. Each command is matched as a prefix of the typed text after ':' and executed on Enter (<cr>).",
+  "commands": [
+    {
+      "name": "help",
+      "short": "h",
+      "action": "open_help"
+    },
+    {
+      "name": "about",
+      "short": "a",
+      "action": "open_about"
+    },
+    {
+      "name": "settings",
+      "short": "s",
+      "action": "open_settings"
+    },
+    {
+      "name": "categories",
+      "short": "c",
+      "action": "open_categories"
+    },
+    {
+      "name": "multi",
+      "short": "m",
+      "action": "start_multi_selection"
+    }
+  ]
+}
