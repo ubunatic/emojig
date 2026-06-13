@@ -397,6 +397,19 @@ const Config = struct {
     disabled_categories: ?[]const u8 = null,
 };
 
+/// Look up the default value for a setting by ID from the loaded spec.
+fn settingDefault(id: []const u8) []const u8 {
+    for (g_spec.settings.options) |opt| {
+        if (std.mem.eql(u8, opt.id, id)) return opt.default;
+    }
+    return "";
+}
+
+fn settingDefaultBool(id: []const u8) bool {
+    const v = settingDefault(id);
+    return std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1");
+}
+
 /// Read configuration from the config file in a single pass.
 fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
     var cfg = Config{};
@@ -1912,10 +1925,10 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
         }
-        var shell_integration = cfg.shell_integration orelse false;
-        var shell_key_binding = cfg.shell_key_binding orelse "C-e";
-        var show_all_categories = cfg.show_all_categories orelse true;
-        var ambiguous_chars = cfg.ambiguous_chars orelse "wide";
+        var shell_integration = cfg.shell_integration orelse settingDefaultBool("shell_integration");
+        var shell_key_binding = cfg.shell_key_binding orelse settingDefault("shell_key_binding");
+        var show_all_categories = cfg.show_all_categories orelse settingDefaultBool("show_all_categories");
+        var ambiguous_chars = cfg.ambiguous_chars orelse settingDefault("ambiguous_chars");
         g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
 
         var popup_msg: ?[]const u8 = null;
