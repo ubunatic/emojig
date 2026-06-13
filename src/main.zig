@@ -17,6 +17,7 @@ const ScreenState = enum {
     search,
     help,
     about,
+    status,
     settings,
     categories,
 };
@@ -181,6 +182,45 @@ fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
         return std.fmt.bufPrint(buf, "{s}{d}{s}", .{ tmpl[0..pos], total, tmpl[pos + ph.len ..] });
     }
     return tmpl;
+}
+
+/// A single `$name` → value substitution entry for expandVars.
+const VarSubst = struct { key: []const u8, val: []const u8 };
+
+/// Expand `$name` placeholders in `tmpl` using the provided key-value pairs.
+/// Writes the result into `buf` and returns the populated slice. Longer key
+/// names must appear before shorter ones that share a prefix (e.g.
+/// `shell_integration` before `shell`) to get the right match.
+fn expandVars(buf: []u8, tmpl: []const u8, vars: []const VarSubst) []const u8 {
+    var out: usize = 0;
+    var i: usize = 0;
+    while (i < tmpl.len and out < buf.len) {
+        if (tmpl[i] == '$') {
+            var matched = false;
+            for (vars) |v| {
+                if (i + 1 + v.key.len <= tmpl.len and
+                    std.mem.eql(u8, tmpl[i + 1 ..][0..v.key.len], v.key))
+                {
+                    const copy_len = @min(v.val.len, buf.len - out);
+                    @memcpy(buf[out..][0..copy_len], v.val[0..copy_len]);
+                    out += copy_len;
+                    i += 1 + v.key.len;
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                buf[out] = tmpl[i];
+                out += 1;
+                i += 1;
+            }
+        } else {
+            buf[out] = tmpl[i];
+            out += 1;
+            i += 1;
+        }
+    }
+    return buf[0..out];
 }
 
 inline fn effectivePalette(t: Theme, sys: Theme, dim: bool) Palette {
@@ -1940,6 +1980,10 @@ pub fn main(init: std.process.Init) !void {
         var popup_msg: ?[]const u8 = null;
         var popup_buf: [1024]u8 = undefined;
 
+        // Pre-formatted emoji count — doesn't change at runtime.
+        var emojis_count_buf: [16]u8 = undefined;
+        const emojis_count_str = std.fmt.bufPrint(&emojis_count_buf, "{d}", .{emojig.EmojiDb.count}) catch "?";
+
         var query_buf: [defaults.MAX_QUERY_LEN]u8 = undefined;
         var query_len: usize = 0;
         // Effective query cap from the spec, never exceeding the stack buffer.
@@ -2182,6 +2226,7 @@ pub fn main(init: std.process.Init) !void {
                 }
 
                 var line_buf: [1024]u8 = undefined;
+                var var_expand_buf: [256]u8 = undefined;
 
                 var printed_rows: usize = 0;
                 const RowWriter = struct {
@@ -2410,6 +2455,15 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else if (current_screen == .about and !is_too_small) {
+                        const theme_str: []const u8 = switch (theme) {
+                            .dark => "dark",
+                            .light => "light",
+                            .system => "system",
+                        };
+                        const spec_vars = [_]VarSubst{
+                            .{ .key = "version", .val = build_options.version },
+                            .{ .key = "theme", .val = theme_str },
+                        };
                         const help_rows = rows + 3;
                         var h_idx: usize = 0;
                         while (h_idx < help_rows) : (h_idx += 1) {
@@ -2419,7 +2473,41 @@ pub fn main(init: std.process.Init) !void {
                             const center_threshold: usize = about_lines.len + 2;
                             const offset = if (help_rows >= center_threshold) @as(usize, 1) else 0;
                             if (h_idx >= offset and h_idx - offset < about_lines.len) {
-                                text = about_lines[h_idx - offset];
+                                text = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
+                            }
+                            const vis_w = ansiDisplayWidth(text);
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, line);
+                            try rw.endRow();
+                        }
+                    } else if (current_screen == .status and !is_too_small) {
+                        const theme_str: []const u8 = switch (theme) {
+                            .dark => "dark",
+                            .light => "light",
+                            .system => "system",
+                        };
+                        const spec_vars = [_]VarSubst{
+                            .{ .key = "shell_integration", .val = if (shell_integration) "true" else "false" },
+                            .{ .key = "shell_key_binding", .val = shell_key_binding },
+                            .{ .key = "show_all_categories", .val = if (show_all_categories) "true" else "false" },
+                            .{ .key = "ambiguous_chars", .val = ambiguous_chars },
+                            .{ .key = "update_cmd", .val = cfg.update_cmd orelse "(auto)" },
+                            .{ .key = "version", .val = build_options.version },
+                            .{ .key = "emojis", .val = emojis_count_str },
+                            .{ .key = "shell", .val = detectShell(init.environ_map) },
+                            .{ .key = "theme", .val = theme_str },
+                        };
+                        const status_rows = rows + 3;
+                        var h_idx: usize = 0;
+                        while (h_idx < status_rows) : (h_idx += 1) {
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            var text: []const u8 = "";
+                            const status_lines = g_spec.strings.status_lines;
+                            const center_threshold: usize = status_lines.len + 2;
+                            const offset = if (status_rows >= center_threshold) @as(usize, 1) else 0;
+                            if (h_idx >= offset and h_idx - offset < status_lines.len) {
+                                text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2817,6 +2905,8 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .help) {
                                 break :blk " Esc:back";
                             } else if (current_screen == .about) {
+                                break :blk " Esc:back";
+                            } else if (current_screen == .status) {
                                 break :blk " Esc:back";
                             } else if (current_screen == .settings and keybind_editing) {
                                 break :blk " Type binding  Enter:save  Esc:cancel";
@@ -3383,7 +3473,7 @@ pub fn main(init: std.process.Init) !void {
                             selected_idx = null;
                             total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                         }
-                    } else if (current_screen == .about or current_screen == .help) {
+                    } else if (current_screen == .about or current_screen == .help or current_screen == .status) {
                         if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
@@ -3428,6 +3518,9 @@ pub fn main(init: std.process.Init) !void {
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_about")) {
                                     current_screen = .about;
+                                    selected_idx = null;
+                                } else if (std.mem.eql(u8, cmd.action, "open_status")) {
+                                    current_screen = .status;
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_settings")) {
                                     current_screen = .settings;

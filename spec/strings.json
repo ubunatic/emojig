@@ -17,10 +17,23 @@
   "about_lines": [
     "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
     "",
-    " Emojig is a lightning-fast, zero-allocation",
-    " emoji picker built in Zig.",
+    " Emojig $version — lightning-fast,",
+    " zero-allocation emoji picker in Zig.",
     "",
     " Made with 💙+🤖 in Dresden, DE"
+  ],
+  "status_lines": [
+    "ℹ️  emojig $version",
+    "",
+    " theme:       $theme",
+    " shell:       $shell",
+    " key binding: $shell_key_binding",
+    " integration: $shell_integration",
+    " categories:  $show_all_categories",
+    " ambiguous:   $ambiguous_chars",
+    " update cmd:  $update_cmd",
+    "",
+    " $emojis emojis indexed"
   ],
   "help_lines_more": [
     "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",

@@ -30,6 +30,11 @@
       "name": "update",
       "short": "u",
       "action": "run_update"
+    },
+    {
+      "name": "status",
+      "short": "st",
+      "action": "open_status"
     }
   ]
 }
