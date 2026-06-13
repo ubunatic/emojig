@@ -2471,7 +2471,7 @@ pub fn main(init: std.process.Init) !void {
                                 // cursor lands at content_width for endRow's \x1b[K — preserving sb.
                                 const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
                                 var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
                             }
                             try rw.endRow();
@@ -2512,7 +2512,7 @@ pub fn main(init: std.process.Init) !void {
                             if (needs_scroll and content_width >= 2) {
                                 const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
                                 var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
                             }
                             try rw.endRow();
@@ -2560,7 +2560,7 @@ pub fn main(init: std.process.Init) !void {
                             if (needs_scroll and content_width >= 2) {
                                 const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
                                 var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
                             }
                             try rw.endRow();
