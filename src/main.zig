@@ -2469,7 +2469,7 @@ pub fn main(init: std.process.Init) !void {
                             if (needs_scroll and content_width >= 2) {
                                 // CHA to col content_width-1 (second-to-last); after writing sb,
                                 // cursor lands at content_width for endRow's \x1b[K — preserving sb.
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▌" else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
@@ -2510,7 +2510,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▌" else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
@@ -2558,7 +2558,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▌" else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width, sb });
                                 try writeAll(stdout_fd, sb_seq);
