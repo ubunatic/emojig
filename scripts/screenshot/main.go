@@ -87,8 +87,11 @@ func main() {
 
 	// Type the optional keys and wait for the re-render.
 	if keys != "" {
-		master.Write([]byte(keys))
-		time.Sleep(500 * time.Millisecond)
+		for _, ks := range parseKeystrokes(keys) {
+			master.Write(ks)
+			time.Sleep(50 * time.Millisecond)
+		}
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	// Drain with raw syscall.Read: os.File.Read would park in the Go poller
@@ -185,4 +188,34 @@ func stripANSI(s string) string {
 		i++
 	}
 	return out.String()
+}
+
+// parseKeystrokes splits a key string into individual writes:
+// ANSI CSI/SS3 escape sequences (e.g. \x1b[A, \x1bOB) are kept as one
+// slice so they arrive at the PTY in a single write; all other bytes are
+// sent one at a time with a 50 ms delay between them.
+// Note: ESC sequence atomicity depends on the TUI's read buffer size —
+// if it reads 1 byte at a time, CSI sequences may still be split.
+func parseKeystrokes(keys string) [][]byte {
+	var list [][]byte
+	i := 0
+	for i < len(keys) {
+		if keys[i] == 0x1b && i+2 < len(keys) {
+			// ESC + introducer byte ([ or O) + at least one more byte.
+			start := i
+			i += 2 // skip ESC and the introducer ([ or O)
+			for i < len(keys) {
+				b := keys[i]
+				i++
+				if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '~' {
+					break
+				}
+			}
+			list = append(list, []byte(keys[start:i]))
+		} else {
+			list = append(list, []byte{keys[i]})
+			i++
+		}
+	}
+	return list
 }

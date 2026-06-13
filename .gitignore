@@ -33,3 +33,4 @@ scripts/wasm-out/
 # Added by cargo
 
 /target
+/screenshot
