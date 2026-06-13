@@ -1830,6 +1830,7 @@ pub fn main(init: std.process.Init) !void {
             theme;
 
         var is_first_render = true;
+        var last_was_motion = false; // true only after a mouse-motion event
         var rctx = resize.ResizeContext.init(resize_mode);
         var last_drawn_h: usize = final_h;
         // Declared here (before the defer) so the defer body can read it.
@@ -2128,10 +2129,12 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             // Render
             // ----------------------------------------------------------------
-            // Skip render when input is already buffered: coalesces rapid
-            // mouse-motion or typing bursts into a single redraw per lull.
-            // Never skip on the first frame or during the exit-preview animation.
+            // Skip render only when the previous event was a mouse-motion event
+            // AND more input is already buffered — coalesces hover storms without
+            // delaying keyboard input. Keyboard events always trigger an immediate
+            // render so characters appear as they are typed.
             const skip_render = !is_first_render and !exit_preview and
+                last_was_motion and
                 (tui.poll(stdin_fd, pipe_rd, 0) == .tty);
             if (!skip_render and (exit_preview or !should_copy_and_exit)) {
                 try writeAll(stdout_fd, "\x1b[?25l");
@@ -3158,6 +3161,8 @@ pub fn main(init: std.process.Init) !void {
             // Decode the raw byte sequence into a logical key name; the binding
             // table in spec/keys.json maps that name to an action below. Mouse
             // events and printable text are handled inline (not via bindings).
+            // Reset here; the SGR mouse branch sets it to true for motion events.
+            last_was_motion = false;
             var logical: ?[]const u8 = null;
 
             if (bytes[0] == 27) {
@@ -3210,6 +3215,7 @@ pub fn main(init: std.process.Init) !void {
 
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
+                        last_was_motion = is_motion;
 
                         if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
                             // Theme button hover.
