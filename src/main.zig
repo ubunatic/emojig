@@ -2448,7 +2448,6 @@ pub fn main(init: std.process.Init) !void {
                         const needs_scroll = help_lines.len > viewport_h;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / help_lines.len) else 0;
                         const thumb_start = if (needs_scroll) help_scroll_top * viewport_h / help_lines.len else 0;
-                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2462,10 +2461,17 @@ pub fn main(init: std.process.Init) !void {
                                 if (h_idx >= offset and h_idx - offset < help_lines.len) text = help_lines[h_idx - offset];
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
-                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                // CHA to col content_width-1 (second-to-last); after writing sb,
+                                // cursor lands at content_width for endRow's \x1b[K — preserving sb.
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                var sb_buf: [16]u8 = undefined;
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                try writeAll(stdout_fd, sb_seq);
+                            }
                             try rw.endRow();
                         }
                     } else if (current_screen == .about and !is_too_small) {
@@ -2483,7 +2489,6 @@ pub fn main(init: std.process.Init) !void {
                         const needs_scroll = about_lines.len > viewport_h;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about_lines.len) else 0;
                         const thumb_start = if (needs_scroll) about_scroll_top * viewport_h / about_lines.len else 0;
-                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2497,10 +2502,15 @@ pub fn main(init: std.process.Init) !void {
                                 if (h_idx >= offset and h_idx - offset < about_lines.len) text = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
-                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                var sb_buf: [16]u8 = undefined;
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                try writeAll(stdout_fd, sb_seq);
+                            }
                             try rw.endRow();
                         }
                     } else if (current_screen == .status and !is_too_small) {
@@ -2525,7 +2535,6 @@ pub fn main(init: std.process.Init) !void {
                         const needs_scroll = status_lines.len > viewport_h;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / status_lines.len) else 0;
                         const thumb_start = if (needs_scroll) status_scroll_top * viewport_h / status_lines.len else 0;
-                        const sb_col: usize = if (needs_scroll) 1 else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2539,10 +2548,15 @@ pub fn main(init: std.process.Init) !void {
                                 if (h_idx >= offset and h_idx - offset < status_lines.len) text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
                             }
                             const vis_w = ansiDisplayWidth(text);
-                            const sb: []const u8 = if (!needs_scroll) "" else if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
-                            const pad_len = if (content_width > vis_w + sb_col) content_width - vis_w - sb_col else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)], sb });
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                var sb_buf: [16]u8 = undefined;
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width - 1, sb });
+                                try writeAll(stdout_fd, sb_seq);
+                            }
                             try rw.endRow();
                         }
                     } else if (current_screen == .settings and !is_too_small) {
@@ -2933,11 +2947,14 @@ pub fn main(init: std.process.Init) !void {
                             if (popup_msg != null) {
                                 break :blk " Space/Enter/Esc:close";
                             } else if (current_screen == .help) {
-                                break :blk " Esc:back";
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.help_lines_more.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
                             } else if (current_screen == .about) {
-                                break :blk " Esc:back";
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.about_lines.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
                             } else if (current_screen == .status) {
-                                break :blk " Esc:back";
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.status_lines.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
                             } else if (current_screen == .settings and keybind_editing) {
                                 break :blk " Type binding  Enter:save  Esc:cancel";
                             } else if (current_screen == .settings) {
