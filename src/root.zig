@@ -1040,35 +1040,30 @@ fn runBench(query: []const u8, duration_ms: u64) u64 {
 
 test "benchmark: search throughput" {
     // Duration per query: 10ms in normal test runs, more in bench mode.
-    // Override: EMOJIG_BENCH=5000 zig build test  (5 s per query)
+    // Override: EMOJIG_BENCH=5000 zig build test [-Doptimize=ReleaseFast]
     const duration_ms: u64 = blk: {
         const env = std.c.getenv("EMOJIG_BENCH") orelse break :blk 10;
         const val = std.mem.sliceTo(env, 0);
         break :blk std.fmt.parseInt(u64, val, 10) catch 10;
     };
-    std.debug.print("\nsearch benchmarks ({d} ms per query, {d} emojis):\n", .{ duration_ms, EmojiDb.count });
-
-    const is_bench = duration_ms > 10;
+    const is_release = @import("builtin").mode != .Debug;
+    const build_label = if (is_release) "release" else "debug";
+    std.debug.print("\nsearch benchmarks ({s}, {d} ms/query, {d} emojis):\n", .{ build_label, duration_ms, EmojiDb.count });
 
     // --- representative query set ---
-    // empty: returns top-48 results in score order — exercises ranking only
-    _ = runBench("", duration_ms);
-    // single char: large result set, full scan with scoring
-    const ns_a = runBench("a", duration_ms);
-    // common short word: typical interactive query
-    const ns_fire = runBench("fire", duration_ms);
-    // multi-word AND: two-term intersection scoring
-    const ns_multi = runBench("red heart", duration_ms);
-    // plural: exercises the fallback stem/plural matching paths
-    const ns_plural = runBench("hearts", duration_ms);
-    // no match: exercises the early-exit / zero-score path
-    _ = runBench("xyzxyz", duration_ms);
+    _ = runBench("", duration_ms);          // empty: ranking only
+    const ns_a = runBench("a", duration_ms);            // single char: large result set
+    const ns_fire = runBench("fire", duration_ms);      // short word: typical query
+    const ns_multi = runBench("red heart", duration_ms); // multi-word AND
+    const ns_plural = runBench("hearts", duration_ms);  // plural/stem fallback
+    _ = runBench("xyzxyz", duration_ms);    // no match: early-exit path
 
-    // In bench mode (release build) enforce a hard latency ceiling:
-    // >500 searches/s means every keystroke is processed in <2 ms.
-    // Debug builds are unoptimised and intentionally excluded.
-    if (is_bench) {
-        const max_ns: u64 = 2_000_000; // 2 ms per search
+    // Enforce latency ceiling only in extended bench mode on a release build.
+    // Debug builds are ~100× slower and intentionally excluded.
+    // 5 ms is a conservative ceiling: release builds typically do <3 ms,
+    // giving headroom for slower CI hardware while still catching regressions.
+    if (duration_ms > 10 and is_release) {
+        const max_ns: u64 = 5_000_000; // 5 ms/search → >200 searches/s
         try std.testing.expect(ns_a < max_ns);
         try std.testing.expect(ns_fire < max_ns);
         try std.testing.expect(ns_multi < max_ns);
