@@ -2446,8 +2446,10 @@ pub fn main(init: std.process.Init) !void {
                         const help_lines = g_spec.strings.help_lines_more;
                         const viewport_h = rows + 3;
                         const needs_scroll = help_lines.len > viewport_h;
+                        const max_scroll_h: usize = if (needs_scroll) help_lines.len - viewport_h else 0;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / help_lines.len) else 0;
-                        const thumb_start = if (needs_scroll) help_scroll_top * viewport_h / help_lines.len else 0;
+                        const travel_h = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_h > 0) help_scroll_top * travel_h / max_scroll_h else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2487,8 +2489,10 @@ pub fn main(init: std.process.Init) !void {
                         const about_lines = g_spec.strings.about_lines;
                         const viewport_h = rows + 3;
                         const needs_scroll = about_lines.len > viewport_h;
+                        const max_scroll_a: usize = if (needs_scroll) about_lines.len - viewport_h else 0;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about_lines.len) else 0;
-                        const thumb_start = if (needs_scroll) about_scroll_top * viewport_h / about_lines.len else 0;
+                        const travel_a = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_a > 0) about_scroll_top * travel_a / max_scroll_a else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2533,8 +2537,10 @@ pub fn main(init: std.process.Init) !void {
                         const status_lines = g_spec.strings.status_lines;
                         const viewport_h = rows + 3;
                         const needs_scroll = status_lines.len > viewport_h;
+                        const max_scroll_s: usize = if (needs_scroll) status_lines.len - viewport_h else 0;
                         const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / status_lines.len) else 0;
-                        const thumb_start = if (needs_scroll) status_scroll_top * viewport_h / status_lines.len else 0;
+                        const travel_s = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_s > 0) status_scroll_top * travel_s / max_scroll_s else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
