@@ -114,6 +114,7 @@ pub fn build(b: *std.Build) void {
     mod.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
     mod.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
     mod.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
+    mod.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
 
     exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
     exe.root_module.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
@@ -132,6 +133,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
     exe.root_module.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
     exe.root_module.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
+    exe.root_module.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
 
     const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
     const options = b.addOptions();

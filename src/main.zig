@@ -184,6 +184,235 @@ fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
     return tmpl;
 }
 
+/// Expand a status template with variable substitution and style spans.
+///
+/// Variables: `{count}` → emoji count, `{search_bg}` → theme palette escape.
+/// Style spans: `$name{text}` or `$[attr1,attr2,fg=N]{text}`.
+///   Named styles are looked up from `spec/styles.json`.
+///   Built-in attrs: bold, dim, italic, underline, blink, reverse, strike.
+///   Key-value: fg=N or color=N (0-255 or color name), bg=N.
+///   Color names: black, red, green, yellow, blue, magenta, cyan, white.
+///   After each span, `\x1b[0m` + `search_bg` are emitted automatically.
+fn expandTemplate(
+    buf: []u8,
+    tmpl: []const u8,
+    styles: *const spec_mod.StylesSpec,
+    count: usize,
+    search_bg: []const u8,
+) []const u8 {
+    var out: usize = 0;
+    var i: usize = 0;
+    while (i < tmpl.len and out < buf.len) {
+        if (tmpl[i] == '{') {
+            if (std.mem.startsWith(u8, tmpl[i..], "{count}")) {
+                var num_buf: [20]u8 = undefined;
+                const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{count}) catch "";
+                const n = @min(num_str.len, buf.len - out);
+                @memcpy(buf[out..][0..n], num_str[0..n]);
+                out += n;
+                i += "{count}".len;
+                continue;
+            } else if (std.mem.startsWith(u8, tmpl[i..], "{search_bg}")) {
+                const n = @min(search_bg.len, buf.len - out);
+                @memcpy(buf[out..][0..n], search_bg[0..n]);
+                out += n;
+                i += "{search_bg}".len;
+                continue;
+            }
+        }
+        if (tmpl[i] == '$') {
+            var j = i + 1;
+            var attrs_str: []const u8 = "";
+            var valid = false;
+            if (j < tmpl.len and tmpl[j] == '[') {
+                j += 1;
+                const start = j;
+                while (j < tmpl.len and tmpl[j] != ']') j += 1;
+                if (j < tmpl.len) {
+                    attrs_str = tmpl[start..j];
+                    j += 1;
+                    valid = true;
+                }
+            } else {
+                const start = j;
+                while (j < tmpl.len and styleIdentChar(tmpl[j])) j += 1;
+                if (j > start) {
+                    attrs_str = tmpl[start..j];
+                    valid = true;
+                }
+            }
+            if (valid and j < tmpl.len and tmpl[j] == '{') {
+                j += 1;
+                const content_start = j;
+                var depth: usize = 1;
+                while (j < tmpl.len) {
+                    if (tmpl[j] == '{') {
+                        depth += 1;
+                    } else if (tmpl[j] == '}') {
+                        depth -= 1;
+                        if (depth == 0) break;
+                    }
+                    j += 1;
+                }
+                if (depth == 0) {
+                    const content = tmpl[content_start..j];
+                    j += 1;
+                    var sgr_buf: [128]u8 = undefined;
+                    const sgr = buildSgr(&sgr_buf, attrs_str, styles);
+                    var n: usize = @min(sgr.len, buf.len - out);
+                    @memcpy(buf[out..][0..n], sgr[0..n]);
+                    out += n;
+                    n = @min(content.len, buf.len - out);
+                    @memcpy(buf[out..][0..n], content[0..n]);
+                    out += n;
+                    const reset = "\x1b[0m";
+                    n = @min(reset.len, buf.len - out);
+                    @memcpy(buf[out..][0..n], reset[0..n]);
+                    out += n;
+                    n = @min(search_bg.len, buf.len - out);
+                    @memcpy(buf[out..][0..n], search_bg[0..n]);
+                    out += n;
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        buf[out] = tmpl[i];
+        out += 1;
+        i += 1;
+    }
+    return buf[0..out];
+}
+
+fn styleIdentChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_';
+}
+
+fn buildSgr(buf: []u8, attrs_str: []const u8, styles: *const spec_mod.StylesSpec) []const u8 {
+    var codes: [32]u16 = undefined;
+    var n: usize = 0;
+    collectSgrCodes(attrs_str, styles, &codes, &n, 0);
+    if (n == 0 or buf.len < 4) return "";
+    var out: usize = 0;
+    buf[out] = 0x1b;
+    out += 1;
+    buf[out] = '[';
+    out += 1;
+    for (codes[0..n], 0..) |code, ci| {
+        if (ci > 0) {
+            if (out < buf.len) {
+                buf[out] = ';';
+                out += 1;
+            }
+        }
+        const s = std.fmt.bufPrint(buf[out..], "{d}", .{code}) catch break;
+        out += s.len;
+    }
+    if (out < buf.len) {
+        buf[out] = 'm';
+        out += 1;
+    }
+    return buf[0..out];
+}
+
+fn collectSgrCodes(
+    attrs_str: []const u8,
+    styles: *const spec_mod.StylesSpec,
+    codes: []u16,
+    n: *usize,
+    depth: usize,
+) void {
+    if (depth > 4) return;
+    var it = std.mem.splitScalar(u8, attrs_str, ',');
+    while (it.next()) |raw| {
+        if (n.* + 4 > codes.len) break;
+        const attr = std.mem.trim(u8, raw, " \t");
+        if (attr.len == 0) continue;
+        if (std.mem.indexOfScalar(u8, attr, '=')) |eq| {
+            const key = attr[0..eq];
+            const val = attr[eq + 1 ..];
+            if (std.mem.eql(u8, key, "fg") or std.mem.eql(u8, key, "color")) {
+                appendFgCodes(codes, n, val);
+            } else if (std.mem.eql(u8, key, "bg")) {
+                appendBgCodes(codes, n, val);
+            }
+        } else if (std.mem.eql(u8, attr, "bold")) {
+            codes[n.*] = 1;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "dim")) {
+            codes[n.*] = 2;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "italic")) {
+            codes[n.*] = 3;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "underline")) {
+            codes[n.*] = 4;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "blink")) {
+            codes[n.*] = 5;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "reverse")) {
+            codes[n.*] = 7;
+            n.* += 1;
+        } else if (std.mem.eql(u8, attr, "strike")) {
+            codes[n.*] = 9;
+            n.* += 1;
+        } else if (styles.styles.map.get(attr)) |def| {
+            collectSgrCodes(def, styles, codes, n, depth + 1);
+        }
+    }
+}
+
+fn appendFgCodes(codes: []u16, n: *usize, val: []const u8) void {
+    if (n.* + 3 > codes.len) return;
+    if (colorNameToBasic(val)) |basic| {
+        codes[n.*] = 30 + basic;
+        n.* += 1;
+    } else if (std.fmt.parseInt(u16, val, 10) catch null) |idx| {
+        if (idx < 8) {
+            codes[n.*] = 30 + idx;
+            n.* += 1;
+        } else if (idx < 16) {
+            codes[n.*] = 90 + idx - 8;
+            n.* += 1;
+        } else {
+            codes[n.*] = 38;
+            codes[n.* + 1] = 5;
+            codes[n.* + 2] = idx;
+            n.* += 3;
+        }
+    }
+}
+
+fn appendBgCodes(codes: []u16, n: *usize, val: []const u8) void {
+    if (n.* + 3 > codes.len) return;
+    if (colorNameToBasic(val)) |basic| {
+        codes[n.*] = 40 + basic;
+        n.* += 1;
+    } else if (std.fmt.parseInt(u16, val, 10) catch null) |idx| {
+        if (idx < 8) {
+            codes[n.*] = 40 + idx;
+            n.* += 1;
+        } else if (idx < 16) {
+            codes[n.*] = 100 + idx - 8;
+            n.* += 1;
+        } else {
+            codes[n.*] = 48;
+            codes[n.* + 1] = 5;
+            codes[n.* + 2] = idx;
+            n.* += 3;
+        }
+    }
+}
+
+fn colorNameToBasic(name: []const u8) ?u16 {
+    const names = [_][]const u8{ "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white" };
+    for (names, 0..) |nm, idx| {
+        if (std.mem.eql(u8, name, nm)) return @intCast(idx);
+    }
+    return null;
+}
+
 /// A single `$name` → value substitution entry for expandVars.
 const VarSubst = struct { key: []const u8, val: []const u8 };
 
@@ -2067,7 +2296,8 @@ pub fn main(init: std.process.Init) !void {
                 selected_idx = null;
             }
 
-            const is_cmd_autocomplete = (current_screen == .search and query_len > 0 and query_buf[0] == ':');
+            const is_cmd_autocomplete = (current_screen == .search and query_len > 0 and (query_buf[0] == ':' or query_buf[0] == '/'));
+            const cmd_prefix: u8 = if (is_cmd_autocomplete) query_buf[0] else ':';
             var cmd_matches: [8]usize = undefined;
             var cmd_match_count: usize = 0;
             if (is_cmd_autocomplete) {
@@ -2233,6 +2463,7 @@ pub fn main(init: std.process.Init) !void {
 
                 var line_buf: [1024]u8 = undefined;
                 var var_expand_buf: [256]u8 = undefined;
+                var tmpl_expand_buf: [512]u8 = undefined;
 
                 var printed_rows: usize = 0;
                 const RowWriter = struct {
@@ -2499,11 +2730,17 @@ pub fn main(init: std.process.Init) !void {
                             var text: []const u8 = "";
                             if (needs_scroll) {
                                 const li = about_scroll_top + h_idx;
-                                if (li < about_lines.len) text = expandVars(&var_expand_buf, about_lines[li], &spec_vars);
+                                if (li < about_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, about_lines[li], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
                             } else {
                                 const center_threshold: usize = about_lines.len + 2;
                                 const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < about_lines.len) text = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
+                                if (h_idx >= offset and h_idx - offset < about_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2660,7 +2897,7 @@ pub fn main(init: std.process.Init) !void {
                                     const is_sel = (selected_idx != null and selected_idx.? == r);
                                     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
                                     const sel_prefix = if (is_sel) "> " else "  ";
-                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}:{s} - {s}\x1b[0m", .{ bg, sel_prefix, cmd.name, cmd.action });
+                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}{c}{s} - {s}\x1b[0m", .{ bg, sel_prefix, cmd_prefix, cmd.name, cmd.action });
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2859,7 +3096,7 @@ pub fn main(init: std.process.Init) !void {
                                 const cmd_idx = cmd_matches[sel];
                                 const cmd = g_spec.commands.commands[cmd_idx];
                                 var desc_buf: [128]u8 = undefined;
-                                const desc = try std.fmt.bufPrint(&desc_buf, "Command: :{s} -> {s}", .{ cmd.name, cmd.action });
+                                const desc = try std.fmt.bufPrint(&desc_buf, "Command: {c}{s} -> {s}", .{ cmd_prefix, cmd.name, cmd.action });
                                 const pad_len_desc = if (content_width > desc.len + 1) content_width - desc.len - 1 else 0;
                                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len_desc, spaces.len)] });
                                 try writeAll(stdout_fd, name_line);
@@ -2948,38 +3185,53 @@ pub fn main(init: std.process.Init) !void {
                         try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.status_bg);
 
-                        var status_text_buf: [256]u8 = undefined;
+                        var status_text_buf: [512]u8 = undefined;
                         const status_text = blk: {
+                            const st = &g_spec.strings.status;
                             if (popup_msg != null) {
-                                break :blk " Space/Enter/Esc:close";
+                                break :blk st.popup.default;
                             } else if (current_screen == .help) {
                                 const vph = rows + 3;
-                                break :blk if (g_spec.strings.help_lines_more.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
+                                break :blk if (g_spec.strings.help_lines_more.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .about) {
                                 const vph = rows + 3;
-                                break :blk if (g_spec.strings.about_lines.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
+                                break :blk if (g_spec.strings.about_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
-                                break :blk if (g_spec.strings.status_lines.len > vph) " ↕:scroll  Esc:back" else " Esc:back";
+                                break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .settings and keybind_editing) {
-                                break :blk " Type binding  Enter:save  Esc:cancel";
+                                break :blk st.settings.keybind;
                             } else if (current_screen == .settings) {
-                                break :blk " ↕:navigate Space:toggle Esc:back";
+                                break :blk st.settings.navigate;
                             } else if (current_screen == .categories) {
-                                break :blk " ↕:navigate Space:toggle Esc:back";
+                                break :blk st.categories.navigate;
                             } else if (is_cmd_autocomplete) {
-                                break :blk " ↕:navigate Enter:run Esc:back";
+                                break :blk st.commands.navigate;
                             } else if (is_cat_autocomplete) {
-                                break :blk " ↕:navigate Enter/Space:select Esc:back";
+                                break :blk st.cat_filter.navigate;
                             } else {
                                 const status_tmpl: []const u8 = if (content_width >= 35)
-                                    (if (query_len == 0) g_spec.strings.status_help_hint_wide else g_spec.strings.status_matches_wide)
+                                    (if (query_len == 0) st.default.on_view_wide else st.default.on_search_wide)
                                 else
-                                    (if (query_len == 0) g_spec.strings.status_help_hint else g_spec.strings.status_matches);
+                                    (if (query_len == 0) st.default.on_view else st.default.on_search);
                                 const base_status = try formatStatus(&status_text_buf, status_tmpl, total_matches);
                                 if (multi_select_active) {
-                                    var multi_status_buf: [256]u8 = undefined;
-                                    break :blk try std.fmt.bufPrint(&multi_status_buf, "[Multi: {d} sel] {s}", .{ multi_selected_emojis.items.len, base_status });
+                                    const n_sel = multi_selected_emojis.items.len;
+                                    if (selected_idx) |sel| {
+                                        if (sel < top_count) {
+                                            const entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                                            var on_sel = false;
+                                            for (multi_selected_emojis.items) |e| {
+                                                if (std.mem.eql(u8, e, entry.emoji)) {
+                                                    on_sel = true;
+                                                    break;
+                                                }
+                                            }
+                                            const tmpl = if (on_sel) st.multi_select.on_done else st.multi_select.on_add;
+                                            break :blk expandTemplate(&status_text_buf, tmpl, &g_spec.styles, n_sel, palette.search_bg);
+                                        }
+                                    }
+                                    break :blk expandTemplate(&status_text_buf, st.multi_select.no_cursor, &g_spec.styles, n_sel, palette.search_bg);
                                 } else {
                                     break :blk base_status;
                                 }
@@ -3107,6 +3359,9 @@ pub fn main(init: std.process.Init) !void {
                     for (multi_selected_emojis.items) |e| {
                         mru.save(e);
                     }
+                    if (result_emoji == null and multi_selected_emojis.items.len > 0) {
+                        result_emoji = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                    }
                     break;
                 }
                 // First pass: copy + MRU, then either show preview or exit.
@@ -3225,6 +3480,8 @@ pub fn main(init: std.process.Init) !void {
                         logical = "ctrl-.";
                     } else if (std.mem.eql(u8, bytes[2..n], "27;2;13~") or std.mem.eql(u8, bytes[2..n], "13;2u")) {
                         logical = "shift-enter";
+                    } else if (std.mem.eql(u8, bytes[2..n], "27;5;13~") or std.mem.eql(u8, bytes[2..n], "13;5u")) {
+                        logical = "ctrl-enter";
                     } else if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
                         (bytes[4] == '3' or bytes[4] == '9'))
                     {
@@ -3288,7 +3545,7 @@ pub fn main(init: std.process.Init) !void {
                                     const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
                                     if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
                                 }
-                            } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                            } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                 const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                 const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                                 if (grid_col < cols) {
@@ -3359,7 +3616,7 @@ pub fn main(init: std.process.Init) !void {
                                             disabled_cats[cat_idx] = !disabled_cats[cat_idx];
                                             saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
                                         }
-                                    } else if (click_row >= grid_first_row and click_row <= grid_last_row) {
+                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                         const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                                         if (grid_col < cols) {
@@ -3368,10 +3625,24 @@ pub fn main(init: std.process.Init) !void {
                                                 selected_idx = clicked_idx;
                                                 if (multi_select_active) {
                                                     const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
-                                                    const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
-                                                    try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
-                                                    const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                    try copyToClipboard(init, joined, final_safe);
+                                                    var on_selected = false;
+                                                    for (multi_selected_emojis.items) |e| {
+                                                        if (std.mem.eql(u8, e, entry.emoji)) {
+                                                            on_selected = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    if (on_selected) {
+                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                        try copyToClipboard(init, joined, final_safe);
+                                                        result_emoji = joined;
+                                                        should_copy_and_exit = true;
+                                                    } else {
+                                                        const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                                                        try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                        try copyToClipboard(init, joined, final_safe);
+                                                    }
                                                 } else {
                                                     should_copy_and_exit = true;
                                                 }
@@ -3426,7 +3697,7 @@ pub fn main(init: std.process.Init) !void {
                         if (b >= 32 and b <= 126 and query_len < max_query_len) {
                             query_buf[query_len] = b;
                             query_len += 1;
-                            selected_idx = 0;
+                            if (!multi_select_active) selected_idx = 0;
                             total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                         }
                     }
@@ -3447,7 +3718,15 @@ pub fn main(init: std.process.Init) !void {
                         query_len = 0;
                         selected_idx = null;
                         total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                    } else if (multi_select_active and std.mem.eql(u8, name, "esc")) {
+                        multi_select_active = false;
+                        multi_selected_emojis.clearRetainingCapacity();
+                        selected_idx = null;
                     } else {
+                        if (multi_select_active and multi_selected_emojis.items.len > 0) {
+                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                            result_emoji = joined;
+                        }
                         break;
                     }
                 } else if (has_focus) {
@@ -3669,21 +3948,57 @@ pub fn main(init: std.process.Init) !void {
                             }
                         } else if (std.mem.eql(u8, action, "select")) {
                             if (multi_select_active) {
-                                const sel = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
-                                if (sel) |s| {
-                                    if (s < top_count) {
-                                        const entry = emojig.EmojiDb.getEntry(top_matches[s].index);
-                                        const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
-                                        try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
-                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                        try copyToClipboard(init, joined, final_safe);
+                                if (selected_idx) |sel| {
+                                    if (sel < top_count) {
+                                        const entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                                        var on_selected = false;
+                                        for (multi_selected_emojis.items) |e| {
+                                            if (std.mem.eql(u8, e, entry.emoji)) {
+                                                on_selected = true;
+                                                break;
+                                            }
+                                        }
+                                        if (on_selected) {
+                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                            try copyToClipboard(init, joined, final_safe);
+                                            result_emoji = joined;
+                                            should_copy_and_exit = true;
+                                        } else {
+                                            const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                                            try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                            try copyToClipboard(init, joined, final_safe);
+                                        }
                                     }
                                 }
+                                // no cursor → no-op
                             } else {
                                 should_copy_and_exit = true;
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
-                            if (query_len > 0) {
+                            if (multi_select_active) {
+                                var removed = false;
+                                if (selected_idx) |sel| {
+                                    if (sel < top_count) {
+                                        const entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                                        for (multi_selected_emojis.items, 0..) |e, i| {
+                                            if (std.mem.eql(u8, e, entry.emoji)) {
+                                                _ = multi_selected_emojis.orderedRemove(i);
+                                                if (multi_selected_emojis.items.len > 0) {
+                                                    const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                    try copyToClipboard(init, joined, final_safe);
+                                                }
+                                                removed = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (!removed and query_len > 0) {
+                                    query_len -= 1;
+                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                }
+                            } else if (query_len > 0) {
                                 query_len -= 1;
                                 selected_idx = if (query_len == 0) null else 0;
                                 total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
@@ -3707,12 +4022,21 @@ pub fn main(init: std.process.Init) !void {
                                 const sel = selected_idx.?;
                                 const count = top_count;
                                 if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
-                                    selected_idx = if (sel > 0) sel - 1 else if (count > 0) count - 1 else 0;
+                                    if (sel == 0) {
+                                        selected_idx = null;
+                                    } else {
+                                        selected_idx = sel - 1;
+                                    }
                                 } else {
                                     selected_idx = if (sel + 1 < count) sel + 1 else 0;
                                 }
                             } else {
-                                selected_idx = navSelect(action, selected_idx.?, top_count, cols, rows);
+                                const sel = selected_idx.?;
+                                if (std.mem.eql(u8, action, "nav_up") and sel < cols) {
+                                    selected_idx = null;
+                                } else {
+                                    selected_idx = navSelect(action, sel, top_count, cols, rows);
+                                }
                             }
                         }
                     }

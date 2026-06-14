@@ -1,11 +1,32 @@
 {
+  "about_lines": [
+    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
+    "",
+    " Emojig $version — lightning-fast,",
+    " zero-allocation emoji picker in Zig.",
+    "",
+    "        $[fg=220]{ ▄████▄ }",
+    "        $[fg=220]{██\u001b[48;5;232m▀▀\u001b[49m█\u001b[48;5;232m▀▀\u001b[49m█}",
+    "        $[fg=220]{█\u001b[48;5;232m▀\u001b[49m████\u001b[48;5;232m▀\u001b[49m█}",
+    "        $[fg=220]{██\u001b[48;5;232m▄▄▄▄\u001b[49m██}",
+    "        $[fg=220]{ ▀████▀ }",
+    "",
+    " Made with 💙+🤖 in Dresden, DE"
+  ],
   "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within the rendered content width (spec/layout.json) or they are truncated. Consumed by both the Zig app and the Go mojigo port. help_lines is the default help page (query starts with '?'); help_lines_more is the second page shown when the query starts with '??' and documents the e:/t: width filters.",
-  "search_prompt": " 🔍 ",
-  "search_placeholder": "search…",
-  "status_help_hint": " ?:help  ↕↔|↵|Esc",
-  "status_matches": " {count}  ↕↔|↵|Esc",
-  "status_help_hint_wide": " ?:help e:img t:txt  ↕↔|↵|Esc",
-  "status_matches_wide": " {count} e:img t:txt  ↕↔|↵|Esc",
+  "focus_lost_runtime_lines": [
+    "🕵️ Picker unfocused.",
+    "   Click or switch window",
+    "   to focus!"
+  ],
+  "focus_lost_startup_lines": [
+    "🛡️ OS prevented focus change.",
+    "   Click or switch window",
+    "   to change focus!",
+    "",
+    "💡 GTK apps have native picker.",
+    "   Try Ctrl + '.' to open."
+  ],
   "help_lines": [
     "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
     "",
@@ -14,14 +35,50 @@
     " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
     " ??        More…"
   ],
-  "about_lines": [
+  "help_lines_more": [
     "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
     "",
-    " Emojig $version — lightning-fast,",
-    " zero-allocation emoji picker in Zig.",
-    "",
-    " Made with 💙+🤖 in Dresden, DE"
+    " e:abc 🔍 Emojis only",
+    " t:abc 🔍 Symbols only",
+    " b:abc 🔍 Box art only",
+    " a b 🔍   Match all words",
+    " ⌫        Back…"
   ],
+  "search_placeholder": "search…",
+  "search_prompt": " 🔍 ",
+  "status": {
+    "default": {
+      "on_view": " ?:help  ↕↔|↵|Esc",
+      "on_view_wide": " ?:help e:img t:txt  ↕↔|↵|Esc",
+      "on_search": " {count}  ↕↔|↵|Esc",
+      "on_search_wide": " {count} e:img t:txt  ↕↔|↵|Esc"
+    },
+    "multi_select": {
+      "no_cursor": " [Multi:{count}] ↕↔",
+      "on_add": " [Multi:{count}] $action{↵:add} ↕↔",
+      "on_done": " [Multi:{count}] $success{↵:done} ⌫:remove"
+    },
+    "settings": {
+      "navigate": " ↕:navigate Space:toggle Esc:back",
+      "keybind": " Type binding  Enter:save  Esc:cancel"
+    },
+    "categories": {
+      "navigate": " ↕:navigate Space:toggle Esc:back"
+    },
+    "view": {
+      "default": " Esc:back",
+      "scrollable": " ↕:scroll  Esc:back"
+    },
+    "commands": {
+      "navigate": " ↕:navigate Enter:run Esc:back"
+    },
+    "cat_filter": {
+      "navigate": " ↕:navigate Enter/Space:select Esc:back"
+    },
+    "popup": {
+      "default": " Space/Enter/Esc:close"
+    }
+  },
   "status_lines": [
     "ℹ️  emojig $version",
     "",
@@ -34,27 +91,5 @@
     " update cmd:  $update_cmd",
     "",
     " $emojis emojis indexed"
-  ],
-  "help_lines_more": [
-    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
-    "",
-    " e:abc 🔍 Emojis only",
-    " t:abc 🔍 Symbols only",
-    " b:abc 🔍 Box art only",
-    " a b 🔍   Match all words",
-    " ⌫        Back…"
-  ],
-  "focus_lost_startup_lines": [
-    "🛡️ OS prevented focus change.",
-    "   Click or switch window",
-    "   to change focus!",
-    "",
-    "💡 GTK apps have native picker.",
-    "   Try Ctrl + '.' to open."
-  ],
-  "focus_lost_runtime_lines": [
-    "🕵️ Picker unfocused.",
-    "   Click or switch window",
-    "   to focus!"
   ]
 }

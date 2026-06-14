@@ -33,6 +33,7 @@ const strings_ru = @embedFile("spec_strings_ru");
 const strings_uk = @embedFile("spec_strings_uk");
 const strings_nl = @embedFile("spec_strings_nl");
 const strings_tr = @embedFile("spec_strings_tr");
+const styles_json = @embedFile("spec_styles");
 
 const parse_opts = std.json.ParseOptions{ .ignore_unknown_fields = true };
 
@@ -129,19 +130,70 @@ const emojig_mod = @import("emojig");
 pub const CategorySpec = emojig_mod.CategorySpec;
 pub const CategoriesSpec = emojig_mod.CategoriesSpec;
 
+pub const StatusDefault = struct {
+    on_view: []const u8 = " ?:help  ↕↔|↵|Esc",
+    on_view_wide: []const u8 = " ?:help e:img t:txt  ↕↔|↵|Esc",
+    on_search: []const u8 = " {count}  ↕↔|↵|Esc",
+    on_search_wide: []const u8 = " {count} e:img t:txt  ↕↔|↵|Esc",
+};
+
+pub const StatusMultiSelect = struct {
+    no_cursor: []const u8 = " [Multi:{count}] ↕↔",
+    on_add: []const u8 = " [Multi:{count}] \x1b[1;34m↵:add\x1b[0m{search_bg}↕↔",
+    on_done: []const u8 = " [Multi:{count}] \x1b[1;32m↵:done\x1b[0m{search_bg}⌫:remove",
+};
+
+pub const StatusSettings = struct {
+    navigate: []const u8 = " ↕:navigate Space:toggle Esc:back",
+    keybind: []const u8 = " Type binding  Enter:save  Esc:cancel",
+};
+
+pub const StatusCategories = struct {
+    navigate: []const u8 = " ↕:navigate Space:toggle Esc:back",
+};
+
+pub const StatusView = struct {
+    default: []const u8 = " Esc:back",
+    scrollable: []const u8 = " ↕:scroll  Esc:back",
+};
+
+pub const StatusCommands = struct {
+    navigate: []const u8 = " ↕:navigate Enter:run Esc:back",
+};
+
+pub const StatusCatFilter = struct {
+    navigate: []const u8 = " ↕:navigate Enter/Space:select Esc:back",
+};
+
+pub const StatusPopup = struct {
+    default: []const u8 = " Space/Enter/Esc:close",
+};
+
+pub const StatusStrings = struct {
+    default: StatusDefault = .{},
+    multi_select: StatusMultiSelect = .{},
+    settings: StatusSettings = .{},
+    categories: StatusCategories = .{},
+    view: StatusView = .{},
+    commands: StatusCommands = .{},
+    cat_filter: StatusCatFilter = .{},
+    popup: StatusPopup = .{},
+};
+
 pub const Strings = struct {
     search_prompt: []const u8,
     search_placeholder: []const u8,
-    status_help_hint: []const u8,
-    status_matches: []const u8,
-    status_help_hint_wide: []const u8,
-    status_matches_wide: []const u8,
     help_lines: []const []const u8,
     help_lines_more: []const []const u8,
     about_lines: []const []const u8 = &[_][]const u8{},
     status_lines: []const []const u8 = &[_][]const u8{},
     focus_lost_startup_lines: []const []const u8 = &[_][]const u8{ "⚠️  Cannot steal Wayland", "popup focus?", "", "Click window to focus!" },
     focus_lost_runtime_lines: []const []const u8 = &[_][]const u8{ "⚠️  Picker unfocused.", "", "", "Click window to focus!" },
+    status: StatusStrings = .{},
+};
+
+pub const StylesSpec = struct {
+    styles: std.json.ArrayHashMap([]const u8) = .{},
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +208,7 @@ pub const Spec = struct {
     commands: Commands,
     settings: SettingsSpec,
     categories: CategoriesSpec,
+    styles: StylesSpec,
     // term.Palette escape strings built at load from the color indices above.
     dark_palette: term.Palette,
     light_palette: term.Palette,
@@ -238,6 +291,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     const commands = try std.json.parseFromSliceLeaky(Commands, arena, commands_json, parse_opts);
     const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
     const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
+    const styles = try std.json.parseFromSliceLeaky(StylesSpec, arena, styles_json, parse_opts);
 
     return .{
         .layout = layout,
@@ -247,6 +301,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .commands = commands,
         .settings = settings,
         .categories = categories,
+        .styles = styles,
         .dark_palette = try buildPalette(arena, theme.themes.dark, false),
         .light_palette = try buildPalette(arena, theme.themes.light, false),
         .dark_palette_dim = try buildPalette(arena, theme.themes.dark, true),
