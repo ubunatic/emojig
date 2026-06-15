@@ -27,6 +27,16 @@ run: ⚙️  # run the inline TUI picker in current terminal
 picker: ⚙️  # launch the emoji picker in a floating foot window (non-blocking)
 	zig build picker
 
+edit-strings: ⚙️  # open spec/strings.json in nvim-qt for editing
+	setsid nvim-qt spec/strings.json >/dev/null 2>&1
+
+edit-art: ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuild on save
+	setsid nvim-qt spec/art.json >/dev/null 2>&1 &
+	@scripts/watch_art.sh
+
+gen-art: ⚙️  # compile spec/art.json → spec/strings.json
+	go run ./scripts/gen_about_art/
+
 test: ⚙️  # run the unit tests
 	zig build test
 	go vet ./...

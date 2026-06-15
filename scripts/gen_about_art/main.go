@@ -28,17 +28,54 @@ const link = "\x1b]8;;https://ubunatic.com/emojig\x1b\\ubunatic.com/emojig\x1b]8
 
 // ── JSON shapes ──────────────────────────────────────────────────────────────
 
+// rawArtSpec is the unmarshalled shape before palette resolution.
+type rawArtSpec struct {
+	Colors   map[string]int               `json:"colors"`
+	Palette  map[string]json.RawMessage   `json:"palette"`
+	Priority []string                     `json:"priority"`
+	Art      []ArtEntry                   `json:"art"`
+}
+
 type ArtSpec struct {
-	Palette  map[string]*int `json:"palette"`
-	Priority []string        `json:"priority"`
-	Art      []ArtEntry      `json:"art"`
+	Palette  map[string]*int
+	Priority []string
+	Art      []ArtEntry
+}
+
+// resolvePalette turns raw palette entries (null | number | "name") into *int.
+func resolvePalette(raw map[string]json.RawMessage, colors map[string]int) (map[string]*int, error) {
+	out := make(map[string]*int, len(raw))
+	for k, v := range raw {
+		if string(v) == "null" {
+			out[k] = nil
+			continue
+		}
+		// try number first
+		var num int
+		if err := json.Unmarshal(v, &num); err == nil {
+			n := num
+			out[k] = &n
+			continue
+		}
+		// try string name
+		var name string
+		if err := json.Unmarshal(v, &name); err != nil {
+			return nil, fmt.Errorf("palette key %q: expected null, number, or color name, got %s", k, v)
+		}
+		n, ok := colors[name]
+		if !ok {
+			return nil, fmt.Errorf("palette key %q references unknown color %q", k, name)
+		}
+		out[k] = &n
+	}
+	return out, nil
 }
 
 type ArtEntry struct {
 	Name    string   `json:"name"`
 	Target  string   `json:"target"`
 	Mode    string   `json:"mode"`
-	OddCols bool     `json:"odd_cols"`
+	Spaced  bool     `json:"spaced"`
 	Indent  string   `json:"indent"`
 	Header  []string `json:"header"`
 	Footer  []string `json:"footer"`
@@ -113,7 +150,7 @@ type tcCell struct {
 }
 
 func compileQuad(entry ArtEntry, palette map[string]*int, priority []string) ([]string, error) {
-	grid, err := parseShape(entry.Shape, entry.OddCols)
+	grid, err := parseShape(entry.Shape, entry.Spaced)
 	if err != nil {
 		return nil, err
 	}
@@ -250,10 +287,15 @@ func main() {
 	if err != nil {
 		fatalf("read spec/art.json: %v", err)
 	}
-	var spec ArtSpec
-	if err := json.Unmarshal(artData, &spec); err != nil {
+	var raw rawArtSpec
+	if err := json.Unmarshal(artData, &raw); err != nil {
 		fatalf("parse spec/art.json: %v", err)
 	}
+	palette, err := resolvePalette(raw.Palette, raw.Colors)
+	if err != nil {
+		fatalf("resolve palette: %v", err)
+	}
+	spec := ArtSpec{Palette: palette, Priority: raw.Priority, Art: raw.Art}
 
 	for _, entry := range spec.Art {
 		var lines []string
