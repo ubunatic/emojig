@@ -146,6 +146,110 @@ TR  pixel rows  visual         DSL summary
 
 ---
 
+## Quadrant block characters (U+2596–U+259F)
+
+Quadrant chars divide a terminal cell into a **2×2 pixel grid** (UL, UR, LL, LR).
+This gives twice the horizontal pixel resolution of half-blocks, but the same
+constraint applies: **only two colours per cell** (fg fills the marked quadrants,
+bg fills the rest).
+
+| Char | Codepoint | Filled quadrants |
+|------|-----------|-----------------|
+| `▘`  | U+2598    | UL              |
+| `▝`  | U+259D    | UR              |
+| `▖`  | U+2596    | LL              |
+| `▗`  | U+2597    | LR              |
+| `▙`  | U+2599    | UL+LL+LR        |
+| `▛`  | U+259B    | UL+UR+LL        |
+| `▜`  | U+259C    | UL+UR+LR        |
+| `▟`  | U+259F    | UR+LL+LR        |
+| `▚`  | U+259A    | UL+LR (diagonal)|
+| `▞`  | U+259E    | UR+LL (anti-diag)|
+| `█`  | U+2588    | all (same as half-block) |
+| ` `  | space     | none            |
+
+The half-block chars ▀/▄ are also usable within the quad grid (they express
+UL+UR and LL+LR respectively).
+
+### Design workflow for quad art
+
+Each **terminal cell** (tr, tc) covers pixel positions:
+
+```
+UL = pixel[tr*2][tc*2]     UR = pixel[tr*2][tc*2+1]
+LL = pixel[tr*2+1][tc*2]   LR = pixel[tr*2+1][tc*2+1]
+```
+
+A 12 terminal-col × 7 terminal-row canvas encodes a **24×14 pixel image**.
+
+Use this decision table to pick the character for each cell:
+
+| UL | UR | LL | LR | char | fg | bg |
+|----|----|----|-----|------|----|----|
+| A  | A  | A  | A  | `█`  | A  | —  |
+| —  | —  | —  | —  | ` `  | —  | —  |
+| A  | —  | —  | —  | `▘`  | A  | —  |
+| —  | A  | —  | —  | `▝`  | A  | —  |
+| —  | —  | A  | —  | `▖`  | A  | —  |
+| —  | —  | —  | A  | `▗`  | A  | —  |
+| A  | —  | A  | A  | `▙`  | A  | —  |
+| A  | A  | A  | —  | `▛`  | A  | —  |
+| A  | A  | —  | A  | `▜`  | A  | —  |
+| —  | A  | A  | A  | `▟`  | A  | —  |
+| A  | —  | —  | A  | `▚`  | A  | —  |
+| —  | A  | A  | —  | `▞`  | A  | —  |
+| A  | A  | —  | —  | `▀`  | A  | —  |
+| —  | —  | A  | A  | `▄`  | A  | —  |
+| A  | B  | A  | B  | use two cells | — | — |
+| A  | A  | B  | B  | `▀`  | A  | B  |
+| B  | B  | A  | A  | `▄`  | A  | B  |
+| A  | B  | …  | …  | approximate   | — | — |
+
+### Roundness advantage
+
+The key visible difference from the half-block version is at face corners.
+Half-blocks can only express top-half / bottom-half fills; quad chars can express
+corner fills, enabling genuinely round-looking corners:
+
+```
+Half-block bottom arc:   ▀████████▀   (rounded, but symmetric)
+Quad bottom arc:        ▝▀████████▀▘  (sharper single-quad corners)
+Half-block top-row fill: ████████████  (flat left/right edges)
+Quad top-row fill:       ▟██████████▙  (single-quad corners cut off)
+```
+
+### Safety
+
+Quadrant characters (U+2596–U+259F) render correctly in all modern terminals
+that use a geometric (pixel-accurate) font renderer:
+
+- ✅ `foot` — geometric rendering guaranteed
+- ✅ `kitty`, `alacritty`, `wezterm`, `ghostty` — geometric
+- ⚠️  `gnome-terminal`, `xterm` — font-dependent; may render as tofu or
+     incorrectly sized if the system font lacks these codepoints
+
+For art in `spec/strings.json` that is displayed in `about2_lines`, this is
+acceptable: it degrades gracefully (the codepoints render as blank boxes in
+the worst case, and the text fallback next to the art remains readable).
+
+### The `:about2` screen
+
+The quad-block smiley in `about2_lines` uses the same 12-col × 7-row canvas
+as the half-block `about_lines` smiley, but with rounded corners:
+
+```
+TR  pixel rows  visual            Difference from about
+0   P0+P1       " ▄████████▄ "   same
+1   P2+P3       "▟██████████▙"   ▟/▙ corners (UL/UR quad missing)
+2   P4+P5       "██WW K YY K WW██"  same (eyes)
+3   P6+P7       "████████████"    solid yellow spacer (was eye-botttoms row)
+4   P8+P9       "█K WWWWWWWW K█"  same (teeth)
+5   P10+P11     "█K KKKKKKKK K█"  same (dark mouth)
+6   P12+P13     "▝▀████████▀▘"   ▝/▘ corners (1-quad only) — more rounded
+```
+
+---
+
 ## Gotchas
 
 - **`\x1b` in Write-tool content** — the tool transmits parameters as JSON, so

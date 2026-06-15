@@ -17,6 +17,9 @@ const ScreenState = enum {
     search,
     help,
     about,
+    about2,
+    about3,
+    about4,
     status,
     settings,
     categories,
@@ -2754,6 +2757,100 @@ pub fn main(init: std.process.Init) !void {
                             }
                             try rw.endRow();
                         }
+                    } else if (current_screen == .about2 and !is_too_small) {
+                        const theme_str: []const u8 = switch (theme) {
+                            .dark => "dark",
+                            .light => "light",
+                            .system => "system",
+                        };
+                        const spec_vars = [_]VarSubst{
+                            .{ .key = "version", .val = build_options.version },
+                            .{ .key = "theme", .val = theme_str },
+                        };
+                        const about2_lines = g_spec.strings.about2_lines;
+                        const viewport_h = rows + 3;
+                        const needs_scroll = about2_lines.len > viewport_h;
+                        const max_scroll_a2: usize = if (needs_scroll) about2_lines.len - viewport_h else 0;
+                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about2_lines.len) else 0;
+                        const travel_a2 = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_a2 > 0) about_scroll_top * travel_a2 / max_scroll_a2 else 0;
+                        var h_idx: usize = 0;
+                        while (h_idx < viewport_h) : (h_idx += 1) {
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            var text: []const u8 = "";
+                            if (needs_scroll) {
+                                const li = about_scroll_top + h_idx;
+                                if (li < about2_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, about2_lines[li], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
+                            } else {
+                                const center_threshold: usize = about2_lines.len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < about2_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, about2_lines[h_idx - offset], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
+                            }
+                            const vis_w = ansiDisplayWidth(text);
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                var sb_buf: [16]u8 = undefined;
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                try writeAll(stdout_fd, sb_seq);
+                            }
+                            try rw.endRow();
+                        }
+                    } else if ((current_screen == .about3 or current_screen == .about4) and !is_too_small) {
+                        const theme_str: []const u8 = switch (theme) {
+                            .dark => "dark",
+                            .light => "light",
+                            .system => "system",
+                        };
+                        const spec_vars = [_]VarSubst{
+                            .{ .key = "version", .val = build_options.version },
+                            .{ .key = "theme", .val = theme_str },
+                        };
+                        const aboutN_lines = if (current_screen == .about3) g_spec.strings.about3_lines else g_spec.strings.about4_lines;
+                        const viewport_h = rows + 3;
+                        const needs_scroll = aboutN_lines.len > viewport_h;
+                        const max_scroll_aN: usize = if (needs_scroll) aboutN_lines.len - viewport_h else 0;
+                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / aboutN_lines.len) else 0;
+                        const travel_aN = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_aN > 0) about_scroll_top * travel_aN / max_scroll_aN else 0;
+                        var h_idx: usize = 0;
+                        while (h_idx < viewport_h) : (h_idx += 1) {
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            var text: []const u8 = "";
+                            if (needs_scroll) {
+                                const li = about_scroll_top + h_idx;
+                                if (li < aboutN_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, aboutN_lines[li], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
+                            } else {
+                                const center_threshold: usize = aboutN_lines.len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < aboutN_lines.len) {
+                                    const after_vars = expandVars(&var_expand_buf, aboutN_lines[h_idx - offset], &spec_vars);
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                }
+                            }
+                            const vis_w = ansiDisplayWidth(text);
+                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                var sb_buf: [16]u8 = undefined;
+                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                try writeAll(stdout_fd, sb_seq);
+                            }
+                            try rw.endRow();
+                        }
                     } else if (current_screen == .status and !is_too_small) {
                         const theme_str: []const u8 = switch (theme) {
                             .dark => "dark",
@@ -3196,6 +3293,15 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .about) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.about_lines.len > vph) st.view.scrollable else st.view.default;
+                            } else if (current_screen == .about2) {
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.about2_lines.len > vph) st.view.scrollable else st.view.default;
+                            } else if (current_screen == .about3) {
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.about3_lines.len > vph) st.view.scrollable else st.view.default;
+                            } else if (current_screen == .about4) {
+                                const vph = rows + 3;
+                                break :blk if (g_spec.strings.about4_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
@@ -3815,19 +3921,21 @@ pub fn main(init: std.process.Init) !void {
                             selected_idx = null;
                             total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                         }
-                    } else if (current_screen == .about or current_screen == .help or current_screen == .status) {
+                    } else if (current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4 or current_screen == .help or current_screen == .status) {
                         if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
                             total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
-                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
+                            const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
+                            const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
                             if (sp.* > 0) sp.* -= 1;
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
                             const viewport_h = rows + 3;
-                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
-                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
+                            const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
+                            const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else if (current_screen == .about2) g_spec.strings.about2_lines.len else if (current_screen == .about3) g_spec.strings.about3_lines.len else if (current_screen == .about4) g_spec.strings.about4_lines.len else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                             if (sp.* < max_scroll) sp.* += 1;
                         }
@@ -3870,6 +3978,18 @@ pub fn main(init: std.process.Init) !void {
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_about")) {
                                     current_screen = .about;
+                                    about_scroll_top = 0;
+                                    selected_idx = null;
+                                } else if (std.mem.eql(u8, cmd.action, "open_about2")) {
+                                    current_screen = .about2;
+                                    about_scroll_top = 0;
+                                    selected_idx = null;
+                                } else if (std.mem.eql(u8, cmd.action, "open_about3")) {
+                                    current_screen = .about3;
+                                    about_scroll_top = 0;
+                                    selected_idx = null;
+                                } else if (std.mem.eql(u8, cmd.action, "open_about4")) {
+                                    current_screen = .about4;
                                     about_scroll_top = 0;
                                     selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_status")) {

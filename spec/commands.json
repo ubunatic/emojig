@@ -12,6 +12,21 @@
       "action": "open_about"
     },
     {
+      "name": "about2",
+      "short": "a2",
+      "action": "open_about2"
+    },
+    {
+      "name": "about3",
+      "short": "a3",
+      "action": "open_about3"
+    },
+    {
+      "name": "about4",
+      "short": "a4",
+      "action": "open_about4"
+    },
+    {
       "name": "settings",
       "short": "s",
       "action": "open_settings"
