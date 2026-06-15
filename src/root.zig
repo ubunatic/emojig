@@ -1051,12 +1051,12 @@ test "benchmark: search throughput" {
     std.debug.print("\nsearch benchmarks ({s}, {d} ms/query, {d} emojis):\n", .{ build_label, duration_ms, EmojiDb.count });
 
     // --- representative query set ---
-    _ = runBench("", duration_ms);          // empty: ranking only
-    const ns_a = runBench("a", duration_ms);            // single char: large result set
-    const ns_fire = runBench("fire", duration_ms);      // short word: typical query
+    _ = runBench("", duration_ms); // empty: ranking only
+    const ns_a = runBench("a", duration_ms); // single char: large result set
+    const ns_fire = runBench("fire", duration_ms); // short word: typical query
     const ns_multi = runBench("red heart", duration_ms); // multi-word AND
-    const ns_plural = runBench("hearts", duration_ms);  // plural/stem fallback
-    _ = runBench("xyzxyz", duration_ms);    // no match: early-exit path
+    const ns_plural = runBench("hearts", duration_ms); // plural/stem fallback
+    _ = runBench("xyzxyz", duration_ms); // no match: early-exit path
 
     // Enforce latency ceiling only in extended bench mode on a release build.
     // Debug builds are ~100× slower and intentionally excluded.

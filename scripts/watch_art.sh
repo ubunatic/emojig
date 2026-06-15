@@ -13,7 +13,8 @@ do
   if test "$cur" != "$last"
   then last="$cur"
        go run ./scripts/gen_about_art/ &&
-       zig build &&
+       go run ./scripts/gen_about_art/ print &&
+       make install
        echo "--- rebuilt ---"
   fi
   sleep 1

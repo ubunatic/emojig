@@ -176,10 +176,18 @@ func compileQuad(entry ArtEntry, palette map[string]*int, priority []string) ([]
 
 		cells := make([]tcCell, tcCols)
 		for tc := 0; tc < tcCols; tc++ {
-			ul := row0[tc*2]
-			ur := row0[tc*2+1]
-			ll := row1[tc*2]
-			lr := row1[tc*2+1]
+			// Normalize: all null-mapped chars become "." so that different
+			// visual-separator chars (e.g. "-", "_", ".") are treated identically.
+			normPx := func(ch string) string {
+				if palette[ch] == nil {
+					return "."
+				}
+				return ch
+			}
+			ul := normPx(row0[tc*2])
+			ur := normPx(row0[tc*2+1])
+			ll := normPx(row1[tc*2])
+			lr := normPx(row1[tc*2+1])
 
 			fg, bg := chooseFgBg(ul, ur, ll, lr, palette, priority)
 
@@ -280,9 +288,59 @@ func span(fg, bg *int, content string) string {
 	return "$[" + attrs.String() + "]{" + content + "}"
 }
 
+// ── DSL expander ─────────────────────────────────────────────────────────────
+
+// expandDSL converts $[fg=N,bg=M]{content} spans to ANSI escape codes.
+// $version is replaced with "dev" (preview only).
+func expandDSL(s string) string {
+	s = strings.ReplaceAll(s, "$version", "dev")
+	var out strings.Builder
+	for {
+		i := strings.Index(s, "$[")
+		if i < 0 {
+			out.WriteString(s)
+			break
+		}
+		out.WriteString(s[:i])
+		s = s[i+2:]
+		j := strings.Index(s, "]{")
+		if j < 0 {
+			out.WriteString("$[")
+			out.WriteString(s)
+			break
+		}
+		attrs := s[:j]
+		s = s[j+2:]
+		k := strings.Index(s, "}")
+		if k < 0 {
+			out.WriteString("$[")
+			out.WriteString(attrs)
+			out.WriteString("]{")
+			out.WriteString(s)
+			break
+		}
+		content := s[:k]
+		s = s[k+1:]
+		for _, part := range strings.Split(attrs, ",") {
+			part = strings.TrimSpace(part)
+			switch {
+			case strings.HasPrefix(part, "fg="):
+				fmt.Fprintf(&out, "\x1b[38;5;%sm", part[3:])
+			case strings.HasPrefix(part, "bg="):
+				fmt.Fprintf(&out, "\x1b[48;5;%sm", part[3:])
+			}
+		}
+		out.WriteString(content)
+		out.WriteString("\x1b[0m")
+	}
+	return out.String()
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
+	doPrint := len(os.Args) > 1 && os.Args[1] == "print"
+
 	artData, err := os.ReadFile("spec/art.json")
 	if err != nil {
 		fatalf("read spec/art.json: %v", err)
@@ -307,6 +365,12 @@ func main() {
 		}
 		if err != nil {
 			fatalf("compile %q: %v", entry.Name, err)
+		}
+		if doPrint {
+			for _, l := range lines {
+				fmt.Println(expandDSL(l))
+			}
+			continue
 		}
 		if err := upsertLines("spec/strings.json", entry.Target, lines); err != nil {
 			fatalf("upsert %s: %v", entry.Target, err)
