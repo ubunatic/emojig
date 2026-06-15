@@ -8,6 +8,7 @@
     "ctrl-w": "quit",
     "enter": "select",
     "shift-enter": "confirm_multi_exit",
+    "ctrl-enter": "confirm_multi_exit",
     "backspace": "delete",
     "tab": "cycle_theme",
     "ctrl-.": "open_settings",

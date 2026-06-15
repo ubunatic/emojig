@@ -75,6 +75,17 @@
     { "char": "▐", "name": "right half block", "tags": ["fill"] },
     { "char": "░", "name": "light shade", "tags": ["dither", "pattern", "transparent", "fill"] },
     { "char": "▒", "name": "medium shade", "tags": ["dither", "pattern", "fill"] },
-    { "char": "▓", "name": "dark shade", "tags": ["dither", "pattern", "fill"] }
+    { "char": "▓", "name": "dark shade", "tags": ["dither", "pattern", "fill"] },
+
+    { "char": "⌫", "name": "backspace", "tags": ["erase", "delete", "keyboard", "key"] },
+    { "char": "⌦", "name": "delete forward", "tags": ["erase", "delete", "keyboard", "key"] },
+    { "char": "⌤", "name": "enter", "tags": ["return", "keyboard", "key"] },
+    { "char": "⌃", "name": "ctrl", "tags": ["control", "keyboard", "key"] },
+    { "char": "⌥", "name": "alt option", "tags": ["option", "keyboard", "key"] },
+    { "char": "⇧", "name": "shift", "tags": ["keyboard", "key"] },
+    { "char": "⌘", "name": "command", "tags": ["cmd", "keyboard", "key", "mac"] },
+    { "char": "⎋", "name": "escape", "tags": ["esc", "keyboard", "key"] },
+    { "char": "⇥", "name": "tab", "tags": ["tabulator", "keyboard", "key"] },
+    { "char": "⎵", "name": "space", "tags": ["blank", "keyboard", "key"] }
   ]
 }

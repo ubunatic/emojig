@@ -2253,6 +2253,16 @@ const EMOJI_DB = [
   ["░", "light shade", "light shade dither pattern transparent fill box ascii art"],
   ["▒", "medium shade", "medium shade dither pattern fill box ascii art"],
   ["▓", "dark shade", "dark shade dither pattern fill box ascii art"],
+  ["⌫", "backspace", "backspace erase delete keyboard key box ascii art"],
+  ["⌦", "delete forward", "delete forward erase delete keyboard key box ascii art"],
+  ["⌤", "enter", "enter return keyboard key box ascii art"],
+  ["⌃", "ctrl", "ctrl control keyboard key box ascii art"],
+  ["⌥", "alt option", "alt option option keyboard key box ascii art"],
+  ["⇧", "shift", "shift keyboard key box ascii art"],
+  ["⌘", "command", "command cmd keyboard key mac box ascii art"],
+  ["⎋", "escape", "escape esc keyboard key box ascii art"],
+  ["⇥", "tab", "tab tabulator keyboard key box ascii art"],
+  ["⎵", "space", "space blank keyboard key box ascii art"],
 ];
 
 const EMOJI_SYNONYMS = {
