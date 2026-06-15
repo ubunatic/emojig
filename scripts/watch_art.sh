@@ -14,7 +14,7 @@ do
   then last="$cur"
        go run ./scripts/gen_about_art/ &&
        go run ./scripts/gen_about_art/ print &&
-       make install
+       # make install
        echo "--- rebuilt ---"
   fi
   sleep 1

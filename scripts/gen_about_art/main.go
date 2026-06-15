@@ -170,20 +170,34 @@ func compileQuad(entry ArtEntry, palette map[string]*int, priority []string) ([]
 		lines = append(lines, strings.ReplaceAll(h, "$link", link))
 	}
 
+	// colorCanon maps each color value to the first palette key in priority
+	// order that carries that color, so chars with the same color are treated
+	// as identical by chooseFgBg and the mask computation.
+	colorCanon := map[int]string{}
+	for _, p := range priority {
+		if palette[p] != nil {
+			v := *palette[p]
+			if _, exists := colorCanon[v]; !exists {
+				colorCanon[v] = p
+			}
+		}
+	}
+	normPx := func(ch string) string {
+		if palette[ch] == nil {
+			return "."
+		}
+		if canon, ok := colorCanon[*palette[ch]]; ok {
+			return canon
+		}
+		return ch
+	}
+
 	for tr := 0; tr < tcRows; tr++ {
 		row0 := grid[tr*2]
 		row1 := grid[tr*2+1]
 
 		cells := make([]tcCell, tcCols)
 		for tc := 0; tc < tcCols; tc++ {
-			// Normalize: all null-mapped chars become "." so that different
-			// visual-separator chars (e.g. "-", "_", ".") are treated identically.
-			normPx := func(ch string) string {
-				if palette[ch] == nil {
-					return "."
-				}
-				return ch
-			}
 			ul := normPx(row0[tc*2])
 			ur := normPx(row0[tc*2+1])
 			ll := normPx(row1[tc*2])
