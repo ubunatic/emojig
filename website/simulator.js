@@ -254,6 +254,26 @@ class EmojigSimulator {
     return cp >= 0x2500 && cp <= 0x259f;
   }
 
+  // Braille pattern glyphs (U+2800–U+28FF, spec/braille.json).
+  isBraille(emoji) {
+    if (!emoji) return false;
+    const cp = emoji.codePointAt(0);
+    return cp >= 0x2800 && cp <= 0x28ff;
+  }
+
+  // Number of raised dots (0-8) encoded by a Braille pattern codepoint.
+  brailleDotCount(emoji) {
+    if (!this.isBraille(emoji)) return 0;
+    const cp = emoji.codePointAt(0);
+    let bits = cp - 0x2800;
+    let count = 0;
+    while (bits) {
+      count += bits & 1;
+      bits >>= 1;
+    }
+    return count;
+  }
+
   getEmojiWidth(emoji) {
     if (!emoji) return 0;
     // VS15 explicitly requests text presentation: single-width.
@@ -310,7 +330,21 @@ class EmojigSimulator {
     let actualQuery = this.query;
     let filterWidth = null;
     let filterBox = false;
-    if (this.query.length >= 2) {
+    let filterBraille = false;
+    let brailleDotFilter = null;
+    if (this.query.length >= 3 &&
+        (this.query[0] === 'b' || this.query[0] === 'B') &&
+        (this.query[1] === 'r' || this.query[1] === 'R') && this.query[2] === ':') {
+      filterBraille = true;
+      const rest = this.query.slice(3);
+      let digits = rest.endsWith(':') ? rest.slice(0, -1) : rest;
+      actualQuery = "";
+      if (digits.length > 0 && /^\d+$/.test(digits)) {
+        brailleDotFilter = parseInt(digits, 10);
+      } else {
+        actualQuery = rest;
+      }
+    } else if (this.query.length >= 2) {
       if ((this.query[0] === 'e' || this.query[0] === 'E') && this.query[1] === ':') {
         actualQuery = this.query.slice(2);
         filterWidth = 2;
@@ -323,6 +357,13 @@ class EmojigSimulator {
       }
     }
 
+    const braillePasses = (emoji) => {
+      if (!filterBraille) return true;
+      if (!this.isBraille(emoji)) return false;
+      if (brailleDotFilter !== null && this.brailleDotCount(emoji) !== brailleDotFilter) return false;
+      return true;
+    };
+
     if (actualQuery.trim() === "") {
       const filtered = [];
       for (let i = 0; i < db.length; i++) {
@@ -333,12 +374,18 @@ class EmojigSimulator {
         if (filterBox && !this.isBoxArt(item[0])) {
           continue;
         }
+        if (!braillePasses(item[0])) {
+          continue;
+        }
         filtered.push({
           emoji: item[0],
           description: item[1],
           originalIdx: i,
           score: 0,
         });
+      }
+      if (filterBraille) {
+        filtered.sort((a, b) => this.brailleDotCount(a.emoji) - this.brailleDotCount(b.emoji));
       }
       return filtered.slice(0, 60);
     }
@@ -352,10 +399,16 @@ class EmojigSimulator {
       if (filterBox && !this.isBoxArt(item[0])) {
         continue;
       }
+      if (!braillePasses(item[0])) {
+        continue;
+      }
       let score = this.fuzzyMatch(actualQuery, item[2]);
       if (score !== null) {
-        // Box art ranks below genuine emoji matches in general searches.
+        // Box art and Braille patterns rank below genuine emoji matches in
+        // general searches; br: searches sort purely by ascending dot count.
         if (this.isBoxArt(item[0])) score -= 150;
+        if (this.isBraille(item[0])) score -= 150;
+        if (filterBraille) score = -this.brailleDotCount(item[0]);
         matches.push({
           emoji: item[0],
           description: item[1],

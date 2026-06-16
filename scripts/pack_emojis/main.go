@@ -198,6 +198,38 @@ func main() {
 	}
 	fmt.Printf("Added %d box art entries.\n", len(boxart.Entries))
 
+	// Append Braille pattern entries from spec/braille.json. They share the
+	// emoji entry format; search engines rank them below emojis and the br:
+	// query prefix filters to them (see internal/emoji and src/root.zig).
+	braillePath := "spec/braille.json"
+	fmt.Printf("Reading %s...\n", braillePath)
+	brailleData, err := os.ReadFile(braillePath)
+	if err != nil {
+		fmt.Printf("Error reading braille file: %v\n", err)
+		os.Exit(1)
+	}
+	type BrailleEntry struct {
+		Char string   `json:"char"`
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	type BrailleJSON struct {
+		Entries []BrailleEntry `json:"entries"`
+	}
+	var braille BrailleJSON
+	if err := json.Unmarshal(brailleData, &braille); err != nil {
+		fmt.Printf("Error unmarshaling braille JSON: %v\n", err)
+		os.Exit(1)
+	}
+	for _, b := range braille.Entries {
+		if b.Char == "" || existing[b.Char] {
+			continue
+		}
+		searchStr := b.Name + " " + strings.Join(b.Tags, " ") + " braille"
+		addEntry(b.Char, b.Name, searchStr)
+	}
+	fmt.Printf("Added %d braille entries.\n", len(braille.Entries))
+
 	// Read synonyms from spec/synonyms.json
 	synonymsPath := "spec/synonyms.json"
 	fmt.Printf("Reading %s...\n", synonymsPath)

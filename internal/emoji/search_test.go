@@ -176,3 +176,67 @@ func TestBoxArtFilterAndRank(t *testing.T) {
 		t.Errorf("expected non-box-art first result for 'left'")
 	}
 }
+
+func TestBrailleFilterDotCountAndOrder(t *testing.T) {
+	db, err := Load()
+	if err != nil {
+		t.Fatalf("failed to load db: %v", err)
+	}
+
+	// br: with empty query lists all 256 Braille patterns, sorted by
+	// ascending dot count.
+	top, total := db.Search("br:", 300)
+	if total != 256 || len(top) != 256 {
+		t.Fatalf("expected 256 braille entries for 'br:', got total=%d len=%d", total, len(top))
+	}
+	prevDots := -1
+	for _, m := range top {
+		emoji := db.Entries[m.Index].Emoji
+		if !IsBraille(emoji) {
+			t.Errorf("expected only braille for 'br:', got %q", emoji)
+		}
+		dots := BrailleDotCount(emoji)
+		if dots < prevDots {
+			t.Errorf("expected ascending dot order, got %d after %d", dots, prevDots)
+		}
+		prevDots = dots
+	}
+	if db.Entries[top[0].Index].Emoji != "⠀" {
+		t.Errorf("expected blank cell first, got %q", db.Entries[top[0].Index].Emoji)
+	}
+	if db.Entries[top[len(top)-1].Index].Emoji != "⣿" {
+		t.Errorf("expected full 8-dot cell last, got %q", db.Entries[top[len(top)-1].Index].Emoji)
+	}
+
+	// "br:<n>" and "br:<n>:" both filter to exactly n raised dots.
+	top, total = db.Search("br:1", 300)
+	if total != 8 {
+		t.Fatalf("expected 8 single-dot braille entries, got %d", total)
+	}
+	for _, m := range top {
+		if d := BrailleDotCount(db.Entries[m.Index].Emoji); d != 1 {
+			t.Errorf("expected dot count 1, got %d", d)
+		}
+	}
+	top, _ = db.Search("br:1:", 300)
+	if len(top) != 8 {
+		t.Errorf("expected 'br:1:' to also list 8 entries, got %d", len(top))
+	}
+
+	// br: name search still filters to Braille glyphs only.
+	top, _ = db.Search("br:dots 1 2", 300)
+	if len(top) == 0 {
+		t.Fatalf("expected matches for 'br:dots 1 2'")
+	}
+	for _, m := range top {
+		if !IsBraille(db.Entries[m.Index].Emoji) {
+			t.Errorf("expected only braille for 'br:dots 1 2', got %q", db.Entries[m.Index].Emoji)
+		}
+	}
+
+	// General searches rank Braille patterns below genuine emoji matches.
+	top, _ = db.Search("dots", 24)
+	if len(top) == 0 || IsBraille(db.Entries[top[0].Index].Emoji) {
+		t.Errorf("expected non-braille first result for 'dots'")
+	}
+}

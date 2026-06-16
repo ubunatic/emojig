@@ -43,6 +43,11 @@ var SynonymsJSON []byte
 //go:embed spec/boxart.json
 var BoxartJSON []byte
 
+// BrailleJSON is the Unicode Braille Patterns block (spec/braille.json).
+//
+//go:embed spec/braille.json
+var BrailleJSON []byte
+
 // ShellSh is the generic shell integration dispatcher (zsh + bash).
 //
 //go:embed src/shell/emojig.sh

@@ -8,6 +8,7 @@ package emoji
 
 import (
 	"encoding/json"
+	"math/bits"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -146,6 +147,31 @@ func Load() (*DB, error) {
 			Search: b.Name + " " + strings.Join(b.Tags, " ") + " box ascii art",
 		})
 	}
+
+	// Append Braille pattern entries (spec/braille.json), after all emojis
+	// so they also sort last on equal scores. Mirrors scripts/pack_emojis.
+	type brailleEntry struct {
+		Char string   `json:"char"`
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}
+	type brailleFile struct {
+		Entries []brailleEntry `json:"entries"`
+	}
+	var braille brailleFile
+	if err := json.Unmarshal(emojig.BrailleJSON, &braille); err != nil {
+		return nil, err
+	}
+	for _, b := range braille.Entries {
+		if b.Char == "" || existing[b.Char] {
+			continue
+		}
+		db.Entries = append(db.Entries, Entry{
+			Emoji:  b.Char,
+			Name:   b.Name,
+			Search: b.Name + " " + strings.Join(b.Tags, " ") + " braille",
+		})
+	}
 	return db, nil
 }
 
@@ -155,6 +181,25 @@ func Load() (*DB, error) {
 func IsBoxArt(emoji string) bool {
 	cp, _ := utf8.DecodeRuneInString(emoji)
 	return cp >= 0x2500 && cp <= 0x259F
+}
+
+// IsBraille reports whether the entry glyph is a Braille pattern character
+// (U+2800–U+28FF). Used by the br: filter and to rank Braille patterns
+// below emojis in general searches.
+func IsBraille(emoji string) bool {
+	cp, _ := utf8.DecodeRuneInString(emoji)
+	return cp >= 0x2800 && cp <= 0x28FF
+}
+
+// BrailleDotCount returns the number of raised dots (0-8) encoded by a
+// Braille pattern codepoint: each of the 8 low bits of (cp - 0x2800) marks
+// one dot position.
+func BrailleDotCount(emoji string) int {
+	cp, _ := utf8.DecodeRuneInString(emoji)
+	if cp < 0x2800 || cp > 0x28FF {
+		return 0
+	}
+	return bits.OnesCount8(uint8(cp - 0x2800))
 }
 
 // Count returns the number of entries.
@@ -211,11 +256,48 @@ func buildSearch(r rawEmoji) string {
 // their own (where the uniform penalty does not affect ordering).
 const boxArtPenalty = 150
 
+// braillePenalty lowers Braille pattern scores in general searches so they
+// rank below genuine emoji matches; the br: filter shows them on their own.
+const braillePenalty = 150
+
+// parseBrailleDotFilter parses the "br:" remainder for the "<n>" or "<n>:"
+// dot-count shorthand. It returns the parsed count and true, or false if the
+// remainder is a plain text query instead.
+func parseBrailleDotFilter(rest string) (int, bool) {
+	digits := strings.TrimSuffix(rest, ":")
+	if digits == "" {
+		return 0, false
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+	}
+	n := 0
+	for _, c := range digits {
+		n = n*10 + int(c-'0')
+	}
+	return n, true
+}
+
 func (db *DB) Search(query string, limit int) (top []Match, total int) {
 	actualQuery := query
 	filterWidth := 0
 	filterBox := false
-	if len(query) >= 2 {
+	filterBraille := false
+	brailleDotFilter := -1
+	if len(query) >= 3 &&
+		(query[0] == 'b' || query[0] == 'B') &&
+		(query[1] == 'r' || query[1] == 'R') && query[2] == ':' {
+		filterBraille = true
+		rest := query[3:]
+		if n, ok := parseBrailleDotFilter(rest); ok {
+			brailleDotFilter = n
+			actualQuery = ""
+		} else {
+			actualQuery = rest
+		}
+	} else if len(query) >= 2 {
 		if (query[0] == 'e' || query[0] == 'E') && query[1] == ':' {
 			actualQuery = query[2:]
 			filterWidth = 2
@@ -226,6 +308,19 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 			actualQuery = query[2:]
 			filterBox = true
 		}
+	}
+
+	braillePasses := func(emoji string) bool {
+		if !filterBraille {
+			return true
+		}
+		if !IsBraille(emoji) {
+			return false
+		}
+		if brailleDotFilter >= 0 && BrailleDotCount(emoji) != brailleDotFilter {
+			return false
+		}
+		return true
 	}
 
 	if strings.TrimSpace(actualQuery) == "" {
@@ -240,10 +335,16 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 			if filterBox && !IsBoxArt(db.Entries[i].Emoji) {
 				continue
 			}
+			if !braillePasses(db.Entries[i].Emoji) {
+				continue
+			}
 			total++
 			if len(top) < limit {
 				top = append(top, Match{Index: i, Score: 0})
 			}
+		}
+		if filterBraille {
+			sortBrailleByDots(db, top)
 		}
 		return top, total
 	}
@@ -259,12 +360,23 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 		if filterBox && !IsBoxArt(db.Entries[i].Emoji) {
 			continue
 		}
+		if !braillePasses(db.Entries[i].Emoji) {
+			continue
+		}
 		score, ok := fuzzyMatch(actualQuery, db.Entries[i].Search, db.Synonyms)
 		if !ok {
 			continue
 		}
 		if IsBoxArt(db.Entries[i].Emoji) {
 			score -= boxArtPenalty
+		}
+		if IsBraille(db.Entries[i].Emoji) {
+			score -= braillePenalty
+		}
+		// br: text searches still gate on relevance above, but order
+		// purely by ascending dot count (fewer raised dots first).
+		if filterBraille {
+			score = -BrailleDotCount(db.Entries[i].Emoji)
 		}
 		total++
 		m := Match{Index: i, Score: score}
@@ -286,6 +398,21 @@ func (db *DB) Search(query string, limit int) (top []Match, total int) {
 		top[pos] = m
 	}
 	return top, total
+}
+
+// sortBrailleByDots stably sorts top in place by ascending Braille dot
+// count, so br: listings show simpler (fewer-dot) patterns first.
+func sortBrailleByDots(db *DB, top []Match) {
+	for i := 1; i < len(top); i++ {
+		key := top[i]
+		keyDots := BrailleDotCount(db.Entries[key.Index].Emoji)
+		j := i
+		for j > 0 && BrailleDotCount(db.Entries[top[j-1].Index].Emoji) > keyDots {
+			top[j] = top[j-1]
+			j--
+		}
+		top[j] = key
+	}
 }
 
 // Width returns the terminal display width (1 or 2 columns) of an emoji glyph.

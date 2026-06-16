@@ -98,7 +98,35 @@ pub fn searchOptions(
     var actual_query = query;
     var filter_width: ?usize = null;
     var filter_box = false;
-    if (query.len >= 2) {
+    var filter_braille = false;
+    var braille_dot_filter: ?u32 = null;
+    if (query.len >= 3 and
+        (query[0] == 'b' or query[0] == 'B') and
+        (query[1] == 'r' or query[1] == 'R') and query[2] == ':')
+    {
+        filter_braille = true;
+        const rest = query[3..];
+        actual_query = "";
+
+        // Dot-count shorthand: "br:<n>" or "br:<n>:" lists every glyph with
+        // exactly n raised dots. Anything else after "br:" is a name search.
+        var digits = rest;
+        if (digits.len > 0 and digits[digits.len - 1] == ':') {
+            digits = digits[0 .. digits.len - 1];
+        }
+        var all_digits = digits.len > 0;
+        for (digits) |c| {
+            if (c < '0' or c > '9') {
+                all_digits = false;
+                break;
+            }
+        }
+        if (all_digits) {
+            braille_dot_filter = std.fmt.parseInt(u32, digits, 10) catch null;
+        } else {
+            actual_query = rest;
+        }
+    } else if (query.len >= 2) {
         if ((query[0] == 'e' or query[0] == 'E') and query[1] == ':') {
             actual_query = query[2..];
             filter_width = 2;
@@ -135,6 +163,7 @@ pub fn searchOptions(
                 if (getEmojiWidth(mru_emoji) != fw) continue;
             }
             if (filter_box and !isBoxArt(mru_emoji)) continue;
+            if (!braillePasses(mru_emoji, filter_braille, braille_dot_filter)) continue;
 
             var db_idx: usize = 0;
             while (db_idx < EmojiDb.count) : (db_idx += 1) {
@@ -180,6 +209,7 @@ pub fn searchOptions(
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
             if (filter_box and !isBoxArt(entry.emoji)) continue;
+            if (!braillePasses(entry.emoji, filter_braille, braille_dot_filter)) continue;
 
             const matches_cat = blk: {
                 if (filter_category) |fc| {
@@ -226,6 +256,7 @@ pub fn searchOptions(
                 if (getEmojiWidth(entry.emoji) != fw) continue;
             }
             if (filter_box and !isBoxArt(entry.emoji)) continue;
+            if (!braillePasses(entry.emoji, filter_braille, braille_dot_filter)) continue;
 
             const matches_cat = blk: {
                 if (filter_category) |fc| {
@@ -252,6 +283,7 @@ pub fn searchOptions(
 
             total += 1;
         }
+        if (filter_braille) sortBrailleByDots(top_matches, top_count.*);
         return total;
     }
 
@@ -264,6 +296,7 @@ pub fn searchOptions(
             if (getEmojiWidth(entry.emoji) != fw) continue;
         }
         if (filter_box and !isBoxArt(entry.emoji)) continue;
+        if (!braillePasses(entry.emoji, filter_braille, braille_dot_filter)) continue;
 
         const matches_cat = blk: {
             if (filter_category) |fc| {
@@ -291,7 +324,11 @@ pub fn searchOptions(
         if (fuzzyMatch(actual_query, entry.search)) |raw_score| {
             // Box art ranks below genuine emoji matches in general searches;
             // under b: the uniform penalty does not affect ordering.
-            const score = if (isBoxArt(entry.emoji)) raw_score - box_art_penalty else raw_score;
+            var score = if (isBoxArt(entry.emoji)) raw_score - box_art_penalty else raw_score;
+            if (isBraille(entry.emoji)) score -= braille_penalty;
+            // br: text searches still gate on relevance above, but order
+            // purely by ascending dot count (fewer raised dots first).
+            if (filter_braille) score = -@as(i32, @intCast(brailleDotCount(entry.emoji)));
             total += 1;
             const match = Match{ .index = i, .score = score };
             var insert_pos: usize = 0;
@@ -585,6 +622,58 @@ pub fn isBoxArt(emoji: []const u8) bool {
     var iterator = view.iterator();
     const cp = iterator.nextCodepoint() orelse return false;
     return cp >= 0x2500 and cp <= 0x259F;
+}
+
+/// Braille scores drop by this much in general searches so patterns rank
+/// below genuine emoji matches; br: shows them on their own.
+const braille_penalty: i32 = 150;
+
+/// True for Braille pattern glyphs (U+2800–U+28FF), the entries from
+/// spec/braille.json. Used by the br: filter and ranking.
+pub fn isBraille(emoji: []const u8) bool {
+    const view = std.unicode.Utf8View.init(emoji) catch return false;
+    var iterator = view.iterator();
+    const cp = iterator.nextCodepoint() orelse return false;
+    return cp >= 0x2800 and cp <= 0x28FF;
+}
+
+/// Number of raised dots (0-8) encoded by a Braille pattern codepoint: each
+/// of the 8 low bits of (cp - 0x2800) marks one dot position.
+pub fn brailleDotCount(emoji: []const u8) u32 {
+    const view = std.unicode.Utf8View.init(emoji) catch return 0;
+    var iterator = view.iterator();
+    const cp = iterator.nextCodepoint() orelse return 0;
+    if (cp < 0x2800 or cp > 0x28FF) return 0;
+    return @popCount(@as(u8, @intCast(cp - 0x2800)));
+}
+
+/// Whether `emoji` survives the br: filter: a Braille glyph, and (if set)
+/// matching the exact dot count requested by "br:<n>".
+fn braillePasses(emoji: []const u8, active: bool, dot_filter: ?u32) bool {
+    if (!active) return true;
+    if (!isBraille(emoji)) return false;
+    if (dot_filter) |dc| {
+        if (brailleDotCount(emoji) != dc) return false;
+    }
+    return true;
+}
+
+/// Stable ascending sort of `matches[0..count]` by Braille dot count, used
+/// so br: results list simpler (fewer-dot) patterns first.
+fn sortBrailleByDots(matches: []Match, count: usize) void {
+    var i: usize = 1;
+    while (i < count) : (i += 1) {
+        const key = matches[i];
+        const key_dots = brailleDotCount(EmojiDb.getEntry(key.index).emoji);
+        var j = i;
+        while (j > 0) {
+            const prev_dots = brailleDotCount(EmojiDb.getEntry(matches[j - 1].index).emoji);
+            if (prev_dots <= key_dots) break;
+            matches[j] = matches[j - 1];
+            j -= 1;
+        }
+        matches[j] = key;
+    }
 }
 
 pub fn getEmojiWidth(emoji: []const u8) usize {
@@ -922,6 +1011,54 @@ test "box art entries: b: filter, names, and low rank" {
     try std.testing.expect(!isBoxArt(EmojiDb.getEntry(top_matches[0].index).emoji));
 }
 
+test "braille entries: br: filter, dot-count shorthand, and ascending dot order" {
+    var top_matches: [300]Match = undefined;
+    var top_count: usize = 0;
+
+    // br: with empty query lists only Braille patterns, sorted by ascending dots.
+    var total = search("br:", &top_matches, &top_count, 300);
+    try std.testing.expectEqual(@as(usize, 256), total);
+    try std.testing.expectEqual(@as(usize, 256), top_count);
+    for (top_matches[0..top_count]) |m| {
+        try std.testing.expect(isBraille(EmojiDb.getEntry(m.index).emoji));
+    }
+    var prev_dots: u32 = 0;
+    for (top_matches[0..top_count]) |m| {
+        const dots = brailleDotCount(EmojiDb.getEntry(m.index).emoji);
+        try std.testing.expect(dots >= prev_dots);
+        prev_dots = dots;
+    }
+    // The blank cell (0 dots) comes first, the full 8-dot cell last.
+    try std.testing.expect(std.mem.eql(u8, EmojiDb.getEntry(top_matches[0].index).emoji, "⠀"));
+    try std.testing.expect(std.mem.eql(u8, EmojiDb.getEntry(top_matches[top_count - 1].index).emoji, "⣿"));
+
+    // "br:<n>" and "br:<n>:" both filter to exactly n raised dots.
+    top_count = 0;
+    total = search("br:1", &top_matches, &top_count, 300);
+    try std.testing.expectEqual(@as(usize, 8), total);
+    for (top_matches[0..top_count]) |m| {
+        try std.testing.expectEqual(@as(u32, 1), brailleDotCount(EmojiDb.getEntry(m.index).emoji));
+    }
+
+    top_count = 0;
+    _ = search("br:1:", &top_matches, &top_count, 300);
+    try std.testing.expectEqual(@as(usize, 8), top_count);
+
+    // br: name search still filters to Braille glyphs only.
+    top_count = 0;
+    _ = search("br:dots 1 2", &top_matches, &top_count, 300);
+    try std.testing.expect(top_count > 0);
+    for (top_matches[0..top_count]) |m| {
+        try std.testing.expect(isBraille(EmojiDb.getEntry(m.index).emoji));
+    }
+
+    // General searches rank Braille patterns below genuine emoji matches.
+    top_count = 0;
+    _ = search("dots", &top_matches, &top_count, 300);
+    try std.testing.expect(top_count > 0);
+    try std.testing.expect(!isBraille(EmojiDb.getEntry(top_matches[0].index).emoji));
+}
+
 test "synonym search ranking" {
     var top_matches: [24]Match = undefined;
     var top_count: usize = 0;
@@ -959,6 +1096,34 @@ test "synonym search ranking" {
         }
     }
     try std.testing.expect(found_car);
+}
+
+fn searchContains(query: []const u8, wanted_emoji: []const u8) bool {
+    var top_matches: [24]Match = undefined;
+    var top_count: usize = 0;
+    _ = search(query, &top_matches, &top_count, 24);
+    for (top_matches[0..top_count]) |m| {
+        const entry = EmojiDb.getEntry(m.index);
+        if (std.mem.eql(u8, entry.emoji, wanted_emoji)) return true;
+    }
+    return false;
+}
+
+test "discoverability: sparkle, server, terminal, emojig, and speed adjectives" {
+    try std.testing.expect(searchContains("sparkl", "🍾"));
+    try std.testing.expect(searchContains("server", "🖥️"));
+    try std.testing.expect(searchContains("terminal", "🖥️"));
+    try std.testing.expect(searchContains("terminal", "💻"));
+    try std.testing.expect(searchContains("emojig", "😀"));
+
+    try std.testing.expect(searchContains("fast", "🚤"));
+    try std.testing.expect(searchContains("fast", "🏎️"));
+    try std.testing.expect(searchContains("fast", "🐎"));
+    try std.testing.expect(searchContains("fast", "🚀"));
+
+    try std.testing.expect(searchContains("speed", "🚤"));
+    try std.testing.expect(searchContains("rapid", "🚤"));
+    try std.testing.expect(searchContains("speedy", "🚤"));
 }
 
 test "localization strings JSON files match spec.Strings struct" {
