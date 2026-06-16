@@ -19,8 +19,13 @@ pub const MAX_COLS: usize = 16;
 /// Largest grid row count any spec layout may use.
 pub const MAX_ROWS: usize = 16;
 
-/// Largest total cell count — sizes the match result buffer.
+/// Largest total cell count — bounds the *viewport* (visible grid area).
 pub const MAX_CELLS: usize = MAX_COLS * MAX_ROWS;
+
+/// Largest number of search results buffered for scrolling. Much larger than
+/// MAX_CELLS (the visible viewport) so the grid can scroll through a deep
+/// result set without re-running the search. Sizes the match result buffer.
+pub const MAX_RESULTS: usize = 5 * MAX_CELLS;
 
 /// Largest search query length any spec layout may use (sizes query buffers).
 pub const MAX_QUERY_LEN: usize = 63;

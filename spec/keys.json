@@ -15,6 +15,10 @@
     "up": "nav_up",
     "down": "nav_down",
     "left": "nav_left",
-    "right": "nav_right"
+    "right": "nav_right",
+    "pageup": "scroll_pageup",
+    "pagedown": "scroll_pagedown",
+    "home": "nav_home",
+    "end": "nav_end"
   }
 }

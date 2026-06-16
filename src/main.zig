@@ -58,6 +58,26 @@ const icon_png = @embedFile("assets/emojig-icon.png");
 
 const Theme = term_lib.Theme;
 const Palette = term_lib.Palette;
+
+/// Scrollbar rendering style, configurable via the Settings screen, the
+/// `EMOJIG_SCROLLBAR` env var, or the `scrollbar_style=` config line.
+///   .expand — proportional thumb whose height tracks the visible fraction
+///   .bar    — fixed single-cell `▐` thumb that slides along the track
+const ScrollbarStyle = enum { expand, bar };
+
+/// Thumb geometry for a scrollable viewport. `viewport_h` is the number of
+/// visible rows, `total` the number of scrollable rows. For `.bar` the thumb
+/// is always one cell tall; for `.expand` it grows with the visible fraction.
+/// `travel` is the number of track cells the thumb top may move through.
+fn scrollbarThumb(style: ScrollbarStyle, viewport_h: usize, total: usize) struct { thumb_h: usize, travel: usize } {
+    if (total <= viewport_h or viewport_h == 0) return .{ .thumb_h = viewport_h, .travel = 0 };
+    const thumb_h: usize = switch (style) {
+        .bar => 1,
+        .expand => @max(1, viewport_h * viewport_h / total),
+    };
+    const th = @min(thumb_h, viewport_h);
+    return .{ .thumb_h = th, .travel = viewport_h - th };
+}
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 var global_tui_start_row: ?i32 = null;
@@ -91,6 +111,19 @@ inline fn getMonotonicMs() i64 {
     var ts = std.mem.zeroes(std.posix.system.timespec);
     _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
     return ts.sec * 1000 + @divTrunc(ts.nsec, 1000000);
+}
+
+/// Delete the byte immediately before the text cursor and shift the tail left
+/// (a backspace at an arbitrary cursor position). No-op when the cursor is at
+/// the start. Mutates query_len and query_cursor in lock-step.
+fn deleteAtCursor(query_buf: []u8, query_len: *usize, query_cursor: *usize) void {
+    if (query_cursor.* == 0 or query_len.* == 0) return;
+    const c = query_cursor.*;
+    if (c < query_len.*) {
+        std.mem.copyForwards(u8, query_buf[c - 1 .. query_len.* - 1], query_buf[c..query_len.*]);
+    }
+    query_len.* -= 1;
+    query_cursor.* -= 1;
 }
 
 /// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
@@ -668,6 +701,7 @@ const Config = struct {
     ambiguous_chars: ?[]const u8 = null,
     disabled_categories: ?[]const u8 = null,
     update_cmd: ?[]const u8 = null,
+    scrollbar_style: ?ScrollbarStyle = null,
 };
 
 /// Look up the default value for a setting by ID from the loaded spec.
@@ -723,6 +757,8 @@ fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.disabled_categories = arena.dupe(u8, val) catch null;
             } else if (std.mem.eql(u8, key, "update_cmd") or std.mem.eql(u8, key, "upd_cmd")) {
                 cfg.update_cmd = arena.dupe(u8, val) catch null;
+            } else if (std.mem.eql(u8, key, "scrollbar_style")) {
+                if (std.mem.eql(u8, val, "bar")) cfg.scrollbar_style = .bar else if (std.mem.eql(u8, val, "expand")) cfg.scrollbar_style = .expand;
             }
         }
     }
@@ -1239,7 +1275,7 @@ fn rcFileHint(home: []const u8, shell_name: []const u8) []const u8 {
     return "~/.zshrc";
 }
 
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, palette: term_lib.Palette) ![]const u8 {
+fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
 
@@ -1263,6 +1299,9 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
         },
         4 => {
             return std.fmt.bufPrint(buf, " {s}{s}[{s}]        theme\x1b[0m", .{ bg, sel_prefix, @tagName(theme) });
+        },
+        5 => {
+            return std.fmt.bufPrint(buf, " {s}{s}[{s}]       scrollbar\x1b[0m", .{ bg, sel_prefix, @tagName(scrollbar) });
         },
         else => unreachable,
     }
@@ -1637,6 +1676,13 @@ pub fn main(init: std.process.Init) !void {
         break :blk null;
     };
 
+    const env_scrollbar: ?ScrollbarStyle = blk: {
+        if (init.environ_map.get("EMOJIG_SCROLLBAR")) |env_val| {
+            if (std.mem.eql(u8, env_val, "bar")) break :blk .bar else if (std.mem.eql(u8, env_val, "expand")) break :blk .expand;
+        }
+        break :blk null;
+    };
+
     const env_width: ?usize = blk: {
         if (init.environ_map.get("EMOJIG_WIDTH")) |env_val| {
             break :blk std.fmt.parseInt(usize, env_val, 10) catch null;
@@ -1869,6 +1915,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     var theme = final_theme;
+    var scrollbar_style: ScrollbarStyle = env_scrollbar orelse cfg.scrollbar_style orelse .expand;
     const term_width = final_width;
     const show_border = final_border;
 
@@ -2182,6 +2229,8 @@ pub fn main(init: std.process.Init) !void {
         var current_screen: ScreenState = .search;
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
+        // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
+        const settings_count: usize = 6;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
         var status_scroll_top: usize = 0;
@@ -2222,11 +2271,19 @@ pub fn main(init: std.process.Init) !void {
 
         var query_buf: [defaults.MAX_QUERY_LEN]u8 = undefined;
         var query_len: usize = 0;
+        // Byte offset of the text cursor within query_buf[0..query_len]. The
+        // prompt "has focus" (owns Left/Right/Home/End) whenever selected_idx
+        // is null; once the grid is navigated, selected_idx becomes non-null
+        // and those keys drive the grid instead.
+        var query_cursor: usize = 0;
         // Effective query cap from the spec, never exceeding the stack buffer.
         const max_query_len: usize = @min(g_spec.layout.max_query_len, query_buf.len);
 
         // In simple mode we cap at MAX_CELLS list items; grid mode uses cols*rows.
+        // total_cells is the *viewport* size (visible cells). The search fetches
+        // up to fetch_limit results so the grid/list can scroll past one page.
         const total_cells: usize = if (final_simple) @min(list_rows, defaults.MAX_CELLS) else cols * rows;
+        const fetch_limit: usize = defaults.MAX_RESULTS;
 
         // The spec grid must fit the compile-time scratch buffers (defaults.zig).
         if (!final_simple) {
@@ -2236,8 +2293,12 @@ pub fn main(init: std.process.Init) !void {
         std.debug.assert(total_cells <= defaults.MAX_CELLS);
 
         var selected_idx: ?usize = null;
-        var top_matches: [defaults.MAX_CELLS]emojig.Match = undefined;
+        var top_matches: [defaults.MAX_RESULTS]emojig.Match = undefined;
         var top_count: usize = 0;
+        // Row offset of the grid/list viewport into the result set (search
+        // screen). Kept in sync with selected_idx via adjustScrollTop, and
+        // also driven directly by PageUp/Down, Home/End, wheel, and drag.
+        var grid_scroll_top: usize = 0;
 
         // (declared before defer above)
         var exit_preview = false;
@@ -2276,7 +2337,7 @@ pub fn main(init: std.process.Init) !void {
             break :blk default_ms * ns_per_ms;
         };
 
-        var total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+        var total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
         selected_idx = if (top_count > 0) 0 else null;
 
         var read_buf: [64]u8 = undefined;
@@ -2362,6 +2423,30 @@ pub fn main(init: std.process.Init) !void {
 
             const palette = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
 
+            // Keep the text cursor and grid scroll within valid bounds. This is
+            // the safety net for every query-reset site: when results shrink or
+            // the query is cleared, neither the cursor nor the viewport can
+            // point past the live data.
+            if (query_cursor > query_len) query_cursor = query_len;
+            {
+                const cc = if (final_simple) @as(usize, 1) else cols;
+                const vp = if (final_simple) total_cells else rows;
+                const trows = (top_count + cc - 1) / cc;
+                const max_top = if (trows > vp) trows - vp else 0;
+                if (grid_scroll_top > max_top) grid_scroll_top = max_top;
+            }
+
+            // Focus model: the prompt "owns" the cursor while selected_idx is
+            // null. In that state, once a query is typed, the first result
+            // still gets a (non-highlighted) bracket marker so Enter's target
+            // stays visible — this preserves the fast "type + Enter" path.
+            // Navigating the grid sets selected_idx (grid focus) and adds the
+            // highlight. effective_idx drives both the marker and the
+            // description row; only selected_idx draws the selection_bg.
+            const soft_marker: bool = current_screen == .search and selected_idx == null and
+                query_len > 0 and top_count > 0 and !multi_select_active;
+            const effective_idx: ?usize = selected_idx orelse (if (soft_marker) @as(usize, 0) else null);
+
             // ----------------------------------------------------------------
             // Render
             // ----------------------------------------------------------------
@@ -2385,7 +2470,17 @@ pub fn main(init: std.process.Init) !void {
                 const prefix_cols = 3;
                 const icon_cols = 4;
                 const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
-                const display_query_len = @min(query_len, max_query_cols);
+                // Horizontal scroll window over the query text so the text
+                // cursor stays visible even when the query is longer than the
+                // search bar. For short queries (the common case) view_start is
+                // 0 and this collapses to the original "show from the start".
+                const query_view_start: usize = if (query_cursor > max_query_cols)
+                    query_cursor - max_query_cols
+                else
+                    0;
+                const display_query_len = @min(query_len - query_view_start, max_query_cols);
+                // Column offset of the cursor within the visible query window.
+                const cursor_col_off = query_cursor - query_view_start;
 
                 if (resize_mode == .altscreen) {
                     rctx.is_hidden = false;
@@ -2494,13 +2589,18 @@ pub fn main(init: std.process.Init) !void {
                     var si: usize = 0;
                     while (si < total_cells) : (si += 1) {
                         try writeAll(stdout_fd, "\x1b[2K\r");
-                        if (si < top_count) {
-                            const entry = emojig.EmojiDb.getEntry(top_matches[si].index);
+                        const li = grid_scroll_top + si;
+                        if (li < top_count) {
+                            const entry = emojig.EmojiDb.getEntry(top_matches[li].index);
                             var strip_buf: [32]u8 = undefined;
                             const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                            if (selected_idx != null and si == selected_idx.?) {
+                            if (selected_idx != null and li == selected_idx.?) {
                                 // selection_bg includes both bg and fg color sequences.
                                 const row_line = try std.fmt.bufPrint(&line_buf, "{s}  > {s} {s}\x1b[0m", .{ palette.selection_bg, render_emoji, entry.name });
+                                try writeAll(stdout_fd, row_line);
+                            } else if (effective_idx != null and li == effective_idx.?) {
+                                // Soft marker (prompt focus): caret without highlight.
+                                const row_line = try std.fmt.bufPrint(&line_buf, "{s}  > {s} {s}\x1b[0m", .{ palette.grid_fg, render_emoji, entry.name });
                                 try writeAll(stdout_fd, row_line);
                             } else {
                                 const row_line = try std.fmt.bufPrint(&line_buf, "{s}    {s} {s}\x1b[0m", .{ palette.grid_fg, render_emoji, entry.name });
@@ -2599,7 +2699,7 @@ pub fn main(init: std.process.Init) !void {
                                 const ph_pad = if (pad_len >= placeholder_cols) pad_len - placeholder_cols else 0;
                                 try writeAll(stdout_fd, spaces[0..@min(ph_pad, spaces.len)]);
                             } else {
-                                try writeAll(stdout_fd, query_buf[0..display_query_len]);
+                                try writeAll(stdout_fd, query_buf[query_view_start .. query_view_start + display_query_len]);
                                 try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
                             }
                             const icon_hl = if (theme_hovered) palette.selection_bg else "";
@@ -2681,7 +2781,7 @@ pub fn main(init: std.process.Init) !void {
                         const viewport_h = rows + 3;
                         const needs_scroll = help_lines.len > viewport_h;
                         const max_scroll_h: usize = if (needs_scroll) help_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / help_lines.len) else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, help_lines.len).thumb_h else 0;
                         const travel_h = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_h > 0) help_scroll_top * travel_h / max_scroll_h else 0;
                         var h_idx: usize = 0;
@@ -2724,7 +2824,7 @@ pub fn main(init: std.process.Init) !void {
                         const viewport_h = rows + 3;
                         const needs_scroll = about_lines.len > viewport_h;
                         const max_scroll_a: usize = if (needs_scroll) about_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about_lines.len) else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, about_lines.len).thumb_h else 0;
                         const travel_a = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_a > 0) about_scroll_top * travel_a / max_scroll_a else 0;
                         var h_idx: usize = 0;
@@ -2771,7 +2871,7 @@ pub fn main(init: std.process.Init) !void {
                         const viewport_h = rows + 3;
                         const needs_scroll = about2_lines.len > viewport_h;
                         const max_scroll_a2: usize = if (needs_scroll) about2_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / about2_lines.len) else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, about2_lines.len).thumb_h else 0;
                         const travel_a2 = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_a2 > 0) about_scroll_top * travel_a2 / max_scroll_a2 else 0;
                         var h_idx: usize = 0;
@@ -2818,7 +2918,7 @@ pub fn main(init: std.process.Init) !void {
                         const viewport_h = rows + 3;
                         const needs_scroll = aboutN_lines.len > viewport_h;
                         const max_scroll_aN: usize = if (needs_scroll) aboutN_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / aboutN_lines.len) else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, aboutN_lines.len).thumb_h else 0;
                         const travel_aN = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_aN > 0) about_scroll_top * travel_aN / max_scroll_aN else 0;
                         var h_idx: usize = 0;
@@ -2872,7 +2972,7 @@ pub fn main(init: std.process.Init) !void {
                         const viewport_h = rows + 3;
                         const needs_scroll = status_lines.len > viewport_h;
                         const max_scroll_s: usize = if (needs_scroll) status_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) @max(1, viewport_h * viewport_h / status_lines.len) else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, status_lines.len).thumb_h else 0;
                         const travel_s = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_s > 0) status_scroll_top * travel_s / max_scroll_s else 0;
                         var h_idx: usize = 0;
@@ -2912,9 +3012,9 @@ pub fn main(init: std.process.Init) !void {
                             } else if (h_idx >= 2 and h_idx - 2 < rows) {
                                 const slot_idx = h_idx - 2;
                                 const opt_idx = settings_scroll_top + slot_idx;
-                                if (opt_idx < 5) {
+                                if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, palette);
+                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2980,6 +3080,18 @@ pub fn main(init: std.process.Init) !void {
                         try rw.endRow();
 
                         // Grid rows.
+                        // Grid scrollbar geometry (only for the genuine emoji grid,
+                        // when the result set spans more rows than the viewport).
+                        const grid_total_rows = (top_count + cols - 1) / cols;
+                        const grid_needs_scroll = !is_cmd_autocomplete and !is_cat_autocomplete and
+                            !is_too_small and !exit_preview and grid_total_rows > rows;
+                        const grid_tg = scrollbarThumb(scrollbar_style, rows, grid_total_rows);
+                        const grid_max_scroll: usize = if (grid_total_rows > rows) grid_total_rows - rows else 0;
+                        const grid_thumb_start: usize = if (grid_needs_scroll and grid_max_scroll > 0)
+                            grid_scroll_top * grid_tg.travel / grid_max_scroll
+                        else
+                            0;
+
                         var r: usize = 0;
                         while (r < rows) : (r += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -3044,7 +3156,7 @@ pub fn main(init: std.process.Init) !void {
                                 var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
                                 var c: usize = 0;
                                 while (c < cols) : (c += 1) {
-                                    const idx = r * cols + c;
+                                    const idx = (grid_scroll_top + r) * cols + c;
                                     if (selected_idx) |sel| {
                                         if (idx == sel and idx < top_count) {
                                             const m = top_matches[idx];
@@ -3085,7 +3197,7 @@ pub fn main(init: std.process.Init) !void {
 
                                 var c: usize = 0;
                                 while (c < cols) : (c += 1) {
-                                    const idx = r * cols + c;
+                                    const idx = (grid_scroll_top + r) * cols + c;
                                     if (idx < top_count) {
                                         const m = top_matches[idx];
                                         const entry = emojig.EmojiDb.getEntry(m.index);
@@ -3102,50 +3214,40 @@ pub fn main(init: std.process.Init) !void {
                                             }
                                         }
 
-                                        if (selected_idx) |sel| {
-                                            if (idx == sel) {
-                                                if (is_selected_in_multi) {
-                                                    if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s} \x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
-                                                    } else {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s}\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
-                                                    }
-                                                } else {
-                                                    if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s} ]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
-                                                    } else {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
-                                                    }
-                                                }
-                                            } else {
-                                                if (is_selected_in_multi) {
-                                                    if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "✓{s}  ", .{render_emoji});
-                                                    } else {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "✓{s} ", .{render_emoji});
-                                                    }
-                                                } else {
-                                                    if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
-                                                    } else {
-                                                        cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
-                                                    }
-                                                }
-                                            }
-                                        } else {
+                                        // Hard selection (grid focus) draws the highlight; the
+                                        // soft marker (prompt focus, first hit) only draws brackets.
+                                        const is_hard = (selected_idx != null and idx == selected_idx.?);
+                                        const is_marker = is_hard or (effective_idx != null and idx == effective_idx.?);
+                                        const w1 = emojig.getEmojiWidth(render_emoji) == 1;
+
+                                        if (is_hard) {
                                             if (is_selected_in_multi) {
-                                                if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "✓{s}  ", .{render_emoji});
-                                                } else {
-                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], "✓{s} ", .{render_emoji});
-                                                }
+                                                cell_strings[c] = if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s} \x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s}\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
                                             } else {
-                                                if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
-                                                } else {
-                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
-                                                }
+                                                cell_strings[c] = if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s} ]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
                                             }
+                                        } else if (is_marker) {
+                                            // Soft marker: brackets in grid colors, no highlight.
+                                            cell_strings[c] = if (w1)
+                                                try std.fmt.bufPrint(&cell_buffers[c], "[{s} ]", .{render_emoji})
+                                            else
+                                                try std.fmt.bufPrint(&cell_buffers[c], "[{s}]", .{render_emoji});
+                                        } else if (is_selected_in_multi) {
+                                            cell_strings[c] = if (w1)
+                                                try std.fmt.bufPrint(&cell_buffers[c], "✓{s}  ", .{render_emoji})
+                                            else
+                                                try std.fmt.bufPrint(&cell_buffers[c], "✓{s} ", .{render_emoji});
+                                        } else {
+                                            cell_strings[c] = if (w1)
+                                                try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji})
+                                            else
+                                                try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
                                         }
                                     } else {
                                         cell_strings[c] = "    ";
@@ -3168,6 +3270,13 @@ pub fn main(init: std.process.Init) !void {
                                 @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
                                 gl_pos += rem_sp.len;
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
+                                if (grid_needs_scroll and content_width >= 2) {
+                                    const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
+                                    const sb: []const u8 = if (on_thumb) "▐" else " ";
+                                    var sb_buf: [16]u8 = undefined;
+                                    const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                    try writeAll(stdout_fd, sb_seq);
+                                }
                             }
                             try rw.endRow();
                         }
@@ -3229,8 +3338,8 @@ pub fn main(init: std.process.Init) !void {
                                 const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.info_bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                                 try writeAll(stdout_fd, name_line);
                             }
-                        } else if (selected_idx != null and !is_too_small) {
-                            const sel = selected_idx.?;
+                        } else if (effective_idx != null and !is_too_small) {
+                            const sel = effective_idx.?;
                             if (top_count > 0 and sel < top_count) {
                                 const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
                                 if (name.len > max_len and max_len >= 3) {
@@ -3413,13 +3522,13 @@ pub fn main(init: std.process.Init) !void {
                     } else if (current_screen != .search) blk: {
                         // Non-search screen: park at the search bar (row 2 + row_off) but hide cursor
                         if (cursor_up > 0) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + display_query_len });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + cursor_col_off });
                         } else {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?25l", .{5 + display_query_len});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?25l", .{5 + cursor_col_off});
                         }
                     } else if (final_simple) blk: {
                         // Simple mode: prompt is already the last row; just position cursor after "> ".
-                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{3 + query_len});
+                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{3 + cursor_col_off});
                     } else if (is_too_small) blk: {
                         if (cursor_up > 0) {
                             break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
@@ -3429,9 +3538,9 @@ pub fn main(init: std.process.Init) !void {
                     } else blk: {
                         // Normal full TUI: move up, position cursor, enable blink.
                         if (cursor_up > 0) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + display_query_len });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + cursor_col_off });
                         } else {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{5 + display_query_len});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{5 + cursor_col_off});
                         }
                     };
                     try writeAll(stdout_fd, cursor_seq);
@@ -3600,6 +3709,14 @@ pub fn main(init: std.process.Init) !void {
                         logical = "right";
                     } else if (bytes[2] == 'D') {
                         logical = "left";
+                    } else if (std.mem.eql(u8, bytes[2..n], "5~")) {
+                        logical = "pageup";
+                    } else if (std.mem.eql(u8, bytes[2..n], "6~")) {
+                        logical = "pagedown";
+                    } else if (bytes[2] == 'H' or std.mem.eql(u8, bytes[2..n], "1~") or std.mem.eql(u8, bytes[2..n], "7~")) {
+                        logical = "home";
+                    } else if (bytes[2] == 'F' or std.mem.eql(u8, bytes[2..n], "4~") or std.mem.eql(u8, bytes[2..n], "8~")) {
+                        logical = "end";
                     } else if (bytes[2] == '<') {
                         // SGR Mouse event — find first terminator to handle batched events.
                         const sgr_data = bytes[3..n];
@@ -3628,9 +3745,45 @@ pub fn main(init: std.process.Init) !void {
 
                         const is_motion = (button & 32) != 0;
                         const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
+                        const is_wheel = (button & 64) != 0;
                         last_was_motion = is_motion;
 
-                        if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
+                        if (is_wheel and term_char == 'M' and has_focus and popup_msg == null) {
+                            // Mouse wheel: scroll whichever pane is shown by a fixed
+                            // step, independent of keyboard focus (normal GUI feel).
+                            const wheel_down = (button & 1) != 0;
+                            const step: usize = 3;
+                            if (current_screen == .search) {
+                                const cc = if (final_simple) @as(usize, 1) else cols;
+                                const vp = if (final_simple) total_cells else rows;
+                                const trows = (top_count + cc - 1) / cc;
+                                const max_top = if (trows > vp) trows - vp else 0;
+                                grid_scroll_top = if (wheel_down)
+                                    @min(grid_scroll_top + step, max_top)
+                                else if (grid_scroll_top > step) grid_scroll_top - step else 0;
+                            } else if (current_screen == .settings) {
+                                const max_top = if (settings_count > rows) settings_count - rows else 0;
+                                settings_scroll_top = if (wheel_down)
+                                    @min(settings_scroll_top + step, max_top)
+                                else if (settings_scroll_top > step) settings_scroll_top - step else 0;
+                            } else if (current_screen == .categories) {
+                                const total = g_spec.categories.categories.len;
+                                const max_top = if (total > rows) total - rows else 0;
+                                cat_scroll_top = if (wheel_down)
+                                    @min(cat_scroll_top + step, max_top)
+                                else if (cat_scroll_top > step) cat_scroll_top - step else 0;
+                            } else {
+                                // help / about* / status popups.
+                                const viewport_h = rows + 3;
+                                const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
+                                const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else if (current_screen == .about2) g_spec.strings.about2_lines.len else if (current_screen == .about3) g_spec.strings.about3_lines.len else if (current_screen == .about4) g_spec.strings.about4_lines.len else g_spec.strings.status_lines.len;
+                                const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
+                                sp.* = if (wheel_down)
+                                    @min(sp.* + step, max_scroll)
+                                else if (sp.* > step) sp.* - step else 0;
+                            }
+                        } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
                             // Theme button hover.
                             const search_row_m: i32 = 2 + row_off;
                             theme_hovered = (click_row == search_row_m and
@@ -3644,7 +3797,7 @@ pub fn main(init: std.process.Init) !void {
                             if (current_screen == .settings) {
                                 if (click_row >= list_first_row) {
                                     const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                    if (opt_idx < 5) selected_idx = opt_idx;
+                                    if (opt_idx < settings_count) selected_idx = opt_idx;
                                 }
                             } else if (current_screen == .categories) {
                                 if (click_row >= list_first_row) {
@@ -3652,11 +3805,21 @@ pub fn main(init: std.process.Init) !void {
                                     if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
                                 }
                             } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
-                                const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                                if (grid_col < cols) {
-                                    const hovered = grid_row * cols + grid_col;
-                                    if (hovered < top_count) selected_idx = hovered;
+                                const total_rows = (top_count + cols - 1) / cols;
+                                const on_sb = btn_id == 0 and local_col == @as(i32, @intCast(content_width)) and total_rows > rows;
+                                if (on_sb) {
+                                    // Scrollbar drag: map the track row to a scroll offset.
+                                    const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
+                                    const max_scroll = total_rows - rows;
+                                    const track_row = @as(usize, @intCast(click_row - grid_first_row));
+                                    if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
+                                } else {
+                                    const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                    const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                    if (grid_col < cols) {
+                                        const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
+                                        if (hovered < top_count) selected_idx = hovered;
+                                    }
                                 }
                             }
                         } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
@@ -3689,7 +3852,7 @@ pub fn main(init: std.process.Init) !void {
                                     const list_first_row: i32 = grid_first_row + 1;
                                     if (current_screen == .settings and click_row >= list_first_row) {
                                         const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                        if (opt_idx < 5) {
+                                        if (opt_idx < settings_count) {
                                             selected_idx = opt_idx;
                                             if (opt_idx == 1) {
                                                 keybind_editing = true;
@@ -3709,6 +3872,12 @@ pub fn main(init: std.process.Init) !void {
                                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                                                 const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
                                                 popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
+                                            } else if (opt_idx == 5) {
+                                                scrollbar_style = switch (scrollbar_style) {
+                                                    .expand => .bar,
+                                                    .bar => .expand,
+                                                };
+                                                saveKeyToConfig(init.io, "scrollbar_style", @tagName(scrollbar_style));
                                             } else {
                                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                                 const shell_s = detectShell(init.environ_map);
@@ -3722,11 +3891,20 @@ pub fn main(init: std.process.Init) !void {
                                             disabled_cats[cat_idx] = !disabled_cats[cat_idx];
                                             saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
                                         }
+                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
+                                        local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > rows)
+                                    {
+                                        // Scrollbar click-to-jump.
+                                        const total_rows = (top_count + cols - 1) / cols;
+                                        const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
+                                        const max_scroll = total_rows - rows;
+                                        const track_row = @as(usize, @intCast(click_row - grid_first_row));
+                                        if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
                                     } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                         const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                                         if (grid_col < cols) {
-                                            const clicked_idx = grid_row * cols + grid_col;
+                                            const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
                                             if (clicked_idx < top_count) {
                                                 selected_idx = clicked_idx;
                                                 if (multi_select_active) {
@@ -3770,6 +3948,10 @@ pub fn main(init: std.process.Init) !void {
                         logical = "right";
                     } else if (bytes[2] == 'D') {
                         logical = "left";
+                    } else if (bytes[2] == 'H') {
+                        logical = "home";
+                    } else if (bytes[2] == 'F') {
+                        logical = "end";
                     }
                 }
             } else if (bytes[0] == 127 or bytes[0] == 8) {
@@ -3801,10 +3983,18 @@ pub fn main(init: std.process.Init) !void {
                 } else if (has_focus and current_screen == .search) {
                     for (bytes) |b| {
                         if (b >= 32 and b <= 126 and query_len < max_query_len) {
-                            query_buf[query_len] = b;
+                            // Insert at the text cursor, shifting the tail right.
+                            if (query_cursor < query_len) {
+                                std.mem.copyBackwards(u8, query_buf[query_cursor + 1 .. query_len + 1], query_buf[query_cursor..query_len]);
+                            }
+                            query_buf[query_cursor] = b;
                             query_len += 1;
-                            if (!multi_select_active) selected_idx = 0;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            query_cursor += 1;
+                            // Typing always returns focus to the prompt and
+                            // resets the scroll; Enter still picks the first hit.
+                            if (!multi_select_active) selected_idx = null;
+                            grid_scroll_top = 0;
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     }
                 }
@@ -3823,7 +4013,7 @@ pub fn main(init: std.process.Init) !void {
                         current_screen = .search;
                         query_len = 0;
                         selected_idx = null;
-                        total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                        total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     } else if (multi_select_active and std.mem.eql(u8, name, "esc")) {
                         multi_select_active = false;
                         multi_selected_emojis.clearRetainingCapacity();
@@ -3863,12 +4053,12 @@ pub fn main(init: std.process.Init) !void {
                             }
                         } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                             keybind_editing = false;
-                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else 4;
-                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
+                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else settings_count - 1;
+                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
                             keybind_editing = false;
-                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < 5) selected_idx.? + 1 else 0;
-                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, 5);
+                            selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < settings_count) selected_idx.? + 1 else 0;
+                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
                             const opt_idx = selected_idx orelse 0;
                             if (opt_idx == 1) {
@@ -3890,6 +4080,12 @@ pub fn main(init: std.process.Init) !void {
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                                 const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
                                 popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
+                            } else if (opt_idx == 5) {
+                                scrollbar_style = switch (scrollbar_style) {
+                                    .expand => .bar,
+                                    .bar => .expand,
+                                };
+                                saveKeyToConfig(init.io, "scrollbar_style", @tagName(scrollbar_style));
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
@@ -3900,7 +4096,7 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .categories) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -3919,25 +4115,33 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4 or current_screen == .help or current_screen == .status) {
                         if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
-                        } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
-                            const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
-                            const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                            if (sp.* > 0) sp.* -= 1;
-                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                        } else {
                             const viewport_h = rows + 3;
                             const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
                             const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
                             const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else if (current_screen == .about2) g_spec.strings.about2_lines.len else if (current_screen == .about3) g_spec.strings.about3_lines.len else if (current_screen == .about4) g_spec.strings.about4_lines.len else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
-                            if (sp.* < max_scroll) sp.* += 1;
+                            if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                                if (sp.* > 0) sp.* -= 1;
+                            } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                                if (sp.* < max_scroll) sp.* += 1;
+                            } else if (std.mem.eql(u8, action, "scroll_pageup")) {
+                                sp.* = if (sp.* > viewport_h) sp.* - viewport_h else 0;
+                            } else if (std.mem.eql(u8, action, "scroll_pagedown")) {
+                                sp.* = @min(sp.* + viewport_h, max_scroll);
+                            } else if (std.mem.eql(u8, action, "nav_home")) {
+                                sp.* = 0;
+                            } else if (std.mem.eql(u8, action, "nav_end")) {
+                                sp.* = max_scroll;
+                            }
                         }
                     } else if (is_cmd_autocomplete) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -3947,7 +4151,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter")) {
                             // Find the selected command
                             var opt_cmd: ?spec_mod.CommandSpec = null;
@@ -4008,21 +4212,21 @@ pub fn main(init: std.process.Init) !void {
                                     multi_select_active = true;
                                     query_len = 0;
                                     selected_idx = null;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 } else if (std.mem.eql(u8, cmd.action, "run_update")) {
                                     const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                     popup_msg = runUpdate(init.io, home_s, cfg.update_cmd, cmd.cmd, &popup_buf);
                                     query_len = 0;
                                     current_screen = .search;
                                     selected_idx = null;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
-                            if (query_len > 0) {
-                                query_len -= 1;
+                            if (query_cursor > 0) {
+                                deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else if (is_cat_autocomplete) {
@@ -4033,7 +4237,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space")) {
                             var opt_cat: ?spec_mod.CategorySpec = null;
                             if (selected_idx != null and selected_idx.? < cat_match_count) {
@@ -4043,14 +4247,15 @@ pub fn main(init: std.process.Init) !void {
                             }
                             if (opt_cat) |cat| {
                                 query_len = if (std.fmt.bufPrint(&query_buf, "c:{s} ", .{cat.short})) |res| res.len else |_| 0;
+                                query_cursor = query_len;
                                 selected_idx = null;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
-                            if (query_len > 0) {
-                                query_len -= 1;
+                            if (query_cursor > 0) {
+                                deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else {
@@ -4114,14 +4319,16 @@ pub fn main(init: std.process.Init) !void {
                                         }
                                     }
                                 }
-                                if (!removed and query_len > 0) {
-                                    query_len -= 1;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                                if (!removed and query_cursor > 0) {
+                                    deleteAtCursor(&query_buf, &query_len, &query_cursor);
+                                    grid_scroll_top = 0;
+                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
-                            } else if (query_len > 0) {
-                                query_len -= 1;
-                                selected_idx = if (query_len == 0) null else 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, total_cells, &g_spec.categories, disabled_cats);
+                            } else if (query_cursor > 0) {
+                                deleteAtCursor(&query_buf, &query_len, &query_cursor);
+                                selected_idx = null;
+                                grid_scroll_top = 0;
+                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "cycle_theme")) {
                             theme = switch (theme) {
@@ -4134,28 +4341,64 @@ pub fn main(init: std.process.Init) !void {
                                 system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                             }
                             applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                        } else if (std.mem.eql(u8, action, "scroll_pageup") or std.mem.eql(u8, action, "scroll_pagedown")) {
+                            if (top_count > 0) {
+                                const down = std.mem.eql(u8, action, "scroll_pagedown");
+                                const cc = if (final_simple) @as(usize, 1) else cols;
+                                const vp = if (final_simple) total_cells else rows;
+                                const trows = (top_count + cc - 1) / cc;
+                                const step = vp * cc;
+                                const cur = selected_idx orelse 0;
+                                selected_idx = if (down)
+                                    @min(cur + step, top_count - 1)
+                                else if (cur > step) cur - step else 0;
+                                adjustScrollTop(selected_idx.? / cc, &grid_scroll_top, vp, trows);
+                            }
                         } else if (std.mem.startsWith(u8, action, "nav_")) {
+                            const is_home = std.mem.eql(u8, action, "nav_home");
+                            const is_end = std.mem.eql(u8, action, "nav_end");
+                            const cc = if (final_simple) @as(usize, 1) else cols;
+                            const vp = if (final_simple) total_cells else rows;
+                            const trows = (top_count + cc - 1) / cc;
                             if (selected_idx == null) {
-                                if (top_count > 0) selected_idx = 0;
-                            } else if (final_simple) {
-                                // In simple mode all directions are linear prev/next.
-                                const sel = selected_idx.?;
-                                const count = top_count;
-                                if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
-                                    if (sel == 0) {
-                                        selected_idx = null;
-                                    } else {
-                                        selected_idx = sel - 1;
-                                    }
-                                } else {
-                                    selected_idx = if (sel + 1 < count) sel + 1 else 0;
+                                // Prompt focus: Left/Right/Home/End move the text
+                                // cursor; Up/Down enter the grid at the first hit.
+                                if (std.mem.eql(u8, action, "nav_left")) {
+                                    if (query_cursor > 0) query_cursor -= 1;
+                                } else if (std.mem.eql(u8, action, "nav_right")) {
+                                    if (query_cursor < query_len) query_cursor += 1;
+                                } else if (is_home) {
+                                    query_cursor = 0;
+                                } else if (is_end) {
+                                    query_cursor = query_len;
+                                } else if (top_count > 0) {
+                                    selected_idx = 0;
+                                    adjustScrollTop(0, &grid_scroll_top, vp, trows);
                                 }
                             } else {
+                                // Grid focus.
                                 const sel = selected_idx.?;
-                                if (std.mem.eql(u8, action, "nav_up") and sel < cols) {
+                                if (is_home) {
+                                    selected_idx = 0;
+                                } else if (is_end) {
+                                    selected_idx = top_count - 1;
+                                } else if (final_simple) {
+                                    // Linear prev/next; nav_up off the top releases focus.
+                                    if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
+                                        selected_idx = if (sel == 0) null else sel - 1;
+                                    } else {
+                                        selected_idx = if (sel + 1 < top_count) sel + 1 else 0;
+                                    }
+                                } else if (std.mem.eql(u8, action, "nav_up") and sel < cols) {
+                                    // Top grid row → release focus back to prompt.
                                     selected_idx = null;
                                 } else {
-                                    selected_idx = navSelect(action, sel, top_count, cols, rows);
+                                    selected_idx = navSelect(action, sel, top_count, cols, trows);
+                                }
+                                if (selected_idx) |s| {
+                                    adjustScrollTop(s / cc, &grid_scroll_top, vp, trows);
+                                } else {
+                                    grid_scroll_top = 0;
                                 }
                             }
                         }
@@ -4273,4 +4516,79 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     if (!copied) {
         return error.ClipboardFailed;
     }
+}
+
+test "deleteAtCursor removes the byte before the cursor" {
+    var buf: [8]u8 = undefined;
+    @memcpy(buf[0..4], "abcd");
+    var len: usize = 4;
+    var cur: usize = 2; // between 'b' and 'c'
+    deleteAtCursor(&buf, &len, &cur);
+    try std.testing.expectEqual(@as(usize, 3), len);
+    try std.testing.expectEqual(@as(usize, 1), cur);
+    try std.testing.expectEqualStrings("acd", buf[0..len]);
+
+    // Delete at end (cursor == len) trims the last byte.
+    cur = len;
+    deleteAtCursor(&buf, &len, &cur);
+    try std.testing.expectEqual(@as(usize, 2), len);
+    try std.testing.expectEqualStrings("ac", buf[0..len]);
+
+    // Delete at start is a no-op.
+    cur = 0;
+    deleteAtCursor(&buf, &len, &cur);
+    try std.testing.expectEqual(@as(usize, 2), len);
+    try std.testing.expectEqual(@as(usize, 0), cur);
+}
+
+test "navSelect wraps with more rows than one viewport" {
+    // 6 columns, 30 results => 5 logical rows. Pass the *total* row count.
+    const cols: usize = 6;
+    const count: usize = 30;
+    const rows: usize = 5;
+
+    // Down from the last row wraps to the same column on the top row.
+    try std.testing.expectEqual(@as(usize, 1), navSelect("nav_down", 25, count, cols, rows));
+    // Down within range advances one row.
+    try std.testing.expectEqual(@as(usize, 7), navSelect("nav_down", 1, count, cols, rows));
+    // Up from the top row wraps to the bottom row (same column).
+    try std.testing.expectEqual(@as(usize, 25), navSelect("nav_up", 1, count, cols, rows));
+    // Left/right wrap at the ends of the whole result set.
+    try std.testing.expectEqual(@as(usize, 29), navSelect("nav_left", 0, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 0), navSelect("nav_right", 29, count, cols, rows));
+}
+
+test "adjustScrollTop keeps a row selection inside the viewport" {
+    var top: usize = 0;
+    // Viewport of 4 rows over 8 total rows.
+    adjustScrollTop(6, &top, 4, 8); // row 6 -> top must be 3 (rows 3..6)
+    try std.testing.expectEqual(@as(usize, 3), top);
+    adjustScrollTop(0, &top, 4, 8); // back to top
+    try std.testing.expectEqual(@as(usize, 0), top);
+    // Selection already visible leaves scroll untouched.
+    top = 2;
+    adjustScrollTop(3, &top, 4, 8);
+    try std.testing.expectEqual(@as(usize, 2), top);
+}
+
+test "scrollbarThumb geometry for both styles" {
+    // Expand: thumb height tracks the visible fraction.
+    const e = scrollbarThumb(.expand, 4, 16);
+    try std.testing.expectEqual(@as(usize, 1), e.thumb_h);
+    try std.testing.expectEqual(@as(usize, 3), e.travel);
+
+    // Bar: always a single cell, full travel.
+    const b = scrollbarThumb(.bar, 4, 16);
+    try std.testing.expectEqual(@as(usize, 1), b.thumb_h);
+    try std.testing.expectEqual(@as(usize, 3), b.travel);
+
+    // Larger viewport relative to total -> taller expand thumb.
+    const e2 = scrollbarThumb(.expand, 8, 12);
+    try std.testing.expectEqual(@as(usize, 5), e2.thumb_h); // 8*8/12 = 5
+    try std.testing.expectEqual(@as(usize, 3), e2.travel);
+
+    // No scrolling needed -> thumb fills the viewport, no travel.
+    const none = scrollbarThumb(.expand, 6, 6);
+    try std.testing.expectEqual(@as(usize, 6), none.thumb_h);
+    try std.testing.expectEqual(@as(usize, 0), none.travel);
 }

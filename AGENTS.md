@@ -87,11 +87,19 @@ To prevent leaving the user's terminal session in a broken state:
   * Enabled with `\x1b[?1003h` (any-event, reports button + motion) + `\x1b[?1006h` (SGR coordinates).
   * **Hover**: motion events (SGR Cb bit 5 set) update `selected_idx` to the cell under cursor without triggering copy/exit.
   * **Click**: left-button press (`Cb & ~32 & 3 == 0`, action `M`) on a grid cell copies that emoji and exits; click on the theme icon (right 3 cols of search row) cycles theme.
+  * **Wheel** (`Cb & 64`): scrolls whichever pane is shown (grid / settings / categories / help-about-status popups) by a fixed 3-row step, independent of keyboard focus. Direction is `Cb & 1` (0=up, 1=down).
+  * **Scrollbar drag**: a left-press or left-drag on the grid scrollbar column (`local_col == content_width`) maps the track row to `grid_scroll_top` via `scrollbarThumb` travel — click-to-jump and drag-to-scroll share one formula.
   * The parser scans for the first `M`/`m` terminator so that batched motion events from `?1003h` do not corrupt parsing.
   * All three exit paths (defer, sigHandler, panic) emit `\x1b[?1003l\x1b[?1006l` to disable tracking.
-* **2D Grid Navigation**:
-  * Support horizontal (`Left`/`Right`) and vertical (`Up`/`Down`) arrow key movement.
-  * Selection wraps around boundaries (e.g., pressing `Right` on column 6 wraps to the start of the next row; pressing `Down` on the bottom row wraps to the top row).
+* **2D Grid Navigation, Scrolling & Focus**:
+  * **Result buffer**: `runSearch` fetches up to `defaults.MAX_RESULTS` (5×`MAX_CELLS` = 1280) matches; the visible `cols×rows` grid is a virtualized viewport over them, offset by `grid_scroll_top` (a *row* offset). Cell index = `(grid_scroll_top + r) * cols + c`.
+  * **Prompt vs. grid focus**: `selected_idx == null` ⇒ the prompt owns the arrows (real text cursor `query_cursor`); non-null ⇒ the grid owns them. Typing any character always returns focus to the prompt (`selected_idx = null`, `grid_scroll_top = 0`).
+  * **Prompt editor**: `Left`/`Right` move `query_cursor`, characters insert at the cursor, Backspace/`delete` removes the byte before it (`deleteAtCursor`), `Home`/`End` jump to start/end. A horizontal scroll window (`query_view_start`) keeps the cursor visible for long queries.
+  * **Soft marker vs. hard highlight**: while the prompt has focus and the query is non-empty, the first hit shows plain brackets `[emoji]` in grid colors (no highlight) — the fast path (`type query, Enter` copies hit #1) is unchanged. Arrow-down from the prompt jumps the grid cursor onto that hit and restores the `selection_bg` highlight. Empty query ⇒ no marker (preserved startup state per §3 Startup State).
+  * **Keys**: `Up`/`Down`/`Left`/`Right` wrap across the *full* result set (`navSelect` takes the total row count); `PageUp`/`PageDown` move one viewport of rows; `Home`/`End` jump first/last result when grid-focused (cursor start/end when prompt-focused). After any nav, `adjustScrollTop(selected_row, &grid_scroll_top, rows, total_rows)` keeps the selection visible. The same keys scroll the help/about/status/settings/categories panes.
+* **Scrollbar styles** (`ScrollbarStyle`, `scrollbarThumb`):
+  * `.expand` — proportional thumb (`viewport²/total`); `.bar` — fixed single-cell `▐`. One helper drives all six scrollbars (grid + help/about×4/status).
+  * Configurable via the Settings screen (6th row), `EMOJIG_SCROLLBAR=expand|bar`, or the `scrollbar_style=` config line — resolved env → config → default `.expand`, persisted with `saveKeyToConfig`.
 
 ---
 
