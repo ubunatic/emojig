@@ -24,6 +24,15 @@ pub fn build(b: *std.Build) void {
     // target and optimize options) will be listed when running `zig build --help`
     // in this directory.
 
+    // LLVM's optimizer is the slow part of `make install` (-Doptimize=ReleaseSmall),
+    // not linking: zig's native ELF path already uses its own fast self-hosted
+    // linker, so an external linker (e.g. mold) has nothing to speed up here.
+    // -Dllvm=false skips LLVM entirely and uses zig's self-hosted backend, which
+    // cuts incremental rebuilds from ~7s to well under 1s. Combined with
+    // ReleaseFast it still disables Debug's runtime safety checks, just without
+    // LLVM's size/speed optimization passes — a middle ground for dev iteration.
+    const use_llvm = b.option(bool, "llvm", "Use LLVM backend (default true); set -Dllvm=false for fast self-hosted dev builds") orelse true;
+
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
     // Zig modules are the preferred way of making Zig code available to consumers.
@@ -46,7 +55,6 @@ pub fn build(b: *std.Build) void {
     });
     mod.link_libc = true;
 
-
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
     // to the module defined above, it's sometimes preferable to split business
@@ -65,7 +73,14 @@ pub fn build(b: *std.Build) void {
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
         .name = "emojig",
+        .use_llvm = use_llvm,
         .root_module = b.createModule(.{
+            // The self-hosted backend skips dead-code elimination and always
+            // keeps debug info, so without LLVM the binary balloons to ~20MB;
+            // stripping it (no LLVM/binutils needed) brings that down to ~6MB.
+            // LLVM builds are unaffected: ReleaseSmall already auto-strips,
+            // and ReleaseFast/Debug keep their prior (unstripped) behavior.
+            .strip = if (use_llvm) null else true,
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
             // this package, which is why in this case we don't have to give it a name.
@@ -195,8 +210,6 @@ pub fn build(b: *std.Build) void {
     run_picker.addArg("--gui");
     picker_step.dependOn(&run_picker.step);
 
-
-
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
@@ -216,5 +229,4 @@ pub fn build(b: *std.Build) void {
     const run_shell_install = b.addRunArtifact(exe);
     run_shell_install.addArg("--install");
     shell_install_step.dependOn(&run_shell_install.step);
-
 }

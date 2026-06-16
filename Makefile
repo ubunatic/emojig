@@ -5,8 +5,14 @@ VERSION = $(shell grep '\.version' build.zig.zon | grep -o '[0-9][0-9.]*')
 
 export WAYREEL_FAST ?= 3
 
-# Override to speed up iterative installs: make install OPTIMIZE=Debug
-OPTIMIZE ?= ReleaseSmall
+# `make install` defaults to a fast dev build: ReleaseFast without LLVM's
+# optimizer (zig's self-hosted backend), since LLVM codegen — not linking —
+# is what makes ReleaseSmall installs slow. Runtime speed is unaffected
+# (self-hosted ReleaseFast matches LLVM ReleaseFast in benchmarks); only the
+# binary is bigger (~6MB stripped vs ~700KB). Use `make install-small` for
+# the smallest possible local binary, e.g. to sanity-check before a release.
+OPTIMIZE ?= ReleaseFast
+LLVM ?= false
 
 help: ⚙️
 	@printf "Emojig Makefile Targets:\n\n"
@@ -18,8 +24,8 @@ zig-help: ⚙️  # show zig build targets
 	@echo "ℹ️ 'zig build <step>' is used internally to manage building and testing."
 	@echo "   Most zig build steps have a convenience Makefile target (see 'make help')."
 
-build: ⚙️  # compile the application (OPTIMIZE=ReleaseSmall by default)
-	zig build -Doptimize=$(OPTIMIZE)
+build: ⚙️  # compile the application (OPTIMIZE=ReleaseFast, LLVM=false by default)
+	zig build -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM)
 
 run: ⚙️  # run the inline TUI picker in current terminal
 	zig build run
@@ -209,12 +215,15 @@ uninstall: ⚙️  # remove binary, shell integration, and desktop entry
 	@rm -f  ~/.local/share/applications/emojig-picker.desktop
 	@echo "✅ emojig uninstalled"
 
-install-debug: ⚙️  # fast install with debug build (no LLVM optimization)
+install-debug: ⚙️  # install with a debug build (slowest binary, safety checks on)
 	@$(MAKE) install OPTIMIZE=Debug
 
-install: ⚙️  # install binary, shell integrations, and desktop launcher
+install-small: ⚙️  # install the smallest possible binary (LLVM ReleaseSmall, slow build) — use before releases
+	@$(MAKE) install OPTIMIZE=ReleaseSmall LLVM=true
+
+install: ⚙️  # install binary, shell integrations, and desktop launcher (fast build, default)
 	@go install ./cmd/mojigo
-	@zig build shell-install -Doptimize=$(OPTIMIZE) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) && exit 1)
+	@zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) && exit 1)
 	@echo "✅ Emojig installed successfully!"
 	@echo "   - Binary:    ~/.local/bin/emojig"
 	@echo "   - Go Binary: $$GOPATH/bin/mojigo"
