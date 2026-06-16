@@ -250,6 +250,84 @@ TR  pixel rows  visual            Difference from about
 
 ---
 
+## Data-driven pipeline: `spec/art.json` + `scripts/gen_about_art`
+
+The manual Go-script workflow above (§4 "Encode in `spec/strings.json`") has
+been superseded for quad-mode art by a declarative compiler:
+
+- **`spec/art.json`** holds `colors` (name → xterm 256-color code), `palette`
+  (pixel-char → color name, or `null` for transparent), `priority` (tie-break
+  order when a cell has 2+ colors), and one or more `art` entries (`shape`,
+  `header`, `footer`, `indent`).
+- **`scripts/gen_about_art/main.go`** (`go run ./scripts/gen_about_art/`)
+  compiles each `shape` into `$[fg=N,bg=M]{...}` DSL rows and upserts them
+  into the named array (`target`) in `spec/strings.json`.
+- **`go run ./scripts/gen_about_art/ print`** renders the same compiled rows
+  straight to stdout as live ANSI (DSL spans expanded, `$version` → `dev`)
+  for fast iteration without rebuilding the Zig binary.
+- **`scripts/watch_art.sh`** polls `spec/art.json` for changes and reruns
+  both the compile and the `print` preview automatically.
+
+### Quad-mode row pairing is fixed and unforgiving
+
+`compileQuad` always groups `shape` rows into pairs `(0,1), (2,3), (4,5), …`
+— row *N* unconditionally pairs with row *N+1* to form one terminal row.
+There is no markup for "this row stands alone."
+
+This means any blank/separator strip inserted between two text blocks
+**must itself span an even number of rows**. A single separator row shifts
+every row-pair below it by one, so a 2-row glyph gets torn across two
+terminal rows and only fills one vertical half of each cell (e.g. only the
+`▖`/`▗` quadrants, never `▘`/`▝`) — it looks like missing/garbled pixels even
+though the source data is "clean."
+
+When laying out multiple stacked glyphs/lines in one `shape` array, insert
+separators in pairs (or omit them entirely and let glyphs touch) so every
+glyph's rows land on the same `(2k, 2k+1)` pair.
+
+### Palette chars must be canonicalized by color value, not by identity
+
+It's tempting to give every "background/separator" role its own palette
+character (`.`, `-`, `_`) so a vertical scan of the JSON shows where rows
+join. But `chooseFgBg` (and the quadrant-mask computation) compares pixel
+values as **palette keys**, not resolved colors. If `.`, `-`, and `_` all map
+to the same color, a cell mixing them is seen as having 3 distinct "colors"
+instead of 1 — the mask bits end up wrong for the chars that aren't the
+chosen `fg` key. This is invisible *only* by accident, when the picked `fg`
+and `bg` happen to resolve to the same color (e.g. an all-separator cell).
+It becomes a real bug the moment a separator char shares a cell with an
+actual content char.
+
+Fix: precompute a `color value → canonical key` map (first match in
+`priority` order) once per art entry, and normalize every pixel through it
+before comparison:
+
+```go
+colorCanon := map[int]string{}
+for _, p := range priority {
+    if palette[p] != nil {
+        if _, exists := colorCanon[*palette[p]]; !exists {
+            colorCanon[*palette[p]] = p
+        }
+    }
+}
+normPx := func(ch string) string {
+    if palette[ch] == nil {
+        return "."
+    }
+    if canon, ok := colorCanon[*palette[ch]]; ok {
+        return canon
+    }
+    return ch
+}
+```
+
+Build this map (and the `normPx` closure) once outside the per-cell loop —
+recreating a closure for every one of the `tcRows*tcCols` cells is wasted
+allocation for no benefit.
+
+---
+
 ## Gotchas
 
 - **`\x1b` in Write-tool content** — the tool transmits parameters as JSON, so

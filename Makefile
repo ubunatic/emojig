@@ -27,12 +27,26 @@ run: ⚙️  # run the inline TUI picker in current terminal
 picker: ⚙️  # launch the emoji picker in a floating foot window (non-blocking)
 	zig build picker
 
-edit-strings: ⚙️  # open spec/strings.json in nvim-qt for editing
-	setsid nvim-qt spec/strings.json >/dev/null 2>&1
+export EDITOR ?= nvim
+ED_TUI  := $(EDITOR)
+ED_GUI  := nvim-qt
+ED_FILE := Makefile
 
-edit-art: ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuild on save
-	setsid nvim-qt spec/art.json >/dev/null 2>&1 &
-	@scripts/watch_art.sh
+edit: ⚙️  # edit ED_FILE in terminal or desktop editor
+	($(ED_TUI) "$(ED_FILE)" || setsid $(ED_GUI) "$(ED_FILE)" >/dev/null 2>&1)
+
+watch: ⚙️  # watch ED_FILE for changes and recompile
+	@scripts/watch.sh $(ED_FILE)
+
+edit-strings: ⚙️  # open spec/strings.json in nvim-qt for editing
+edit-art:     ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuild on save
+edit-%:
+	($(ED_TUI) "spec/$*.json" || setsid $(ED_GUI) "spec/$*.json" >/dev/null 2>&1)
+
+watch-strings: ⚙️
+watch-art:     ⚙️
+watch-%:
+	@scripts/watch.sh spec/$*.json
 
 gen-art: ⚙️  # compile spec/art.json → spec/strings.json
 	go run ./scripts/gen_about_art/
