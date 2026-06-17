@@ -19,6 +19,12 @@ pub const MAX_COLS: usize = 16;
 /// Largest grid row count any spec layout may use.
 pub const MAX_ROWS: usize = 16;
 
+/// Smallest usable grid size. Enforced on every grid-dimension resolution and
+/// edit, so a misconfigured `cols`/`rows` (or an over-eager Settings edit)
+/// can never shrink the picker below a legible 5×3 grid.
+pub const MIN_COLS: usize = 5;
+pub const MIN_ROWS: usize = 3;
+
 /// Largest total cell count — bounds the *viewport* (visible grid area).
 pub const MAX_CELLS: usize = MAX_COLS * MAX_ROWS;
 

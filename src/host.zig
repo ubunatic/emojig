@@ -332,6 +332,8 @@ pub fn spawnGuiWindow(
     debug: bool,
     wait: bool,
     borderless: bool,
+    cols_val: usize,
+    rows_val: usize,
     spec: *const spec_mod.Spec,
 ) !void {
     const io = init.io;
@@ -349,14 +351,11 @@ pub fn spawnGuiWindow(
     const foot_fg = if (gui_pal.terminal_fg) |fg| (if (fg.len > 0) fg[1..] else "") else "";
     const foot_border = if (gui_pal.terminal_border) |border_color| (if (border_color.len > 0) border_color[1..] else "") else "";
 
-    // GUI grid dimensions: respect environment overrides if present, otherwise fallback to layout spec defaults.
-    const env_cols_val = init.environ_map.get("EMOJIG_COLS");
-    const cols_val = if (env_cols_val) |v| std.fmt.parseInt(usize, v, 10) catch spec.layout.gui.cols else spec.layout.gui.cols;
-
-    const env_rows_val = init.environ_map.get("EMOJIG_ROWS");
-    const rows_val = if (env_rows_val) |v| std.fmt.parseInt(usize, v, 10) catch spec.layout.gui.rows else spec.layout.gui.rows;
-
-    const width_val = if (cols_val == spec.layout.gui.cols) spec.layout.gui.width else if (cols_val == spec.layout.tui.cols) spec.layout.tui.width else cols_val * 4;
+    // GUI grid dimensions are resolved by the caller (config → spec) and passed
+    // in so the foot window matches the picker's unified grid size exactly.
+    // Content width follows the column count (one trailing scrollbar gutter
+    // column), mirroring the in-picker `content_width = cols*4 + 1`.
+    const width_val = cols_val * 4 + 1;
 
     // Derive the window height from the GUI grid rows.
     const gui_content_rows: usize = rows_val + spec.layout.layout_overhead;

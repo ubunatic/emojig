@@ -398,7 +398,7 @@ func fatalf(f string, args ...any) {
 	os.Exit(1)
 }
 
-// ── strings.json upsert (same token-aware approach as write_about_art.go) ────
+// ── strings.json upsert (token-aware: rewrites only the target array) ────────
 
 func upsertLines(file, key string, lines []string) error {
 	data, err := os.ReadFile(file)

@@ -135,6 +135,7 @@ pub const StatusDefault = struct {
     on_view_wide: []const u8 = " ?:help e:img t:txt  ↕↔|↵|Esc",
     on_search: []const u8 = " {count}  ↕↔|↵|Esc",
     on_search_wide: []const u8 = " {count} e:img t:txt  ↕↔|↵|Esc",
+    on_grid_wide: []const u8 = " {count}  ␣:multi  ↕↔|↵|Esc",
 };
 
 pub const StatusMultiSelect = struct {
@@ -153,8 +154,8 @@ pub const StatusCategories = struct {
 };
 
 pub const StatusView = struct {
-    default: []const u8 = " Esc:back",
-    scrollable: []const u8 = " ↕:scroll  Esc:back",
+    default: []const u8 = " q/Esc:close",
+    scrollable: []const u8 = " ↕:scroll  q/Esc:close",
 };
 
 pub const StatusCommands = struct {
@@ -186,12 +187,20 @@ pub const Strings = struct {
     help_lines: []const []const u8,
     help_lines_more: []const []const u8,
     about_lines: []const []const u8 = &[_][]const u8{},
-    about2_lines: []const []const u8 = &[_][]const u8{},
-    about3_lines: []const []const u8 = &[_][]const u8{},
-    about4_lines: []const []const u8 = &[_][]const u8{},
     status_lines: []const []const u8 = &[_][]const u8{},
     focus_lost_startup_lines: []const []const u8 = &[_][]const u8{ "⚠️  Cannot steal Wayland", "popup focus?", "", "Click window to focus!" },
     focus_lost_runtime_lines: []const []const u8 = &[_][]const u8{ "⚠️  Picker unfocused.", "", "", "Click window to focus!" },
+    // Cursor box drawn around the focused / first-hit emoji. Each side must be a
+    // single display cell (e.g. ⌜ ⌟, [ ], ⟨ ⟩, ▏ ▕) so the 4-col grid stays aligned.
+    cursor_left: []const u8 = "⌜",
+    cursor_right: []const u8 = "⌟",
+    // Single-width glyph prefixed to emojis picked in multi-select mode. Keep it
+    // one cell wide (e.g. ✓ ✔ · • ＊ ▸) so the 4-col grid stays aligned. When set
+    // to "" the mark is dropped and picked cells are shown with multi_select_bg.
+    multi_select_mark: []const u8 = "✓",
+    // Background highlight for picked cells when multi_select_mark is empty —
+    // a color name (green, blue, …) or 0-255 palette index.
+    multi_select_bg: []const u8 = "green",
     status: StatusStrings = .{},
 };
 

@@ -46,16 +46,16 @@
   ],
   "art": [
     {
-      "name": "about2",
-      "target": "about2_lines",
+      "name": "about",
+      "target": "about_lines",
       "mode": "quad",
       "spaced": false,
       "indent": "   ",
       "header": [
         "$link",
         "",
-        " Emojig $version — quad-block art",
-        " using U+2596–U+259F quadrant chars.",
+        " Emojig $version — lightning-fast,",
+        " zero-allocation emoji picker in Zig.",
         ""
       ],
       "footer": ["", " Made with 💙+🤖 in Dresden, DE"],

@@ -1,21 +1,26 @@
 {
   "about_lines": [
-    "😀 \u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
+    "\u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
     "",
     " Emojig $version — lightning-fast,",
     " zero-allocation emoji picker in Zig.",
     "",
-    "      $[fg=220]{ ▄████████▄ }",
-    "      $[fg=220]{██}$[fg=255,bg=220]{▄▄}$[fg=232,bg=220]{▄}$[fg=220]{██}$[fg=232,bg=220]{▄}$[fg=255,bg=220]{▄▄}$[fg=220]{██}",
-    "      $[fg=220]{██}$[fg=255,bg=220]{▀}$[fg=232,bg=220]{▀▀}$[fg=220]{██}$[fg=232,bg=220]{▀▀}$[fg=255,bg=220]{▀}$[fg=220]{██}",
-    "      $[fg=220]{█}$[fg=232]{█}$[fg=255]{████████}$[fg=232]{█}$[fg=220]{█}",
-    "      $[fg=220]{█}$[fg=232]{██████████}$[fg=220]{█}",
-    "      $[fg=220]{██}$[fg=220,bg=232]{▄▄▄▄▄▄▄▄}$[fg=220]{██}",
-    "      $[fg=220]{ ▀████████▀ }",
+    "                   ",
+    "       $[fg=214]{▄▟████▙▄}    ",
+    "     $[fg=214]{▗█}$[fg=255,bg=214]{▗▄▖}$[fg=214]{██████▖}  ",
+    "     $[fg=214]{██}$[fg=255]{█}$[fg=232]{█}$[fg=232,bg=255]{▌}$[fg=214]{█}$[fg=255,bg=214]{▗}$[fg=232,bg=255]{▄▖}$[fg=255,bg=214]{▖}$[fg=214]{██}  ",
+    "    $[fg=214]{▐██}$[fg=255,bg=214]{▝▀▘}$[fg=214]{█}$[fg=255,bg=214]{▝}$[fg=232,bg=255]{▀▘}$[fg=255,bg=214]{▘}$[fg=214]{██▌} ",
+    "    $[fg=214]{▐█}$[fg=232,bg=214]{▗▖}$[fg=255,bg=214]{▗▄▄▄▄▄}$[fg=232,bg=214]{▗▖}$[fg=214]{█▌} ",
+    "     $[fg=214]{██}$[fg=232,bg=214]{▀}$[fg=232]{█}$[fg=232,bg=209]{▛▀▀▜}$[fg=232]{█}$[fg=232,bg=214]{▀}$[fg=214]{██}  ",
+    "      $[fg=214]{▀▜█}$[fg=255,bg=214]{▀▀▀▀}$[fg=214]{█▛▀}   ",
+    "         $[fg=214]{▀▀▀▀}      ",
+    "     $[fg=214]{▞▘▄▗} $[fg=214]{▗▖▝▝} $[fg=214]{▄▖}  ",
+    "     $[fg=214]{▛▘▌▌▌▌▐▐▐▝▄▌}  ",
+    "     $[fg=214]{▝▘▘▘▘▝▘▞▝} $[fg=214]{▄▘}  ",
     "",
     " Made with 💙+🤖 in Dresden, DE"
   ],
-  "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within the rendered content width (spec/layout.json) or they are truncated. Consumed by both the Zig app and the Go mojigo port. help_lines is the default help page (query starts with '?'); help_lines_more is the second page shown when the query starts with '??' and documents the e:/t: width filters.",
+  "description": "Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within the rendered content width (spec/layout.json) or they are truncated. Consumed by both the Zig app and the Go mojigo port. help_lines is the default help page (query starts with '?'); help_lines_more is the second page shown when the query starts with '??' and documents the e:/t: width filters. cursor_left/cursor_right are the cursor box drawn around the focused emoji (default ⌜ ⌟; try [ ], ⟨ ⟩, ▏ ▕ — each must be one display cell). multi_select_mark is the glyph prefixed to emojis picked in multi-select mode — keep it a single display cell wide (e.g. ✓ ✔ · • ▸) so the 4-column grid stays aligned. When multi_select_mark is \"\" the mark is dropped and picked cells are instead highlighted with multi_select_bg (a color name like green/blue or a 0-255 palette index). Rebuild (zig build) after editing since specs are embedded at compile time.",
   "focus_lost_runtime_lines": [
     "🕵️ Picker unfocused.",
     "   Click or switch window",
@@ -34,6 +39,7 @@
     "",
     " ⌨️|abc|↕↔ Search, Navigate",
     " 🖱️|↵|Esc  Select, Exit",
+    " ␣ (Space) Multi-select",
     " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
     " ??        More…"
   ],
@@ -44,8 +50,13 @@
     " t:abc 🔍 Symbols only",
     " b:abc 🔍 Box art only",
     " a b 🔍   Match all words",
+    " ␣/↵ pick  ⇧↵ done",
     " ⌫        Back…"
   ],
+  "cursor_left": "⌜",
+  "cursor_right": "⌟",
+  "multi_select_mark": "☑︎",
+  "multi_select_bg": "",
   "search_placeholder": "search…",
   "search_prompt": " 🔍 ",
   "status": {
@@ -61,15 +72,16 @@
       "on_done": " [Multi:{count}] $success{↵:done} ⌫:remove"
     },
     "settings": {
-      "navigate": " ↕:navigate Space:toggle Esc:back",
+      "navigate": " ↕:nav ←→:change ?:help Esc:back",
       "keybind": " Type binding  Enter:save  Esc:cancel"
     },
     "categories": {
       "navigate": " ↕:navigate Space:toggle Esc:back"
     },
     "view": {
-      "default": " Esc:back",
-      "scrollable": " ↕:scroll  Esc:back"
+      "default": " q/Esc:close",
+      "scrollable": " ↕:scroll  q/Esc:close",
+      "about": " ↕:scroll ←→:page q/Esc:close"
     },
     "commands": {
       "navigate": " ↕:navigate Enter:run Esc:back"
@@ -93,63 +105,5 @@
     " update cmd:  $update_cmd",
     "",
     " $emojis emojis indexed"
-  ]
-,
-  "about2_lines": [
-    "\u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
-    "",
-    " Emojig $version — quad-block art",
-    " using U+2596–U+259F quadrant chars.",
-    "",
-    "                   ",
-    "       $[fg=214]{▄▟████▙▄}    ",
-    "     $[fg=214]{▗█}$[fg=255,bg=214]{▗▄▖}$[fg=214]{██████▖}  ",
-    "     $[fg=214]{██}$[fg=255]{█}$[fg=232]{█}$[fg=232,bg=255]{▌}$[fg=214]{█}$[fg=255,bg=214]{▗}$[fg=232,bg=255]{▄▖}$[fg=255,bg=214]{▖}$[fg=214]{██}  ",
-    "    $[fg=214]{▐██}$[fg=255,bg=214]{▝▀▘}$[fg=214]{█}$[fg=255,bg=214]{▝}$[fg=232,bg=255]{▀▘}$[fg=255,bg=214]{▘}$[fg=214]{██▌} ",
-    "    $[fg=214]{▐█}$[fg=232,bg=214]{▗▖}$[fg=255,bg=214]{▗▄▄▄▄▄}$[fg=232,bg=214]{▗▖}$[fg=214]{█▌} ",
-    "     $[fg=214]{██}$[fg=232,bg=214]{▀}$[fg=232]{█}$[fg=232,bg=209]{▛▀▀▜}$[fg=232]{█}$[fg=232,bg=214]{▀}$[fg=214]{██}  ",
-    "      $[fg=214]{▀▜█}$[fg=255,bg=214]{▀▀▀▀}$[fg=214]{█▛▀}   ",
-    "         $[fg=214]{▀▀▀▀}      ",
-    "     $[fg=214]{▞▘▄▗} $[fg=214]{▗▖▝▝} $[fg=214]{▄▖}  ",
-    "     $[fg=214]{▛▘▌▌▌▌▐▐▐▝▄▌}  ",
-    "     $[fg=214]{▝▘▘▘▘▝▘▞▝} $[fg=214]{▄▘}  ",
-    "",
-    " Made with 💙+🤖 in Dresden, DE"
-  ]
-,
-  "about3_lines": [
-    "\u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
-    "",
-    " Emojig $version — circular face",
-    " on explicit dark background.",
-    "",
-    "$[bg=232]{        }$[fg=220,bg=232]{▄▄▄▄▄▄▄▄}$[bg=232]{        }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▄}$[fg=220]{██████████}$[fg=220,bg=232]{▄}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▟}$[fg=220]{██}$[fg=255]{█}$[fg=232]{█}$[fg=220]{████}$[fg=232]{█}$[fg=255]{█}$[fg=220]{██}$[fg=220,bg=232]{▙}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{████████████}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{█}$[fg=220,bg=232]{▀}$[fg=255,bg=232]{▄}$[fg=255]{██████}$[fg=255,bg=232]{▄}$[fg=220,bg=232]{▀}$[fg=220]{█}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{█}$[fg=232]{██████████}$[fg=220]{█}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▀}$[fg=220]{██████████}$[fg=220,bg=232]{▀}$[bg=232]{      }",
-    "$[bg=232]{        }$[fg=220,bg=232]{▀▀▀▀▀▀▀▀}$[bg=232]{        }",
-    "",
-    " Made with 💙+🤖 in Dresden, DE"
-  ]
-,
-  "about4_lines": [
-    "\u001b]8;;https://ubunatic.com/emojig\u001b\\ubunatic.com/emojig\u001b]8;;\u001b\\",
-    "",
-    " Emojig $version — max circle",
-    " with pink cheeks ☺",
-    "",
-    "$[bg=232]{          }$[fg=220,bg=232]{▄▄▄▄}$[bg=232]{          }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▄▄}$[fg=220]{████████}$[fg=220,bg=232]{▄▄}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▟}$[fg=220]{██}$[fg=255]{█}$[fg=232]{█}$[fg=220]{████}$[fg=232]{█}$[fg=255]{█}$[fg=220]{██}$[fg=220,bg=232]{▙}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{█}$[fg=209,bg=220]{▄▄}$[fg=220]{██████}$[fg=209,bg=220]{▄▄}$[fg=220]{█}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{█}$[fg=220,bg=232]{▀}$[fg=255,bg=232]{▄}$[fg=255]{██████}$[fg=255,bg=232]{▄}$[fg=220,bg=232]{▀}$[fg=220]{█}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220]{█}$[fg=232]{██████████}$[fg=220]{█}$[bg=232]{      }",
-    "$[bg=232]{      }$[fg=220,bg=232]{▀▀}$[fg=220]{████████}$[fg=220,bg=232]{▀▀}$[bg=232]{      }",
-    "$[bg=232]{          }$[fg=220,bg=232]{▀▀▀▀}$[bg=232]{          }",
-    "",
-    " Made with 💙+🤖 in Dresden, DE"
   ]
 }

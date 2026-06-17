@@ -17,9 +17,6 @@ const ScreenState = enum {
     search,
     help,
     about,
-    about2,
-    about3,
-    about4,
     status,
     settings,
     categories,
@@ -36,6 +33,15 @@ extern fn unlink(path: [*:0]const u8) c_int;
 // process-lifetime arena; read-only after load.
 var g_spec: spec_mod.Spec = undefined;
 var g_wide_ambiguous: bool = true;
+
+// Search dedup cache (see searchDedup). The "search key" is the query with
+// outer spaces trimmed, plus the disabled-category mask — the only two inputs
+// that change the result set. Re-running an identical search is skipped.
+var g_search_key_buf: [defaults.MAX_QUERY_LEN]u8 = undefined;
+var g_search_key_len: usize = 0;
+var g_search_disabled: [32]bool = undefined;
+var g_search_total: usize = 0;
+var g_search_initialized: bool = false;
 
 // ---------------------------------------------------------------------------
 // Embedded shell integration scripts
@@ -124,6 +130,15 @@ fn deleteAtCursor(query_buf: []u8, query_len: *usize, query_cursor: *usize) void
     }
     query_len.* -= 1;
     query_cursor.* -= 1;
+}
+
+/// Emit a single BEL to acknowledge an ignored/dead key, but only once per run
+/// of consecutive ignored keys. `armed` is true when the previous key event was
+/// *not* itself an ignored key; this routine then re-suppresses so a repeat is
+/// silent. The terminal's own bell config decides audible vs. visual vs. silent.
+fn ringBell(armed: bool, suppressed: *bool) void {
+    if (armed) writeAll(std.posix.STDOUT_FILENO, "\x07") catch {};
+    suppressed.* = true;
 }
 
 /// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
@@ -449,6 +464,34 @@ fn colorNameToBasic(name: []const u8) ?u16 {
     return null;
 }
 
+/// Build a standalone SGR background-color escape from a color name (`green`)
+/// or a 0-255 palette index (`22`). Returns "" for an empty or invalid value.
+fn bgEscape(buf: []u8, val: []const u8) []const u8 {
+    if (val.len == 0) return "";
+    var codes: [4]u16 = undefined;
+    var n: usize = 0;
+    appendBgCodes(&codes, &n, val);
+    if (n == 0) return "";
+    var pos: usize = 0;
+    const prefix = "\x1b[";
+    if (pos + prefix.len > buf.len) return "";
+    @memcpy(buf[pos..][0..prefix.len], prefix);
+    pos += prefix.len;
+    for (codes[0..n], 0..) |code, i| {
+        if (i > 0) {
+            if (pos >= buf.len) return "";
+            buf[pos] = ';';
+            pos += 1;
+        }
+        const s = std.fmt.bufPrint(buf[pos..], "{d}", .{code}) catch return "";
+        pos += s.len;
+    }
+    if (pos >= buf.len) return "";
+    buf[pos] = 'm';
+    pos += 1;
+    return buf[0..pos];
+}
+
 /// A single `$name` → value substitution entry for expandVars.
 const VarSubst = struct { key: []const u8, val: []const u8 };
 
@@ -693,6 +736,8 @@ const Config = struct {
     theme: ?Theme = null,
     width: ?usize = null,
     height: ?usize = null,
+    cols: ?usize = null,
+    rows: ?usize = null,
     border: ?bool = null,
     safe: ?bool = null,
     shell_integration: ?bool = null,
@@ -741,6 +786,10 @@ fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.width = std.fmt.parseInt(usize, val, 10) catch null;
             } else if (std.mem.eql(u8, key, "height")) {
                 cfg.height = std.fmt.parseInt(usize, val, 10) catch null;
+            } else if (std.mem.eql(u8, key, "cols")) {
+                cfg.cols = std.fmt.parseInt(usize, val, 10) catch null;
+            } else if (std.mem.eql(u8, key, "rows")) {
+                cfg.rows = std.fmt.parseInt(usize, val, 10) catch null;
             } else if (std.mem.eql(u8, key, "border")) {
                 cfg.border = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
             } else if (std.mem.eql(u8, key, "safe")) {
@@ -1268,16 +1317,14 @@ fn installShellIntegration(io: std.Io, home: []const u8, shell: []const u8, rc_o
     }
 }
 
-fn rcFileHint(home: []const u8, shell_name: []const u8) []const u8 {
-    if (std.mem.eql(u8, shell_name, "fish")) return "~/.config/fish/config.fish";
-    if (fileExists(home, ".userrc")) return "~/.userrc";
-    if (std.mem.eql(u8, shell_name, "bash")) return "~/.bashrc";
-    return "~/.zshrc";
-}
-
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, palette: term_lib.Palette) ![]const u8 {
+fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+
+    // The grid-size `‹`/`›` are clickable buttons: always bold so they read as
+    // controls, and underlined while hovered (only on the selected/hovered row).
+    const lq = if (is_sel and hover_left) "\x1b[1;4m\u{2039}\x1b[22;24m" else "\x1b[1m\u{2039}\x1b[22m";
+    const rq = if (is_sel and hover_right) "\x1b[1;4m\u{203a}\x1b[22;24m" else "\x1b[1m\u{203a}\x1b[22m";
 
     switch (idx) {
         0 => {
@@ -1295,7 +1342,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             return std.fmt.bufPrint(buf, " {s}{s}[{s}]           show all categories\x1b[0m", .{ bg, sel_prefix, cb });
         },
         3 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}|narrow] ambiguous chars\x1b[0m", .{ bg, sel_prefix, amb_chars });
+            return std.fmt.bufPrint(buf, " {s}{s}[{s}]      ambiguous chars\x1b[0m", .{ bg, sel_prefix, amb_chars });
         },
         4 => {
             return std.fmt.bufPrint(buf, " {s}{s}[{s}]        theme\x1b[0m", .{ bg, sel_prefix, @tagName(theme) });
@@ -1303,80 +1350,92 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
         5 => {
             return std.fmt.bufPrint(buf, " {s}{s}[{s}]       scrollbar\x1b[0m", .{ bg, sel_prefix, @tagName(scrollbar) });
         },
+        6 => {
+            return std.fmt.bufPrint(buf, " {s}{s}[{s} {d:>2} {s}]    grid width (cols)\x1b[0m", .{ bg, sel_prefix, lq, grid_cols, rq });
+        },
+        7 => {
+            return std.fmt.bufPrint(buf, " {s}{s}[{s} {d:>2} {s}]    grid height (rows)\x1b[0m", .{ bg, sel_prefix, lq, grid_rows, rq });
+        },
         else => unreachable,
     }
 }
 
+/// Apply a non-text settings change (toggles and 2-state enums) without any
+/// confirmation popup — the per-setting help modal (`?`/`h`/`F1`) explains what
+/// each does. `forward` only matters for multi-state enums; 2-state toggles
+/// flip regardless of direction. Theme (idx 4) is handled inline in the event
+/// loop because it needs terminal-colour side effects.
 fn toggleSetting(
     init: std.process.Init,
     idx: usize,
     shell_int: *bool,
     show_cats: *bool,
     amb_chars: *[]const u8,
-    popup_msg: *?[]const u8,
-    popup_buf: []u8,
+    scrollbar: *ScrollbarStyle,
     home: []const u8,
     shell_name: []const u8,
-) !void {
+) void {
     const io = init.io;
     switch (idx) {
         0 => {
             shell_int.* = !shell_int.*;
             saveKeyToConfig(io, "shell_integration", if (shell_int.*) "true" else "false");
             if (shell_int.*) {
+                // Install the integration; the rc-sourcing reminder lives in the
+                // settings help modal, so the write output is discarded here.
+                var scratch: [1024]u8 = undefined;
                 var pos: usize = 0;
-                const writer = BufferWriter{ .buf = popup_buf, .pos = &pos };
-                installShellIntegration(io, home, shell_name, null, writer);
-                if (pos > 0) popup_msg.* = popup_buf[0..pos];
-            } else {
-                const rc = rcFileHint(home, shell_name);
-                const msg = try std.fmt.bufPrint(popup_buf, "Shell integration disabled.\nRemove the source line from {s}\nand restart your shell.", .{rc});
-                popup_msg.* = msg;
+                installShellIntegration(io, home, shell_name, null, BufferWriter{ .buf = &scratch, .pos = &pos });
             }
         },
-        1 => {}, // text input — handled inline in the event loop
         2 => {
             show_cats.* = !show_cats.*;
             saveKeyToConfig(io, "show_all_categories", if (show_cats.*) "true" else "false");
-
-            const msg = if (show_cats.*)
-                "Show all categories enabled.\nCategories list will show all filters."
-            else
-                "Show all categories disabled.\nOnly matching/used categories will show.";
-            const len = @min(msg.len, popup_buf.len);
-            @memcpy(popup_buf[0..len], msg[0..len]);
-            popup_msg.* = popup_buf[0..len];
         },
         3 => {
-            if (std.mem.eql(u8, amb_chars.*, "wide")) {
-                amb_chars.* = "narrow";
-            } else {
-                amb_chars.* = "wide";
-            }
+            amb_chars.* = if (std.mem.eql(u8, amb_chars.*, "wide")) "narrow" else "wide";
             saveKeyToConfig(io, "ambiguous_chars", amb_chars.*);
             g_wide_ambiguous = !std.mem.eql(u8, amb_chars.*, "narrow");
-
-            const msg = if (std.mem.eql(u8, amb_chars.*, "wide"))
-                "Ambiguous chars: wide (2 cols)\nwide:   \u{2192}_ \u{2248}_ \u{2605}_\nnarrow: \u{2192} \u{2248} \u{2605}"
-            else
-                "Ambiguous chars: narrow (1 col)\nnarrow: \u{2192} \u{2248} \u{2605}\nwide:   \u{2192}_ \u{2248}_ \u{2605}_";
-            const len = @min(msg.len, popup_buf.len);
-            @memcpy(popup_buf[0..len], msg[0..len]);
-            popup_msg.* = popup_buf[0..len];
         },
-        else => unreachable,
+        5 => {
+            scrollbar.* = switch (scrollbar.*) {
+                .expand => .bar,
+                .bar => .expand,
+            };
+            saveKeyToConfig(io, "scrollbar_style", @tagName(scrollbar.*));
+        },
+        else => {}, // 1 = text input, 4 = theme, 6/7 = grid dims — handled inline
     }
 }
 
-fn buildThemePopup(buf: []u8, t: Theme, pal: Palette) []const u8 {
-    return std.fmt.bufPrint(
-        buf,
-        "Theme: {s}\n" ++
-            "{s}{s}  😀 emoji grid text\x1b[0m\n" ++
-            "{s} > 🔥 fire (selected)\x1b[0m\n" ++
-            "{s} 🔍 search…\x1b[0m",
-        .{ @tagName(t), pal.grid_bg, pal.grid_fg, pal.selection_bg, pal.search_bg },
-    ) catch buf[0..0];
+/// Cycle the theme enum forward (dark → light → system) or backward.
+fn cycleTheme(t: Theme, forward: bool) Theme {
+    if (forward) return switch (t) {
+        .dark => .light,
+        .light => .system,
+        .system => .dark,
+    };
+    return switch (t) {
+        .dark => .system,
+        .system => .light,
+        .light => .dark,
+    };
+}
+
+/// Short, context-sensitive help for the selected settings row, shown as a
+/// modal when the user presses `?`/`h`/`F1`. Lines stay narrow to fit the popup.
+fn settingHelp(idx: usize) []const u8 {
+    return switch (idx) {
+        0 => "Shell integration\n\nAdds an `emojig` shell\nfunction. Enable, then\n`source` your shell rc.",
+        1 => "Shell key binding\n\nEnter edits the keybind\n(e.g. C-e). source your\nshell rc afterwards.",
+        2 => "Show all categories\n\non/off — list every\ncategory filter, or only\nmatching/used ones.",
+        3 => "Ambiguous chars\n\nwide | narrow\nColumn width of chars\nlike \u{2192} \u{2248} \u{2605}.",
+        4 => "Theme\n\ndark | light | system\nsystem follows the\nterminal background.",
+        5 => "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell.",
+        6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
+        7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
+        else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
+    };
 }
 
 fn adjustScrollTop(selected_idx: usize, scroll_top: *usize, viewport_h: usize, total_items: usize) void {
@@ -1392,6 +1451,78 @@ fn adjustScrollTop(selected_idx: usize, scroll_top: *usize, viewport_h: usize, t
     if (scroll_top.* + viewport_h > total_items) {
         scroll_top.* = total_items - viewport_h;
     }
+}
+
+/// Persist a numeric setting (e.g. grid `cols`/`rows`) to the config file.
+fn saveUsizeToConfig(io: std.Io, key: []const u8, val: usize) void {
+    var buf: [16]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{d}", .{val}) catch return;
+    saveKeyToConfig(io, key, s);
+}
+
+/// Nudge a grid dimension by ±1 within `[min, max]` (Left/Right fine-tune).
+fn stepGridDim(val: usize, increase: bool, min: usize, max: usize) usize {
+    const next = if (increase) val + 1 else (if (val > min) val - 1 else min);
+    return @max(min, @min(next, max));
+}
+
+/// Cycle a grid dimension by a larger step within `[min, max]`, wrapping back
+/// to `min` once it would overflow (Space/Enter coarse adjust).
+fn cycleGridDim(val: usize, step: usize, min: usize, max: usize) usize {
+    return if (val + step > max) min else @max(min, val + step);
+}
+
+/// Clamp a freshly edited grid dimension to `[min, max]`, persisting the
+/// corrected value if it changed. Called when a digit-typing run ends so a
+/// transient sub-minimum entry (e.g. a lone "1" en route to "12") is fixed up.
+fn clampGridDim(val: usize, min: usize, max: usize) usize {
+    return @max(min, @min(val, max));
+}
+
+fn finalizeGridDim(io: std.Io, val: *usize, key: []const u8, min: usize, max: usize) void {
+    const clamped = clampGridDim(val.*, min, max);
+    if (clamped != val.*) {
+        val.* = clamped;
+        saveUsizeToConfig(io, key, clamped);
+    }
+}
+
+/// End a digit-typing run on whichever grid-size settings row (`sel` 6 = cols,
+/// 7 = rows) was being edited, clamping the value up to its minimum. A lone "1"
+/// typed en route to "12" stays below the minimum while typing; this fixes it
+/// the moment focus leaves the row.
+fn finalizeGridTyping(io: std.Io, sel: ?usize, cols: *usize, rows: *usize) void {
+    const s = sel orelse return;
+    if (s == 6) finalizeGridDim(io, cols, "cols", defaults.MIN_COLS, defaults.MAX_COLS);
+    if (s == 7) finalizeGridDim(io, rows, "rows", defaults.MIN_ROWS, defaults.MAX_ROWS);
+}
+
+/// Apply a grid-dimension mouse click on a settings row by hit-zone:
+/// the `[‹ NN ›]` widget splits into `‹` (decrement), the number (select-only,
+/// for keyboard entry), and `›` (increment). `local_col` is the 0-indexed
+/// display column of the click. Returns true if the value changed.
+fn applyGridDimClick(io: std.Io, is_cols: bool, local_col: i32, val: *usize) bool {
+    const min = if (is_cols) defaults.MIN_COLS else defaults.MIN_ROWS;
+    const max = if (is_cols) defaults.MAX_COLS else defaults.MAX_ROWS;
+    if (local_col >= 3 and local_col <= 5) {
+        val.* = stepGridDim(val.*, false, min, max);
+    } else if (local_col >= 8 and local_col <= 10) {
+        val.* = stepGridDim(val.*, true, min, max);
+    } else {
+        return false; // middle (the digits): just select for keyboard entry
+    }
+    saveUsizeToConfig(io, if (is_cols) "cols" else "rows", val.*);
+    return true;
+}
+
+/// Append a digit to a grid dimension, clamped to `[1, max]`. `continuing`
+/// chains digits within one typing run (1 then 2 → 12); otherwise the digit
+/// starts a fresh value.
+fn typeGridDim(val: *usize, digit: u8, continuing: bool, max: usize) void {
+    const d: usize = digit - '0';
+    var nv: usize = if (continuing) val.* * 10 + d else d;
+    if (nv > max) nv = max;
+    val.* = @max(1, nv);
 }
 
 fn saveDisabledCategories(io: std.Io, cats: []const emojig.CategorySpec, disabled_cats: []const bool) void {
@@ -1426,6 +1557,34 @@ fn runSearch(
         }
     }
     return emojig.searchOptions(query, top_matches, top_count, limit, categories, disabled_cats_names_buf[0..disabled_cats_count]);
+}
+
+/// Search wrapper that skips re-running an identical query. Leading/trailing
+/// spaces never add terms (fuzzyMatch splits on spaces, ignoring empties), so
+/// the trimmed query plus the disabled-category mask fully determine the result
+/// set. Typing a lone space, or returning to search with an unchanged query
+/// after closing a screen, reuses the cached results instead of re-querying.
+fn searchDedup(
+    query: []const u8,
+    top_matches: []emojig.Match,
+    top_count: *usize,
+    limit: usize,
+    categories: *const spec_mod.CategoriesSpec,
+    disabled_cats: [32]bool,
+) usize {
+    const key = std.mem.trim(u8, query, " ");
+    if (g_search_initialized and
+        std.mem.eql(u8, key, g_search_key_buf[0..g_search_key_len]) and
+        std.mem.eql(bool, &g_search_disabled, &disabled_cats))
+    {
+        return g_search_total;
+    }
+    g_search_total = runSearch(query, top_matches, top_count, limit, categories, disabled_cats);
+    @memcpy(g_search_key_buf[0..key.len], key);
+    g_search_key_len = key.len;
+    g_search_disabled = disabled_cats;
+    g_search_initialized = true;
+    return g_search_total;
 }
 
 // ---------------------------------------------------------------------------
@@ -1736,7 +1895,42 @@ pub fn main(init: std.process.Init) !void {
     const height_override: ?usize = opt_height orelse env_height orelse cfg.height;
 
     const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
-    const final_width = opt_width orelse env_width orelse cfg.width orelse g_spec.layout.tui.width;
+
+    // Unified grid size (columns × rows). The single source of truth is the
+    // config (`cols=`/`rows=`), overridable per-launch by EMOJIG_COLS/EMOJIG_ROWS
+    // (the GUI launcher sets these so the child picker matches the foot window).
+    // Both GUI and TUI use the same base because users work on one screen.
+    // Each axis is clamped to its compile-time max so all stack buffers stay
+    // in bounds; with MAX_COLS*MAX_ROWS == MAX_CELLS the product is safe too.
+    // Each axis is clamped to [MIN, MAX]: the MAX keeps stack buffers in bounds,
+    // the MIN guarantees a legible grid even if `cols`/`rows` (env or config)
+    // is misconfigured below 5×3.
+    const base_cols: usize = blk: {
+        const raw: usize = raw: {
+            if (init.environ_map.get("EMOJIG_COLS")) |v| {
+                if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
+            }
+            if (cfg.cols) |c| break :raw c;
+            break :raw g_spec.layout.tui.cols;
+        };
+        break :blk @max(defaults.MIN_COLS, @min(raw, defaults.MAX_COLS));
+    };
+    const base_rows: usize = blk: {
+        const raw: usize = raw: {
+            if (init.environ_map.get("EMOJIG_ROWS")) |v| {
+                if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
+            }
+            if (height_override) |h| break :raw if (h > g_spec.layout.layout_overhead) h - g_spec.layout.layout_overhead else 0;
+            if (cfg.rows) |r| break :raw r;
+            break :raw g_spec.layout.tui.rows;
+        };
+        break :blk @max(defaults.MIN_ROWS, @min(raw, defaults.MAX_ROWS));
+    };
+
+    // Content width follows the column count (one trailing column for the
+    // scrollbar gutter) unless an explicit width override is given. For the
+    // default 6 columns this reproduces the historical width of 25.
+    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * 4 + 1);
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
@@ -1895,6 +2089,29 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
+        // Unified grid size for the GUI window: config → spec GUI default.
+        // (EMOJIG_COLS/ROWS may override, e.g. for scripted launches.)
+        const gui_cols: usize = blk: {
+            const raw: usize = raw: {
+                if (init.environ_map.get("EMOJIG_COLS")) |v| {
+                    if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
+                }
+                if (cfg.cols) |c| break :raw c;
+                break :raw g_spec.layout.gui.cols;
+            };
+            break :blk @max(defaults.MIN_COLS, @min(raw, defaults.MAX_COLS));
+        };
+        const gui_rows: usize = blk: {
+            const raw: usize = raw: {
+                if (init.environ_map.get("EMOJIG_ROWS")) |v| {
+                    if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
+                }
+                if (cfg.rows) |r| break :raw r;
+                break :raw g_spec.layout.gui.rows;
+            };
+            break :blk @max(defaults.MIN_ROWS, @min(raw, defaults.MAX_ROWS));
+        };
+
         host.spawnGuiWindow(
             init,
             exe_path,
@@ -1904,6 +2121,8 @@ pub fn main(init: std.process.Init) !void {
             final_debug,
             opt_wait,
             opt_borderless,
+            gui_cols,
+            gui_rows,
             &g_spec,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
@@ -1916,6 +2135,19 @@ pub fn main(init: std.process.Init) !void {
 
     var theme = final_theme;
     var scrollbar_style: ScrollbarStyle = env_scrollbar orelse cfg.scrollbar_style orelse .expand;
+    // Pending grid size shown/edited in the Settings screen. Seeded from the
+    // resolved launch size; edits persist to config and take effect on the
+    // next launch (the live grid keeps its launch dimensions for safety).
+    var grid_cols: usize = base_cols;
+    var grid_rows: usize = base_rows;
+    // Coarse step for Space/Enter on a grid-size row (Left/Right adjust by ±1).
+    const grid_dim_step: usize = 2;
+    // Set once a grid-size row is edited this session — surfaced in the settings
+    // status hint ("applies on next launch") instead of a per-step popup.
+    var griddim_changed: bool = false;
+    // True while consecutive digits are being typed into a grid-size row, so
+    // "1" then "2" builds 12. Any non-digit key (nav/select/esc) clears it.
+    var griddim_typing: bool = false;
     const term_width = final_width;
     const show_border = final_border;
 
@@ -2038,14 +2270,8 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        const cols: usize = if (init.environ_map.get("EMOJIG_COLS")) |v| std.fmt.parseInt(usize, v, 10) catch g_spec.layout.tui.cols else g_spec.layout.tui.cols;
-        const rows: usize = blk: {
-            if (init.environ_map.get("EMOJIG_ROWS")) |v| {
-                if (std.fmt.parseInt(usize, v, 10)) |n| break :blk n else |_| {}
-            }
-            if (height_override) |h| break :blk if (h > g_spec.layout.layout_overhead) h - g_spec.layout.layout_overhead else 1;
-            break :blk g_spec.layout.tui.rows;
-        };
+        const cols: usize = base_cols;
+        const rows: usize = base_rows;
         // In simple mode: list_rows of results + 1 count row + 1 prompt row.
         // Derive list_rows from height_override if given, else use the grid row count as default.
         const list_rows: usize = if (final_simple) blk: {
@@ -2230,7 +2456,7 @@ pub fn main(init: std.process.Init) !void {
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
         // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
-        const settings_count: usize = 6;
+        const settings_count: usize = 8;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
         var status_scroll_top: usize = 0;
@@ -2263,6 +2489,9 @@ pub fn main(init: std.process.Init) !void {
         var keybind_committed_len: usize = 0;
 
         var popup_msg: ?[]const u8 = null;
+        // Title shown on the popup's first row — set alongside `popup_msg` so the
+        // modal header reflects what it actually shows (settings help vs. update).
+        var popup_title: []const u8 = "💬 emojig message";
         var popup_buf: [1024]u8 = undefined;
 
         // Pre-formatted emoji count — doesn't change at runtime.
@@ -2276,6 +2505,9 @@ pub fn main(init: std.process.Init) !void {
         // is null; once the grid is navigated, selected_idx becomes non-null
         // and those keys drive the grid instead.
         var query_cursor: usize = 0;
+        // Acknowledge ignored/dead keys with a single BEL, re-armed by any other
+        // key so a run of repeats stays silent (prompt Up, dead keys on docs).
+        var bell_suppressed = false;
         // Effective query cap from the spec, never exceeding the stack buffer.
         const max_query_len: usize = @min(g_spec.layout.max_query_len, query_buf.len);
 
@@ -2305,6 +2537,9 @@ pub fn main(init: std.process.Init) !void {
         var exit_preview_step: usize = 0;
         const max_preview_steps: usize = 8;
         var theme_hovered = false;
+        // Which grid-size arrow (if any) the mouse is over, for hover feedback.
+        var griddim_hover_left = false;
+        var griddim_hover_right = false;
 
         // ---------------------------------------------------------------------------
         // Exit preview configuration (parsed once before the render loop).
@@ -2337,7 +2572,7 @@ pub fn main(init: std.process.Init) !void {
             break :blk default_ms * ns_per_ms;
         };
 
-        var total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+        var total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
         selected_idx = if (top_count > 0) 0 else null;
 
         var read_buf: [64]u8 = undefined;
@@ -2719,7 +2954,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             var text: []const u8 = "";
                             if (h_idx == 0) {
-                                text = "💬 emojig message";
+                                text = popup_title;
                             } else if (h_idx >= 2) {
                                 if (lines.next()) |line| {
                                     text = line;
@@ -2857,100 +3092,6 @@ pub fn main(init: std.process.Init) !void {
                             }
                             try rw.endRow();
                         }
-                    } else if (current_screen == .about2 and !is_too_small) {
-                        const theme_str: []const u8 = switch (theme) {
-                            .dark => "dark",
-                            .light => "light",
-                            .system => "system",
-                        };
-                        const spec_vars = [_]VarSubst{
-                            .{ .key = "version", .val = build_options.version },
-                            .{ .key = "theme", .val = theme_str },
-                        };
-                        const about2_lines = g_spec.strings.about2_lines;
-                        const viewport_h = rows + 3;
-                        const needs_scroll = about2_lines.len > viewport_h;
-                        const max_scroll_a2: usize = if (needs_scroll) about2_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, about2_lines.len).thumb_h else 0;
-                        const travel_a2 = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_a2 > 0) about_scroll_top * travel_a2 / max_scroll_a2 else 0;
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = about_scroll_top + h_idx;
-                                if (li < about2_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, about2_lines[li], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
-                                }
-                            } else {
-                                const center_threshold: usize = about2_lines.len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < about2_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, about2_lines[h_idx - offset], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
-                                }
-                            }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
-                                var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
-                                try writeAll(stdout_fd, sb_seq);
-                            }
-                            try rw.endRow();
-                        }
-                    } else if ((current_screen == .about3 or current_screen == .about4) and !is_too_small) {
-                        const theme_str: []const u8 = switch (theme) {
-                            .dark => "dark",
-                            .light => "light",
-                            .system => "system",
-                        };
-                        const spec_vars = [_]VarSubst{
-                            .{ .key = "version", .val = build_options.version },
-                            .{ .key = "theme", .val = theme_str },
-                        };
-                        const aboutN_lines = if (current_screen == .about3) g_spec.strings.about3_lines else g_spec.strings.about4_lines;
-                        const viewport_h = rows + 3;
-                        const needs_scroll = aboutN_lines.len > viewport_h;
-                        const max_scroll_aN: usize = if (needs_scroll) aboutN_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, aboutN_lines.len).thumb_h else 0;
-                        const travel_aN = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_aN > 0) about_scroll_top * travel_aN / max_scroll_aN else 0;
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = about_scroll_top + h_idx;
-                                if (li < aboutN_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, aboutN_lines[li], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
-                                }
-                            } else {
-                                const center_threshold: usize = aboutN_lines.len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < aboutN_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, aboutN_lines[h_idx - offset], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
-                                }
-                            }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
-                                var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
-                                try writeAll(stdout_fd, sb_seq);
-                            }
-                            try rw.endRow();
-                        }
                     } else if (current_screen == .status and !is_too_small) {
                         const theme_str: []const u8 = switch (theme) {
                             .dark => "dark",
@@ -3014,7 +3155,7 @@ pub fn main(init: std.process.Init) !void {
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, palette);
+                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, griddim_hover_left, griddim_hover_right, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -3091,6 +3232,11 @@ pub fn main(init: std.process.Init) !void {
                             grid_scroll_top * grid_tg.travel / grid_max_scroll
                         else
                             0;
+
+                        // Checkcell highlight used for picked cells when the
+                        // multi-select mark glyph is disabled (mark == "").
+                        var check_bg_buf: [16]u8 = undefined;
+                        const check_bg = bgEscape(&check_bg_buf, g_spec.strings.multi_select_bg);
 
                         var r: usize = 0;
                         while (r < rows) : (r += 1) {
@@ -3219,30 +3365,46 @@ pub fn main(init: std.process.Init) !void {
                                         const is_hard = (selected_idx != null and idx == selected_idx.?);
                                         const is_marker = is_hard or (effective_idx != null and idx == effective_idx.?);
                                         const w1 = emojig.getEmojiWidth(render_emoji) == 1;
+                                        const mark = g_spec.strings.multi_select_mark;
+                                        const use_mark = mark.len > 0;
+                                        const cl = g_spec.strings.cursor_left;
+                                        const cr = g_spec.strings.cursor_right;
 
                                         if (is_hard) {
-                                            if (is_selected_in_multi) {
+                                            if (is_selected_in_multi and use_mark) {
+                                                // Picked + cursor: swap the opening bracket for the
+                                                // mark, keep the closing bracket — full 4 cols.
                                                 cell_strings[c] = if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s} \x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg })
                                                 else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}✓{s}\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg });
                                             } else {
+                                                // Cursor box. If also picked (mark disabled), tint it
+                                                // with the checkcell highlight instead of selection_bg.
+                                                const box_bg = if (is_selected_in_multi) check_bg else palette.selection_bg;
                                                 cell_strings[c] = if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s} ]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg })
                                                 else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}[{s}]\x1b[0m{s}{s}", .{ palette.selection_bg, render_emoji, palette.grid_bg, palette.grid_fg });
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg });
                                             }
                                         } else if (is_marker) {
                                             // Soft marker: brackets in grid colors, no highlight.
                                             cell_strings[c] = if (w1)
-                                                try std.fmt.bufPrint(&cell_buffers[c], "[{s} ]", .{render_emoji})
+                                                try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} {s}", .{ cl, render_emoji, cr })
                                             else
-                                                try std.fmt.bufPrint(&cell_buffers[c], "[{s}]", .{render_emoji});
+                                                try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}", .{ cl, render_emoji, cr });
                                         } else if (is_selected_in_multi) {
-                                            cell_strings[c] = if (w1)
-                                                try std.fmt.bufPrint(&cell_buffers[c], "✓{s}  ", .{render_emoji})
+                                            cell_strings[c] = if (use_mark)
+                                                (if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}  ", .{ mark, render_emoji })
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} ", .{ mark, render_emoji }))
                                             else
-                                                try std.fmt.bufPrint(&cell_buffers[c], "✓{s} ", .{render_emoji});
+                                                // No mark: highlight the whole cell with checkcell bg.
+                                                (if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s} {s}  \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s} {s} \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg }));
                                         } else {
                                             cell_strings[c] = if (w1)
                                                 try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji})
@@ -3402,20 +3564,23 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .about) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.about_lines.len > vph) st.view.scrollable else st.view.default;
-                            } else if (current_screen == .about2) {
-                                const vph = rows + 3;
-                                break :blk if (g_spec.strings.about2_lines.len > vph) st.view.scrollable else st.view.default;
-                            } else if (current_screen == .about3) {
-                                const vph = rows + 3;
-                                break :blk if (g_spec.strings.about3_lines.len > vph) st.view.scrollable else st.view.default;
-                            } else if (current_screen == .about4) {
-                                const vph = rows + 3;
-                                break :blk if (g_spec.strings.about4_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .settings and keybind_editing) {
                                 break :blk st.settings.keybind;
+                            } else if (current_screen == .settings and selected_idx != null and
+                                (selected_idx.? == 6 or selected_idx.? == 7))
+                            {
+                                // Grid-size row: show the controls and (once edited)
+                                // the "applies on next launch" note, instead of a
+                                // popup on every step.
+                                const lbl = if (selected_idx.? == 6) "width" else "height";
+                                const val = if (selected_idx.? == 6) grid_cols else grid_rows;
+                                break :blk if (griddim_changed)
+                                    std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039}\u{203a}/0-9/Bksp ?:help · next launch", .{ lbl, val }) catch st.settings.navigate
+                                else
+                                    std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039} \u{203a}/0-9 ?:help · Esc:back", .{ lbl, val }) catch st.settings.navigate;
                             } else if (current_screen == .settings) {
                                 break :blk st.settings.navigate;
                             } else if (current_screen == .categories) {
@@ -3425,8 +3590,13 @@ pub fn main(init: std.process.Init) !void {
                             } else if (is_cat_autocomplete) {
                                 break :blk st.cat_filter.navigate;
                             } else {
+                                // On a wide layout with the grid focused (cursor on a
+                                // cell, not yet in multi-select), advertise that Space
+                                // starts multi-select. Narrow layouts keep the concise
+                                // status — the help screen documents Space there.
+                                const grid_focus = selected_idx != null and !multi_select_active;
                                 const status_tmpl: []const u8 = if (content_width >= 35)
-                                    (if (query_len == 0) st.default.on_view_wide else st.default.on_search_wide)
+                                    (if (grid_focus) st.default.on_grid_wide else if (query_len == 0) st.default.on_view_wide else st.default.on_search_wide)
                                 else
                                     (if (query_len == 0) st.default.on_view else st.default.on_search);
                                 const base_status = try formatStatus(&status_text_buf, status_tmpl, total_matches);
@@ -3657,6 +3827,11 @@ pub fn main(init: std.process.Init) !void {
 
             const bytes = read_buf[0..n];
 
+            // Re-arm the acknowledgement bell on every key event; an ignored key
+            // re-suppresses below, so the bell rings only once per run of them.
+            const bell_armed = !bell_suppressed;
+            bell_suppressed = false;
+
             // Check for focus events
             var focus_event = false;
             if (std.mem.indexOf(u8, bytes, "\x1b[I") != null) {
@@ -3775,9 +3950,9 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 // help / about* / status popups.
                                 const viewport_h = rows + 3;
-                                const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
+                                const is_about = current_screen == .about;
                                 const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else if (current_screen == .about2) g_spec.strings.about2_lines.len else if (current_screen == .about3) g_spec.strings.about3_lines.len else if (current_screen == .about4) g_spec.strings.about4_lines.len else g_spec.strings.status_lines.len;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
                                 const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                                 sp.* = if (wheel_down)
                                     @min(sp.* + step, max_scroll)
@@ -3795,9 +3970,17 @@ pub fn main(init: std.process.Init) !void {
                             // Settings/categories have title+blank before first item → offset +1.
                             const list_first_row: i32 = grid_first_row + 1;
                             if (current_screen == .settings) {
+                                griddim_hover_left = false;
+                                griddim_hover_right = false;
                                 if (click_row >= list_first_row) {
                                     const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
                                     if (opt_idx < settings_count) selected_idx = opt_idx;
+                                    // Bold the grid-size arrow under the cursor (same
+                                    // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
+                                    if (opt_idx == 6 or opt_idx == 7) {
+                                        griddim_hover_left = local_col >= 3 and local_col <= 5;
+                                        griddim_hover_right = local_col >= 8 and local_col <= 10;
+                                    }
                                 }
                             } else if (current_screen == .categories) {
                                 if (click_row >= list_first_row) {
@@ -3861,27 +4044,21 @@ pub fn main(init: std.process.Init) !void {
                                                 @memcpy(keybind_input_buf[0..len], shell_key_binding[0..len]);
                                                 shell_key_binding = keybind_input_buf[0..len];
                                             } else if (opt_idx == 4) {
-                                                theme = switch (theme) {
-                                                    .dark => .light,
-                                                    .light => .system,
-                                                    .system => .dark,
-                                                };
+                                                theme = cycleTheme(theme, true);
                                                 saveThemeToConfig(init.io, theme);
                                                 if (theme == .system)
                                                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                                const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
-                                                popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
-                                            } else if (opt_idx == 5) {
-                                                scrollbar_style = switch (scrollbar_style) {
-                                                    .expand => .bar,
-                                                    .bar => .expand,
-                                                };
-                                                saveKeyToConfig(init.io, "scrollbar_style", @tagName(scrollbar_style));
+                                            } else if (opt_idx == 6 or opt_idx == 7) {
+                                                griddim_typing = false;
+                                                const v = if (opt_idx == 6) &grid_cols else &grid_rows;
+                                                if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
+                                                    griddim_changed = true;
+                                                }
                                             } else {
                                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                                 const shell_s = detectShell(init.environ_map);
-                                                try toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
                                             }
                                         }
                                     } else if (current_screen == .categories and click_row >= list_first_row) {
@@ -3952,6 +4129,8 @@ pub fn main(init: std.process.Init) !void {
                         logical = "home";
                     } else if (bytes[2] == 'F') {
                         logical = "end";
+                    } else if (bytes[2] == 'P') {
+                        logical = "f1";
                     }
                 }
             } else if (bytes[0] == 127 or bytes[0] == 8) {
@@ -3980,6 +4159,53 @@ pub fn main(init: std.process.Init) !void {
                             shell_key_binding = keybind_input_buf[0..keybind_input_len];
                         }
                     }
+                } else if (has_focus and current_screen == .settings) {
+                    const on_grid = selected_idx != null and (selected_idx.? == 6 or selected_idx.? == 7);
+                    for (bytes) |b| {
+                        if (b == '?' or b == 'h') {
+                            // Context-sensitive help for the selected setting —
+                            // the same key toggles the modal closed again.
+                            popup_title = "❔ setting help";
+                            popup_msg = if (popup_msg == null) settingHelp(selected_idx orelse 0) else null;
+                        } else if (on_grid and b >= '0' and b <= '9') {
+                            // Type a number directly into the selected grid-size row.
+                            const is_cols = selected_idx.? == 6;
+                            const max = if (is_cols) defaults.MAX_COLS else defaults.MAX_ROWS;
+                            const v = if (is_cols) &grid_cols else &grid_rows;
+                            typeGridDim(v, b, griddim_typing, max);
+                            griddim_typing = true;
+                            griddim_changed = true;
+                            saveUsizeToConfig(init.io, if (is_cols) "cols" else "rows", v.*);
+                        }
+                    }
+                } else if (has_focus and current_screen == .search and
+                    selected_idx != null and bytes.len == 1 and bytes[0] == ' ')
+                {
+                    // Grid focus: Space starts multi-select and toggles the focused
+                    // emoji in/out of the selection (spacebar-to-select). On the
+                    // prompt (selected_idx == null) Space still types into the query.
+                    const sel = selected_idx.?;
+                    if (sel < top_count) {
+                        multi_select_active = true;
+                        const entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                        var found_at: ?usize = null;
+                        for (multi_selected_emojis.items, 0..) |e, i| {
+                            if (std.mem.eql(u8, e, entry.emoji)) {
+                                found_at = i;
+                                break;
+                            }
+                        }
+                        if (found_at) |i| {
+                            _ = multi_selected_emojis.orderedRemove(i);
+                        } else {
+                            const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                            try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                        }
+                        if (multi_selected_emojis.items.len > 0) {
+                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                            try copyToClipboard(init, joined, final_safe);
+                        }
+                    }
                 } else if (has_focus and current_screen == .search) {
                     for (bytes) |b| {
                         if (b >= 32 and b <= 126 and query_len < max_query_len) {
@@ -3994,8 +4220,35 @@ pub fn main(init: std.process.Init) !void {
                             // resets the scroll; Enter still picks the first hit.
                             if (!multi_select_active) selected_idx = null;
                             grid_scroll_top = 0;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
+                    }
+                } else if (has_focus and (current_screen == .help or current_screen == .about or
+                    current_screen == .status))
+                {
+                    // Doc screens are pager-like: a lone 'q' closes (less/man
+                    // convention); any other printable jumps back to search and
+                    // seeds the query so the screen never traps the user.
+                    if (bytes.len == 1 and (bytes[0] == 'q' or bytes[0] == 'Q')) {
+                        current_screen = .search;
+                        query_len = 0;
+                        query_cursor = 0;
+                        selected_idx = null;
+                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                    } else {
+                        current_screen = .search;
+                        query_len = 0;
+                        query_cursor = 0;
+                        selected_idx = null;
+                        for (bytes) |b| {
+                            if (b >= 32 and b <= 126 and query_len < max_query_len) {
+                                query_buf[query_len] = b;
+                                query_len += 1;
+                                query_cursor += 1;
+                            }
+                        }
+                        grid_scroll_top = 0;
+                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     }
                 }
             }
@@ -4005,7 +4258,7 @@ pub fn main(init: std.process.Init) !void {
             if (logical) |name| {
                 const action = g_spec.actionFor(name) orelse "";
                 if (popup_msg != null) {
-                    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete") or std.mem.eql(u8, action, "select") or std.mem.eql(u8, action, "quit")) {
+                    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "f1") or std.mem.eql(u8, action, "delete") or std.mem.eql(u8, action, "select") or std.mem.eql(u8, action, "quit")) {
                         popup_msg = null;
                     }
                 } else if (std.mem.eql(u8, action, "quit")) {
@@ -4013,7 +4266,7 @@ pub fn main(init: std.process.Init) !void {
                         current_screen = .search;
                         query_len = 0;
                         selected_idx = null;
-                        total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     } else if (multi_select_active and std.mem.eql(u8, name, "esc")) {
                         multi_select_active = false;
                         multi_selected_emojis.clearRetainingCapacity();
@@ -4043,20 +4296,24 @@ pub fn main(init: std.process.Init) !void {
                                 @memcpy(keybind_committed_buf[0..keybind_committed_len], keybind_input_buf[0..keybind_committed_len]);
                                 shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
                                 saveKeyToConfig(init.io, "shell_key_binding", shell_key_binding);
-                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                const shell_s = detectShell(init.environ_map);
-                                const rc = rcFileHint(home_s, shell_s);
-                                popup_msg = try std.fmt.bufPrint(&popup_buf, "Key binding set to: {s}\nRun: source {s}", .{ shell_key_binding, rc });
                             } else if (std.mem.eql(u8, name, "esc")) {
                                 keybind_editing = false;
                                 shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
                             }
                         } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                             keybind_editing = false;
+                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
+                            griddim_typing = false;
+                            griddim_hover_left = false;
+                            griddim_hover_right = false;
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else settings_count - 1;
                             adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
                             keybind_editing = false;
+                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
+                            griddim_typing = false;
+                            griddim_hover_left = false;
+                            griddim_hover_right = false;
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < settings_count) selected_idx.? + 1 else 0;
                             adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
@@ -4069,34 +4326,78 @@ pub fn main(init: std.process.Init) !void {
                                 @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
                                 shell_key_binding = keybind_input_buf[0..keybind_input_len];
                             } else if (opt_idx == 4) {
-                                theme = switch (theme) {
-                                    .dark => .light,
-                                    .light => .system,
-                                    .system => .dark,
-                                };
+                                theme = cycleTheme(theme, true);
                                 saveThemeToConfig(init.io, theme);
                                 if (theme == .system)
                                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                const new_pal = effectivePalette(theme, system_theme, !has_focus and gui_spawned);
-                                popup_msg = buildThemePopup(&popup_buf, theme, new_pal);
-                            } else if (opt_idx == 5) {
-                                scrollbar_style = switch (scrollbar_style) {
-                                    .expand => .bar,
-                                    .bar => .expand,
-                                };
-                                saveKeyToConfig(init.io, "scrollbar_style", @tagName(scrollbar_style));
+                            } else if (opt_idx == 6) {
+                                grid_cols = cycleGridDim(grid_cols, grid_dim_step, defaults.MIN_COLS, defaults.MAX_COLS);
+                                saveUsizeToConfig(init.io, "cols", grid_cols);
+                                griddim_changed = true;
+                                griddim_typing = false;
+                            } else if (opt_idx == 7) {
+                                grid_rows = cycleGridDim(grid_rows, grid_dim_step, defaults.MIN_ROWS, defaults.MAX_ROWS);
+                                saveUsizeToConfig(init.io, "rows", grid_rows);
+                                griddim_changed = true;
+                                griddim_typing = false;
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
-                                try toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &popup_msg, &popup_buf, home_s, shell_s);
+                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
                             }
+                        } else if ((std.mem.eql(u8, action, "nav_left") or std.mem.eql(u8, action, "nav_right")) and selected_idx != null) {
+                            // Left/Right change the value of the selected setting:
+                            // ±1 on grid dims, forward/back cycle on theme, and a
+                            // plain toggle on the booleans and 2-state enums.
+                            const opt_idx = selected_idx.?;
+                            const increase = std.mem.eql(u8, action, "nav_right");
+                            griddim_typing = false;
+                            if (opt_idx == 6) {
+                                grid_cols = stepGridDim(grid_cols, increase, defaults.MIN_COLS, defaults.MAX_COLS);
+                                saveUsizeToConfig(init.io, "cols", grid_cols);
+                                griddim_changed = true;
+                            } else if (opt_idx == 7) {
+                                grid_rows = stepGridDim(grid_rows, increase, defaults.MIN_ROWS, defaults.MAX_ROWS);
+                                saveUsizeToConfig(init.io, "rows", grid_rows);
+                                griddim_changed = true;
+                            } else if (opt_idx == 4) {
+                                theme = cycleTheme(theme, increase);
+                                saveThemeToConfig(init.io, theme);
+                                if (theme == .system)
+                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                            } else if (opt_idx != 1) {
+                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                const shell_s = detectShell(init.environ_map);
+                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
+                            }
+                        } else if (std.mem.eql(u8, name, "f1")) {
+                            popup_title = "❔ setting help";
+                            popup_msg = settingHelp(selected_idx orelse 0);
+                        } else if (std.mem.eql(u8, name, "backspace") and selected_idx != null and
+                            (selected_idx.? == 6 or selected_idx.? == 7))
+                        {
+                            // Backspace on a grid-size row resets it to the spec
+                            // default and ends the typing run, so the next digit
+                            // starts a fresh number rather than appending.
+                            if (selected_idx.? == 6) {
+                                grid_cols = clampGridDim(g_spec.layout.tui.cols, defaults.MIN_COLS, defaults.MAX_COLS);
+                                saveUsizeToConfig(init.io, "cols", grid_cols);
+                            } else {
+                                grid_rows = clampGridDim(g_spec.layout.tui.rows, defaults.MIN_ROWS, defaults.MAX_ROWS);
+                                saveUsizeToConfig(init.io, "rows", grid_rows);
+                            }
+                            griddim_changed = true;
+                            griddim_typing = false;
                         } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
                             keybind_editing = false;
+                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
+                            griddim_typing = false;
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .categories) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -4115,19 +4416,18 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
-                    } else if (current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4 or current_screen == .help or current_screen == .status) {
+                    } else if (current_screen == .about or current_screen == .help or current_screen == .status) {
                         if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else {
                             const viewport_h = rows + 3;
-                            const is_about = current_screen == .about or current_screen == .about2 or current_screen == .about3 or current_screen == .about4;
-                            const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else if (current_screen == .about2) g_spec.strings.about2_lines.len else if (current_screen == .about3) g_spec.strings.about3_lines.len else if (current_screen == .about4) g_spec.strings.about4_lines.len else g_spec.strings.status_lines.len;
+                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                             if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                                 if (sp.* > 0) sp.* -= 1;
@@ -4141,6 +4441,9 @@ pub fn main(init: std.process.Init) !void {
                                 sp.* = 0;
                             } else if (std.mem.eql(u8, action, "nav_end")) {
                                 sp.* = max_scroll;
+                            } else {
+                                // Any other key is dead on a doc screen → bell.
+                                ringBell(bell_armed, &bell_suppressed);
                             }
                         }
                     } else if (is_cmd_autocomplete) {
@@ -4151,7 +4454,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter")) {
                             // Find the selected command
                             var opt_cmd: ?spec_mod.CommandSpec = null;
@@ -4184,18 +4487,6 @@ pub fn main(init: std.process.Init) !void {
                                     current_screen = .about;
                                     about_scroll_top = 0;
                                     selected_idx = null;
-                                } else if (std.mem.eql(u8, cmd.action, "open_about2")) {
-                                    current_screen = .about2;
-                                    about_scroll_top = 0;
-                                    selected_idx = null;
-                                } else if (std.mem.eql(u8, cmd.action, "open_about3")) {
-                                    current_screen = .about3;
-                                    about_scroll_top = 0;
-                                    selected_idx = null;
-                                } else if (std.mem.eql(u8, cmd.action, "open_about4")) {
-                                    current_screen = .about4;
-                                    about_scroll_top = 0;
-                                    selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_status")) {
                                     current_screen = .status;
                                     status_scroll_top = 0;
@@ -4212,21 +4503,22 @@ pub fn main(init: std.process.Init) !void {
                                     multi_select_active = true;
                                     query_len = 0;
                                     selected_idx = null;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 } else if (std.mem.eql(u8, cmd.action, "run_update")) {
                                     const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                    popup_title = "📦 emojig update";
                                     popup_msg = runUpdate(init.io, home_s, cfg.update_cmd, cmd.cmd, &popup_buf);
                                     query_len = 0;
                                     current_screen = .search;
                                     selected_idx = null;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else if (is_cat_autocomplete) {
@@ -4237,7 +4529,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space")) {
                             var opt_cat: ?spec_mod.CategorySpec = null;
                             if (selected_idx != null and selected_idx.? < cat_match_count) {
@@ -4249,13 +4541,13 @@ pub fn main(init: std.process.Init) !void {
                                 query_len = if (std.fmt.bufPrint(&query_buf, "c:{s} ", .{cat.short})) |res| res.len else |_| 0;
                                 query_cursor = query_len;
                                 selected_idx = null;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else {
@@ -4322,13 +4614,13 @@ pub fn main(init: std.process.Init) !void {
                                 if (!removed and query_cursor > 0) {
                                     deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                     grid_scroll_top = 0;
-                                    total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
                             } else if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = null;
                                 grid_scroll_top = 0;
-                                total_matches = runSearch(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "cycle_theme")) {
                             theme = switch (theme) {
@@ -4371,9 +4663,18 @@ pub fn main(init: std.process.Init) !void {
                                     query_cursor = 0;
                                 } else if (is_end) {
                                     query_cursor = query_len;
-                                } else if (top_count > 0) {
+                                } else if (std.mem.eql(u8, action, "nav_down") and top_count > 0) {
+                                    // Down enters the grid at the first hit;
+                                    // Up is a no-op in the prompt (the grid is
+                                    // below, so entering it on Up reads backwards).
                                     selected_idx = 0;
                                     adjustScrollTop(0, &grid_scroll_top, vp, trows);
+                                } else if (std.mem.eql(u8, action, "nav_up")) {
+                                    // Up is ignored in the prompt, but emit a BEL
+                                    // so the terminal's own bell config (audible,
+                                    // visual flash, or silent) acknowledges it —
+                                    // once per run of consecutive Up presses.
+                                    ringBell(bell_armed, &bell_suppressed);
                                 }
                             } else {
                                 // Grid focus.
@@ -4539,6 +4840,36 @@ test "deleteAtCursor removes the byte before the cursor" {
     deleteAtCursor(&buf, &len, &cur);
     try std.testing.expectEqual(@as(usize, 2), len);
     try std.testing.expectEqual(@as(usize, 0), cur);
+}
+
+test "grid dimension editing helpers" {
+    // stepGridDim clamps to [min, max] on ±1 (min = 5 cols here).
+    try std.testing.expectEqual(@as(usize, 7), stepGridDim(6, true, 5, 16));
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(6, false, 5, 16));
+    try std.testing.expectEqual(@as(usize, 16), stepGridDim(16, true, 5, 16)); // clamp high
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(5, false, 5, 16)); // clamp to min
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(3, false, 5, 16)); // sub-min snaps up
+
+    // cycleGridDim adds the coarse step and wraps back to min past the max.
+    try std.testing.expectEqual(@as(usize, 8), cycleGridDim(6, 2, 5, 16));
+    try std.testing.expectEqual(@as(usize, 5), cycleGridDim(16, 2, 5, 16)); // wrap to min
+
+    // typeGridDim allows a transient sub-min value while building a multi-digit
+    // entry (1 -> 12); the minimum is enforced separately on commit.
+    var v: usize = 9;
+    typeGridDim(&v, '1', false, 16); // fresh
+    try std.testing.expectEqual(@as(usize, 1), v);
+    typeGridDim(&v, '2', true, 16); // 1 -> 12
+    try std.testing.expectEqual(@as(usize, 12), v);
+    typeGridDim(&v, '9', true, 16); // 129 clamps to 16
+    try std.testing.expectEqual(@as(usize, 16), v);
+    typeGridDim(&v, '0', false, 16); // fresh 0 -> low bound 1
+    try std.testing.expectEqual(@as(usize, 1), v);
+
+    // clampGridDim (used by finalizeGridDim on commit) snaps into [min, max].
+    try std.testing.expectEqual(@as(usize, 5), clampGridDim(1, 5, 16)); // sub-min
+    try std.testing.expectEqual(@as(usize, 8), clampGridDim(8, 3, 16)); // in range
+    try std.testing.expectEqual(@as(usize, 16), clampGridDim(99, 3, 16)); // over max
 }
 
 test "navSelect wraps with more rows than one viewport" {

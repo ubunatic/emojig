@@ -99,6 +99,25 @@ std.debug.assert(total_cells <= defaults.MAX_CELLS);
 
 Raise the `MAX_*` bounds only if a spec grid would ever exceed them.
 
+### User-configurable grid size (`cols`/`rows`)
+
+The `spec/layout.json` `cols`/`rows` are *defaults*. The end user overrides them
+per machine via `~/.config/emojig/config` (`cols=`/`rows=`) or the **Settings**
+screen ("grid width (cols)" / "grid height (rows)" rows — Left/Right adjust ±1,
+Space/Enter steps coarsely). Both axes are clamped to `[MIN_COLS, MAX_COLS]` /
+`[MIN_ROWS, MAX_ROWS]` on load: the MAX keeps the comptime buffers in bounds, and
+the **minimum 5×3** is enforced even when a config/env value is smaller, so a
+misconfigured tiny grid can never reach the renderer.
+
+Resolution order per axis: `EMOJIG_COLS`/`EMOJIG_ROWS` env → config → spec
+default. The GUI launcher (`--gui`) resolves the same value and sizes the foot
+window to it (`content_width = cols*4 + 1`), then passes `EMOJIG_COLS/ROWS` to
+the child `--tui` so the picker grid matches the window exactly — one size for
+GUI and TUI, because users work on one screen. A settings edit persists to
+config and takes effect on the **next launch**; the live grid keeps its launch
+dimensions because mid-session grid resizing is unsafe for inline-TUI scrollback
+reservation (the terminal-state-safety rule in `AGENTS.md`).
+
 ---
 
 ## 4. Keys: bytes → logical name → action

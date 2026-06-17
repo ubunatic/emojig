@@ -228,14 +228,14 @@ that use a geometric (pixel-accurate) font renderer:
 - ⚠️  `gnome-terminal`, `xterm` — font-dependent; may render as tofu or
      incorrectly sized if the system font lacks these codepoints
 
-For art in `spec/strings.json` that is displayed in `about2_lines`, this is
+For art in `spec/strings.json` that is displayed in `about_lines`, this is
 acceptable: it degrades gracefully (the codepoints render as blank boxes in
 the worst case, and the text fallback next to the art remains readable).
 
-### The `:about2` screen
+### The `:about` screen
 
-The quad-block smiley in `about2_lines` uses the same 12-col × 7-row canvas
-as the half-block `about_lines` smiley, but with rounded corners:
+The quad-block smiley in `about_lines` (generated from `spec/art.json` by
+`make gen-art`) uses a 12-col × 7-row canvas with rounded corners:
 
 ```
 TR  pixel rows  visual            Difference from about
