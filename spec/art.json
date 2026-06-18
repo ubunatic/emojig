@@ -57,7 +57,7 @@
       "end_delay_ms": 0,
       "header": [
         "",
-        " 😀 $link",
+        "😀 $link",
         "",
         " Emojig $version — lightning-fast,",
         " zero-allocation emoji picker in Zig."

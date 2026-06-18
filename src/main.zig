@@ -3206,7 +3206,7 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else if (current_screen == .settings and !is_too_small) {
-                        const settings_rows = rows + 3;
+                        const settings_rows = rows + 4;
                         var h_idx: usize = 0;
                         while (h_idx < settings_rows) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -3214,9 +3214,15 @@ pub fn main(init: std.process.Init) !void {
                             var custom_rendered = false;
 
                             if (h_idx == 0) {
+                                // Empty line on top
+                                custom_rendered = true;
+                            } else if (h_idx == 1) {
                                 text = "⚙️ emojig settings";
-                            } else if (h_idx >= 2 and h_idx - 2 < rows) {
-                                const slot_idx = h_idx - 2;
+                            } else if (h_idx == 2) {
+                                // Empty separator row
+                                custom_rendered = true;
+                            } else if (h_idx >= 3 and h_idx - 3 < rows) {
+                                const slot_idx = h_idx - 3;
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
@@ -3238,7 +3244,7 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else if (current_screen == .categories and !is_too_small) {
-                        const cats_rows = rows + 3;
+                        const cats_rows = rows + 4;
                         var h_idx: usize = 0;
                         while (h_idx < cats_rows) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -3246,9 +3252,15 @@ pub fn main(init: std.process.Init) !void {
                             var custom_rendered = false;
 
                             if (h_idx == 0) {
+                                // Empty line on top
+                                custom_rendered = true;
+                            } else if (h_idx == 1) {
                                 text = "📁 emojig categories";
-                            } else if (h_idx >= 2 and h_idx - 2 < rows) {
-                                const slot_idx = h_idx - 2;
+                            } else if (h_idx == 2) {
+                                // Empty separator row
+                                custom_rendered = true;
+                            } else if (h_idx >= 3 and h_idx - 3 < rows) {
+                                const slot_idx = h_idx - 3;
                                 const cat_idx = cat_scroll_top + slot_idx;
                                 if (cat_idx < g_spec.categories.categories.len) {
                                     const is_sel = (selected_idx != null and selected_idx.? == cat_idx);
