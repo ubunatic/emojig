@@ -52,7 +52,7 @@
       "spaced": false,
       "indent": "   ",
       "frames_dir": "spec/art/about/",
-      "delays_ms": [500, 80, 80, 80, 500],
+      "delays_ms": [500, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 500],
       "header": [
         "$link",
         "",
