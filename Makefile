@@ -252,6 +252,7 @@ install-verbose: ⚙️  # install with verbose compilation output
 preflight: ⚙️  # run license check, unit tests, and code formatting lint
 	reuse lint
 	zig build test
+	@echo "Note: 'failed command' message above is OK (Zig test runner info, all tests pass)"
 	zig fmt --check src/
 	go vet ./...
 	go test ./...

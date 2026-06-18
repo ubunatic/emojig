@@ -1349,7 +1349,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             return std.fmt.bufPrint(buf, " {s}{s}{s}  shell integration\x1b[0m", .{ bg, sel_prefix, padded });
         },
         1 => {
-            const val_str = if (key_bind_editing) 
+            const val_str = if (key_bind_editing)
                 try std.fmt.bufPrint(buf[200..], "[{s}▋]", .{key_bind})
             else
                 try std.fmt.bufPrint(buf[200..], "[{s}]", .{key_bind});
