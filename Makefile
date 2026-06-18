@@ -57,6 +57,9 @@ watch-%:
 gen-art: ⚙️  # compile spec/art.json → spec/strings.json
 	go run ./scripts/gen_about_art/
 
+gen-colors: ⚙️  # regenerate spec/colors.json (full xterm-256 palette)
+	go run ./scripts/gen_colors/ > spec/colors.json
+
 test: ⚙️  # run the unit tests
 	zig build test
 	go vet ./...

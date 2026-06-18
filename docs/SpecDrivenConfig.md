@@ -31,6 +31,7 @@ learned wiring it up.
 | Exit-fade in TUI / GUI / both / neither | `spec/layout.json`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
 | Theme icons (🌙🌞🔆)                     | `spec/theme.json`                 | `icons` |
 | Grid/selection/search colors            | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints) |
+| Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
 | Search prompt, status bar, help text    | `spec/strings.json`               | see §4 |
@@ -239,14 +240,70 @@ To provide a clear visual indication that the floating GUI window is inactive, t
 
 ---
 
-## 9. Files touched
+## 9. Named colors (`spec/colors.json`)
+
+Any color value in a spec — `multi_select_bg` in `strings.json`, the `bg=`/`fg=`
+attributes in `styles.json`, etc. — accepts a **name**, not just a 0-255 palette
+index. The names are documented in `spec/colors.json`, one entry per xterm slot:
+
+```json
+{ "i": 208, "name": "orange", "short": "org", "hex": "#ff8700", "desc": "orange",
+  "alt": ["rgb520"] }
+```
+
+- **`name`** — long name. System colors 0-15 (`black`, `maroon`, `green`, …) and a
+  curated set of popular colors (`orange`=208, `teal`, `forest`, `navy`, `skyblue`,
+  `crimson`, `slate`, …) get friendly names; everything else gets a systematic
+  `rgbRGB` name where `R`/`G`/`B` are the cube level digits 0-5 (the six levels are
+  `0,95,135,175,215,255`), and grays are `gray0`-`gray23`.
+- **`short`** — a 3-letter alias (`grn`, `blu`, `blk`, `org`, `fst`…) for quick typing.
+- **`alt`** — extra aliases; renamed cube slots keep their systematic `rgbRGB` name
+  reachable here.
+- **`hex`/`desc`** — documentation only (hex value + human color family like
+  "dark green"); not used for resolution.
+
+### Generation
+
+`spec/colors.json` is **generated**, never hand-edited — run `make gen-colors`
+(`go run ./scripts/gen_colors/`, stdlib-only). The generator owns the system-color
+table, the popular-name overrides, the cube/gray math (hex), and an HSV-based
+`desc` classifier. To rename a color or add a popular alias, edit
+`scripts/gen_colors/main.go` and regenerate. Rebuild (`zig build`) afterwards
+since the JSON is `@embedFile`'d (registered as `spec_colors` in `build.zig`, like
+the other specs — see §2).
+
+### Resolution path (Zig)
+
+`spec.ColorsSpec.indexOf(name)` linear-scans the parsed entries (name → short →
+alt), **first match wins** so the lowest index resolves on collision. In
+`main.zig` every color value flows through `appendBgCodes`/`appendFgCodes`:
+
+1. the **8 basic ANSI names** (`colorNameToBasic`) keep the compact `3X`/`4X`
+   form — so existing `theme.json` behavior is byte-identical;
+2. otherwise `colorNameToIndex` consults `spec.ColorsSpec.indexOf`, then falls
+   back to `std.fmt.parseInt` (a literal numeric index);
+3. the resulting index emits via `appendIndexedColor`: `3X`/`4X` for 0-7,
+   `9X`/`10X` for 8-15, else the extended `38;5;N` / `48;5;N`.
+
+The lookup is guarded by a module-level `g_colors: ?*const ColorsSpec` set after
+`g_spec` loads, so the color helpers are safe to call before the spec is parsed
+and in unit tests that never load it (it just returns `null` → numeric fallback).
+
+> The 256 entries are parsed into the startup arena (~10 KB) — fine against the
+> RSS budget, and off the hot path (color names resolve at config/render time,
+> never per emoji cell). The Go `mojigo` port ignores `colors.json` (unknown spec
+> file); the name system is a Zig-app feature.
+
+## 10. Files touched
 
 ```
-build.zig            anonymous imports for the four spec files
-src/spec.zig         embed + parse + palette/binding builders; Animation struct; constructs dark_palette_dim and light_palette_dim
+build.zig            anonymous imports for the spec files (incl. spec_colors)
+src/spec.zig         embed + parse + palette/binding builders; Animation struct; constructs dark_palette_dim and light_palette_dim; ColorsSpec + indexOf()
 src/defaults.zig     reduced to comptime MAX_* bounds
 src/term.zig         palettes/icon/colors removed; Palette fields warning_fg and success_fg
-src/main.zig         g_spec load; layout/theme/strings/keys consumed; passes !has_focus and gui_spawned to effectivePalette; renders warnings with palette.info_fg
+src/main.zig         g_spec load; layout/theme/strings/keys consumed; passes !has_focus and gui_spawned to effectivePalette; renders warnings with palette.info_fg; g_colors + colorNameToIndex/appendIndexedColor color-name resolution
+scripts/gen_colors/  generates spec/colors.json (make gen-colors); see §9
+spec/colors.json     generated full xterm-256 palette with name/short/hex/desc/alt
 src/root.zig         updated test Strings struct to mirror focus fields
 internal/spec/spec.go updated Go structs to mirror new theme and strings fields
 spec/layout.json     added animation.{exit_preview_tui,exit_preview_gui}

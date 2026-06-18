@@ -52,15 +52,20 @@
       "spaced": false,
       "indent": "   ",
       "frames_dir": "spec/art/about/",
-      "delays_ms": [500, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 500],
+      "fps": 30,
+      "start_delay_ms": 200,
+      "end_delay_ms": 0,
       "header": [
-        "$link",
+        "",
+        " 😀 $link",
         "",
         " Emojig $version — lightning-fast,",
-        " zero-allocation emoji picker in Zig.",
-        ""
+        " zero-allocation emoji picker in Zig."
       ],
-      "footer": ["", " Made with 💙+🤖 in Dresden, DE"]
+      "footer": [
+        "",
+        " Made with 💙+🤖 in Dresden, DE"
+      ]
     }
   ]
 }

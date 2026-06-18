@@ -34,6 +34,7 @@ const strings_uk = @embedFile("spec_strings_uk");
 const strings_nl = @embedFile("spec_strings_nl");
 const strings_tr = @embedFile("spec_strings_tr");
 const styles_json = @embedFile("spec_styles");
+const colors_json = @embedFile("spec_colors");
 
 const parse_opts = std.json.ParseOptions{ .ignore_unknown_fields = true };
 
@@ -200,13 +201,42 @@ pub const Strings = struct {
     // to "" the mark is dropped and picked cells are shown with multi_select_bg.
     multi_select_mark: []const u8 = "✓",
     // Background highlight for picked cells when multi_select_mark is empty —
-    // a color name (green, blue, …) or 0-255 palette index.
+    // any color name from spec/colors.json (long like `forest`/`teal`, 3-letter
+    // short like `grn`/`blu`) or a literal 0-255 palette index.
     multi_select_bg: []const u8 = "green",
     status: StatusStrings = .{},
 };
 
 pub const StylesSpec = struct {
     styles: std.json.ArrayHashMap([]const u8) = .{},
+};
+
+/// One documented xterm-256 palette slot (see spec/colors.json).
+pub const ColorEntry = struct {
+    i: u16,
+    name: []const u8 = "",
+    short: []const u8 = "",
+    hex: []const u8 = "",
+    desc: []const u8 = "",
+    alt: []const []const u8 = &.{},
+};
+
+pub const ColorsSpec = struct {
+    colors: []const ColorEntry = &.{},
+
+    /// Resolve a colour name (long, short, or alias) to its 0-255 palette
+    /// index. Case-sensitive, first match wins (lower index). Returns null when
+    /// the name is unknown — callers then fall back to numeric parsing.
+    pub fn indexOf(self: *const ColorsSpec, name: []const u8) ?u16 {
+        for (self.colors) |c| {
+            if (std.mem.eql(u8, name, c.name)) return c.i;
+            if (c.short.len != 0 and std.mem.eql(u8, name, c.short)) return c.i;
+            for (c.alt) |a| {
+                if (std.mem.eql(u8, name, a)) return c.i;
+            }
+        }
+        return null;
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -222,6 +252,7 @@ pub const Spec = struct {
     settings: SettingsSpec,
     categories: CategoriesSpec,
     styles: StylesSpec,
+    colors: ColorsSpec,
     // term.Palette escape strings built at load from the color indices above.
     dark_palette: term.Palette,
     light_palette: term.Palette,
@@ -305,6 +336,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
     const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
     const styles = try std.json.parseFromSliceLeaky(StylesSpec, arena, styles_json, parse_opts);
+    const colors = try std.json.parseFromSliceLeaky(ColorsSpec, arena, colors_json, parse_opts);
 
     return .{
         .layout = layout,
@@ -315,6 +347,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .settings = settings,
         .categories = categories,
         .styles = styles,
+        .colors = colors,
         .dark_palette = try buildPalette(arena, theme.themes.dark, false),
         .light_palette = try buildPalette(arena, theme.themes.light, false),
         .dark_palette_dim = try buildPalette(arena, theme.themes.dark, true),

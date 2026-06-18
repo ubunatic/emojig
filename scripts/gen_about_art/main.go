@@ -79,16 +79,45 @@ func resolvePalette(raw map[string]json.RawMessage, colors map[string]int) (map[
 }
 
 type ArtEntry struct {
-	Name      string   `json:"name"`
-	Target    string   `json:"target"`
-	Mode      string   `json:"mode"`
-	Spaced    bool     `json:"spaced"`
-	Indent    string   `json:"indent"`
-	Header    []string `json:"header"`
-	Footer    []string `json:"footer"`
-	Shape     []string `json:"shape"`
-	FramesDir string   `json:"frames_dir"`
-	DelaysMs  []int    `json:"delays_ms"`
+	Name         string   `json:"name"`
+	Target       string   `json:"target"`
+	Mode         string   `json:"mode"`
+	Spaced       bool     `json:"spaced"`
+	Indent       string   `json:"indent"`
+	Header       []string `json:"header"`
+	Footer       []string `json:"footer"`
+	Shape        []string `json:"shape"`
+	FramesDir    string   `json:"frames_dir"`
+	DelaysMs     []int    `json:"delays_ms"`
+	Fps          int      `json:"fps"`
+	StartDelayMs *int     `json:"start_delay_ms"`
+	EndDelayMs   *int     `json:"end_delay_ms"`
+}
+
+// buildDelays returns one delay (ms) per frame.
+// If fps > 0, all frames get 1000/fps ms; otherwise delays_ms is used verbatim.
+// start_delay_ms / end_delay_ms override the first / last entry.
+func buildDelays(entry ArtEntry, n int) []int {
+	delays := make([]int, n)
+	switch {
+	case entry.Fps > 0:
+		ms := 1000 / entry.Fps
+		for i := range delays {
+			delays[i] = ms
+		}
+	case len(entry.DelaysMs) == n:
+		copy(delays, entry.DelaysMs)
+	default:
+		fatalf("%q: need 'fps' or 'delays_ms' with %d entries for %d frames (got %d)",
+			entry.Name, n, n, len(entry.DelaysMs))
+	}
+	if entry.StartDelayMs != nil {
+		delays[0] = *entry.StartDelayMs
+	}
+	if entry.EndDelayMs != nil {
+		delays[n-1] = *entry.EndDelayMs
+	}
+	return delays
 }
 
 // ── Compiler ─────────────────────────────────────────────────────────────────
@@ -489,7 +518,10 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 		if e.IsDir() {
 			continue
 		}
-		if filepath.Ext(e.Name()) == ".png" && e.Name() != "preview.png" {
+		if filepath.Ext(e.Name()) != ".png" {
+			continue
+		}
+		if _, _, _, ok := parseFrameName(e.Name()); ok {
 			names = append(names, e.Name())
 		}
 	}
@@ -575,11 +607,6 @@ func main() {
 			if err != nil {
 				fatalf("load frames for %q: %v", entry.Name, err)
 			}
-			// Validate delays_ms count matches frame count.
-			if len(entry.DelaysMs) != len(shapeFrames) {
-				fatalf("%q: delays_ms has %d entries but found %d frames",
-					entry.Name, len(entry.DelaysMs), len(shapeFrames))
-			}
 			// Validate consistent dimensions across frames.
 			refRows := len(shapeFrames[0])
 			refCols := 0
@@ -631,13 +658,19 @@ func main() {
 			allFrames = append(allFrames, lines)
 		}
 
+		// Build delays for multi-frame entries.
+		var delays []int
+		if strings.HasSuffix(entry.Target, "_frames") {
+			delays = buildDelays(entry, len(allFrames))
+		}
+
 		// Print mode.
 		if doPrint {
 			for i, frame := range allFrames {
 				if len(allFrames) > 1 {
 					delay := 0
-					if i < len(entry.DelaysMs) {
-						delay = entry.DelaysMs[i]
+					if delays != nil && i < len(delays) {
+						delay = delays[i]
 					}
 					if i > 0 {
 						fmt.Println()
@@ -657,7 +690,7 @@ func main() {
 				fatalf("upsert %s: %v", entry.Target, err)
 			}
 			delaysKey := strings.TrimSuffix(entry.Target, "_frames") + "_delays"
-			if err := upsertInts("spec/strings.json", delaysKey, entry.DelaysMs); err != nil {
+			if err := upsertInts("spec/strings.json", delaysKey, delays); err != nil {
 				fatalf("upsert %s: %v", delaysKey, err)
 			}
 			fmt.Printf("spec/strings.json: updated %s (%d frames) + %s\n",

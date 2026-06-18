@@ -32,6 +32,9 @@ extern fn unlink(path: [*:0]const u8) c_int;
 // Holds layout dims, theme palettes, key bindings, and UI strings. Lives in a
 // process-lifetime arena; read-only after load.
 var g_spec: spec_mod.Spec = undefined;
+// Points at g_spec.colors once the spec is loaded; null beforehand (and in
+// tests that never load) so the color-name lookup is safe to consult anywhere.
+var g_colors: ?*const spec_mod.ColorsSpec = null;
 var g_wide_ambiguous: bool = true;
 
 // Search dedup cache (see searchDedup). The "search key" is the query with
@@ -414,24 +417,43 @@ fn collectSgrCodes(
     }
 }
 
+/// Emit SGR codes for a 0-255 palette index: the compact 30-37/40-47 (normal)
+/// and 90-97/100-107 (bright) forms for the 16 system colours, else the
+/// `38;5;N` / `48;5;N` extended form. `normal`/`bright`/`ext` are 30/90/38 for
+/// foreground, 40/100/48 for background.
+fn appendIndexedColor(codes: []u16, n: *usize, idx: u16, normal: u16, bright: u16, ext: u16) void {
+    if (idx < 8) {
+        codes[n.*] = normal + idx;
+        n.* += 1;
+    } else if (idx < 16) {
+        codes[n.*] = bright + idx - 8;
+        n.* += 1;
+    } else {
+        codes[n.*] = ext;
+        codes[n.* + 1] = 5;
+        codes[n.* + 2] = idx;
+        n.* += 3;
+    }
+}
+
+/// Resolve a color spec value to a 0-255 palette index: a name from
+/// spec/colors.json (long/short/alias) or a literal numeric index. Returns null
+/// for anything unrecognised. The 8 basic ANSI names are handled separately by
+/// the callers (they prefer the compact 3X/4X form), so they never reach here.
+fn colorNameToIndex(val: []const u8) ?u16 {
+    if (g_colors) |c| {
+        if (c.indexOf(val)) |idx| return idx;
+    }
+    return std.fmt.parseInt(u16, val, 10) catch null;
+}
+
 fn appendFgCodes(codes: []u16, n: *usize, val: []const u8) void {
     if (n.* + 3 > codes.len) return;
     if (colorNameToBasic(val)) |basic| {
         codes[n.*] = 30 + basic;
         n.* += 1;
-    } else if (std.fmt.parseInt(u16, val, 10) catch null) |idx| {
-        if (idx < 8) {
-            codes[n.*] = 30 + idx;
-            n.* += 1;
-        } else if (idx < 16) {
-            codes[n.*] = 90 + idx - 8;
-            n.* += 1;
-        } else {
-            codes[n.*] = 38;
-            codes[n.* + 1] = 5;
-            codes[n.* + 2] = idx;
-            n.* += 3;
-        }
+    } else if (colorNameToIndex(val)) |idx| {
+        appendIndexedColor(codes, n, idx, 30, 90, 38);
     }
 }
 
@@ -440,19 +462,8 @@ fn appendBgCodes(codes: []u16, n: *usize, val: []const u8) void {
     if (colorNameToBasic(val)) |basic| {
         codes[n.*] = 40 + basic;
         n.* += 1;
-    } else if (std.fmt.parseInt(u16, val, 10) catch null) |idx| {
-        if (idx < 8) {
-            codes[n.*] = 40 + idx;
-            n.* += 1;
-        } else if (idx < 16) {
-            codes[n.*] = 100 + idx - 8;
-            n.* += 1;
-        } else {
-            codes[n.*] = 48;
-            codes[n.* + 1] = 5;
-            codes[n.* + 2] = idx;
-            n.* += 3;
-        }
+    } else if (colorNameToIndex(val)) |idx| {
+        appendIndexedColor(codes, n, idx, 40, 100, 48);
     }
 }
 
@@ -1782,6 +1793,7 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(std.posix.STDERR_FILENO, "\n");
         std.process.exit(1);
     };
+    g_colors = &g_spec.colors;
 
     if (opt_completion) {
         const shell = opt_completion_shell orelse detectShell(init.environ_map);
@@ -4964,4 +4976,30 @@ test "scrollbarThumb geometry for both styles" {
     const none = scrollbarThumb(.expand, 6, 6);
     try std.testing.expectEqual(@as(usize, 6), none.thumb_h);
     try std.testing.expectEqual(@as(usize, 0), none.travel);
+}
+
+test "color names from spec/colors.json resolve to palette indices" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    g_spec = try spec_mod.load(arena.allocator(), null);
+    g_colors = &g_spec.colors;
+    defer g_colors = null;
+
+    // Long names, 3-letter shorts, popular names, and systematic cube/gray names.
+    try std.testing.expectEqual(@as(?u16, 2), colorNameToIndex("grn"));
+    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("orange"));
+    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("org"));
+    try std.testing.expectEqual(@as(?u16, 22), colorNameToIndex("forest"));
+    try std.testing.expectEqual(@as(?u16, 232), colorNameToIndex("gray0"));
+    // alt alias keeps the systematic name reachable for renamed slots.
+    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("rgb520"));
+    // Numeric fallback and unknown names.
+    try std.testing.expectEqual(@as(?u16, 240), colorNameToIndex("240"));
+    try std.testing.expectEqual(@as(?u16, null), colorNameToIndex("not-a-color"));
+
+    // Extended-form escape for a named colour beyond the 16 system slots.
+    var buf: [16]u8 = undefined;
+    try std.testing.expectEqualStrings("\x1b[48;5;208m", bgEscape(&buf, "orange"));
+    // A 3-letter short for a system colour uses the compact 4X form.
+    try std.testing.expectEqualStrings("\x1b[42m", bgEscape(&buf, "grn"));
 }
