@@ -252,21 +252,33 @@ TR  pixel rows  visual            Difference from about
 
 ## Data-driven pipeline: `spec/art.json` + `scripts/gen_about_art`
 
-The manual Go-script workflow above (§4 "Encode in `spec/strings.json`") has
-been superseded for quad-mode art by a declarative compiler:
+The manual Go-script workflow above (§4 "Encode in `spec/strings.json`") has been superseded for quad-mode art by a declarative compiler that reads `.png` frame assets directly:
 
-- **`spec/art.json`** holds `colors` (name → xterm 256-color code), `palette`
-  (pixel-char → color name, or `null` for transparent), `priority` (tie-break
-  order when a cell has 2+ colors), and one or more `art` entries (`shape`,
-  `header`, `footer`, `indent`).
-- **`scripts/gen_about_art/main.go`** (`go run ./scripts/gen_about_art/`)
-  compiles each `shape` into `$[fg=N,bg=M]{...}` DSL rows and upserts them
-  into the named array (`target`) in `spec/strings.json`.
-- **`go run ./scripts/gen_about_art/ print`** renders the same compiled rows
-  straight to stdout as live ANSI (DSL spans expanded, `$version` → `dev`)
-  for fast iteration without rebuilding the Zig binary.
-- **`scripts/watch_art.sh`** polls `spec/art.json` for changes and reruns
-  both the compile and the `print` preview automatically.
+* **Source Project (`sheet.pxo`)**: The animations are designed using Pixelorama. The project source file `spec/art/about/sheet.pxo` is tracked in Git.
+* **Exported Frames (`sheet_000*.png`)**: Individual frame files are exported from Pixelorama and saved to `spec/art/about/`. The compiler reads these PNG frames directly.
+* **`spec/art.json`** holds `colors` (name → xterm 256-color code), `palette` (pixel-char → color name, or `null` for transparent), `priority` (tie-break order when a cell has 2+ colors), and one or more `art` entries (`frames_dir`, `delays_ms`, `header`, `footer`, `indent`).
+* **`scripts/gen_about_art/main.go`** (`go run ./scripts/gen_about_art/`) decodes each PNG frame from the `frames_dir`, maps pixel colors to the closest palette characters, compiles them into `$[fg=N,bg=M]{...}` DSL rows, and upserts them into the named array (`target`) in `spec/strings.json`.
+* **`go run ./scripts/gen_about_art/ print`** renders the same compiled rows straight to stdout as live ANSI for fast preview.
+* **`make gen-art`** compiles the configuration and frames into `spec/strings.json`.
+
+---
+
+## Committing and Diffing `.pxo` files
+
+Because `.pxo` files are binary ZIP archives containing a JSON file (`data.json`) and raw images (`image_data/`), standard `git diff` cannot show meaningful text changes. 
+
+To enable clean, human-readable text diffs of the Pixelorama metadata directly in your terminal, the repository utilizes a custom Git diff converter:
+
+1. A Git attribute mapping in [.gitattributes](file:///.gitattributes) assigns the custom `pxo` diff driver to all `.pxo` files:
+   ```gitattributes
+   *.pxo diff=pxo
+   ```
+2. The `pxo` diff driver is configured locally to extract and diff only the `data.json` inside the archive:
+   ```bash
+   git config diff.pxo.textconv "sh -c 'unzip -p \"\$0\" data.json'"
+   ```
+
+With this configuration, commands like `git diff` or `git show` will automatically display structural text modifications (like fps, layer configurations, or frame additions) instead of simple "Binary files differ" warnings.
 
 ### Quad-mode row pairing is fixed and unforgiving
 
