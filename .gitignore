@@ -36,3 +36,5 @@ scripts/wasm-out/
 
 /target
 /screenshot
+zig-cache/
+zig-out/
