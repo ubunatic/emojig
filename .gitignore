@@ -4,6 +4,8 @@ zig-out/
 dist/
 /mojigo
 /record
+/gen_about_art
+/sync_art_frames
 
 # Downloaded raw emoji source datasets
 data/

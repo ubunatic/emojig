@@ -54,7 +54,10 @@ watch-art:     ⚙️
 watch-%:
 	@scripts/watch.sh spec/$*.json
 
-gen-art: ⚙️  # compile spec/art.json → spec/strings.json
+sync-art: ⚙️  # sync spec/art/ txt↔png frames (bidirectional)
+	@test -d scripts/sync_art_frames && go run ./scripts/sync_art_frames/ || true
+
+gen-art: sync-art ⚙️  # compile spec/art.json → spec/strings.json
 	go run ./scripts/gen_about_art/
 
 test: ⚙️  # run the unit tests

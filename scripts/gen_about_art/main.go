@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Reads spec/art.json and compiles pixel-art entries into $[fg=N,bg=M]{char}
-// DSL strings, then upserts the resulting *_lines arrays into spec/strings.json.
+// DSL strings, then upserts the resulting *_lines or *_frames arrays into
+// spec/strings.json.  Single-frame entries use inline "shape"; multi-frame
+// entries use "frames_dir" (directory of numbered .txt files) + "delays_ms".
 // Run: go run ./scripts/gen_about_art/
 
 package main
@@ -12,6 +14,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -72,14 +76,16 @@ func resolvePalette(raw map[string]json.RawMessage, colors map[string]int) (map[
 }
 
 type ArtEntry struct {
-	Name    string   `json:"name"`
-	Target  string   `json:"target"`
-	Mode    string   `json:"mode"`
-	Spaced  bool     `json:"spaced"`
-	Indent  string   `json:"indent"`
-	Header  []string `json:"header"`
-	Footer  []string `json:"footer"`
-	Shape   []string `json:"shape"`
+	Name      string   `json:"name"`
+	Target    string   `json:"target"`
+	Mode      string   `json:"mode"`
+	Spaced    bool     `json:"spaced"`
+	Indent    string   `json:"indent"`
+	Header    []string `json:"header"`
+	Footer    []string `json:"footer"`
+	Shape     []string `json:"shape"`
+	FramesDir string   `json:"frames_dir"`
+	DelaysMs  []int    `json:"delays_ms"`
 }
 
 // ── Compiler ─────────────────────────────────────────────────────────────────
@@ -350,6 +356,44 @@ func expandDSL(s string) string {
 	return out.String()
 }
 
+// ── frame loading ────────────────────────────────────────────────────────────
+
+// loadFrames reads all *.txt files from dir in sorted order and returns
+// each file's lines as one element of the outer slice.
+func loadFrames(dir string) ([][]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read frames dir %s: %w", dir, err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if filepath.Ext(e.Name()) == ".txt" {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no .txt files found in %s", dir)
+	}
+	var frames [][]string
+	for _, name := range names {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		raw := strings.TrimRight(string(data), "\n")
+		var lines []string
+		if raw != "" {
+			lines = strings.Split(raw, "\n")
+		}
+		frames = append(frames, lines)
+	}
+	return frames, nil
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
@@ -370,26 +414,106 @@ func main() {
 	spec := ArtSpec{Palette: palette, Priority: raw.Priority, Art: raw.Art}
 
 	for _, entry := range spec.Art {
-		var lines []string
-		switch entry.Mode {
-		case "quad":
-			lines, err = compileQuad(entry, spec.Palette, spec.Priority)
-		default:
-			fatalf("unsupported mode %q in art entry %q", entry.Mode, entry.Name)
+		// Determine frame shapes: either from frames_dir or inline shape.
+		var shapeFrames [][]string // each element is one frame's shape rows
+		if entry.FramesDir != "" {
+			shapeFrames, err = loadFrames(entry.FramesDir)
+			if err != nil {
+				fatalf("load frames for %q: %v", entry.Name, err)
+			}
+			// Validate delays_ms count matches frame count.
+			if len(entry.DelaysMs) != len(shapeFrames) {
+				fatalf("%q: delays_ms has %d entries but found %d frames",
+					entry.Name, len(entry.DelaysMs), len(shapeFrames))
+			}
+			// Validate consistent dimensions across frames.
+			refRows := len(shapeFrames[0])
+			refCols := 0
+			if refRows > 0 {
+				refCols = len([]rune(shapeFrames[0][0]))
+			}
+			for i, frame := range shapeFrames {
+				if len(frame) != refRows {
+					fatalf("%q: frame %d has %d rows, expected %d",
+						entry.Name, i, len(frame), refRows)
+				}
+				for r, row := range frame {
+					if len([]rune(row)) != refCols {
+						fatalf("%q: frame %d row %d has %d cols, expected %d",
+							entry.Name, i, r, len([]rune(row)), refCols)
+					}
+				}
+			}
+			// Validate even dimensions for quad mode.
+			if entry.Mode == "quad" {
+				if refRows%2 != 0 {
+					fatalf("%q: quad mode needs even row count, got %d", entry.Name, refRows)
+				}
+				if refCols%2 != 0 {
+					fatalf("%q: quad mode needs even column count, got %d", entry.Name, refCols)
+				}
+			}
+		} else if entry.Shape != nil {
+			shapeFrames = [][]string{entry.Shape}
+		} else {
+			fatalf("%q: art entry has neither 'shape' nor 'frames_dir'", entry.Name)
 		}
-		if err != nil {
-			fatalf("compile %q: %v", entry.Name, err)
+
+		// Compile each frame.
+		allFrames := make([][]string, 0, len(shapeFrames))
+		for _, shape := range shapeFrames {
+			frameEntry := entry
+			frameEntry.Shape = shape
+			var lines []string
+			switch entry.Mode {
+			case "quad":
+				lines, err = compileQuad(frameEntry, spec.Palette, spec.Priority)
+			default:
+				fatalf("unsupported mode %q in art entry %q", entry.Mode, entry.Name)
+			}
+			if err != nil {
+				fatalf("compile %q: %v", entry.Name, err)
+			}
+			allFrames = append(allFrames, lines)
 		}
+
+		// Print mode.
 		if doPrint {
-			for _, l := range lines {
-				fmt.Println(expandDSL(l))
+			for i, frame := range allFrames {
+				if len(allFrames) > 1 {
+					delay := 0
+					if i < len(entry.DelaysMs) {
+						delay = entry.DelaysMs[i]
+					}
+					if i > 0 {
+						fmt.Println()
+					}
+					fmt.Printf("--- Frame %d (%dms) ---\n", i, delay)
+				}
+				for _, l := range frame {
+					fmt.Println(expandDSL(l))
+				}
 			}
 			continue
 		}
-		if err := upsertLines("spec/strings.json", entry.Target, lines); err != nil {
-			fatalf("upsert %s: %v", entry.Target, err)
+
+		// Write to strings.json.
+		if strings.HasSuffix(entry.Target, "_frames") {
+			if err := upsertFrames("spec/strings.json", entry.Target, allFrames); err != nil {
+				fatalf("upsert %s: %v", entry.Target, err)
+			}
+			delaysKey := strings.TrimSuffix(entry.Target, "_frames") + "_delays"
+			if err := upsertInts("spec/strings.json", delaysKey, entry.DelaysMs); err != nil {
+				fatalf("upsert %s: %v", delaysKey, err)
+			}
+			fmt.Printf("spec/strings.json: updated %s (%d frames) + %s\n",
+				entry.Target, len(allFrames), delaysKey)
+		} else {
+			if err := upsertLines("spec/strings.json", entry.Target, allFrames[0]); err != nil {
+				fatalf("upsert %s: %v", entry.Target, err)
+			}
+			fmt.Printf("spec/strings.json: updated %s (%d lines)\n", entry.Target, len(allFrames[0]))
 		}
-		fmt.Printf("spec/strings.json: updated %s (%d lines)\n", entry.Target, len(lines))
 	}
 }
 
@@ -398,7 +522,7 @@ func fatalf(f string, args ...any) {
 	os.Exit(1)
 }
 
-// ── strings.json upsert (token-aware: rewrites only the target array) ────────
+// ── strings.json upsert (token-aware: rewrites only the target value) ────────
 
 func upsertLines(file, key string, lines []string) error {
 	data, err := os.ReadFile(file)
@@ -513,4 +637,131 @@ func skipValue(dec *json.Decoder) error {
 	}
 	_, err = dec.Token()
 	return err
+}
+
+// upsertFrames writes a [][]string (array of frame line arrays) into the JSON file.
+func upsertFrames(file, key string, frames [][]string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(frames)
+	if err != nil {
+		return err
+	}
+	// Pretty-print the 2D array: outer array on its own lines, inner arrays
+	// formatted like upsertLines (one string per line, 6-space indent).
+	var pretty bytes.Buffer
+	var outer []json.RawMessage
+	if err := json.Unmarshal(encoded, &outer); err != nil {
+		return err
+	}
+	pretty.WriteString("[\n")
+	for fi, frameRaw := range outer {
+		var inner []json.RawMessage
+		if err := json.Unmarshal(frameRaw, &inner); err != nil {
+			return err
+		}
+		pretty.WriteString("    [\n")
+		for i, elem := range inner {
+			pretty.WriteString("      ")
+			pretty.Write(elem)
+			if i < len(inner)-1 {
+				pretty.WriteByte(',')
+			}
+			pretty.WriteByte('\n')
+		}
+		pretty.WriteString("    ]")
+		if fi < len(outer)-1 {
+			pretty.WriteByte(',')
+		}
+		pretty.WriteByte('\n')
+	}
+	pretty.WriteString("  ]")
+
+	return upsertRaw(file, key, pretty.Bytes(), data)
+}
+
+// upsertInts writes a []int value into the JSON file.
+func upsertInts(file, key string, vals []int) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(vals)
+	if err != nil {
+		return err
+	}
+	// Pretty-print: single-line array is fine for ints.
+	return upsertRaw(file, key, encoded, data)
+}
+
+// upsertRaw replaces or inserts a key with already-formatted value bytes.
+func upsertRaw(file, key string, value, data []byte) error {
+	arrStart, arrEnd, found, err := findValueBounds(data, key)
+	if err != nil {
+		return fmt.Errorf("scan %s: %w", key, err)
+	}
+	if found {
+		out := make([]byte, 0, len(data)+len(value))
+		out = append(out, data[:arrStart]...)
+		out = append(out, value...)
+		out = append(out, data[arrEnd:]...)
+		return os.WriteFile(file, out, 0o644)
+	}
+	closingBrace := bytes.LastIndexByte(data, '}')
+	if closingBrace < 0 {
+		return fmt.Errorf("no closing brace in %s", file)
+	}
+	newField := []byte(",\n  \"" + key + "\": " + string(value))
+	out := make([]byte, 0, len(data)+len(newField)+2)
+	out = append(out, data[:closingBrace]...)
+	out = append(out, newField...)
+	out = append(out, '\n', '}')
+	return os.WriteFile(file, out, 0o644)
+}
+
+// findValueBounds locates the start and end byte offsets of a top-level
+// key's value in a JSON object.  Works for any value type (array, object,
+// number, string, etc.).
+func findValueBounds(data []byte, key string) (start, end int, found bool, err error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if _, e := dec.Token(); e != nil {
+		return 0, 0, false, e
+	}
+	for dec.More() {
+		keyTok, e := dec.Token()
+		if e != nil {
+			return 0, 0, false, e
+		}
+		k, ok := keyTok.(string)
+		if !ok {
+			return 0, 0, false, fmt.Errorf("expected string key, got %T", keyTok)
+		}
+		valStart := int(dec.InputOffset())
+		if k != key {
+			if e := skipValue(dec); e != nil {
+				return 0, 0, false, e
+			}
+			continue
+		}
+		// Skip whitespace before colon
+		for valStart < len(data) && (data[valStart] == ' ' || data[valStart] == '\t' || data[valStart] == '\n' || data[valStart] == '\r') {
+			valStart++
+		}
+		// Skip colon
+		if valStart < len(data) && data[valStart] == ':' {
+			valStart++
+		}
+		// Skip whitespace after colon
+		for valStart < len(data) && (data[valStart] == ' ' || data[valStart] == '\t' || data[valStart] == '\n' || data[valStart] == '\r') {
+			valStart++
+		}
+		if e := skipValue(dec); e != nil {
+			return 0, 0, false, e
+		}
+		return valStart, int(dec.InputOffset()), true, nil
+	}
+	return 0, 0, false, nil
 }

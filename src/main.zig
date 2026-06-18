@@ -2459,6 +2459,9 @@ pub fn main(init: std.process.Init) !void {
         const settings_count: usize = 8;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
+        var anim_frame: usize = 0;
+        var anim_timer: i64 = 0;
+        var anim_done: bool = true;
         var status_scroll_top: usize = 0;
         var multi_select_active: bool = false;
         var multi_selected_emojis = std.ArrayList([]const u8).empty;
@@ -3055,7 +3058,9 @@ pub fn main(init: std.process.Init) !void {
                             .{ .key = "version", .val = build_options.version },
                             .{ .key = "theme", .val = theme_str },
                         };
-                        const about_lines = g_spec.strings.about_lines;
+                        const about_frames = g_spec.strings.about_frames;
+                        const cur_frame: usize = if (about_frames.len > 0) @min(anim_frame, about_frames.len - 1) else 0;
+                        const about_lines = if (about_frames.len > 0) about_frames[cur_frame] else &[_][]const u8{};
                         const viewport_h = rows + 3;
                         const needs_scroll = about_lines.len > viewport_h;
                         const max_scroll_a: usize = if (needs_scroll) about_lines.len - viewport_h else 0;
@@ -3563,7 +3568,8 @@ pub fn main(init: std.process.Init) !void {
                                 break :blk if (g_spec.strings.help_lines_more.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .about) {
                                 const vph = rows + 3;
-                                break :blk if (g_spec.strings.about_lines.len > vph) st.view.scrollable else st.view.default;
+                                const abl = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
+                                break :blk if (abl > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
@@ -3776,14 +3782,43 @@ pub fn main(init: std.process.Init) !void {
             // ----------------------------------------------------------------
             // Poll for input: block on both /dev/tty and the signal self-pipe.
             // The timeout implements EMOJIG_PICKER_TIMEOUT without alarm(2).
+            // For animation, shorten the timeout to the next frame deadline.
             // ----------------------------------------------------------------
-            const timeout_ms: i32 = if (active_timeout) |t_sec|
+            var timeout_ms: i32 = if (active_timeout) |t_sec|
                 @as(i32, @intCast(@min(t_sec, @as(c_uint, 2_147)))) * 1_000
             else
                 -1;
 
+            // Shorten timeout for animation frame advance.
+            if (current_screen == .about and !anim_done) {
+                const now_ms = getMonotonicMs();
+                const remaining = anim_timer - now_ms;
+                const anim_ms: i32 = if (remaining <= 0) 0 else @intCast(@min(remaining, 2_147));
+                timeout_ms = if (timeout_ms < 0) anim_ms else @min(timeout_ms, anim_ms);
+            }
+
             switch (tui.poll(stdin_fd, pipe_rd, timeout_ms)) {
-                .timeout => break, // inactivity timeout → exit cleanly via defer
+                .timeout => {
+                    // Advance animation frame on timeout if playing.
+                    if (current_screen == .about and !anim_done) {
+                        const delays = g_spec.strings.about_delays;
+                        const frame_count = g_spec.strings.about_frames.len;
+                        if (frame_count > 0 and delays.len > 0) {
+                            anim_frame += 1;
+                            if (anim_frame >= frame_count) {
+                                anim_frame = frame_count - 1;
+                                anim_done = true;
+                            } else {
+                                const d_idx = @min(anim_frame, delays.len - 1);
+                                anim_timer = getMonotonicMs() + @as(i64, delays[d_idx]);
+                            }
+                        } else {
+                            anim_done = true;
+                        }
+                        continue; // re-render with new frame
+                    }
+                    break; // inactivity timeout → exit cleanly via defer
+                },
                 .pipe => {
                     // Drain all pending signal bytes and dispatch synchronously.
                     var sig_buf: [16]u8 = undefined;
@@ -3952,7 +3987,8 @@ pub fn main(init: std.process.Init) !void {
                                 const viewport_h = rows + 3;
                                 const is_about = current_screen == .about;
                                 const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
+                                const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
                                 const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                                 sp.* = if (wheel_down)
                                     @min(sp.* + step, max_scroll)
@@ -4427,7 +4463,8 @@ pub fn main(init: std.process.Init) !void {
                         } else {
                             const viewport_h = rows + 3;
                             const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
-                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) g_spec.strings.about_lines.len else g_spec.strings.status_lines.len;
+                            const about_lines_len2: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                             if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                                 if (sp.* > 0) sp.* -= 1;
@@ -4487,6 +4524,11 @@ pub fn main(init: std.process.Init) !void {
                                     current_screen = .about;
                                     about_scroll_top = 0;
                                     selected_idx = null;
+                                    // Reset animation for replay on re-enter.
+                                    anim_frame = 0;
+                                    anim_done = false;
+                                    const delays = g_spec.strings.about_delays;
+                                    anim_timer = getMonotonicMs() + @as(i64, if (delays.len > 0) delays[0] else 500);
                                 } else if (std.mem.eql(u8, cmd.action, "open_status")) {
                                     current_screen = .status;
                                     status_scroll_top = 0;
