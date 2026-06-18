@@ -13,9 +13,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -360,7 +363,123 @@ func expandDSL(s string) string {
 
 // loadFrames reads all *.txt files from dir in sorted order and returns
 // each file's lines as one element of the outer slice.
-func loadFrames(dir string) ([][]string, error) {
+// parseFrameName splits a frame base name (like "sheet_0001" or "02") into
+// its prefix (everything before the trailing digits), numeric value, and digit width.
+func parseFrameName(name string) (prefix string, num int, width int, ok bool) {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	i := len(base) - 1
+	for i >= 0 && base[i] >= '0' && base[i] <= '9' {
+		i--
+	}
+	digitStart := i + 1
+	if digitStart == len(base) {
+		return "", 0, 0, false
+	}
+	prefix = base[:digitStart]
+	digits := base[digitStart:]
+	var err error
+	num, err = strconv.Atoi(digits)
+	if err != nil {
+		return "", 0, 0, false
+	}
+	return prefix, num, len(digits), true
+}
+
+// standardANSI is the classic 16-color palette (indices 0–15).
+var standardANSI = [16]color.NRGBA{
+	{0x00, 0x00, 0x00, 0xFF}, // 0  black
+	{0x80, 0x00, 0x00, 0xFF}, // 1  red
+	{0x00, 0x80, 0x00, 0xFF}, // 2  green
+	{0x80, 0x80, 0x00, 0xFF}, // 3  yellow
+	{0x00, 0x00, 0x80, 0xFF}, // 4  blue
+	{0x80, 0x00, 0x80, 0xFF}, // 5  magenta
+	{0x00, 0x80, 0x80, 0xFF}, // 6  cyan
+	{0xC0, 0xC0, 0xC0, 0xFF}, // 7  white
+	{0x80, 0x80, 0x80, 0xFF}, // 8  bright black
+	{0xFF, 0x00, 0x00, 0xFF}, // 9  bright red
+	{0x00, 0xFF, 0x00, 0xFF}, // 10 bright green
+	{0xFF, 0xFF, 0x00, 0xFF}, // 11 bright yellow
+	{0x00, 0x00, 0xFF, 0xFF}, // 12 bright blue
+	{0xFF, 0x00, 0xFF, 0xFF}, // 13 bright magenta
+	{0x00, 0xFF, 0xFF, 0xFF}, // 14 bright cyan
+	{0xFF, 0xFF, 0xFF, 0xFF}, // 15 bright white
+}
+
+// Well-known overrides for specific 256-color indices used in the project.
+var knownColors = map[int]color.NRGBA{
+	214: {0xFF, 0xD7, 0x00, 0xFF}, // amber
+	255: {0xEE, 0xEE, 0xEE, 0xFF}, // white
+	238: {0x44, 0x44, 0x44, 0xFF}, // gray
+	232: {0x08, 0x08, 0x08, 0xFF}, // dark/black
+	209: {0xFF, 0x87, 0x5F, 0xFF}, // pink
+	54:  {0x5F, 0x00, 0x87, 0xFF}, // purple
+}
+
+// idx256ToRGB converts a 256-color terminal index to NRGBA.
+func idx256ToRGB(idx int) color.NRGBA {
+	if c, ok := knownColors[idx]; ok {
+		return c
+	}
+	if idx < 16 {
+		return standardANSI[idx]
+	}
+	if idx >= 232 {
+		// grayscale ramp: 232–255 → 8, 18, 28, …, 238
+		g := uint8(8 + (idx-232)*10)
+		return color.NRGBA{g, g, g, 0xFF}
+	}
+	// 6×6×6 color cube: indices 16–231
+	idx -= 16
+	b := idx % 6
+	idx /= 6
+	g := idx % 6
+	r := idx / 6
+	conv := func(v int) uint8 {
+		if v == 0 {
+			return 0
+		}
+		return uint8(55 + v*40)
+	}
+	return color.NRGBA{conv(r), conv(g), conv(b), 0xFF}
+}
+
+// buildImagePalette creates an indexed color.Palette following priority order.
+func buildImagePalette(priority []string, pal map[string]*int) color.Palette {
+	imgPal := make(color.Palette, len(priority))
+	for i, ch := range priority {
+		colPtr := pal[ch]
+		if colPtr == nil {
+			imgPal[i] = color.NRGBA{0, 0, 0, 0} // transparent
+		} else {
+			imgPal[i] = idx256ToRGB(*colPtr)
+		}
+	}
+	return imgPal
+}
+
+// closestPaletteIndex finds the palette entry closest to c by Euclidean distance.
+func closestPaletteIndex(c color.Color, pal color.Palette) int {
+	cr, cg, cb, ca := c.RGBA()
+	best := 0
+	bestDist := uint64(1<<63 - 1)
+	for i, pc := range pal {
+		pr, pg, pb, pa := pc.RGBA()
+		dr := int64(cr) - int64(pr)
+		dg := int64(cg) - int64(pg)
+		db := int64(cb) - int64(pb)
+		da := int64(ca) - int64(pa)
+		dist := uint64(dr*dr + dg*dg + db*db + da*da)
+		if dist < bestDist {
+			bestDist = dist
+			best = i
+		}
+	}
+	return best
+}
+
+// loadFrames reads all *.png files from dir in sorted order and returns
+// each file's pixel characters as lines of strings.
+func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read frames dir %s: %w", dir, err)
@@ -370,24 +489,58 @@ func loadFrames(dir string) ([][]string, error) {
 		if e.IsDir() {
 			continue
 		}
-		if filepath.Ext(e.Name()) == ".txt" {
+		if filepath.Ext(e.Name()) == ".png" && e.Name() != "preview.png" {
 			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool {
+		pi, numI, _, okI := parseFrameName(names[i])
+		pj, numJ, _, okJ := parseFrameName(names[j])
+		if okI && okJ {
+			if pi != pj {
+				return pi < pj
+			}
+			return numI < numJ
+		}
+		return names[i] < names[j]
+	})
+
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no .txt files found in %s", dir)
+		return nil, fmt.Errorf("no .png files found in %s", dir)
 	}
 	var frames [][]string
 	for _, name := range names {
-		data, err := os.ReadFile(filepath.Join(dir, name))
+		f, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
 			return nil, err
 		}
-		raw := strings.TrimRight(string(data), "\n")
+		img, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("decode %s: %w", name, err)
+		}
+
+		bounds := img.Bounds()
+		w, h := bounds.Dx(), bounds.Dy()
+
 		var lines []string
-		if raw != "" {
-			lines = strings.Split(raw, "\n")
+		for y := 0; y < h; y++ {
+			var sb strings.Builder
+			for x := 0; x < w; x++ {
+				c := img.At(bounds.Min.X+x, bounds.Min.Y+y)
+				_, _, _, ca := c.RGBA()
+				if ca == 0 {
+					sb.WriteString(priority[0])
+				} else {
+					idx := closestPaletteIndex(c, imgPal)
+					if idx < len(priority) {
+						sb.WriteString(priority[idx])
+					} else {
+						sb.WriteString(priority[0])
+					}
+				}
+			}
+			lines = append(lines, sb.String())
 		}
 		frames = append(frames, lines)
 	}
@@ -417,7 +570,8 @@ func main() {
 		// Determine frame shapes: either from frames_dir or inline shape.
 		var shapeFrames [][]string // each element is one frame's shape rows
 		if entry.FramesDir != "" {
-			shapeFrames, err = loadFrames(entry.FramesDir)
+			imgPal := buildImagePalette(spec.Priority, spec.Palette)
+			shapeFrames, err = loadFrames(entry.FramesDir, spec.Priority, imgPal)
 			if err != nil {
 				fatalf("load frames for %q: %v", entry.Name, err)
 			}
