@@ -1340,32 +1340,80 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
     switch (idx) {
         0 => {
             const cb = if (shell_int) "✔" else " ";
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]           shell integration\x1b[0m", .{ bg, sel_prefix, cb });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  shell integration\x1b[0m", .{ bg, sel_prefix, padded });
         },
         1 => {
-            if (key_bind_editing) {
-                return std.fmt.bufPrint(buf, " {s}{s}[{s}▋]       shell key binding\x1b[0m", .{ bg, sel_prefix, key_bind });
-            }
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]         shell key binding\x1b[0m", .{ bg, sel_prefix, key_bind });
+            const val_str = if (key_bind_editing) 
+                try std.fmt.bufPrint(buf[200..], "[{s}▋]", .{key_bind})
+            else
+                try std.fmt.bufPrint(buf[200..], "[{s}]", .{key_bind});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  shell key binding\x1b[0m", .{ bg, sel_prefix, padded });
         },
         2 => {
             const cb = if (show_cats) "✔" else " ";
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]           show all categories\x1b[0m", .{ bg, sel_prefix, cb });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  show all categories\x1b[0m", .{ bg, sel_prefix, padded });
         },
         3 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]      ambiguous chars\x1b[0m", .{ bg, sel_prefix, amb_chars });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{amb_chars});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  ambiguous chars\x1b[0m", .{ bg, sel_prefix, padded });
         },
         4 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]        theme\x1b[0m", .{ bg, sel_prefix, @tagName(theme) });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(theme)});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  theme\x1b[0m", .{ bg, sel_prefix, padded });
         },
         5 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s}]       scrollbar\x1b[0m", .{ bg, sel_prefix, @tagName(scrollbar) });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(scrollbar)});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  scrollbar\x1b[0m", .{ bg, sel_prefix, padded });
         },
         6 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s} {d:>2} {s}]    grid width (cols)\x1b[0m", .{ bg, sel_prefix, lq, grid_cols, rq });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_cols, rq });
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  grid width (cols)\x1b[0m", .{ bg, sel_prefix, padded });
         },
         7 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[{s} {d:>2} {s}]    grid height (rows)\x1b[0m", .{ bg, sel_prefix, lq, grid_rows, rq });
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_rows, rq });
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  grid height (rows)\x1b[0m", .{ bg, sel_prefix, padded });
         },
         else => unreachable,
     }
