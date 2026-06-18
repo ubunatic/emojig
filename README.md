@@ -1,10 +1,10 @@
 # <img src="src/assets/emojig-icon.web.svg" width="38" height="38" align="center" alt="emojig logo" /> emojig — *all your emoji are belong to us!*
 
 [![Codeberg](https://img.shields.io/badge/Codeberg-Repository-3a8fcb?logo=codeberg&logoColor=white)](https://codeberg.org/ubunatic/emojig)
-[![Release](https://img.shields.io/badge/Release-v0.1.6-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
+[![Release](https://img.shields.io/badge/Release-v0.2.0-blue?logo=semver&logoColor=white)](https://codeberg.org/ubunatic/emojig/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-brightgreen?logo=open-source-initiative&logoColor=white)](https://codeberg.org/ubunatic/emojig/src/branch/main/LICENSES)
 [![Language](https://img.shields.io/badge/Language-Zig_0.16-orange?logo=zig&logoColor=white)](https://ziglang.org)
-[![Memory Usage](https://img.shields.io/badge/RAM-%3C%202.5%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
+[![Memory Usage](https://img.shields.io/badge/RAM-%3C%205%20MB%20RSS-violet?logo=speedtest&logoColor=white)](#performance)
 
 A zig-based, low-memory, instant-popup, daemon-free GUI + TUI emoji picker for Linux.
 
@@ -17,7 +17,7 @@ A zig-based, low-memory, instant-popup, daemon-free GUI + TUI emoji picker for L
 
 | | |
 |-|-|
-| 🏎️ **603 KB static binary, < 2.5 MB RSS** | Zero-allocation Zig core, `ReleaseSmall` optimized |
+| 🏎️ **900 KB static binary, < 5 MB RSS** | Zero-allocation Zig core, `ReleaseSmall` optimized |
 | 🌐 **GUI + TUI in one binary** | Auto-detects terminal vs. desktop and picks the right mode |
 | 🔍 **Instant fuzzy search** | Multi-term, plural / stem fallbacks (`cars`→`car`, `racing`→`race`) |
 | 📦 **2,249 emojis embedded** | Compile-time `@embedFile` — no data files, no network |
@@ -108,8 +108,8 @@ See **[Advanced Usage](docs/Advanced.md)** for:
 
 | Metric | Value |
 |--------|-------|
-| Binary size | **603 KB** (static musl, no runtime deps) |
-| RAM | **< 2.5 MB RSS** during operation |
+| Binary size | **900 KB** (static musl, no runtime deps) |
+| RAM | **< 5 MB RSS** during operation |
 | Database | 2,249 emojis embedded at compile time |
 
 Memory usage is self-reported to `/tmp/emojig.log` at exit.
