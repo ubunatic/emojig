@@ -1,6 +1,7 @@
 # Zig/Go build directories
 .zig-cache/
 zig-out/
+zig-cache/
 dist/
 /mojigo
 /record

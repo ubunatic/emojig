@@ -19,6 +19,14 @@ pub fn parseMode(val: ?[]const u8) Mode {
     return .eat;
 }
 
+test "parseMode" {
+    try std.testing.expectEqual(Mode.eat, parseMode(null));
+    try std.testing.expectEqual(Mode.altscreen, parseMode("altscreen"));
+    try std.testing.expectEqual(Mode.eat, parseMode("eat"));
+    try std.testing.expectEqual(Mode.eat, parseMode("unknown"));
+    try std.testing.expectEqual(Mode.eat, parseMode(""));
+}
+
 pub const ResizeContext = struct {
     mode: Mode,
     is_hidden: bool = false,
