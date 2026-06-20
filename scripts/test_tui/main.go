@@ -275,7 +275,12 @@ func main() {
 	fmt.Println("PASS: Category autocompletion test passed.")
 
 	fmt.Println()
-	fmt.Println("=== Test 5: Multi-selection mode test ===")
+	fmt.Println("=== Test 5: Quit command test (:q and /quit) ===")
+	runQuitCommandTest(binaryPath)
+	fmt.Println("PASS: Quit command test passed.")
+
+	fmt.Println()
+	fmt.Println("=== Test 6: Multi-selection mode test ===")
 	runMultiSelectTest(binaryPath)
 	fmt.Println("PASS: Multi-selection mode test passed.")
 
@@ -699,6 +704,184 @@ func runMultiSelectTest(binaryPath string) {
 		os.Exit(1)
 	}
 	fmt.Println("PASS: process exited cleanly on Shift-Enter.")
+}
+
+func runQuitCommandTest(binaryPath string) {
+	// 1. Test :q command
+	{
+		master, slaveName := spawnPTY()
+		defer master.Close()
+
+		slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+		if err != nil {
+			fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+			os.Exit(1)
+		}
+		defer slave.Close()
+
+		type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+		ws := winsize{Row: 24, Col: 80}
+		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+		cmd := exec.Command(binaryPath, "--tui")
+		cmd.Stdin = slave
+		cmd.Stdout = slave
+		cmd.Stderr = slave
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid:  true,
+			Setctty: true,
+			Ctty:    0,
+		}
+		cmd.Env = append(os.Environ(), "EMOJIG_EXIT_PREVIEW=0")
+
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("Error starting command: %v\n", err)
+			os.Exit(1)
+		}
+		slave.Close()
+
+		chunksChan := make(chan string, 100)
+		go func() {
+			buf := make([]byte, 65536)
+			for {
+				n, err := master.Read(buf)
+				if n > 0 {
+					s := string(buf[:n])
+					chunksChan <- s
+					if strings.Contains(s, "\x1b[6n") {
+						master.Write([]byte("\x1b[24;80R"))
+					}
+				}
+				if err != nil {
+					close(chunksChan)
+					return
+				}
+			}
+		}()
+
+		// Wait for initial render.
+		time.Sleep(300 * time.Millisecond)
+
+		// Type ":q"
+		if _, err := master.Write([]byte(":q")); err != nil {
+			fmt.Printf("Error typing :q: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		time.Sleep(200 * time.Millisecond)
+
+		// Press Enter to execute the command
+		if _, err := master.Write([]byte("\n")); err != nil {
+			fmt.Printf("Error writing Enter: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+
+		exitChan := make(chan error, 1)
+		go func() { exitChan <- cmd.Wait() }()
+
+		select {
+		case err := <-exitChan:
+			if err != nil {
+				fmt.Printf("FAIL: quit command :q failed to exit cleanly: %v\n", err)
+				os.Exit(1)
+			}
+		case <-time.After(1500 * time.Millisecond):
+			fmt.Println("FAIL: quit command :q did not exit within 1.5 s — force killing.")
+			cmd.Process.Kill()
+			<-exitChan
+			os.Exit(1)
+		}
+		fmt.Println("PASS: quit command :q exited cleanly.")
+	}
+
+	// 2. Test /quit command
+	{
+		master, slaveName := spawnPTY()
+		defer master.Close()
+
+		slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+		if err != nil {
+			fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+			os.Exit(1)
+		}
+		defer slave.Close()
+
+		type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+		ws := winsize{Row: 24, Col: 80}
+		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+		cmd := exec.Command(binaryPath, "--tui")
+		cmd.Stdin = slave
+		cmd.Stdout = slave
+		cmd.Stderr = slave
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid:  true,
+			Setctty: true,
+			Ctty:    0,
+		}
+		cmd.Env = append(os.Environ(), "EMOJIG_EXIT_PREVIEW=0")
+
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("Error starting command: %v\n", err)
+			os.Exit(1)
+		}
+		slave.Close()
+
+		chunksChan := make(chan string, 100)
+		go func() {
+			buf := make([]byte, 65536)
+			for {
+				n, err := master.Read(buf)
+				if n > 0 {
+					s := string(buf[:n])
+					chunksChan <- s
+					if strings.Contains(s, "\x1b[6n") {
+						master.Write([]byte("\x1b[24;80R"))
+					}
+				}
+				if err != nil {
+					close(chunksChan)
+					return
+				}
+			}
+		}()
+
+		// Wait for initial render.
+		time.Sleep(300 * time.Millisecond)
+
+		// Type "/quit"
+		if _, err := master.Write([]byte("/quit")); err != nil {
+			fmt.Printf("Error typing /quit: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		time.Sleep(200 * time.Millisecond)
+
+		// Press Enter to execute the command
+		if _, err := master.Write([]byte("\n")); err != nil {
+			fmt.Printf("Error writing Enter: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+
+		exitChan := make(chan error, 1)
+		go func() { exitChan <- cmd.Wait() }()
+
+		select {
+		case err := <-exitChan:
+			if err != nil {
+				fmt.Printf("FAIL: quit command /quit failed to exit cleanly: %v\n", err)
+				os.Exit(1)
+			}
+		case <-time.After(1500 * time.Millisecond):
+			fmt.Println("FAIL: quit command /quit did not exit within 1.5 s — force killing.")
+			cmd.Process.Kill()
+			<-exitChan
+			os.Exit(1)
+		}
+		fmt.Println("PASS: quit command /quit exited cleanly.")
+	}
 }
 
 

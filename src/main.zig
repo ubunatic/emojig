@@ -2672,7 +2672,7 @@ pub fn main(init: std.process.Init) !void {
 
             const is_cmd_autocomplete = (current_screen == .search and query_len > 0 and (query_buf[0] == ':' or query_buf[0] == '/'));
             const cmd_prefix: u8 = if (is_cmd_autocomplete) query_buf[0] else ':';
-            var cmd_matches: [8]usize = undefined;
+            var cmd_matches: [16]usize = undefined;
             var cmd_match_count: usize = 0;
             if (is_cmd_autocomplete) {
                 const cmd_query = query_buf[1..query_len];
@@ -4643,6 +4643,8 @@ pub fn main(init: std.process.Init) !void {
                                     current_screen = .search;
                                     selected_idx = null;
                                     total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                } else if (std.mem.eql(u8, cmd.action, "quit_app")) {
+                                    break;
                                 }
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {

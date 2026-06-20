@@ -35,6 +35,11 @@
       "name": "status",
       "short": "st",
       "action": "open_status"
+    },
+    {
+      "name": "quit",
+      "short": "q",
+      "action": "quit_app"
     }
   ]
 }
