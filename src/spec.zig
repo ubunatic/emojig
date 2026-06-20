@@ -157,6 +157,8 @@ pub const StatusCategories = struct {
 pub const StatusView = struct {
     default: []const u8 = " q/Esc:close",
     scrollable: []const u8 = " ↕:scroll  q/Esc:close",
+    about: []const u8 = " Space:replay  q/Esc:close",
+    about_scrollable: []const u8 = " ↕:scroll Space:replay  q/Esc:close",
 };
 
 pub const StatusCommands = struct {

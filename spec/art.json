@@ -36,13 +36,15 @@
     " ": "dark",
     "p": "pink",
     "P": "purple",
+    "b": "Midnight Blue",
+    "y": "Dark Goldenrod",
     ".": null,
     "-": null,
     "_": null
   },
   "priority": [
     ".", "-","_",
-    " ", "#", "*", "+", "p"
+    " ", "#", "*", "+", "p", "b", "y"
   ],
   "art": [
     {
@@ -51,7 +53,10 @@
       "mode": "quad",
       "spaced": false,
       "indent": "   ",
-      "frames_dir": "spec/art/about/",
+      "stack": [
+        "spec/art/frames/emojig_fall",
+        { "path": "spec/art/frames/emojig_spin_emo", "fps": 10 }
+      ],
       "fps": 30,
       "start_delay_ms": 200,
       "end_delay_ms": 0,

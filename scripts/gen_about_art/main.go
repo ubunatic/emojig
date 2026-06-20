@@ -78,20 +78,45 @@ func resolvePalette(raw map[string]json.RawMessage, colors map[string]int) (map[
 	return out, nil
 }
 
+type StackItem struct {
+	Path string
+	Fps  int
+}
+
+func (s *StackItem) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		s.Path = str
+		s.Fps = 0
+		return nil
+	}
+	var obj struct {
+		Path string `json:"path"`
+		Fps  int    `json:"fps"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		s.Path = obj.Path
+		s.Fps = obj.Fps
+		return nil
+	}
+	return fmt.Errorf("invalid stack item: %s", string(data))
+}
+
 type ArtEntry struct {
-	Name         string   `json:"name"`
-	Target       string   `json:"target"`
-	Mode         string   `json:"mode"`
-	Spaced       bool     `json:"spaced"`
-	Indent       string   `json:"indent"`
-	Header       []string `json:"header"`
-	Footer       []string `json:"footer"`
-	Shape        []string `json:"shape"`
-	FramesDir    string   `json:"frames_dir"`
-	DelaysMs     []int    `json:"delays_ms"`
-	Fps          int      `json:"fps"`
-	StartDelayMs *int     `json:"start_delay_ms"`
-	EndDelayMs   *int     `json:"end_delay_ms"`
+	Name         string      `json:"name"`
+	Target       string      `json:"target"`
+	Mode         string      `json:"mode"`
+	Spaced       bool        `json:"spaced"`
+	Indent       string      `json:"indent"`
+	Header       []string    `json:"header"`
+	Footer       []string    `json:"footer"`
+	Shape        []string    `json:"shape"`
+	FramesDir    string      `json:"frames_dir"`
+	Stack        []StackItem `json:"stack"`
+	DelaysMs     []int       `json:"delays_ms"`
+	Fps          int         `json:"fps"`
+	StartDelayMs *int        `json:"start_delay_ms"`
+	EndDelayMs   *int        `json:"end_delay_ms"`
 }
 
 // buildDelays returns one delay (ms) per frame.
@@ -506,9 +531,19 @@ func closestPaletteIndex(c color.Color, pal color.Palette) int {
 	return best
 }
 
-// loadFrames reads all *.png files from dir in sorted order and returns
-// each file's pixel characters as lines of strings.
-func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string, error) {
+// loadFramesFromPath reads *.png files from dir in sorted order, optionally
+// filtering by filename prefix, and returns each file's pixel characters.
+func loadFramesFromPath(path string, priority []string, imgPal color.Palette) ([][]string, error) {
+	fi, err := os.Stat(path)
+	var dir, prefix string
+	if err == nil && fi.IsDir() {
+		dir = path
+		prefix = ""
+	} else {
+		dir = filepath.Dir(path)
+		prefix = filepath.Base(path)
+	}
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read frames dir %s: %w", dir, err)
@@ -521,9 +556,17 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 		if filepath.Ext(e.Name()) != ".png" {
 			continue
 		}
-		if _, _, _, ok := parseFrameName(e.Name()); ok {
-			names = append(names, e.Name())
+		name := e.Name()
+		filePrefix, _, _, ok := parseFrameName(name)
+		if !ok {
+			continue
 		}
+		if prefix != "" {
+			if filePrefix != prefix && filePrefix != prefix+"_" && filePrefix != prefix+"-" {
+				continue
+			}
+		}
+		names = append(names, name)
 	}
 	sort.Slice(names, func(i, j int) bool {
 		pi, numI, _, okI := parseFrameName(names[i])
@@ -538,7 +581,7 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 	})
 
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no .png files found in %s", dir)
+		return nil, fmt.Errorf("no .png files found in %s with prefix %q", dir, prefix)
 	}
 	var frames [][]string
 	for _, name := range names {
@@ -579,6 +622,12 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 	return frames, nil
 }
 
+// loadFrames reads all *.png files from dir in sorted order and returns
+// each file's pixel characters as lines of strings.
+func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string, error) {
+	return loadFramesFromPath(dir, priority, imgPal)
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 func main() {
@@ -599,9 +648,111 @@ func main() {
 	spec := ArtSpec{Palette: palette, Priority: raw.Priority, Art: raw.Art}
 
 	for _, entry := range spec.Art {
-		// Determine frame shapes: either from frames_dir or inline shape.
+		// Determine frame shapes: from stack, frames_dir or inline shape.
 		var shapeFrames [][]string // each element is one frame's shape rows
-		if entry.FramesDir != "" {
+		if len(entry.Stack) > 0 {
+			imgPal := buildImagePalette(spec.Priority, spec.Palette)
+			var stackFrames [][][]string
+			for _, item := range entry.Stack {
+				frames, err := loadFramesFromPath(item.Path, spec.Priority, imgPal)
+				if err != nil {
+					fatalf("load stack frame %q for %q: %v", item.Path, entry.Name, err)
+				}
+				stackFrames = append(stackFrames, frames)
+			}
+
+			// Resolve target FPS
+			targetFps := entry.Fps
+			if targetFps == 0 {
+				targetFps = 30
+			}
+
+			// Validate and calculate maxFrames using exact integer divisions/multiples.
+			maxFrames := 0
+			for k, frames := range stackFrames {
+				itemFps := entry.Stack[k].Fps
+				if itemFps == 0 {
+					itemFps = targetFps
+				}
+				if targetFps%itemFps != 0 {
+					fatalf("%q: target fps (%d) must be a multiple of stack item %q fps (%d)",
+						entry.Name, targetFps, entry.Stack[k].Path, itemFps)
+				}
+				factor := targetFps / itemFps
+				needed := len(frames) * factor
+				if needed > maxFrames {
+					maxFrames = needed
+				}
+			}
+
+			maxWidth := 0
+			for _, frames := range stackFrames {
+				if len(frames) > 0 && len(frames[0]) > 0 {
+					w := len([]rune(frames[0][0]))
+					if w > maxWidth {
+						maxWidth = w
+					}
+				}
+			}
+
+			shapeFrames = make([][]string, maxFrames)
+			for i := 0; i < maxFrames; i++ {
+				var combinedFrame []string
+				for k, frames := range stackFrames {
+					itemFps := entry.Stack[k].Fps
+					if itemFps == 0 {
+						itemFps = targetFps
+					}
+					// Map time/frame index concretely (target_fps % itemFps == 0)
+					fIdx := (i * itemFps) / targetFps
+					if fIdx >= len(frames) {
+						fIdx = len(frames) - 1
+					}
+					frameRows := frames[fIdx]
+					for _, row := range frameRows {
+						rowRunes := []rune(row)
+						if len(rowRunes) < maxWidth {
+							paddingChar := spec.Priority[0]
+							padded := string(rowRunes) + strings.Repeat(paddingChar, maxWidth-len(rowRunes))
+							combinedFrame = append(combinedFrame, padded)
+						} else {
+							combinedFrame = append(combinedFrame, row)
+						}
+					}
+				}
+				shapeFrames[i] = combinedFrame
+			}
+
+			// Validate consistent dimensions across frames.
+			if len(shapeFrames) > 0 {
+				refRows := len(shapeFrames[0])
+				refCols := 0
+				if refRows > 0 {
+					refCols = len([]rune(shapeFrames[0][0]))
+				}
+				for i, frame := range shapeFrames {
+					if len(frame) != refRows {
+						fatalf("%q: frame %d has %d rows, expected %d",
+							entry.Name, i, len(frame), refRows)
+					}
+					for r, row := range frame {
+						if len([]rune(row)) != refCols {
+							fatalf("%q: frame %d row %d has %d cols, expected %d",
+								entry.Name, i, r, len([]rune(row)), refCols)
+						}
+					}
+				}
+				// Validate even dimensions for quad mode.
+				if entry.Mode == "quad" {
+					if refRows%2 != 0 {
+						fatalf("%q: quad mode needs even row count, got %d", entry.Name, refRows)
+					}
+					if refCols%2 != 0 {
+						fatalf("%q: quad mode needs even column count, got %d", entry.Name, refCols)
+					}
+				}
+			}
+		} else if entry.FramesDir != "" {
 			imgPal := buildImagePalette(spec.Priority, spec.Palette)
 			shapeFrames, err = loadFrames(entry.FramesDir, spec.Priority, imgPal)
 			if err != nil {
@@ -637,7 +788,7 @@ func main() {
 		} else if entry.Shape != nil {
 			shapeFrames = [][]string{entry.Shape}
 		} else {
-			fatalf("%q: art entry has neither 'shape' nor 'frames_dir'", entry.Name)
+			fatalf("%q: art entry has neither 'shape', 'frames_dir', nor 'stack'", entry.Name)
 		}
 
 		// Compile each frame.

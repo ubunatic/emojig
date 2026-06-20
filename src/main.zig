@@ -3641,7 +3641,7 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .about) {
                                 const vph = rows + 3;
                                 const abl = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                                break :blk if (abl > vph) st.view.scrollable else st.view.default;
+                                break :blk if (abl > vph) st.view.about_scrollable else st.view.about;
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
@@ -4527,7 +4527,12 @@ pub fn main(init: std.process.Init) !void {
                             total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .about or current_screen == .help or current_screen == .status) {
-                        if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
+                        if (current_screen == .about and std.mem.eql(u8, name, "space")) {
+                            anim_frame = 0;
+                            anim_done = false;
+                            const delays = g_spec.strings.about_delays;
+                            anim_timer = getMonotonicMs() + @as(i64, if (delays.len > 0) delays[0] else 500);
+                        } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
