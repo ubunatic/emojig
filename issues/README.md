@@ -17,6 +17,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**16**](16-tui-flicker.md) | [Zig TUI flickering during rapid redraws](16-tui-flicker.md) | **P2** | Redundant pre-clearing of lines (`\x1b[2K\r`) at the start of drawing each row causes visual flicker. Rely entirely on trailing clear (`\x1b[K`) instead. |
 | [**18**](18-update-rpm-mode.md) | [`:update` command: RPM install mode](18-update-rpm-mode.md) | **P3** | `:update` detects dev/deb/curl modes but not RPM. Documents detection heuristic, `dnf upgrade` vs manual `.rpm` download path, and `captureShellCmd` wiring needed. |
 | [**19**](19-update-brew-mode.md) | [`:update` command: Homebrew install mode](19-update-brew-mode.md) | **P3 (blocked)** | `:update` has no Homebrew branch. Blocked on issue 02 (tap not live) and Linux-only build. Documents detection via Cellar path and `brew upgrade` command. |
+| [**21**](21-color-system-simplification.md) | [Color System Simplification](21-color-system-simplification.md) | **P2** | Consolidate the color definitions and conversions, eliminate hardcoded overrides in the generator, and use `spec/colors.json` as the single source of truth. |
 
 ---
 
