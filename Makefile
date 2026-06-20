@@ -72,9 +72,6 @@ bench: ⚙️  # run search benchmarks comparing debug vs release (5 s per query
 tui: ⚙️  # run TUI mode (stdout path: prints selected emoji to terminal)
 	zig build && zig-out/bin/emojig --tui | cat
 
-tui-go: ⚙️  # run Go TUI port (mojigo) in the current terminal
-	go run ./cmd/mojigo/ --height 10
-
 tui-rust: ⚙️  # run Rust TUI demo in the current terminal
 	cargo run --bin inline-demo -- --height 10
 
@@ -212,7 +209,6 @@ worktree: ⚙️  # create a sibling git worktree ready to build (usage: make wo
 	@echo "   remove later with: git worktree remove $(WORKTREE_DIR)"
 
 uninstall: ⚙️  # remove binary, shell integration, and desktop entry
-	@rm -f  "$$GOPATH/bin/mojigo"
 	@rm -f  ~/.local/bin/emojig
 	@rm -rf ~/.local/share/emojig
 	@rm -f  ~/.local/share/applications/emojig-picker.desktop
@@ -225,11 +221,9 @@ install-small: ⚙️  # install the smallest possible binary (LLVM ReleaseSmall
 	@$(MAKE) install OPTIMIZE=ReleaseSmall LLVM=true
 
 install: ⚙️  # install binary, shell integrations, and desktop launcher (fast build, default)
-	@go install ./cmd/mojigo
 	@zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) && exit 1)
 	@echo "✅ Emojig installed successfully!"
 	@echo "   - Binary:    ~/.local/bin/emojig"
-	@echo "   - Go Binary: $$GOPATH/bin/mojigo"
 	@echo "   - Shells:    ~/.local/share/emojig/shell/emojig.{bash,zsh,fish}"
 	@echo "   - Launcher:  ~/.local/share/applications/emojig-picker.desktop"
 

@@ -2997,8 +2997,8 @@ pub fn main(init: std.process.Init) !void {
                         } else {
                             try writeAll(stdout_fd, " ");
                             try writeAll(stdout_fd, palette.search_bg);
-                            // The spec prompt carries a leading margin space for mojigo's
-                            // layout; the Zig renderer emits its own margin above, so trim it.
+                            // The spec prompt carries a leading margin space; trim it
+                            // since the Zig renderer emits its own margin above.
                             try writeAll(stdout_fd, std.mem.trimStart(u8, g_spec.strings.search_prompt, " "));
                             if (query_len == 0) {
                                 const placeholder = g_spec.strings.search_placeholder;

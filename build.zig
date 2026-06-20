@@ -108,7 +108,7 @@ pub fn build(b: *std.Build) void {
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
-    // Embed the declarative UI spec (shared with the Go `mojigo` port) so the
+    // Embed the declarative UI spec so the
     // binary is self-contained. `src/` is the module root, so @embedFile cannot
     // reach `../spec`; registering the files as anonymous imports makes them
     // available to @embedFile by import name from any file in this module.

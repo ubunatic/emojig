@@ -4,14 +4,13 @@
 //! Runtime loader for the declarative UI spec (`spec/*.json`).
 //!
 //! These JSON files are the single source of truth for the layout, theme,
-//! key bindings, and UI strings, shared with the Go `mojigo` port. They are
+//! key bindings, and UI strings. They are
 //! embedded into the binary (see build.zig anonymous imports) and parsed once
 //! at startup into a `Spec`. All allocations are made into a caller-provided
 //! arena that lives for the process lifetime (the hot picker loop stays
 //! allocation-free; parsing happens only at startup).
 //!
-//! Edit the JSON to change grid sizes, colors, bindings, or text — both the
-//! Zig app and mojigo pick the change up.
+//! Edit the JSON to change grid sizes, colors, bindings, or text.
 
 const std = @import("std");
 const term = @import("term.zig");

@@ -1,5 +1,5 @@
 {
-  "description": "Language-neutral layout spec for the emojig/mojigo picker. Consumed by Go (internal/spec) today and reusable by a future Zig rewrite. Mirrors src/defaults.zig.",
+  "description": "Language-neutral layout spec for the emojig picker. Consumed by the Zig app. Mirrors src/defaults.zig.",
   "tui": {
     "cols": 8,
     "rows": 10,
