@@ -443,6 +443,18 @@ fn appendIndexedColor(codes: []u16, n: *usize, idx: u16, normal: u16, bright: u1
 fn colorNameToIndex(val: []const u8) ?u16 {
     if (g_colors) |c| {
         if (c.indexOf(val)) |idx| return idx;
+        if (val.len > 0 and val[0] == '#') {
+            if (spec_mod.parseHex(val)) |rgb| {
+                for (c.colors) |gc| {
+                    if (spec_mod.parseHex(gc.hex)) |g_rgb| {
+                        if (g_rgb[0] == rgb[0] and g_rgb[1] == rgb[1] and g_rgb[2] == rgb[2]) {
+                            return gc.i;
+                        }
+                    }
+                }
+                return c.closestColorIndex(rgb);
+            }
+        }
     }
     return std.fmt.parseInt(u16, val, 10) catch null;
 }
@@ -5061,6 +5073,23 @@ test "color names from spec/colors.json resolve to palette indices" {
     // Numeric fallback and unknown names.
     try std.testing.expectEqual(@as(?u16, 240), colorNameToIndex("240"));
     try std.testing.expectEqual(@as(?u16, null), colorNameToIndex("not-a-color"));
+
+    // Verify refactored color system:
+    // a) long name "Midnight Blue" (case-insensitive & space/punctuation-insensitive)
+    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("Midnight Blue"));
+    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("midnight blue"));
+    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("midnight-blue"));
+    // b) short name "blue"
+    try std.testing.expectEqual(@as(?u16, 12), colorNameToIndex("blue"));
+    // c) 3-letter names "blu"
+    try std.testing.expectEqual(@as(?u16, 12), colorNameToIndex("blu"));
+    // d) ansi color number: 220
+    try std.testing.expectEqual(@as(?u16, 220), colorNameToIndex("220"));
+    // e) short or long hex: "#fff" "#ffffff"
+    try std.testing.expectEqual(@as(?u16, 15), colorNameToIndex("#fff"));
+    try std.testing.expectEqual(@as(?u16, 15), colorNameToIndex("#ffffff"));
+    // hex closest match fallback
+    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("#005f86"));
 
     // Extended-form escape for a named colour beyond the 16 system slots.
     var buf: [16]u8 = undefined;

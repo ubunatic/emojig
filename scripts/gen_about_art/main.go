@@ -35,9 +35,26 @@ const link = "\x1b]8;;https://ubunatic.com/emojig\x1b\\ubunatic.com/emojig\x1b]8
 
 // ── JSON shapes ──────────────────────────────────────────────────────────────
 
+// Global Colors Schema loaded from spec/colors.json
+type GlobalColor struct {
+	I     int      `json:"i"`
+	Name  string   `json:"name"`
+	Short string   `json:"short"`
+	Hex   string   `json:"hex"`
+	Desc  string   `json:"desc"`
+	Alt   []string `json:"alt"`
+}
+
+type GlobalColorsSpec struct {
+	Colors []GlobalColor `json:"colors"`
+}
+
+var globalColors []GlobalColor
+var globalRGBs [256]color.NRGBA
+
 // rawArtSpec is the unmarshalled shape before palette resolution.
 type rawArtSpec struct {
-	Colors   map[string]int               `json:"colors"`
+	Colors   map[string]json.RawMessage   `json:"colors"`
 	Palette  map[string]json.RawMessage   `json:"palette"`
 	Priority []string                     `json:"priority"`
 	Art      []ArtEntry                   `json:"art"`
@@ -49,30 +66,173 @@ type ArtSpec struct {
 	Art      []ArtEntry
 }
 
+func normalizeColorName(s string) string {
+	s = strings.ToLower(s)
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+func parseHexGo(h string) (color.NRGBA, error) {
+	h = strings.TrimPrefix(h, "#")
+	if len(h) == 3 {
+		r, err := strconv.ParseUint(h[0:1], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		g, err := strconv.ParseUint(h[1:2], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		b, err := strconv.ParseUint(h[2:3], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		return color.NRGBA{uint8(r * 17), uint8(g * 17), uint8(b * 17), 255}, nil
+	} else if len(h) == 6 {
+		r, err := strconv.ParseUint(h[0:2], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		g, err := strconv.ParseUint(h[2:4], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		b, err := strconv.ParseUint(h[4:6], 16, 8)
+		if err != nil {
+			return color.NRGBA{}, err
+		}
+		return color.NRGBA{uint8(r), uint8(g), uint8(b), 255}, nil
+	}
+	return color.NRGBA{}, fmt.Errorf("invalid hex color: %s", h)
+}
+
+func closestSchemaColor(c color.NRGBA, schema []GlobalColor) GlobalColor {
+	best := schema[0]
+	bestDist := uint64(1<<63 - 1)
+	cr, cg, cb := c.R, c.G, c.B
+	for _, gc := range schema {
+		pc, err := parseHexGo(gc.Hex)
+		if err != nil {
+			continue
+		}
+		dr := int64(cr) - int64(pc.R)
+		dg := int64(cg) - int64(pc.G)
+		db := int64(cb) - int64(pc.B)
+		dist := uint64(dr*dr + dg*dg + db*db)
+		if dist < bestDist {
+			bestDist = dist
+			best = gc
+		}
+	}
+	return best
+}
+
+func resolveRawColor(v json.RawMessage) (int, error) {
+	var num int
+	if err := json.Unmarshal(v, &num); err == nil {
+		if num >= 0 && num <= 255 {
+			return num, nil
+		}
+		return 0, fmt.Errorf("invalid color index: %d", num)
+	}
+	var str string
+	if err := json.Unmarshal(v, &str); err != nil {
+		return 0, fmt.Errorf("expected number or string, got %s", string(v))
+	}
+	// Try parsing as integer string
+	if idx, err := strconv.Atoi(str); err == nil {
+		if idx >= 0 && idx <= 255 {
+			return idx, nil
+		}
+		return 0, fmt.Errorf("invalid color index: %d", idx)
+	}
+	// Try parsing as hex
+	if strings.HasPrefix(str, "#") {
+		rgb, err := parseHexGo(str)
+		if err != nil {
+			return 0, err
+		}
+		// Check exact match in schema
+		for _, gc := range globalColors {
+			if gc.Hex == str {
+				return gc.I, nil
+			}
+		}
+		// Check normalized exact hex match
+		for _, gc := range globalColors {
+			gcRGB := globalRGBs[gc.I]
+			if gcRGB.R == rgb.R && gcRGB.G == rgb.G && gcRGB.B == rgb.B {
+				return gc.I, nil
+			}
+		}
+		// Warning and match to closest
+		closest := closestSchemaColor(rgb, globalColors)
+		fmt.Fprintf(os.Stderr, "Warning: hex color %q is not compatible with the schema, matching to closest color %q (index %d, hex %s)\n", str, closest.Name, closest.I, closest.Hex)
+		return closest.I, nil
+	}
+
+	// Normalize and look up in globalColors
+	norm := normalizeColorName(str)
+	for _, gc := range globalColors {
+		if normalizeColorName(gc.Name) == norm || (gc.Short != "" && normalizeColorName(gc.Short) == norm) {
+			return gc.I, nil
+		}
+		for _, a := range gc.Alt {
+			if normalizeColorName(a) == norm {
+				return gc.I, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("unknown color name: %q", str)
+}
+
 // resolvePalette turns raw palette entries (null | number | "name") into *int.
-func resolvePalette(raw map[string]json.RawMessage, colors map[string]int) (map[string]*int, error) {
-	out := make(map[string]*int, len(raw))
-	for k, v := range raw {
+func resolvePalette(rawPalette map[string]json.RawMessage, rawColors map[string]json.RawMessage) (map[string]*int, error) {
+	// First resolve the local colors overrides
+	localColors := make(map[string]int)
+	for name, rawVal := range rawColors {
+		idx, err := resolveRawColor(rawVal)
+		if err != nil {
+			return nil, fmt.Errorf("resolve local color %q: %w", name, err)
+		}
+		localColors[name] = idx
+	}
+
+	out := make(map[string]*int, len(rawPalette))
+	for k, v := range rawPalette {
 		if string(v) == "null" {
 			out[k] = nil
 			continue
 		}
-		// try number first
-		var num int
-		if err := json.Unmarshal(v, &num); err == nil {
-			n := num
-			out[k] = &n
-			continue
+		
+		// If it matches a local override name or global color name
+		var str string
+		if err := json.Unmarshal(v, &str); err == nil {
+			// Check local overrides first
+			if idx, ok := localColors[str]; ok {
+				n := idx
+				out[k] = &n
+				continue
+			}
+			// Check global colors
+			if idx, err := resolveRawColor(v); err == nil {
+				n := idx
+				out[k] = &n
+				continue
+			}
 		}
-		// try string name
-		var name string
-		if err := json.Unmarshal(v, &name); err != nil {
-			return nil, fmt.Errorf("palette key %q: expected null, number, or color name, got %s", k, v)
+
+		// Fallback to direct resolution of raw palette entry
+		idx, err := resolveRawColor(v)
+		if err != nil {
+			return nil, fmt.Errorf("palette key %q: %w", k, err)
 		}
-		n, ok := colors[name]
-		if !ok {
-			return nil, fmt.Errorf("palette key %q references unknown color %q", k, name)
-		}
+		n := idx
 		out[k] = &n
 	}
 	return out, nil
@@ -439,62 +599,12 @@ func parseFrameName(name string) (prefix string, num int, width int, ok bool) {
 	return prefix, num, len(digits), true
 }
 
-// standardANSI is the classic 16-color palette (indices 0–15).
-var standardANSI = [16]color.NRGBA{
-	{0x00, 0x00, 0x00, 0xFF}, // 0  black
-	{0x80, 0x00, 0x00, 0xFF}, // 1  red
-	{0x00, 0x80, 0x00, 0xFF}, // 2  green
-	{0x80, 0x80, 0x00, 0xFF}, // 3  yellow
-	{0x00, 0x00, 0x80, 0xFF}, // 4  blue
-	{0x80, 0x00, 0x80, 0xFF}, // 5  magenta
-	{0x00, 0x80, 0x80, 0xFF}, // 6  cyan
-	{0xC0, 0xC0, 0xC0, 0xFF}, // 7  white
-	{0x80, 0x80, 0x80, 0xFF}, // 8  bright black
-	{0xFF, 0x00, 0x00, 0xFF}, // 9  bright red
-	{0x00, 0xFF, 0x00, 0xFF}, // 10 bright green
-	{0xFF, 0xFF, 0x00, 0xFF}, // 11 bright yellow
-	{0x00, 0x00, 0xFF, 0xFF}, // 12 bright blue
-	{0xFF, 0x00, 0xFF, 0xFF}, // 13 bright magenta
-	{0x00, 0xFF, 0xFF, 0xFF}, // 14 bright cyan
-	{0xFF, 0xFF, 0xFF, 0xFF}, // 15 bright white
-}
-
-// Well-known overrides for specific 256-color indices used in the project.
-var knownColors = map[int]color.NRGBA{
-	214: {0xFF, 0xD7, 0x00, 0xFF}, // amber
-	255: {0xEE, 0xEE, 0xEE, 0xFF}, // white
-	238: {0x44, 0x44, 0x44, 0xFF}, // gray
-	232: {0x08, 0x08, 0x08, 0xFF}, // dark/black
-	209: {0xFF, 0x87, 0x5F, 0xFF}, // pink
-	54:  {0x5F, 0x00, 0x87, 0xFF}, // purple
-}
-
-// idx256ToRGB converts a 256-color terminal index to NRGBA.
+// idx256ToRGB converts a 256-color terminal index to NRGBA using the global schema.
 func idx256ToRGB(idx int) color.NRGBA {
-	if c, ok := knownColors[idx]; ok {
-		return c
+	if idx < 0 || idx > 255 {
+		return color.NRGBA{0, 0, 0, 0}
 	}
-	if idx < 16 {
-		return standardANSI[idx]
-	}
-	if idx >= 232 {
-		// grayscale ramp: 232–255 → 8, 18, 28, …, 238
-		g := uint8(8 + (idx-232)*10)
-		return color.NRGBA{g, g, g, 0xFF}
-	}
-	// 6×6×6 color cube: indices 16–231
-	idx -= 16
-	b := idx % 6
-	idx /= 6
-	g := idx % 6
-	r := idx / 6
-	conv := func(v int) uint8 {
-		if v == 0 {
-			return 0
-		}
-		return uint8(55 + v*40)
-	}
-	return color.NRGBA{conv(r), conv(g), conv(b), 0xFF}
+	return globalRGBs[idx]
 }
 
 // buildImagePalette creates an indexed color.Palette following priority order.
@@ -584,6 +694,7 @@ func loadFramesFromPath(path string, priority []string, imgPal color.Palette) ([
 		return nil, fmt.Errorf("no .png files found in %s with prefix %q", dir, prefix)
 	}
 	var frames [][]string
+	warned := make(map[color.NRGBA]bool)
 	for _, name := range names {
 		f, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
@@ -597,6 +708,33 @@ func loadFramesFromPath(path string, priority []string, imgPal color.Palette) ([
 
 		bounds := img.Bounds()
 		w, h := bounds.Dx(), bounds.Dy()
+
+		// Scan all pixel colors for schema compatibility
+		for y := 0; y < h; y++ {
+			for x := 0; x < w; x++ {
+				c := img.At(bounds.Min.X+x, bounds.Min.Y+y)
+				_, _, _, ca := c.RGBA()
+				if ca > 0 {
+					nrgba := color.NRGBAModel.Convert(c).(color.NRGBA)
+					if !warned[nrgba] {
+						// Check if there is an exact match in globalColors
+						exact := false
+						for _, gc := range globalColors {
+							gcRGB := globalRGBs[gc.I]
+							if gcRGB.R == nrgba.R && gcRGB.G == nrgba.G && gcRGB.B == nrgba.B {
+								exact = true
+								break
+							}
+						}
+						if !exact {
+							warned[nrgba] = true
+							closest := closestSchemaColor(nrgba, globalColors)
+							fmt.Fprintf(os.Stderr, "Warning: PNG pixel color #%02x%02x%02x in frame %s is not compatible with the schema, matching to closest color %q (index %d, hex %s)\n", nrgba.R, nrgba.G, nrgba.B, name, closest.Name, closest.I, closest.Hex)
+						}
+					}
+				}
+			}
+		}
 
 		var lines []string
 		for y := 0; y < h; y++ {
@@ -632,6 +770,23 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 
 func main() {
 	doPrint := len(os.Args) > 1 && os.Args[1] == "print"
+
+	colorsData, err := os.ReadFile("spec/colors.json")
+	if err != nil {
+		fatalf("read spec/colors.json: %v", err)
+	}
+	var gColorsSpec GlobalColorsSpec
+	if err := json.Unmarshal(colorsData, &gColorsSpec); err != nil {
+		fatalf("parse spec/colors.json: %v", err)
+	}
+	globalColors = gColorsSpec.Colors
+	for _, c := range globalColors {
+		rgb, err := parseHexGo(c.Hex)
+		if err != nil {
+			fatalf("parse global hex color %q: %v", c.Hex, err)
+		}
+		globalRGBs[c.I] = rgb
+	}
 
 	artData, err := os.ReadFile("spec/art.json")
 	if err != nil {

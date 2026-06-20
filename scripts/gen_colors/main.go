@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 )
 
 // colorEntry is one documented palette slot.
@@ -32,34 +33,77 @@ type colorEntry struct {
 type named struct {
 	name  string
 	short string
+	alt   []string
 }
 
 // system holds the 16 ANSI base colors (long name + 3-letter short).
 var system = [16]named{
-	{"black", "blk"}, {"maroon", "mar"}, {"green", "grn"}, {"olive", "oli"},
-	{"navy", "nvy"}, {"purple", "pur"}, {"teal", "tea"}, {"silver", "sil"},
-	{"gray", "gry"}, {"red", "red"}, {"lime", "lim"}, {"yellow", "ylw"},
-	{"blue", "blu"}, {"magenta", "mag"}, {"cyan", "cyn"}, {"white", "wht"},
+	{"black", "blk", nil}, {"maroon", "mar", nil}, {"green", "grn", nil}, {"olive", "oli", nil},
+	{"navy", "nvy", nil}, {"purple", "pur", nil}, {"teal", "tea", nil}, {"silver", "sil", nil},
+	{"brightblack", "bbk", []string{"brightgray", "bgry"}}, {"red", "red", nil}, {"lime", "lim", nil}, {"yellow", "ylw", nil},
+	{"blue", "blu", nil}, {"magenta", "mag", nil}, {"cyan", "cyn", nil}, {"white", "wht", nil},
 }
 
 // popular maps well-known xterm indices to friendly names so people can type a
 // colour by feel ("orange", "pink") instead of memorising the cube formula.
 var popular = map[int]named{
-	196: {"brightred", "brd"}, 46: {"brightgreen", "bgn"}, 21: {"brightblue", "bbl"},
-	51: {"brightcyan", "bcy"}, 201: {"brightmagenta", "bmg"}, 226: {"brightyellow", "byl"},
-	208: {"orange", "org"}, 202: {"darkorange", "dor"}, 214: {"amber", "amb"},
-	220: {"gold", "gld"}, 200: {"pink", "pnk"}, 198: {"hotpink", "hpk"},
-	205: {"rose", "ros"}, 93: {"violet", "vio"}, 99: {"indigo", "ind"},
-	54: {"darkviolet", "dvi"}, 30: {"darkteal", "dtl"}, 22: {"forest", "fst"},
-	28: {"darkgreen", "dgn"}, 17: {"darknavy", "dnv"}, 33: {"azure", "azr"},
-	39: {"skyblue", "sky"}, 111: {"lightblue", "lbl"}, 153: {"paleblue", "pbl"},
-	94: {"brown", "brn"}, 130: {"sienna", "sie"}, 137: {"tan", "tan"},
-	180: {"wheat", "wht2"}, 143: {"khaki", "khk"}, 100: {"darkolive", "dol"},
-	160: {"crimson", "crm"}, 124: {"darkred", "drd"}, 88: {"darkmaroon", "dmr"},
-	29: {"seagreen", "sea"}, 35: {"mint", "mnt"}, 121: {"palegreen", "pgn"},
-	159: {"paleturquoise", "ptq"}, 183: {"plum", "plm"}, 60: {"slate", "slt"},
-	67: {"steelblue", "stl"}, 245: {"midgray", "mgy"}, 240: {"darkgray", "dgy"},
-	250: {"lightgray", "lgy"}, 244: {"dimgray", "dmg"},
+	196: {"brightred", "brd", nil},
+	46:  {"brightgreen", "bgn", nil},
+	21:  {"Deep Blue", "dpb", []string{"brightblue", "bbl"}},
+	51:  {"Cyan / Aqua", "cyn", []string{"brightcyan", "bcy"}},
+	201: {"brightmagenta", "bmg", nil},
+	226: {"brightyellow", "byl", nil},
+	208: {"orange", "org", nil},
+	202: {"darkorange", "dor", nil},
+	214: {"Bright Amber", "bab", []string{"amber", "amb"}},
+	220: {"gold", "gld", []string{"yellow", "ylw"}},
+	200: {"pink", "pnk", nil},
+	198: {"hotpink", "hpk", nil},
+	205: {"rose", "ros", nil},
+	93:  {"violet", "vio", nil},
+	99:  {"indigo", "ind", nil},
+	54:  {"darkviolet", "dvi", []string{"purple"}},
+	30:  {"darkteal", "dtl", nil},
+	22:  {"forest", "fst", nil},
+	28:  {"darkgreen", "dgn", nil},
+	17:  {"darknavy", "dnv", nil},
+	33:  {"Electric Blue", "ebl", []string{"azure", "azr"}},
+	39:  {"Sky Blue", "sky", []string{"skyblue"}},
+	111: {"Light Blue", "lbl", []string{"lightblue"}},
+	153: {"Pale Ice Blue", "pib", []string{"paleblue", "pbl"}},
+	94:  {"brown", "brn", nil},
+	130: {"sienna", "sie", nil},
+	137: {"tan", "tan", nil},
+	180: {"wheat", "wht2", nil},
+	143: {"khaki", "khk", nil},
+	100: {"darkolive", "dol", nil},
+	160: {"crimson", "crm", nil},
+	124: {"darkred", "drd", nil},
+	88:  {"darkmaroon", "dmr", nil},
+	29:  {"seagreen", "sea", nil},
+	35:  {"mint", "mnt", nil},
+	121: {"palegreen", "pgn", nil},
+	159: {"paleturquoise", "ptq", nil},
+	183: {"plum", "plm", nil},
+	60:  {"slate", "slt", nil},
+	67:  {"Steel Blue", "stl", []string{"steelblue"}},
+	245: {"midgray", "mgy", nil},
+	240: {"darkgray", "dgy", []string{"gray"}},
+	250: {"lightgray", "lgy", nil},
+	244: {"dimgray", "dmg", nil},
+	178: {"Dark Gold", "dgd", []string{"gold2"}},
+	172: {"Orange-Brown", "obr", nil},
+	136: {"Dark Goldenrod", "dgo", nil},
+	18:  {"Dark Blue", "dbl", nil},
+	19:  {"Navy Blue", "nbl", nil},
+	24:  {"Midnight Blue", "mnb", []string{"midnight"}},
+	69:  {"Cornflower Blue", "cbl", nil},
+	75:  {"Royal Blue", "rbl", nil},
+	45:  {"Dodger Blue", "dbl", nil},
+	195: {"Powder Blue", "pwb", nil},
+	232: {"dark", "drk", []string{"gray0"}},
+	238: {"gray", "gry", []string{"gray6"}},
+	209: {"Rose Pink", "rpk", []string{"rosepink", "coral"}},
 }
 
 // cubeLevels are the six channel intensities of the 6×6×6 colour cube.
@@ -74,6 +118,7 @@ func main() {
 		colors = append(colors, colorEntry{
 			I: i, Name: system[i].name, Short: system[i].short,
 			Hex: hex(r, g, b), Desc: describe(r, g, b),
+			Alt: system[i].alt,
 		})
 	}
 
@@ -93,6 +138,201 @@ func main() {
 		canon := fmt.Sprintf("gray%d", i-232)
 		colors = append(colors, withName(i, canon, v, v, v))
 	}
+
+	// Generate JSON schemas
+	var colorEnums []string
+	for _, c := range colors {
+		colorEnums = append(colorEnums, c.Name)
+		if c.Short != "" {
+			colorEnums = append(colorEnums, c.Short)
+		}
+		for _, a := range c.Alt {
+			colorEnums = append(colorEnums, a)
+		}
+	}
+	seen := make(map[string]bool)
+	var uniqueEnums []string
+	for _, name := range colorEnums {
+		if !seen[name] {
+			seen[name] = true
+			uniqueEnums = append(uniqueEnums, name)
+		}
+	}
+	sort.Strings(uniqueEnums)
+
+	themeSchema := map[string]any{
+		"$schema": "http://json-schema.org/draft-07/schema#",
+		"type":    "object",
+		"properties": map[string]any{
+			"description": map[string]any{"type": "string"},
+			"notes":       map[string]any{"type": "object"},
+			"icons": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"dark":   map[string]any{"type": "string"},
+					"light":  map[string]any{"type": "string"},
+					"system": map[string]any{"type": "string"},
+				},
+				"additionalProperties": false,
+				"required":             []string{"dark", "light", "system"},
+			},
+			"themes": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"dark":  map[string]any{"$ref": "#/definitions/palette"},
+					"light": map[string]any{"$ref": "#/definitions/palette"},
+				},
+				"additionalProperties": false,
+				"required":             []string{"dark", "light"},
+			},
+		},
+		"additionalProperties": false,
+		"required":             []string{"icons", "themes"},
+		"definitions": map[string]any{
+			"color": map[string]any{
+				"anyOf": []any{
+					map[string]any{"type": "integer", "minimum": 0, "maximum": 255},
+					map[string]any{"type": "null"},
+					map[string]any{
+						"type": "string",
+						"enum": uniqueEnums,
+					},
+					map[string]any{
+						"type":    "string",
+						"pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+					},
+				},
+			},
+			"palette": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"grid_bg":         map[string]any{"$ref": "#/definitions/color"},
+					"grid_fg":         map[string]any{"$ref": "#/definitions/color"},
+					"selection_bg":    map[string]any{"$ref": "#/definitions/color"},
+					"selection_fg":    map[string]any{"$ref": "#/definitions/color"},
+					"search_bg":       map[string]any{"$ref": "#/definitions/color"},
+					"search_fg":       map[string]any{"$ref": "#/definitions/color"},
+					"search_shade_fg": map[string]any{"$ref": "#/definitions/color"},
+					"info_bg":         map[string]any{"$ref": "#/definitions/color"},
+					"info_fg":         map[string]any{"$ref": "#/definitions/color"},
+					"status_bg":       map[string]any{"$ref": "#/definitions/color"},
+					"status_fg":       map[string]any{"$ref": "#/definitions/color"},
+					"status_shade_fg": map[string]any{"$ref": "#/definitions/color"},
+					"border_bg":       map[string]any{"$ref": "#/definitions/color"},
+					"border_shade_fg": map[string]any{"$ref": "#/definitions/color"},
+					"terminal_bg2":    map[string]any{"type": "string"},
+					"terminal_bg":     map[string]any{"type": "string"},
+					"terminal_fg":     map[string]any{"type": "string"},
+					"terminal_border": map[string]any{"type": "string"},
+					"warning_fg":      map[string]any{"$ref": "#/definitions/color"},
+					"success_fg":      map[string]any{"$ref": "#/definitions/color"},
+				},
+				"additionalProperties": false,
+			},
+		},
+	}
+
+	artSchema := map[string]any{
+		"$schema": "http://json-schema.org/draft-07/schema#",
+		"type":    "object",
+		"properties": map[string]any{
+			"description": map[string]any{"type": "string"},
+			"colors": map[string]any{
+				"type": "object",
+				"additionalProperties": map[string]any{
+					"anyOf": []any{
+						map[string]any{"type": "integer", "minimum": 0, "maximum": 255},
+						map[string]any{
+							"type": "string",
+							"enum": uniqueEnums,
+						},
+						map[string]any{
+							"type":    "string",
+							"pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+						},
+					},
+				},
+			},
+			"palette": map[string]any{
+				"type": "object",
+				"additionalProperties": map[string]any{
+					"anyOf": []any{
+						map[string]any{"type": "null"},
+						map[string]any{"type": "integer", "minimum": 0, "maximum": 255},
+						map[string]any{
+							"type": "string",
+							"enum": uniqueEnums,
+						},
+						map[string]any{
+							"type":    "string",
+							"pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+						},
+					},
+				},
+			},
+			"priority": map[string]any{
+				"type": "array",
+				"items": map[string]any{"type": "string"},
+			},
+			"art": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":           map[string]any{"type": "string"},
+						"target":         map[string]any{"type": "string"},
+						"mode":           map[string]any{"type": "string", "enum": []string{"quad"}},
+						"spaced":         map[string]any{"type": "boolean"},
+						"indent":         map[string]any{"type": "string"},
+						"stack": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"anyOf": []any{
+									map[string]any{"type": "string"},
+									map[string]any{
+										"type": "object",
+										"properties": map[string]any{
+											"path": map[string]any{"type": "string"},
+											"fps":  map[string]any{"type": "integer"},
+										},
+										"required": []string{"path"},
+									},
+								},
+							},
+						},
+						"fps":            map[string]any{"type": "integer"},
+						"start_delay_ms": map[string]any{"type": "integer"},
+						"end_delay_ms":   map[string]any{"type": "integer"},
+						"header": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "string"},
+						},
+						"footer": map[string]any{
+							"type":  "array",
+							"items": map[string]any{"type": "string"},
+						},
+					},
+					"required": []string{"name", "target", "mode", "spaced"},
+				},
+			},
+		},
+		"required": []string{"colors", "palette", "priority", "art"},
+	}
+
+	writeSchema := func(path string, val any) {
+		data, err := json.MarshalIndent(val, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "marshal schema %s: %v\n", path, err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(path, data, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "write schema %s: %v\n", path, err)
+			os.Exit(1)
+		}
+	}
+
+	writeSchema("spec/theme.schema.json", themeSchema)
+	writeSchema("spec/art.schema.json", artSchema)
 
 	out := map[string]any{
 		"description": "Full xterm-256 palette. Each entry: i (index 0-255), " +
@@ -121,7 +361,7 @@ func withName(i int, canon string, r, g, b int) colorEntry {
 	if p, ok := popular[i]; ok {
 		e.Name = p.name
 		e.Short = p.short
-		e.Alt = []string{canon}
+		e.Alt = append([]string{canon}, p.alt...)
 	}
 	return e
 }

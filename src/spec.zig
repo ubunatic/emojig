@@ -64,27 +64,89 @@ pub const Layout = struct {
 };
 
 pub const PaletteSpec = struct {
-    grid_bg: ?u8 = null,
-    grid_fg: u8,
-    selection_bg: ?u8 = null,
-    selection_fg: u8,
-    search_bg: ?u8 = null,
-    search_fg: u8,
-    search_shade_fg: u8,
-    info_bg: ?u8 = null,
-    info_fg: u8,
-    status_bg: ?u8 = null,
-    status_fg: u8,
-    status_shade_fg: u8,
-    border_bg: ?u8 = null,
-    border_shade_fg: u8,
+    grid_bg: std.json.Value = .null,
+    grid_fg: std.json.Value,
+    selection_bg: std.json.Value = .null,
+    selection_fg: std.json.Value,
+    search_bg: std.json.Value = .null,
+    search_fg: std.json.Value,
+    search_shade_fg: std.json.Value,
+    info_bg: std.json.Value = .null,
+    info_fg: std.json.Value,
+    status_bg: std.json.Value = .null,
+    status_fg: std.json.Value,
+    status_shade_fg: std.json.Value,
+    border_bg: std.json.Value = .null,
+    border_shade_fg: std.json.Value,
     terminal_bg2: ?[]const u8 = null,
     terminal_bg: ?[]const u8 = null,
     terminal_fg: ?[]const u8 = null,
     terminal_border: ?[]const u8 = null,
-    warning_fg: u8 = 9,
-    success_fg: u8 = 10,
+    warning_fg: std.json.Value = .{ .integer = 9 },
+    success_fg: std.json.Value = .{ .integer = 10 },
 };
+
+fn resolveColorValue(val: std.json.Value, colors_spec: *const ColorsSpec) !?u8 {
+    switch (val) {
+        .null => return null,
+        .integer => |i| {
+            if (i >= 0 and i <= 255) {
+                return @intCast(i);
+            }
+            return error.InvalidColorIndex;
+        },
+        .string => |s| {
+            // 1. Try parsing as integer
+            if (std.fmt.parseInt(u8, s, 10)) |idx| {
+                return idx;
+            } else |_| {}
+
+            // 2. Try parsing as hex
+            if (s.len > 0 and s[0] == '#') {
+                if (parseHex(s)) |target_rgb| {
+                    // Check exact match in colors_spec
+                    for (colors_spec.colors) |c| {
+                        if (parseHex(c.hex)) |rgb| {
+                            if (rgb[0] == target_rgb[0] and rgb[1] == target_rgb[1] and rgb[2] == target_rgb[2]) {
+                                return @intCast(c.i);
+                            }
+                        }
+                    }
+                    // If no exact match, find closest and warn
+                    const closest = colors_spec.closestColorIndex(target_rgb);
+                    // Find its name for warning
+                    var name: []const u8 = "unknown";
+                    var c_hex: []const u8 = "";
+                    for (colors_spec.colors) |c| {
+                        if (c.i == closest) {
+                            name = c.name;
+                            c_hex = c.hex;
+                            break;
+                        }
+                    }
+                    std.debug.print("Warning: color '{s}' is not compatible with the schema, matching to closest color '{s}' (index {d}, hex '{s}')\n", .{ s, name, closest, c_hex });
+                    return @intCast(closest);
+                }
+                return error.InvalidHexColor;
+            }
+
+            // 3. Look up in colors_spec (by name/short/alt)
+            if (colors_spec.indexOf(s)) |idx| {
+                return @intCast(idx);
+            }
+
+            return error.UnknownColorName;
+        },
+        else => return error.InvalidColorType,
+    }
+}
+
+fn resolveRequiredColorValue(val: std.json.Value, colors_spec: *const ColorsSpec, default_val: u8) !u8 {
+    if (try resolveColorValue(val, colors_spec)) |idx| {
+        return idx;
+    }
+    return default_val;
+}
 
 pub const Theme = struct {
     icons: struct {
@@ -227,19 +289,76 @@ pub const ColorsSpec = struct {
     colors: []const ColorEntry = &.{},
 
     /// Resolve a colour name (long, short, or alias) to its 0-255 palette
-    /// index. Case-sensitive, first match wins (lower index). Returns null when
+    /// index. Case-insensitive, first match wins (lower index). Returns null when
     /// the name is unknown — callers then fall back to numeric parsing.
     pub fn indexOf(self: *const ColorsSpec, name: []const u8) ?u16 {
+        var search_buf: [64]u8 = undefined;
+        const norm_search = normalizeColorName(name, &search_buf);
+
         for (self.colors) |c| {
-            if (std.mem.eql(u8, name, c.name)) return c.i;
-            if (c.short.len != 0 and std.mem.eql(u8, name, c.short)) return c.i;
+            var c_buf: [64]u8 = undefined;
+            if (std.mem.eql(u8, norm_search, normalizeColorName(c.name, &c_buf))) return c.i;
+            if (c.short.len != 0) {
+                if (std.mem.eql(u8, norm_search, normalizeColorName(c.short, &c_buf))) return c.i;
+            }
             for (c.alt) |a| {
-                if (std.mem.eql(u8, name, a)) return c.i;
+                if (std.mem.eql(u8, norm_search, normalizeColorName(a, &c_buf))) return c.i;
             }
         }
         return null;
     }
+
+    pub fn closestColorIndex(self: *const ColorsSpec, target_rgb: [3]u8) u16 {
+        var best_idx: u16 = 0;
+        var best_dist: u32 = std.math.maxInt(u32);
+        for (self.colors) |c| {
+            if (parseHex(c.hex)) |rgb| {
+                const dr = @as(i32, target_rgb[0]) - rgb[0];
+                const dg = @as(i32, target_rgb[1]) - rgb[1];
+                const db = @as(i32, target_rgb[2]) - rgb[2];
+                const dist = @as(u32, @intCast(dr * dr + dg * dg + db * db));
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_idx = c.i;
+                }
+            }
+        }
+        return best_idx;
+    }
 };
+
+fn normalizeColorName(name: []const u8, buf: []u8) []const u8 {
+    var out_len: usize = 0;
+    for (name) |c| {
+        if (c >= 'A' and c <= 'Z') {
+            buf[out_len] = c + 32;
+            out_len += 1;
+        } else if ((c >= 'a' and c <= 'z') or (c >= '0' and c <= '9')) {
+            buf[out_len] = c;
+            out_len += 1;
+        }
+    }
+    return buf[0..out_len];
+}
+
+pub fn parseHex(hex_str: []const u8) ?[3]u8 {
+    var s = hex_str;
+    if (s.len > 0 and s[0] == '#') {
+        s = s[1..];
+    }
+    if (s.len == 3) {
+        const r = std.fmt.parseInt(u8, s[0..1], 16) catch return null;
+        const g = std.fmt.parseInt(u8, s[1..2], 16) catch return null;
+        const b = std.fmt.parseInt(u8, s[2..3], 16) catch return null;
+        return [3]u8{ r * 17, g * 17, b * 17 };
+    } else if (s.len == 6) {
+        const r = std.fmt.parseInt(u8, s[0..2], 16) catch return null;
+        const g = std.fmt.parseInt(u8, s[2..4], 16) catch return null;
+        const b = std.fmt.parseInt(u8, s[4..6], 16) catch return null;
+        return [3]u8{ r, g, b };
+    }
+    return null;
+}
 
 // ---------------------------------------------------------------------------
 // Spec bundle
@@ -350,58 +469,80 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .categories = categories,
         .styles = styles,
         .colors = colors,
-        .dark_palette = try buildPalette(arena, theme.themes.dark, false),
-        .light_palette = try buildPalette(arena, theme.themes.light, false),
-        .dark_palette_dim = try buildPalette(arena, theme.themes.dark, true),
-        .light_palette_dim = try buildPalette(arena, theme.themes.light, true),
+        .dark_palette = try buildPalette(arena, theme.themes.dark, &colors, false),
+        .light_palette = try buildPalette(arena, theme.themes.light, &colors, false),
+        .dark_palette_dim = try buildPalette(arena, theme.themes.dark, &colors, true),
+        .light_palette_dim = try buildPalette(arena, theme.themes.light, &colors, true),
     };
 }
 
 /// Build a `term.Palette` (ANSI escape strings) from a `PaletteSpec`'s
 /// xterm-256 color indices. Mirrors the former compile-time palettes in
 /// src/term.zig: `bg`/`border_bg` are intentionally empty.
-fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, dim: bool) !term.Palette {
+fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const ColorsSpec, dim: bool) !term.Palette {
     const dim_suffix = if (dim) ";2" else "";
     const dim_suffix_bold = if (dim) ";2" else ";1";
 
-    const g_bg = if (p.grid_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
-    else
-        "";
-    const s_bg = if (p.search_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
-    else
-        "";
-    const st_bg = if (p.status_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
-    else
-        "";
-    const i_bg = if (p.info_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
-    else
-        "";
-    const sel_bg = if (p.selection_bg) |bg_val|
-        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}{s}m", .{ bg_val, p.selection_fg, dim_suffix })
-    else
-        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.selection_fg, dim_suffix });
-    const b_bg = if (p.border_bg) |bg_val|
+    const g_bg_idx = try resolveColorValue(p.grid_bg, colors_spec);
+    const g_bg = if (g_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
         "";
 
+    const s_bg_idx = try resolveColorValue(p.search_bg, colors_spec);
+    const s_bg = if (s_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const st_bg_idx = try resolveColorValue(p.status_bg, colors_spec);
+    const st_bg = if (st_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const i_bg_idx = try resolveColorValue(p.info_bg, colors_spec);
+    const i_bg = if (i_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const sel_bg_idx = try resolveColorValue(p.selection_bg, colors_spec);
+    const sel_fg_idx = try resolveRequiredColorValue(p.selection_fg, colors_spec, 255);
+    const sel_bg = if (sel_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}{s}m", .{ bg_val, sel_fg_idx, dim_suffix })
+    else
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ sel_fg_idx, dim_suffix });
+
+    const b_bg_idx = try resolveColorValue(p.border_bg, colors_spec);
+    const b_bg = if (b_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const grid_fg_idx = try resolveRequiredColorValue(p.grid_fg, colors_spec, 248);
+    const search_fg_idx = try resolveRequiredColorValue(p.search_fg, colors_spec, 255);
+    const status_fg_idx = try resolveRequiredColorValue(p.status_fg, colors_spec, 240);
+    const info_fg_idx = try resolveRequiredColorValue(p.info_fg, colors_spec, 248);
+    const search_shade_fg_idx = try resolveRequiredColorValue(p.search_shade_fg, colors_spec, 238);
+    const status_shade_fg_idx = try resolveRequiredColorValue(p.status_shade_fg, colors_spec, 238);
+    const border_shade_fg_idx = try resolveRequiredColorValue(p.border_shade_fg, colors_spec, 236);
+    const warning_fg_idx = try resolveRequiredColorValue(p.warning_fg, colors_spec, 9);
+    const success_fg_idx = try resolveRequiredColorValue(p.success_fg, colors_spec, 10);
+
     return .{
         .grid_bg = g_bg,
-        .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ g_bg, p.grid_fg, dim_suffix }),
+        .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ g_bg, grid_fg_idx, dim_suffix }),
         .selection_bg = sel_bg,
-        .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ s_bg, p.search_fg, dim_suffix }),
-        .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ st_bg, p.status_fg, dim_suffix }),
+        .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ s_bg, search_fg_idx, dim_suffix }),
+        .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ st_bg, status_fg_idx, dim_suffix }),
         .info_bg = i_bg,
-        .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ i_bg, p.info_fg, dim_suffix }),
+        .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ i_bg, info_fg_idx, dim_suffix }),
         .border_bg = b_bg,
-        .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.search_shade_fg, dim_suffix }),
-        .status_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.status_shade_fg, dim_suffix }),
-        .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.border_shade_fg, dim_suffix }),
-        .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.warning_fg, dim_suffix_bold }),
-        .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ p.success_fg, dim_suffix_bold }),
+        .search_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ search_shade_fg_idx, dim_suffix }),
+        .status_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ status_shade_fg_idx, dim_suffix }),
+        .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ border_shade_fg_idx, dim_suffix }),
+        .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ warning_fg_idx, dim_suffix_bold }),
+        .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ success_fg_idx, dim_suffix_bold }),
     };
 }
