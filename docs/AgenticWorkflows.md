@@ -62,5 +62,27 @@ When writing test scripts that simulate terminal interaction using a PTY, writin
 
 ### Recovery from Context Compaction
 When an agent experiences memory/context compaction, it loses fine-grained history.
-* **Self-Documentation**: Before compaction, saving the current state, compiler errors, resolved decisions, and planned tasks in a dedicated tracker file (e.g., [issues/17-custom-commands-and-screens.md](file:///home/uwe/projects/emojig/issues/17-custom-commands-and-screens.md)) ensures the next turn or new agent can resume immediately without duplicate investigation.
+* **Self-Documentation**: Before context compaction, saving the current state, compiler errors, resolved decisions, and planned tasks in a dedicated tracker file (e.g., [issues/17-custom-commands-and-screens.md](file:///home/uwe/projects/emojig/issues/17-custom-commands-and-screens.md)) ensures the next turn or new agent can resume immediately without duplicate investigation.
 * **Preflight Hygiene**: Always run `make preflight` (or license lint, unit tests, and code formatting lints) before concluding tasks to ensure standard repository constraints are preserved.
+
+---
+
+## 4. Large-Scale Zig Refactoring & TUI Timing Stability
+
+### Safely Splitting Monolithic Files
+When refactoring large files (e.g., modularizing `src/main.zig`'s 5,000+ lines or `src/root.zig`'s 1,200+ lines), modifying hundreds of call sites is highly error-prone.
+* **Forwarding Aliases**: Define aliases and inline forwarding wrappers at the top of the refactored monolithic files (e.g., `const scrollbarThumb = tui_draw.scrollbarThumb;` or `inline fn effectivePalette(...) Palette`). This isolates changes to the file imports without modifying call sites inside massive loops.
+* **Separate Test Files in Zig**: Unit tests and benchmarks can be cleanly isolated into a separate test file (e.g. `src/root_test.zig`) by using a forwarding test block in the main file:
+  ```zig
+  test {
+      std.testing.refAllDecls(@This());
+      _ = @import("root_test.zig");
+  }
+  ```
+  This forces the compiler to include and run tests defined in the separate file while keeping the library file clean of test blocks.
+
+### Fallback Default Restorations
+* **Prompt-to-Grid Keyboard Fallback**: Ensure that keyboard actions (like pressing Enter to `select` on the search screen) preserve original fallback logic such as `selected_idx orelse 0`. If this is refactored to strictly check if `selected_idx` is non-null, keyboard-only/prompt-focused flows will silently break because typing reset the selection index to `null`.
+
+### Timing Stability in PTY Test Harnesses
+* TUI test scripts running in programmatic PTYs require conservative sleep intervals (e.g., `300ms` to `500ms` instead of `200ms`) during startup and render transitions to prevent race conditions where `collectAvailable()` reads an empty or incomplete buffer.
