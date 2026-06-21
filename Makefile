@@ -78,6 +78,12 @@ tui-rust: ⚙️  # run Rust TUI demo in the current terminal
 gui: ⚙️  # launch the floating terminal picker window (requires foot)
 	zig build gui
 
+gui-watch: ⚙️  # tail /tmp/emojig.log live while using the gui picker
+	tail -f /tmp/emojig.log
+
+gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ctrl+.)
+	python3 explore_gtk_emoji.py
+
 jsdemo: ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.json
 	@printf '// generated from spec/jsdemo.json — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/jsdemo.json)" > website/jsdemo.js
 

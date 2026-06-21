@@ -227,7 +227,7 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
     // V1 legacy handler — still wired to SIGINT/SIGTERM *before* the TUI block
     // sets up the self-pipe (e.g. when the spec-load or TTY-open fails).  Performs
     // minimal safe cleanup: restore termios only (no terminal I/O in signal context).
-    _ = sig;
+    term_lib.appendLog("exit via sigHandler sig={d}", .{@intFromEnum(sig)});
     if (global_orig_termios) |orig| {
         _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
     }
@@ -238,12 +238,25 @@ fn sigHandler(sig: std.posix.SIG) callconv(.c) void {
 
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     _ = error_return_trace;
-    if (global_orig_termios) |orig| {
-        _ = std.posix.system.tcsetattr(global_tty_fd, .NOW, &orig);
-    }
+    term_lib.appendLog("panic: {s}", .{msg});
     clearTuiRows(global_tty_fd, global_tui_height, global_row_off);
     const seq = restoreSeq();
     _ = std.posix.system.write(global_tty_fd, seq.ptr, seq.len);
+    if (global_orig_termios) |orig| {
+        var drain_raw = orig;
+        const sys = std.posix.system;
+        drain_raw.lflag.ICANON = false;
+        drain_raw.lflag.ECHO = false;
+        drain_raw.cc[@intFromEnum(sys.V.MIN)] = 0;
+        drain_raw.cc[@intFromEnum(sys.V.TIME)] = 0;
+        _ = sys.tcsetattr(global_tty_fd, .NOW, &drain_raw);
+        var drain_buf: [256]u8 = undefined;
+        while (true) {
+            const rc = sys.read(global_tty_fd, &drain_buf, drain_buf.len);
+            if (rc <= 0) break;
+        }
+        _ = sys.tcsetattr(global_tty_fd, .NOW, &orig);
+    }
     removePickerPidFile();
     logMemoryUsage();
     std.debug.defaultPanic(msg, ret_addr);
@@ -364,6 +377,9 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
             return std.fmt.bufPrint(buf, " {s}{s}{s}  grid height (rows)\x1b[0m", .{ bg, sel_prefix, padded });
         },
+        8 => {
+            return std.fmt.bufPrint(buf, " {s}{s}[clear]    recent (MRU) history\x1b[0m", .{ bg, sel_prefix });
+        },
         else => unreachable,
     }
 }
@@ -442,6 +458,7 @@ fn settingHelp(idx: usize) []const u8 {
         5 => "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell.",
         6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
         7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
+        8 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
         else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
     };
 }
@@ -1132,6 +1149,10 @@ pub fn main(init: std.process.Init) !void {
                 }
             } else |_| {}
         }
+        // Tracks the monotonic time of the last received input event so the
+        // inactivity countdown resets correctly on any user activity (including
+        // scrollbar drags that pause between motion events).
+        var last_input_ms: i64 = getMonotonicMs();
 
         var raw = orig_termios;
         raw.iflag.IGNBRK = false;
@@ -1258,6 +1279,7 @@ pub fn main(init: std.process.Init) !void {
 
         var is_first_render = true;
         var last_was_motion = false; // true only after a mouse-motion event
+        var dragging_scrollbar = false; // true while left-button is held on the scrollbar column
         var rctx = resize.ResizeContext.init(resize_mode);
         var last_drawn_h: usize = final_h;
         // Declared here (before the defer) so the defer body can read it.
@@ -1265,6 +1287,7 @@ pub fn main(init: std.process.Init) !void {
         var should_copy_and_exit = false;
 
         defer {
+            term_lib.appendLog("exit via defer (normal/signal)", .{});
             // CRITICAL HANDSHAKE FOR TERMINAL EXIT SYNCHRONIZATION:
             // 1. Disable mouse tracking immediately.
             // 2. Append a Cursor Position Report query ("\x1b[6n") to stdout.
@@ -1374,11 +1397,16 @@ pub fn main(init: std.process.Init) !void {
 
         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
 
+        const start_ms = getMonotonicMs();
+        const log_mode: []const u8 = if (gui_spawned) "gui" else if (final_simple) "simple" else "tui";
+        term_lib.appendLog("start mode={s}", .{log_mode});
+        var last_rss_bytes: usize = term_lib.readRssBytes();
+
         var current_screen: ScreenState = .search;
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
         // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
-        const settings_count: usize = 8;
+        const settings_count: usize = 9;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
         var anim_frame: usize = 0;
@@ -1500,7 +1528,12 @@ pub fn main(init: std.process.Init) !void {
         var total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
         selected_idx = if (top_count > 0) 0 else null;
 
-        var read_buf: [64]u8 = undefined;
+        var read_buf: [512]u8 = undefined;
+        // Carry buffer: saves the bytes of an incomplete SGR mouse event that
+        // arrived at the end of a read and had no M/m terminator yet.  Prepended
+        // to the next read so the bytes are never re-interpreted as typed text.
+        var mouse_carry: [32]u8 = undefined;
+        var mouse_carry_len: usize = 0;
         const spaces = " " ** 512;
         const content_width = term_width;
 
@@ -1717,8 +1750,10 @@ pub fn main(init: std.process.Init) !void {
                     }
                 } else {
                     is_first_render = false;
+                    term_lib.appendLog("first_render latency_ms={d}", .{getMonotonicMs() - start_ms});
                 }
 
+                const render_start_ms = getMonotonicMs();
                 var line_buf: [1024]u8 = undefined;
                 var var_expand_buf: [256]u8 = undefined;
                 var tmpl_expand_buf: [512]u8 = undefined;
@@ -2442,12 +2477,68 @@ pub fn main(init: std.process.Init) !void {
                         } else if (effective_idx != null and !is_too_small) {
                             const sel = effective_idx.?;
                             if (top_count > 0 and sel < top_count) {
-                                const name = emojig.EmojiDb.getEntry(top_matches[sel].index).name;
-                                if (name.len > max_len and max_len >= 3) {
-                                    const display_name = name[0 .. max_len - 3];
-                                    const printed_cols = 1 + display_name.len + 3;
+                                const db_entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                                const name = db_entry.name;
+                                const search_str = db_entry.search;
+
+                                // Derive extra tags: words in search not present as words in name.
+                                // Pad name with spaces so word boundary checks are simple indexOf.
+                                var name_pad_buf: [130]u8 = undefined;
+                                name_pad_buf[0] = ' ';
+                                const name_pad_len = blk: {
+                                    var i: usize = 0;
+                                    while (i < name.len and i + 1 < name_pad_buf.len - 1) : (i += 1) {
+                                        name_pad_buf[i + 1] = std.ascii.toLower(name[i]);
+                                    }
+                                    name_pad_buf[i + 1] = ' ';
+                                    break :blk i + 2;
+                                };
+                                const name_padded = name_pad_buf[0..name_pad_len];
+
+                                var tags_buf: [80]u8 = undefined;
+                                var tags_len: usize = 0;
+                                var sit = std.mem.splitScalar(u8, search_str, ' ');
+                                while (sit.next()) |word| {
+                                    if (word.len == 0 or word.len + 2 > 66) continue;
+                                    var wpad: [66]u8 = undefined;
+                                    wpad[0] = ' ';
+                                    @memcpy(wpad[1..][0..word.len], word);
+                                    wpad[1 + word.len] = ' ';
+                                    if (std.mem.indexOf(u8, name_padded, wpad[0 .. word.len + 2]) != null) continue;
+                                    if (tags_len + word.len + 1 > tags_buf.len) break;
+                                    if (tags_len > 0) {
+                                        tags_buf[tags_len] = ' ';
+                                        tags_len += 1;
+                                    }
+                                    @memcpy(tags_buf[tags_len..][0..word.len], word);
+                                    tags_len += word.len;
+                                }
+                                const tags = tags_buf[0..tags_len];
+                                const shade = palette.status_shade_fg;
+
+                                // Total visible columns: 1 (leading space) + name + optional "  tags"
+                                const suffix_cols = if (tags_len > 0) 2 + tags_len else 0;
+                                const full_cols = 1 + name.len + suffix_cols;
+                                if (full_cols > max_len) {
+                                    if (max_len >= 4 and 1 + name.len > max_len -| 3) {
+                                        // Name itself overflows — truncate with "..."
+                                        const trunc = max_len -| 4;
+                                        const display_name = name[0..@min(trunc, name.len)];
+                                        const printed_cols = 1 + display_name.len + 3;
+                                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}", .{ palette.info_bg, palette.info_fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                                        try writeAll(stdout_fd, name_line);
+                                    } else {
+                                        // Name fits but tags overflow — drop tags, show name only
+                                        const printed_cols = 1 + name.len;
+                                        const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
+                                        const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                                        try writeAll(stdout_fd, name_line);
+                                    }
+                                } else if (tags_len > 0) {
+                                    const printed_cols = full_cols;
                                     const pad_len_desc = if (content_width > printed_cols) content_width - printed_cols else 0;
-                                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}...{s}", .{ palette.info_bg, palette.info_fg, display_name, spaces[0..@min(pad_len_desc, spaces.len)] });
+                                    const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}  {s}{s}{s}{s}", .{ palette.info_bg, palette.info_fg, name, shade, tags, palette.info_fg, spaces[0..@min(pad_len_desc, spaces.len)] });
                                     try writeAll(stdout_fd, name_line);
                                 } else {
                                     const printed_cols = 1 + name.len;
@@ -2617,6 +2708,13 @@ pub fn main(init: std.process.Init) !void {
 
                 last_drawn_h = current_total_rows;
                 global_tui_height = last_drawn_h;
+                const render_ms = getMonotonicMs() - render_start_ms;
+                if (render_ms > 20) term_lib.appendLog("render_slow ms={d} scroll={d}", .{ render_ms, grid_scroll_top });
+                const cur_rss = term_lib.readRssBytes();
+                if (cur_rss > last_rss_bytes + 512 * 1024) {
+                    term_lib.appendLog("rss_jump +{d}KB -> {d:.2}MB session_ms={d}", .{ (cur_rss - last_rss_bytes) / 1024, @as(f64, @floatFromInt(cur_rss)) / (1024.0 * 1024.0), getMonotonicMs() - start_ms });
+                    last_rss_bytes = cur_rss;
+                }
 
                 // Reposition cursor to the search bar column.
                 if (rctx.repositionCursor()) {
@@ -2700,6 +2798,7 @@ pub fn main(init: std.process.Init) !void {
                         else
                             selected.emoji;
                         copyToClipboard(init, selected.emoji, final_safe) catch {};
+                        term_lib.appendLog("copy emoji={s} name=\"{s}\" q=\"{s}\" session_ms={d}", .{ selected.emoji, selected.name, query_buf[0..query_len], getMonotonicMs() - start_ms });
 
                         // Decide whether to show exit preview frame.
                         if (preview_enabled and !is_too_small and top_count > 0) {
@@ -2718,10 +2817,11 @@ pub fn main(init: std.process.Init) !void {
             // The timeout implements EMOJIG_PICKER_TIMEOUT without alarm(2).
             // For animation, shorten the timeout to the next frame deadline.
             // ----------------------------------------------------------------
-            var timeout_ms: i32 = if (active_timeout) |t_sec|
-                @as(i32, @intCast(@min(t_sec, @as(c_uint, 2_147)))) * 1_000
-            else
-                -1;
+            var timeout_ms: i32 = if (active_timeout) |t_sec| blk: {
+                const deadline = last_input_ms + @as(i64, t_sec) * 1_000;
+                const remaining = deadline - getMonotonicMs();
+                break :blk if (remaining <= 0) 0 else @intCast(@min(remaining, 2_147_000));
+            } else -1;
 
             // Shorten timeout for animation frame advance.
             if (current_screen == .about and !anim_done) {
@@ -2776,11 +2876,18 @@ pub fn main(init: std.process.Init) !void {
                 .tty => {}, // fall through to existing keyboard/mouse handling
             }
 
-            var n = readStdin(stdin_fd, &read_buf) catch |err| {
-                if (err == error.SystemResources or err == error.Interrupted) continue;
+            // Prepend any incomplete SGR sequence saved from the previous read.
+            if (mouse_carry_len > 0) {
+                std.mem.copyBackwards(u8, read_buf[mouse_carry_len..], read_buf[0..0]);
+                @memcpy(read_buf[0..mouse_carry_len], mouse_carry[0..mouse_carry_len]);
+            }
+            var n = (mouse_carry_len + (readStdin(stdin_fd, read_buf[mouse_carry_len..]) catch |err| blk: {
+                if (err == error.SystemResources or err == error.Interrupted) break :blk @as(usize, 0);
                 return err;
-            };
+            }));
+            mouse_carry_len = 0;
             if (n == 0) break;
+            last_input_ms = getMonotonicMs();
 
             // Arrow keys send ESC [ A/B/C/D; in some contexts (e.g. ZLE widgets) the
             // bytes can arrive in separate reads.
@@ -2862,227 +2969,256 @@ pub fn main(init: std.process.Init) !void {
                     } else if (bytes[2] == 'F' or std.mem.eql(u8, bytes[2..n], "4~") or std.mem.eql(u8, bytes[2..n], "8~")) {
                         logical = "end";
                     } else if (bytes[2] == '<') {
-                        // SGR Mouse event — find first terminator to handle batched events.
-                        const sgr_data = bytes[3..n];
-                        var term_pos: usize = 0;
-                        var term_char: u8 = 0;
-                        while (term_pos < sgr_data.len) : (term_pos += 1) {
-                            if (sgr_data[term_pos] == 'M' or sgr_data[term_pos] == 'm') {
-                                term_char = sgr_data[term_pos];
-                                break;
-                            }
-                        }
-                        if (term_char == 0) continue;
-
-                        var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
-                        const button_str = it.next() orelse continue;
-                        const col_str = it.next() orelse continue;
-                        const row_str = it.next() orelse continue;
-
-                        const button = std.fmt.parseInt(i32, button_str, 10) catch continue;
-                        const click_col = std.fmt.parseInt(i32, col_str, 10) catch continue;
-                        const click_row_raw = std.fmt.parseInt(i32, row_str, 10) catch continue;
-                        const local_col = click_col - 1;
-
-                        // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
-                        const click_row = term_lib.mapSgrRow(click_row_raw, global_tui_start_row, global_tty_fd, final_h);
-
-                        const is_motion = (button & 32) != 0;
-                        const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
-                        const is_wheel = (button & 64) != 0;
-                        last_was_motion = is_motion;
-
-                        if (is_wheel and term_char == 'M' and has_focus and popup_msg == null) {
-                            // Mouse wheel: scroll whichever pane is shown by a fixed
-                            // step, independent of keyboard focus (normal GUI feel).
-                            const wheel_down = (button & 1) != 0;
-                            const step: usize = 3;
-                            if (current_screen == .search) {
-                                const cc = if (final_simple) @as(usize, 1) else cols;
-                                const vp = if (final_simple) total_cells else rows;
-                                const trows = (top_count + cc - 1) / cc;
-                                const max_top = if (trows > vp) trows - vp else 0;
-                                grid_scroll_top = if (wheel_down)
-                                    @min(grid_scroll_top + step, max_top)
-                                else if (grid_scroll_top > step) grid_scroll_top - step else 0;
-                            } else if (current_screen == .settings) {
-                                const max_top = if (settings_count > rows) settings_count - rows else 0;
-                                settings_scroll_top = if (wheel_down)
-                                    @min(settings_scroll_top + step, max_top)
-                                else if (settings_scroll_top > step) settings_scroll_top - step else 0;
-                            } else if (current_screen == .categories) {
-                                const total = g_spec.categories.categories.len;
-                                const max_top = if (total > rows) total - rows else 0;
-                                cat_scroll_top = if (wheel_down)
-                                    @min(cat_scroll_top + step, max_top)
-                                else if (cat_scroll_top > step) cat_scroll_top - step else 0;
-                            } else {
-                                // help / about* / status popups.
-                                const viewport_h = rows + 3;
-                                const is_about = current_screen == .about;
-                                const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                                const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
-                                const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
-                                sp.* = if (wheel_down)
-                                    @min(sp.* + step, max_scroll)
-                                else if (sp.* > step) sp.* - step else 0;
-                            }
-                        } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
-                            // Theme button hover.
-                            const search_row_m: i32 = 2 + row_off;
-                            theme_hovered = (click_row == search_row_m and
-                                local_col >= @as(i32, @intCast(content_width)) - 4);
-
-                            // Hover: update selection to item under cursor (no copy/action).
-                            const grid_first_row: i32 = 4 + row_off;
-                            const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
-                            // Settings/categories have title+blank before first item → offset +1.
-                            const list_first_row: i32 = grid_first_row + 1;
-                            if (current_screen == .settings) {
-                                griddim_hover_left = false;
-                                griddim_hover_right = false;
-                                if (click_row >= list_first_row) {
-                                    const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                    if (opt_idx < settings_count) selected_idx = opt_idx;
-                                    // Bold the grid-size arrow under the cursor (same
-                                    // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
-                                    if (opt_idx == 6 or opt_idx == 7) {
-                                        griddim_hover_left = local_col >= 3 and local_col <= 5;
-                                        griddim_hover_right = local_col >= 8 and local_col <= 10;
-                                    }
+                        // SGR Mouse — loop through ALL complete events in the read buffer.
+                        // A 512-byte buffer holds ~40 events; the multi-event loop plus the
+                        // carry buffer below prevent partial-event tails from reaching the
+                        // printable-text path and appearing as typed characters in the query.
+                        var sgr_off: usize = 0; // cursor into bytes[3..n]
+                        sgr_loop: while (true) {
+                            const sgr_data = bytes[3 + sgr_off .. n];
+                            var term_pos: usize = 0;
+                            var term_char: u8 = 0;
+                            while (term_pos < sgr_data.len) : (term_pos += 1) {
+                                if (sgr_data[term_pos] == 'M' or sgr_data[term_pos] == 'm') {
+                                    term_char = sgr_data[term_pos];
+                                    break;
                                 }
-                            } else if (current_screen == .categories) {
-                                if (click_row >= list_first_row) {
-                                    const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                    if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
+                            }
+                            if (term_char == 0) {
+                                // Incomplete event tail — save to carry so next read completes it.
+                                const tail_len = 3 + sgr_data.len; // \x1b[< + partial params
+                                if (tail_len <= mouse_carry.len) {
+                                    mouse_carry[0] = 0x1b;
+                                    mouse_carry[1] = '[';
+                                    mouse_carry[2] = '<';
+                                    @memcpy(mouse_carry[3..][0..sgr_data.len], sgr_data);
+                                    mouse_carry_len = tail_len;
                                 }
-                            } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
-                                const total_rows = (top_count + cols - 1) / cols;
-                                const on_sb = btn_id == 0 and local_col == @as(i32, @intCast(content_width)) and total_rows > rows;
-                                if (on_sb) {
-                                    // Scrollbar drag: map the track row to a scroll offset.
-                                    const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
-                                    const max_scroll = total_rows - rows;
-                                    const track_row = @as(usize, @intCast(click_row - grid_first_row));
-                                    if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
+                                break :sgr_loop;
+                            }
+
+                            var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
+                            const button_str = it.next() orelse break :sgr_loop;
+                            const col_str = it.next() orelse break :sgr_loop;
+                            const row_str = it.next() orelse break :sgr_loop;
+
+                            const button = std.fmt.parseInt(i32, button_str, 10) catch break :sgr_loop;
+                            const click_col = std.fmt.parseInt(i32, col_str, 10) catch break :sgr_loop;
+                            const click_row_raw = std.fmt.parseInt(i32, row_str, 10) catch break :sgr_loop;
+                            const local_col = click_col - 1;
+
+                            // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
+                            const click_row = term_lib.mapSgrRow(click_row_raw, global_tui_start_row, global_tty_fd, final_h);
+
+                            const is_motion = (button & 32) != 0;
+                            const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
+                            const is_wheel = (button & 64) != 0;
+                            last_was_motion = is_motion;
+                            if (term_char == 'm') dragging_scrollbar = false;
+
+                            if (is_wheel and term_char == 'M' and has_focus and popup_msg == null) {
+                                // Mouse wheel: scroll whichever pane is shown by a fixed
+                                // step, independent of keyboard focus (normal GUI feel).
+                                const wheel_down = (button & 1) != 0;
+                                const step: usize = 3;
+                                if (current_screen == .search) {
+                                    const cc = if (final_simple) @as(usize, 1) else cols;
+                                    const vp = if (final_simple) total_cells else rows;
+                                    const trows = (top_count + cc - 1) / cc;
+                                    const max_top = if (trows > vp) trows - vp else 0;
+                                    grid_scroll_top = if (wheel_down)
+                                        @min(grid_scroll_top + step, max_top)
+                                    else if (grid_scroll_top > step) grid_scroll_top - step else 0;
+                                } else if (current_screen == .settings) {
+                                    const max_top = if (settings_count > rows) settings_count - rows else 0;
+                                    settings_scroll_top = if (wheel_down)
+                                        @min(settings_scroll_top + step, max_top)
+                                    else if (settings_scroll_top > step) settings_scroll_top - step else 0;
+                                } else if (current_screen == .categories) {
+                                    const total = g_spec.categories.categories.len;
+                                    const max_top = if (total > rows) total - rows else 0;
+                                    cat_scroll_top = if (wheel_down)
+                                        @min(cat_scroll_top + step, max_top)
+                                    else if (cat_scroll_top > step) cat_scroll_top - step else 0;
                                 } else {
-                                    const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                    const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
-                                    if (grid_col < cols) {
-                                        const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
-                                        if (hovered < top_count) selected_idx = hovered;
-                                    }
+                                    // help / about* / status popups.
+                                    const viewport_h = rows + 3;
+                                    const is_about = current_screen == .about;
+                                    const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
+                                    const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
+                                    const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
+                                    const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
+                                    sp.* = if (wheel_down)
+                                        @min(sp.* + step, max_scroll)
+                                    else if (sp.* > step) sp.* - step else 0;
                                 }
-                            }
-                        } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
-                            // Left click press.
-                            if (popup_msg != null) {
-                                popup_msg = null;
-                                continue;
-                            }
-                            const now = getMonotonicMs();
-                            if (now - last_focus_gain_ms > 200) {
-                                const search_row: i32 = 2 + row_off;
+                            } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
+                                // Theme button hover.
+                                const search_row_m: i32 = 2 + row_off;
+                                theme_hovered = (click_row == search_row_m and
+                                    local_col >= @as(i32, @intCast(content_width)) - 4);
+
+                                // Hover: update selection to item under cursor (no copy/action).
                                 const grid_first_row: i32 = 4 + row_off;
                                 const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
-
-                                if (click_row == search_row and
-                                    local_col >= @as(i32, @intCast(content_width)) - 4)
-                                {
-                                    // Theme toggle icon — cycle and persist to config.
-                                    theme = switch (theme) {
-                                        .dark => .light,
-                                        .light => .system,
-                                        .system => .dark,
-                                    };
-                                    saveThemeToConfig(init.io, theme);
-                                    if (theme == .system)
-                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                    // Settings/categories have title+blank before first item → offset +1.
-                                } else {
-                                    const list_first_row: i32 = grid_first_row + 1;
-                                    if (current_screen == .settings and click_row >= list_first_row) {
+                                // Settings/categories have title+blank before first item → offset +1.
+                                const list_first_row: i32 = grid_first_row + 1;
+                                if (current_screen == .settings) {
+                                    griddim_hover_left = false;
+                                    griddim_hover_right = false;
+                                    if (click_row >= list_first_row) {
                                         const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                        if (opt_idx < settings_count) {
-                                            selected_idx = opt_idx;
-                                            if (opt_idx == 1) {
-                                                keybind_editing = true;
-                                                keybind_input_len = shell_key_binding.len;
-                                                const len = @min(shell_key_binding.len, keybind_input_buf.len);
-                                                @memcpy(keybind_input_buf[0..len], shell_key_binding[0..len]);
-                                                shell_key_binding = keybind_input_buf[0..len];
-                                            } else if (opt_idx == 4) {
-                                                theme = cycleTheme(theme, true);
-                                                saveThemeToConfig(init.io, theme);
-                                                if (theme == .system)
-                                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                            } else if (opt_idx == 6 or opt_idx == 7) {
-                                                griddim_typing = false;
-                                                const v = if (opt_idx == 6) &grid_cols else &grid_rows;
-                                                if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
-                                                    griddim_changed = true;
-                                                }
-                                            } else {
-                                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                                const shell_s = detectShell(init.environ_map);
-                                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
-                                            }
+                                        if (opt_idx < settings_count) selected_idx = opt_idx;
+                                        // Bold the grid-size arrow under the cursor (same
+                                        // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
+                                        if (opt_idx == 6 or opt_idx == 7) {
+                                            griddim_hover_left = local_col >= 3 and local_col <= 5;
+                                            griddim_hover_right = local_col >= 8 and local_col <= 10;
                                         }
-                                    } else if (current_screen == .categories and click_row >= list_first_row) {
+                                    }
+                                } else if (current_screen == .categories) {
+                                    if (click_row >= list_first_row) {
                                         const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                        if (cat_idx < g_spec.categories.categories.len) {
-                                            selected_idx = cat_idx;
-                                            disabled_cats[cat_idx] = !disabled_cats[cat_idx];
-                                            saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
-                                        }
-                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
-                                        local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > rows)
-                                    {
-                                        // Scrollbar click-to-jump.
-                                        const total_rows = (top_count + cols - 1) / cols;
+                                        if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
+                                    }
+                                } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
+                                    const total_rows = (top_count + cols - 1) / cols;
+                                    const on_sb = dragging_scrollbar and total_rows > rows;
+                                    if (on_sb) {
+                                        // Scrollbar drag: map the track row to a scroll offset.
                                         const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
                                         const max_scroll = total_rows - rows;
                                         const track_row = @as(usize, @intCast(click_row - grid_first_row));
                                         if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
-                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
+                                    } else {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                         const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
                                         if (grid_col < cols) {
-                                            const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
-                                            if (clicked_idx < top_count) {
-                                                selected_idx = clicked_idx;
-                                                if (multi_select_active) {
-                                                    const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
-                                                    var on_selected = false;
-                                                    for (multi_selected_emojis.items) |e| {
-                                                        if (std.mem.eql(u8, e, entry.emoji)) {
-                                                            on_selected = true;
-                                                            break;
-                                                        }
-                                                    }
-                                                    if (on_selected) {
-                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                        try copyToClipboard(init, joined, final_safe);
-                                                        result_emoji = joined;
-                                                        should_copy_and_exit = true;
-                                                    } else {
-                                                        const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
-                                                        try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
-                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                        try copyToClipboard(init, joined, final_safe);
+                                            const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
+                                            if (hovered < top_count) selected_idx = hovered;
+                                        }
+                                    }
+                                }
+                            } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
+                                // Left click press.
+                                if (popup_msg != null) {
+                                    popup_msg = null;
+                                    break :sgr_loop;
+                                }
+                                const now = getMonotonicMs();
+                                if (now - last_focus_gain_ms > 200) {
+                                    const search_row: i32 = 2 + row_off;
+                                    const grid_first_row: i32 = 4 + row_off;
+                                    const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
+
+                                    if (click_row == search_row and
+                                        local_col >= @as(i32, @intCast(content_width)) - 4)
+                                    {
+                                        // Theme toggle icon — cycle and persist to config.
+                                        theme = switch (theme) {
+                                            .dark => .light,
+                                            .light => .system,
+                                            .system => .dark,
+                                        };
+                                        saveThemeToConfig(init.io, theme);
+                                        if (theme == .system)
+                                            system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                        applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                        // Settings/categories have title+blank before first item → offset +1.
+                                    } else {
+                                        const list_first_row: i32 = grid_first_row + 1;
+                                        if (current_screen == .settings and click_row >= list_first_row) {
+                                            const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                            if (opt_idx < settings_count) {
+                                                selected_idx = opt_idx;
+                                                if (opt_idx == 1) {
+                                                    keybind_editing = true;
+                                                    keybind_input_len = shell_key_binding.len;
+                                                    const len = @min(shell_key_binding.len, keybind_input_buf.len);
+                                                    @memcpy(keybind_input_buf[0..len], shell_key_binding[0..len]);
+                                                    shell_key_binding = keybind_input_buf[0..len];
+                                                } else if (opt_idx == 4) {
+                                                    theme = cycleTheme(theme, true);
+                                                    saveThemeToConfig(init.io, theme);
+                                                    if (theme == .system)
+                                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                                } else if (opt_idx == 6 or opt_idx == 7) {
+                                                    griddim_typing = false;
+                                                    const v = if (opt_idx == 6) &grid_cols else &grid_rows;
+                                                    if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
+                                                        griddim_changed = true;
                                                     }
                                                 } else {
-                                                    should_copy_and_exit = true;
+                                                    const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                                    const shell_s = detectShell(init.environ_map);
+                                                    toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
+                                                }
+                                            }
+                                        } else if (current_screen == .categories and click_row >= list_first_row) {
+                                            const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                            if (cat_idx < g_spec.categories.categories.len) {
+                                                selected_idx = cat_idx;
+                                                disabled_cats[cat_idx] = !disabled_cats[cat_idx];
+                                                saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
+                                            }
+                                        } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
+                                            local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > rows)
+                                        {
+                                            // Scrollbar click-to-jump; mark as drag start so
+                                            // subsequent motion events continue scrolling even
+                                            // when the cursor strays left or right of the track.
+                                            dragging_scrollbar = true;
+                                            const total_rows = (top_count + cols - 1) / cols;
+                                            const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
+                                            const max_scroll = total_rows - rows;
+                                            const track_row = @as(usize, @intCast(click_row - grid_first_row));
+                                            if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
+                                        } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
+                                            const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                            if (grid_col < cols) {
+                                                const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
+                                                if (clicked_idx < top_count) {
+                                                    selected_idx = clicked_idx;
+                                                    if (multi_select_active) {
+                                                        const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
+                                                        var on_selected = false;
+                                                        for (multi_selected_emojis.items) |e| {
+                                                            if (std.mem.eql(u8, e, entry.emoji)) {
+                                                                on_selected = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (on_selected) {
+                                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                            try copyToClipboard(init, joined, final_safe);
+                                                            result_emoji = joined;
+                                                            should_copy_and_exit = true;
+                                                        } else {
+                                                            const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                                                            try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                            try copyToClipboard(init, joined, final_safe);
+                                                        }
+                                                    } else {
+                                                        should_copy_and_exit = true;
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
+                            // Advance past this event; continue loop if next event follows.
+                            sgr_off += term_pos + 1; // skip Cb;Cx;CyM/m
+                            const next = 3 + sgr_off;
+                            if (next + 2 < n and bytes[next] == 0x1b and bytes[next + 1] == '[' and bytes[next + 2] == '<') {
+                                sgr_off += 3; // skip \x1b[< prefix of next event
+                            } else {
+                                break :sgr_loop;
+                            }
+                        } // end sgr_loop
                     }
                 } else if (n > 2 and bytes[1] == 'O') {
                     // Arrow keys — application cursor key mode (\x1bOA/B/C/D).
@@ -3191,6 +3327,7 @@ pub fn main(init: std.process.Init) !void {
                             if (!multi_select_active) selected_idx = null;
                             grid_scroll_top = 0;
                             total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            term_lib.appendLog("search q=\"{s}\" results={d}", .{ query_buf[0..query_len], total_matches });
                         }
                     }
                 } else if (has_focus and (current_screen == .help or current_screen == .about or
@@ -3311,6 +3448,10 @@ pub fn main(init: std.process.Init) !void {
                                 saveUsizeToConfig(init.io, "rows", grid_rows);
                                 griddim_changed = true;
                                 griddim_typing = false;
+                            } else if (opt_idx == 8) {
+                                mru.clear();
+                                popup_title = "✔ done";
+                                popup_msg = "Recent history cleared.";
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
@@ -3641,7 +3782,13 @@ pub fn main(init: std.process.Init) !void {
                                 if (std.mem.eql(u8, action, "nav_left")) {
                                     if (query_cursor > 0) query_cursor -= 1;
                                 } else if (std.mem.eql(u8, action, "nav_right")) {
-                                    if (query_cursor < query_len) query_cursor += 1;
+                                    if (query_cursor < query_len) {
+                                        query_cursor += 1;
+                                    } else if (top_count > 0) {
+                                        // Cursor already at end of query → enter grid.
+                                        selected_idx = 0;
+                                        adjustScrollTop(0, &grid_scroll_top, vp, trows);
+                                    }
                                 } else if (is_home) {
                                     query_cursor = 0;
                                 } else if (is_end) {

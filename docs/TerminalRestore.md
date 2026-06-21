@@ -117,3 +117,58 @@ the bottom row (forces the scroll-up reservation), and exit via Enter
 (selection + fade), Esc, Ctrl-C, and a mouse click. After exit the next
 prompt must sit directly under the launching command — zero blank lines, no
 leftover TUI rows, scrollback intact.
+
+## 6. Pitfall: SGR mouse events split across reads → typed into search query
+
+**Symptom.** After fast scrollbar drag or rapid wheel scroll, characters like
+`7M`, `2;32;12M`, or `[<32;32;11M` appear in the search bar of the next
+session. They are the *tail bytes of SGR mouse events* whose leading bytes
+were consumed in a prior read.
+
+**Root cause.** `?1003h` (any-motion tracking) generates one `\x1b[<Cb;Cx;CyM`
+event per mouse-position sample — at 125 Hz that is thousands of events per
+scrollbar drag. With a 64-byte read buffer, each `readStdin` call holds roughly
+five 12-byte events. The original parser processed **only the first event** per
+read and then returned to `poll()`. The remaining bytes came back in the next
+`readStdin` call. When the read-buffer boundary fell *inside* an event (e.g.
+the buffer ended after `\x1b[<32;32;` with no `M` yet), the continuation bytes
+(`7M`, `12M`, ...) arrived in the next read starting with a digit — no leading
+`\x1b` — so the printable-text branch typed them into the query.
+
+**Why panic made it worse.** Zig `defer` blocks do not run on `panic()`. When
+the app panicked (e.g. the now-fixed `name[0..max_len-3]` out-of-bounds in the
+description row), the CPR drain block was skipped entirely. Mouse events that
+foot had already queued in the PTY buffer were then read by the next process
+(the shell), appearing verbatim in the prompt.
+
+**Fix — three layers in `src/main.zig`:**
+
+1. **Larger read buffer** — `read_buf` grew from 64 → 512 bytes. With 12-byte
+   events that is ~40 events per read, cutting split probability 8×.
+
+2. **Multi-event loop (`sgr_loop`)** — the `bytes[2] == '<'` branch now loops
+   with an `sgr_off` cursor: after processing one complete event it advances
+   past the terminator, checks whether the next three bytes are `\x1b[<`, and
+   if so continues into the next event. All complete events in the buffer are
+   consumed in a single read iteration before returning to `poll()`.
+
+3. **Carry buffer for incomplete tails** — when the loop finds no `M`/`m`
+   terminator in the remaining bytes (`term_char == 0`), it saves the partial
+   `\x1b[<...` bytes into `mouse_carry[0..mouse_carry_len]`. At the start of
+   the next `readStdin`, carry bytes are prepended to the front of `read_buf`
+   so the continuation arrives as a contiguous, parseable sequence.
+
+4. **Panic drain** — the `pub fn panic` handler was extended to drain the TTY
+   input non-blockingly after writing `RESTORE`. This flushes any SGR events
+   that foot queued before processing `MOUSE_OFF`, matching what the `defer`
+   block already did for normal exits.
+
+**Detection pattern.** If control-code leak symptoms reappear, search the log
+for search queries that match `^\d.*[Mm]$` or contain `;` — those are raw SGR
+parameter tails. The escape byte (`\x1b`) is non-printable so it is silently
+dropped, leaving only the parameter+terminator suffix visible as text.
+
+**Testing.** Drag the scrollbar hard and fast for 5–10 seconds, release, then
+scroll the mouse wheel rapidly. Close the picker and verify the shell prompt is
+clean. In `--tui` mode, run `emojig --tui | cat` and repeat — `cat` will print
+any bytes that leak after the TUI exits, making them visible.

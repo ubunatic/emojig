@@ -115,6 +115,37 @@ pub fn writeAll(fd: std.posix.fd_t, bytes: []const u8) !void {
     }
 }
 
+/// Append a timestamped line to /tmp/emojig.log.
+/// The caller formats the message body; a Unix second timestamp and newline
+/// are prepended/appended automatically.  Uses raw POSIX I/O — no heap.
+pub fn appendLog(comptime fmt: []const u8, args: anytype) void {
+    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, "/tmp/emojig.log", wr_flags, 0o644) catch return;
+    defer _ = std.posix.system.close(fd);
+    var ts = std.mem.zeroes(std.posix.system.timespec);
+    _ = std.posix.system.clock_gettime(.REALTIME, &ts);
+    var buf: [512]u8 = undefined;
+    const hdr = std.fmt.bufPrint(&buf, "[{d}] ", .{ts.sec}) catch return;
+    const body = std.fmt.bufPrint(buf[hdr.len..], fmt ++ "\n", args) catch return;
+    const total = hdr.len + body.len;
+    _ = std.posix.system.write(fd, buf[0..total].ptr, total);
+}
+
+/// Read RSS from /proc/self/statm and return it in bytes (0 on error).
+pub fn readRssBytes() usize {
+    const flags = std.posix.O{ .ACCMODE = .RDONLY };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, "/proc/self/statm", flags, 0) catch return 0;
+    defer _ = std.posix.system.close(fd);
+    var buf: [64]u8 = undefined;
+    const len = std.posix.read(fd, &buf) catch return 0;
+    if (len == 0) return 0;
+    var it = std.mem.splitScalar(u8, buf[0..len], ' ');
+    _ = it.next(); // virt
+    const rss_str = it.next() orelse return 0;
+    const rss_pages = std.fmt.parseInt(usize, std.mem.trim(u8, rss_str, " \t\r\n"), 10) catch return 0;
+    return rss_pages * 4096;
+}
+
 pub fn logMemoryUsage() void {
     const flags = std.posix.O{ .ACCMODE = .RDONLY };
     const fd = std.posix.openat(std.posix.AT.FDCWD, "/proc/self/statm", flags, 0) catch return;

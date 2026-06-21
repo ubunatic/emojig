@@ -65,6 +65,28 @@ pub fn load() void {
     }
 }
 
+pub fn clear() void {
+    mru_count = 0;
+
+    const home = std.mem.span(std.c.getenv("HOME") orelse return);
+    var path_buf: [512]u8 = undefined;
+    const config_dir = std.fmt.bufPrint(&path_buf, "{s}/.config/emojig", .{home}) catch return;
+    if (config_dir.len + 1 > path_buf.len) return;
+    path_buf[config_dir.len] = 0;
+
+    var file_path_buf: [520]u8 = undefined;
+    const file_path = std.fmt.bufPrint(&file_path_buf, "{s}/mru.json", .{config_dir}) catch return;
+    if (file_path.len + 1 > file_path_buf.len) return;
+    file_path_buf[file_path.len] = 0;
+
+    const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, file_path_buf[0..file_path.len :0], wr_flags, 0o644) catch return;
+    const empty = "[]";
+    _ = std.posix.system.write(fd, empty.ptr, empty.len);
+    _ = std.posix.system.fsync(fd);
+    _ = std.posix.system.close(fd);
+}
+
 pub fn save(emoji: []const u8) void {
     if (emoji.len == 0 or emoji.len > 31) return;
 
