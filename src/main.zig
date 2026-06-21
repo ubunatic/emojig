@@ -1647,10 +1647,15 @@ pub fn main(init: std.process.Init) !void {
             // AND more input is already buffered — coalesces hover storms without
             // delaying keyboard input. Keyboard events always trigger an immediate
             // render so characters appear as they are typed.
-            const skip_render = !is_first_render and !exit_preview and
-                last_was_motion and
-                (tui.poll(stdin_fd, pipe_rd, 0) == .tty);
-            if (!skip_render and (exit_preview or !should_copy_and_exit)) {
+            //
+            // fast_render: motion events still queued (scrollbar drag / hover storm).
+            // Draw the full frame with blank emoji cells so foot can update the
+            // scrollbar thumb position instantly — no new glyphs means no
+            // rasterization delay. Full emoji cells render once the queue drains.
+            const has_pending_input = tui.poll(stdin_fd, pipe_rd, 0) == .tty;
+            const fast_render = !is_first_render and !exit_preview and
+                (last_was_motion or dragging_scrollbar) and has_pending_input;
+            if (exit_preview or !should_copy_and_exit) {
                 try writeAll(stdout_fd, "\x1b[?25l");
 
                 var ws_size = std.mem.zeroes(std.posix.winsize);
@@ -2311,6 +2316,27 @@ pub fn main(init: std.process.Init) !void {
                                 @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
                                 gl_pos += rem_sp.len;
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
+                            } else if (fast_render) {
+                                // Blank cells: background + spaces only, no emoji glyphs.
+                                // foot can paint this instantly (nothing to rasterize).
+                                // The scrollbar thumb is still written so drag position
+                                // tracks live; emojis fill in on the next full render.
+                                var gl_pos: usize = 0;
+                                for ([_][]const u8{ " ", palette.grid_bg, palette.grid_fg }) |s| {
+                                    @memcpy(line_buf[gl_pos..][0..s.len], s);
+                                    gl_pos += s.len;
+                                }
+                                const blank_len = @min(content_width, spaces.len);
+                                @memcpy(line_buf[gl_pos..][0..blank_len], spaces[0..blank_len]);
+                                gl_pos += blank_len;
+                                try writeAll(stdout_fd, line_buf[0..gl_pos]);
+                                if (grid_needs_scroll and content_width >= 2) {
+                                    const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
+                                    const sb: []const u8 = if (on_thumb) "▐" else " ";
+                                    var sb_buf: [16]u8 = undefined;
+                                    const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                    try writeAll(stdout_fd, sb_seq);
+                                }
                             } else {
                                 var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
                                 var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
@@ -3090,6 +3116,33 @@ pub fn main(init: std.process.Init) !void {
                                         const max_scroll = total_rows - rows;
                                         const track_row = @as(usize, @intCast(click_row - grid_first_row));
                                         if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
+                                        // Write only the scrollbar column so the thumb tracks the
+                                        // mouse instantly on every event, without waiting for the
+                                        // full-frame render at the end of the batch. Uses absolute
+                                        // cursor positioning so the rest of the frame is untouched.
+                                        // Cursor is parked back at the search bar row afterward so
+                                        // the next render's relative \x1b[NA reposition is correct.
+                                        if (global_tui_start_row) |tui_top| {
+                                            const new_max = if (max_scroll > 0) max_scroll else 1;
+                                            const new_thumb = grid_scroll_top * tg.travel / new_max;
+                                            var sb_r: usize = 0;
+                                            while (sb_r < rows) : (sb_r += 1) {
+                                                const abs_row = @as(usize, @intCast(tui_top)) +
+                                                    3 + @as(usize, @intCast(row_off)) + sb_r;
+                                                const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
+                                                const sb_char: []const u8 = if (on_t) "▐" else " ";
+                                                var sb_buf: [32]u8 = undefined;
+                                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d};{d}H{s}", .{ abs_row, content_width + 1, sb_char });
+                                                try writeAll(stdout_fd, sb_seq);
+                                            }
+                                            // Park cursor at search-bar row so next render's
+                                            // relative move (\x1b[{1+row_off}A\r) lands correctly.
+                                            const search_row = @as(usize, @intCast(tui_top)) +
+                                                1 + @as(usize, @intCast(row_off));
+                                            var park_buf: [24]u8 = undefined;
+                                            const park_seq = try std.fmt.bufPrint(&park_buf, "\x1b[{d};1H", .{search_row});
+                                            try writeAll(stdout_fd, park_seq);
+                                        }
                                     } else {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                         const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;

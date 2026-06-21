@@ -172,3 +172,56 @@ dropped, leaving only the parameter+terminator suffix visible as text.
 scroll the mouse wheel rapidly. Close the picker and verify the shell prompt is
 clean. In `--tui` mode, run `emojig --tui | cat` and repeat — `cat` will print
 any bytes that leak after the TUI exits, making them visible.
+
+## 7. Scroll performance: fast-render and per-event scrollbar tracking
+
+**Context.** `?1003h` (any-motion) generates up to 125 events/sec during a
+scrollbar drag. The TUI's `sgr_loop` processes an entire 512-byte read buffer
+(~40 events) before returning to the render. Without mitigation the emoji grid
+and scrollbar both freeze while foot rasterizes a full render, then jump to the
+batch-final position.
+
+**What we tried and why it didn't fully work.**
+
+* *Pre-rendering emojis to warm foot's glyph atlas*: foot only rasterizes
+  glyphs that appear in the visible viewport. Any off-screen or invisible-ink
+  trick is silently skipped. Preload before alt-screen causes a flash AND only
+  loads the last screenful. This approach is fundamentally unworkable without
+  foot-side support.
+
+* *Per-event carry buffer* (break sgr_loop after each drag, save remainder to
+  `mouse_carry`): gave one full-frame render per event (40×/batch). PTY write
+  volume was 40 KB/batch, outer-loop overhead was 40× per batch. Result:
+  sluggish, emojis never loaded during continuous drag (because
+  `mouse_carry_len > 0` kept `fast_render` active forever).
+
+**What is implemented.**
+
+Two complementary mechanisms in `src/main.zig`:
+
+1. **`fast_render` flag** (computed before each render): when a motion event
+   just fired AND the PTY still has pending input (`last_was_motion or
+   dragging_scrollbar) and has_pending_input`), the grid rows are drawn as
+   `palette.grid_bg + spaces` instead of emoji glyphs. The scrollbar thumb is
+   still drawn at the correct (batch-final) position. foot can paint a
+   blank-cell frame instantly — no glyph atlas lookups. When the queue drains,
+   the next render is a full emoji render.
+
+2. **Per-event scrollbar column write inside `sgr_loop`**: after each
+   scrollbar drag event updates `grid_scroll_top`, we write exactly `rows`
+   cursor-positioning sequences (`\x1b[ROW;COLHchar`) directly to the PTY —
+   ~100 bytes total, no emoji glyphs. This updates only the rightmost column
+   of the grid area so the thumb tracks the mouse at every event, independent
+   of the full-frame render rate. After the column writes the cursor is parked
+   back at the search-bar row with an absolute `\x1b[ROW;1H` so the next
+   render's relative `\x1b[{1+row_off}A\r` reposition still lands at the
+   correct TUI top.
+
+**Remaining limitation.** The very first scroll after a cold launch (or after
+scrolling to a section with uncached glyphs) still causes a visible delay:
+foot's HarfBuzz/FreeType rasterization takes ~80–150 ms per viewport of new
+glyphs, and we cannot pipeline around it — foot processes output in order, so
+any frame we write while foot is rasterizing will only display after it
+finishes. This is a foot-side constraint. The `fast_render` path ensures the
+*scrollbar* at least shows the correct position after the delay; the grid cells
+remain blank until the queue drains.
