@@ -642,6 +642,52 @@ test "localization strings JSON files match spec.Strings struct" {
     }
 }
 
+test "ranking: cars — vehicle search" {
+    // "cars" fuzzy-matches vehicle emojis via plural stem + word-position heuristic.
+    // All four main car variants must land in top 10; trucks also in top 20.
+    try std.testing.expect(inTop("cars", "🚗", 10)); // automobile (baseline)
+    try std.testing.expect(inTop("cars", "🚘", 10)); // oncoming automobile
+    try std.testing.expect(inTop("cars", "🚙", 10)); // sport utility vehicle
+    try std.testing.expect(inTop("cars", "🛻", 10)); // pickup truck
+    try std.testing.expect(inTop("cars", "🚚", 20)); // delivery truck
+    try std.testing.expect(inTop("cars", "🚛", 20)); // articulated lorry
+}
+
+test "ranking: sparkling — champagne and clinking glasses" {
+    // "sparkling" should surface 🍾 and 🥂 in the top 10.
+    try std.testing.expect(inTop("sparkling", "🍾", 10));
+    try std.testing.expect(inTop("sparkling", "🥂", 10));
+}
+
+test "ranking: glass / glasses — drinkware" {
+    // "glass": five core drinkware emojis in top 10; champagne/cup/crystal in top 20.
+    try std.testing.expect(inTop("glass", "🍷", 10)); // wine glass
+    try std.testing.expect(inTop("glass", "🍸", 10)); // cocktail glass
+    try std.testing.expect(inTop("glass", "🥂", 10)); // clinking glasses
+    try std.testing.expect(inTop("glass", "🥛", 10)); // glass of milk
+    try std.testing.expect(inTop("glass", "🥃", 10)); // tumbler glass
+    try std.testing.expect(inTop("glass", "🍾", 20)); // champagne bottle
+    try std.testing.expect(inTop("glass", "🥤", 20)); // cup with straw
+    try std.testing.expect(inTop("glass", "🔮", 20)); // crystal ball
+
+    // "glasses": same drinkware visible within top 15 (eyewear occupies top 5 slots).
+    try std.testing.expect(inTop("glasses", "🍷", 10));
+    try std.testing.expect(inTop("glasses", "🍸", 10));
+    try std.testing.expect(inTop("glasses", "🥂", 10));
+    try std.testing.expect(inTop("glasses", "🥛", 10));
+    try std.testing.expect(inTop("glasses", "🥃", 15));
+    try std.testing.expect(inTop("glasses", "🍾", 20));
+    try std.testing.expect(inTop("glasses", "🥤", 20));
+    try std.testing.expect(inTop("glasses", "🔮", 20));
+}
+
+test "ranking: lens — magnifying glass and crystal ball" {
+    // "lens" should surface 🔍 and 🔎 in the top 10; crystal ball in top 20.
+    try std.testing.expect(inTop("lens", "🔍", 10));
+    try std.testing.expect(inTop("lens", "🔎", 10));
+    try std.testing.expect(inTop("lens", "🔮", 20));
+}
+
 fn benchNowNs() u64 {
     var ts = std.mem.zeroes(std.posix.system.timespec);
     _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
@@ -693,3 +739,4 @@ test "benchmark: search throughput" {
         try std.testing.expect(ns_plural < max_ns);
     }
 }
+

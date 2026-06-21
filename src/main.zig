@@ -3876,6 +3876,9 @@ pub fn main(init: std.process.Init) !void {
                                 } else if (std.mem.eql(u8, action, "nav_up") and sel < cols) {
                                     // Top grid row → release focus back to prompt.
                                     selected_idx = null;
+                                } else if (std.mem.eql(u8, action, "nav_left") and sel == 0) {
+                                    // First cell → release focus back to prompt instead of wrapping.
+                                    selected_idx = null;
                                 } else {
                                     selected_idx = navSelect(action, sel, top_count, cols, trows);
                                 }
