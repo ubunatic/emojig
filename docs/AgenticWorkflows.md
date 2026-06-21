@@ -67,7 +67,7 @@ When an agent experiences memory/context compaction, it loses fine-grained histo
 
 ---
 
-## 4. Large-Scale Zig Refactoring & TUI Timing Stability
+## 4. Large-Scale Zig Refactoring & Core TUI Integrity
 
 ### Safely Splitting Monolithic Files
 When refactoring large files (e.g., modularizing `src/main.zig`'s 5,000+ lines or `src/root.zig`'s 1,200+ lines), modifying hundreds of call sites is highly error-prone.
@@ -84,5 +84,36 @@ When refactoring large files (e.g., modularizing `src/main.zig`'s 5,000+ lines o
 ### Fallback Default Restorations
 * **Prompt-to-Grid Keyboard Fallback**: Ensure that keyboard actions (like pressing Enter to `select` on the search screen) preserve original fallback logic such as `selected_idx orelse 0`. If this is refactored to strictly check if `selected_idx` is non-null, keyboard-only/prompt-focused flows will silently break because typing reset the selection index to `null`.
 
-### Timing Stability in PTY Test Harnesses
-* TUI test scripts running in programmatic PTYs require conservative sleep intervals (e.g., `300ms` to `500ms` instead of `200ms`) during startup and render transitions to prevent race conditions where `collectAvailable()` reads an empty or incomplete buffer.
+---
+
+## 5. Input Parsing & Vim Muscle Integration
+
+Developers using terminal tools frequently have deep Vim muscle memory. Forcing a developer to exit using a specific desktop key binding (like standard `Ctrl-C`) when they are used to typing `:q` can cause user frustration.
+* **Direct Input Buffer Traversal**: Check for specific command sequences (e.g., `:q`, `:quit`, `/quit`) at the entry of the keyboard input loop.
+* **Pre-emptive Interception**: By checking if the input buffer starts with or matches these patterns *before* passing characters to the query search engine, the application can exit immediately with standard return status 0 without rendering false search queries or flashing empty screens.
+
+---
+
+## 6. Programmatic Schema Generation & Resource Validation
+
+Emojig defines a custom 256-color palette spec (`spec/colors.json`) mapping xterm-256 indices to names, shorts, hex values, and description aliases.
+* **Schema Generation from Master Specs**: Hardcoding valid values in multiple schemas (e.g., themes and pixel-art definitions) is a maintenance hazard. We solved this by having the color generation tool (`scripts/gen_colors/main.go`) auto-generate `spec/theme.schema.json` and `spec/art.schema.json` using the master colors database. This programmatically embeds valid xterm color names, hex patterns, and short codes into the schemas, ensuring immediate validation using standard JSON Schema tooling.
+* **Animation Warn-Once Suppression**: When compiling half-block pixel art frames from PNG images, we verify that every non-transparent pixel maps to an exact color in our schema. If an incompatible color is found, we warn and match to the closest schema color. To avoid flooding stdout with thousands of identical warnings (one per pixel per frame), we maintain a cache of warned colors and alert the developer *only once* per color/animation.
+
+---
+
+## 7. Ecosystem Focus & Complexity Reduction
+
+Historically, the repository contained a concurrent Go-based clone of the picker (`mojigo`).
+* **Technical Debt & Focus**: Dual-language implementations of identical interactive behaviors lead to divergence. Differences in search score calculations, layouts, and window metrics crop up over time.
+* **Decision**: Deleting `mojigo` to focus 100% of TUI efforts on Zig. This lowered repository lines of code, simplified the build process, and ensured that performance optimization resides solely in the zero-allocation Zig codebase.
+
+---
+
+## 8. PTY Testing & Timing Stability in Async Harnesses
+
+Simulating keyboard/mouse interactions in terminal apps using Unix pseudo-terminals (PTYs) is notoriously timing-sensitive.
+* **Coalesced Reads**: If a test harness writes multiple keystrokes (like typing a query and then pressing Enter) in quick succession without a yield, the operating system kernel merges these bytes into a single read event inside the target application's buffer. The application sees this as a single chunk, bypassing distinct state changes (e.g., query typed -> result list updated -> enter pressed).
+* **Mitigation**: Introduce short pauses (e.g., 200ms) between keystroke writes to let the application process events and update its internal render tree.
+* **Timing Conservatism**: On local fast machines, 100-200ms sleep is usually enough. However, in automated test harnesses (CI/CD, sandboxed tasks, virtualized environments), scheduling drift can delay the TUI renderer. Standardizing on conservative delays (e.g., 300-500ms) during startup and large viewport updates eliminates test flakiness.
+
