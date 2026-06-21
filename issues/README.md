@@ -4,6 +4,14 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 
 ---
 
+## 📝 Review Reports
+
+| Report | Title | Summary |
+|---|---|---|
+| [**24**](24-ux-and-resilience-review-2026-06.md) | [UX & Resilience Review — 2026-06-21](24-ux-and-resilience-review-2026-06.md) | Consolidated repo review covering current UX/resilience risks, validated new issues, and stale backlog entries. |
+
+---
+
 ## 🟢 Open Issues (Active Backlog)
 
 | Issue | Title | Priority | Summary |
@@ -17,7 +25,12 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**16**](16-tui-flicker.md) | [Zig TUI flickering during rapid redraws](16-tui-flicker.md) | **P2** | Redundant pre-clearing of lines (`\x1b[2K\r`) at the start of drawing each row causes visual flicker. Rely entirely on trailing clear (`\x1b[K`) instead. |
 | [**18**](18-update-rpm-mode.md) | [`:update` command: RPM install mode](18-update-rpm-mode.md) | **P3** | `:update` detects dev/deb/curl modes but not RPM. Documents detection heuristic, `dnf upgrade` vs manual `.rpm` download path, and `captureShellCmd` wiring needed. |
 | [**19**](19-update-brew-mode.md) | [`:update` command: Homebrew install mode](19-update-brew-mode.md) | **P3 (blocked)** | `:update` has no Homebrew branch. Blocked on issue 02 (tap not live) and Linux-only build. Documents detection via Cellar path and `brew upgrade` command. |
+| [**20**](20-wl-clipboard-opens-as-desk-app.md) | [Fast Multi-Select calls wl-clipboard as visible desktop app](20-wl-clipboard-opens-as-desk-app.md) | **P2** | `copyToClipboard` still spawns raw `wl-copy` with no debounce or child-env cleanup, so GNOME/Wayland notification and dock-noise behavior remains relevant. |
 | [**21**](21-color-system-simplification.md) | [Color System Simplification](21-color-system-simplification.md) | **P2** | Consolidate the color definitions and conversions, eliminate hardcoded overrides in the generator, and use `spec/colors.json` as the single source of truth. |
+| [**22**](22-category-switcher.md) | [Category Switcher UI](22-category-switcher.md) | **P3** | Feature idea for a GTK-style category bar; useful for navigation, but not yet prioritized ahead of reliability work. |
+| [**25**](25-xfce4-terminal-autodetect-gap.md) | [GUI auto-mode misses `xfce4-terminal` despite built-in host support](25-xfce4-terminal-autodetect-gap.md) | **P2** | The host kind and argv builder support `xfce4-terminal`, but `selectTerminalHost()` never auto-detects it. |
+| [**26**](26-install-and-update-integrity-gap.md) | [`install.sh` and self-update still skip artifact verification](26-install-and-update-integrity-gap.md) | **P1** | The release plan promises verification, but the installer still downloads and extracts without `SHA256SUMS`/`minisign`, and curl-update inherits the same gap. |
+| [**27**](27-persistence-buffer-edges.md) | [Config and MRU persistence still have silent 4 KB edge behavior](27-persistence-buffer-edges.md) | **P2** | The config loader still hard-bails on a full 4 KB read, and MRU still uses the same fixed-size single-read pattern without a full-buffer guard. |
 
 ---
 
@@ -37,4 +50,3 @@ These issues have been fully resolved, finalized, or closed by design. Their tec
 | [**10**](closed/10-synonym-search-ranking.md) | [Synonym Support for Better Search Ranking](closed/10-synonym-search-ranking.md) | **Closed (Implemented)** | `spec/synonyms.json` synonym expansion at match time in both engines; 🚗 outranks 🚋 for "car", asserted by Zig and Go tests. Broader ranking work continues on the website roadmap. |
 | [**13**](closed/13-terminal-state-diagnostic-tool.md) | [Terminal state diagnostic tool](closed/13-terminal-state-diagnostic-tool.md) | **Closed (Implemented)** | `scripts/termstate.sh` reports raw mode, mouse tracking, scroll region, cursor, paste and altscreen state via DECRQM/DECRQSS with `OK` / `⚠ LEAKED` annotations. |
 | [**17**](closed/17-screenshot-keys-and-go-fd-blocking.md) | [Screenshot harness: typed keys + Go `Fd()` blocking gotcha](closed/17-screenshot-keys-and-go-fd-blocking.md) | **Closed (Implemented)** | `scripts/screenshot` types an optional keys arg (e.g. `'??'`) before capturing. Documents two Go PTY traps: poller-parked `os.File.Read` and `Fd()` resetting the fd to blocking. |
-

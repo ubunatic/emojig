@@ -121,3 +121,138 @@ specific entry. Verify any new mapping with the project's screenshot tool
 (`go run scripts/screenshot/*.go zig-out/bin/emojig "<query>"`) rather than
 assuming the scorer will pick the result you intended — tie-breaking by target
 length is easy to get backwards.
+
+---
+
+## 4. Search-word ordering in the packed binary: aliases first
+
+The packer (`scripts/pack_emojis/main.go`) builds each emoji's search string by
+joining de-duplicated words in this order:
+
+```
+aliases → description → tags → category keyword
+```
+
+Before this was established the order was `description → tags → aliases`.  The
+change matters because the fuzzy scorer penalises late-starting matches (the
+"late-start penalty" in `matchTermDirect`).  Putting the canonical popular name
+**first** (e.g. `"coffee"` for ☕, `"heart"` for ❤️, `"bee"` for 🐝) means that
+query scores at position 0 with a word-start bonus and zero late-start penalty,
+giving it a decisive ranking advantage.
+
+**Consequence for new data edits**: when you want a term to be the *primary* search
+word for an emoji (i.e. typing just that word should surface the emoji in the top
+3), add it as the **first alias** in `data/emoji.json`, not as a tag.  Tags land
+after the description and score lower.  Example: to make `"money"` reliably surface
+💰 before 🤑 and 💸 (both of which have `"money_mouth_face"` / `"money_with_wings"`
+as aliases, putting "money" at position 0), add `"money"` as the first alias of 💰.
+
+---
+
+## 5. Category keyword injection
+
+The packer injects one canonical keyword per emoji category at the **end** of each
+emoji's search string:
+
+| Category          | Injected keyword |
+|-------------------|-----------------|
+| Animals & Nature  | `animal`        |
+| Food & Drink      | `food`          |
+| Travel & Places   | `travel`        |
+| Activities        | `activity`      |
+
+This is done entirely in the packer — no tag needs to be added to `data/emoji.json`
+for every individual emoji.  The mapping lives in `categoryKeywords` at the top of
+`scripts/pack_emojis/main.go`.
+
+**Combined queries work well**; bare category-keyword queries do not.
+
+`"animal lion"` → AND search, both terms must match → only Animals & Nature emojis
+that also have "lion" in their search strings → 🦁 in top 24.  This is reliable.
+
+`"animal"` alone → fuzzy search hits every emoji whose search string contains
+`a…n…i…m…a…l` as a subsequence — potentially hundreds, far more than the
+~150 actual Animals & Nature emojis.  The injected keyword is intended for the
+combined-query use case, not bare-keyword category browsing.  For bare category
+browsing the TUI uses the category-filter mechanism (§6 below).
+
+---
+
+## 6. The `c:` category filter and auto-detect
+
+### Explicit prefix (`c:category term`)
+
+`searchOptions()` parses `c:<word> <rest>` before the fuzzy-match phase:
+`filter_category = word`, `actual_query = rest`.  `findCategorySpec` resolves
+`filter_category` against `CategoriesSpec` (name, short, or any synonym from
+`spec/categories.json`).  The matched `CategorySpec` is then used to filter each
+emoji by whether its search string contains one of the category's synonyms
+(`emojiMatchesCategory`).
+
+**Critical**: when `categories_spec` is `null` (as in unit tests using the bare
+`search()` function), `findCategorySpec` always returns `null`, and
+`matches_cat` is always `false` — every emoji is excluded.  A `c:`-prefixed query
+against `search()` returns **zero results**.  Do not write unit tests that call
+`search("c:animal …")` and expect results.
+
+### Auto-detect (implicit category filter)
+
+After the explicit `c:` check, `searchOptions` tries to auto-detect a category
+from the **first word** of the query.  If `findCategorySpec(categories_spec,
+first_word)` succeeds, the first word is silently consumed as a category filter and
+the rest becomes the search term — no prefix needed.
+
+```
+animal         →  Animals & Nature filter, empty term  →  all animals (MRU-ordered)
+animal lion    →  Animals & Nature filter + "lion"     →  🦁
+animals        →  same (synonym match via spec/categories.json)
+food pizza     →  Food & Drink filter + "pizza"        →  🍕
+vehicles       →  Travel & Places filter               →  all travel (synonym)
+```
+
+**Falls through gracefully** when `categories_spec` is null (unit tests) or when
+the first word is not a known category — it's a no-op in those cases, so existing
+query behaviour is unchanged.
+
+### Spec file: `spec/categories.json`
+
+Maps friendly category names to their canonical short name and synonyms.  The
+short name must match the word injected by the packer (§5) so that
+`emojiMatchesCategory` finds a hit in the search string.  Add synonyms here
+(plural forms, alternate names) to cover natural user input — no code change
+needed.
+
+---
+
+## 7. Coverage tracking: `scripts/check_coverage`
+
+`go run scripts/check_coverage/main.go` (flags: `-cache data/emojibase_en.json`,
+`-v`) compares `data/emoji.json` against the **emojibase** dataset (the same
+upstream source GTK's emoji picker uses, CLDR v46 / Unicode 16.0).  As of June 2026
+emojig covers **97.4 %** (1 663 / 1 707 base emojis).  The 44 missing entries are
+mostly Unicode 16 additions (phoenix 🐦‍🔥, orca 🫍, …) and complex ZWJ people
+sequences — not search-quality gaps.
+
+The script fetches from jsDelivr and caches the result locally; subsequent runs are
+offline.  Run it after bulk emoji data changes to catch regressions.
+
+---
+
+## 8. Ranking test guidelines
+
+`src/root_test.zig` has a suite of ranking tests.  When adding or tuning one:
+
+- **Use `inTop(query, emoji, n)`**, not `searchContains`.  It checks rank, not
+  mere presence.
+- **Top-3 for the primary name**, top-10 for close synonyms, top-24 for
+  category-context queries (e.g. `"animal lion"`).
+- **Buffer size for `searchRank`**: the internal buffer is `[512]Match`.  Pass
+  `limit ≤ 512` or increase the buffer — a limit larger than the buffer causes
+  silent truncation.
+- **Bare category keywords (`"food"`, `"animal"`) are unreliable in tests**
+  because they fuzzy-match hundreds of entries as a subsequence, filling the
+  top-N before the target emoji.  Use combined queries (`"food pizza"`,
+  `"animal lion"`) for category-related ranking assertions.
+- **`c:` prefix cannot be tested via `search()`** — it always returns zero
+  results with null `categories_spec` (see §6).  Test the keyword-injection
+  behaviour directly (`inTop("animal lion", "🦁", 24)`) instead.

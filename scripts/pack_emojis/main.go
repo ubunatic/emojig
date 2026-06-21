@@ -18,8 +18,19 @@ import (
 type EmojiItem struct {
 	Emoji       string   `json:"emoji"`
 	Description string   `json:"description"`
+	Category    string   `json:"category"`
 	Tags        []string `json:"tags"`
 	Aliases     []string `json:"aliases"`
+}
+
+// categoryKeywords injects a canonical keyword for each emoji category so that
+// "c:animal" / "c:food" / "c:travel" filters work without adding tags to every
+// individual emoji in the data file.
+var categoryKeywords = map[string]string{
+	"Animals & Nature": "animal",
+	"Food & Drink":     "food",
+	"Travel & Places":  "travel",
+	"Activities":       "activity",
 }
 
 func cleanWord(word string) string {
@@ -132,12 +143,18 @@ func main() {
 			}
 		}
 
+		// Aliases first so the canonical popular name (e.g. "coffee", "heart",
+		// "bee") lands at position 0 and scores highest for direct queries.
+		for _, a := range item.Aliases {
+			addWords(a)
+		}
 		addWords(item.Description)
 		for _, t := range item.Tags {
 			addWords(t)
 		}
-		for _, a := range item.Aliases {
-			addWords(a)
+		// Inject category keyword so c:animal / c:food / c:travel filters work.
+		if kw, ok := categoryKeywords[item.Category]; ok {
+			addWords(kw)
 		}
 
 		searchStr := strings.Join(searchWords, " ")

@@ -1,6 +1,26 @@
 {
-  "description": "Category synonyms and keywords for filtering.",
+  "description": "Category synonyms and keywords for c: filtering. Names/synonyms match against the emoji search string so each category's packer-injected keyword must appear here too.",
   "categories": [
+    {
+      "name": "animals",
+      "short": "animal",
+      "synonyms": ["animal", "nature", "wildlife", "creature", "pet", "fauna"]
+    },
+    {
+      "name": "food",
+      "short": "food",
+      "synonyms": ["food", "drink", "eat", "meal", "beverage", "fruit", "vegetable"]
+    },
+    {
+      "name": "travel",
+      "short": "travel",
+      "synonyms": ["travel", "vehicle", "transport", "place", "location", "car", "boat", "plane", "train"]
+    },
+    {
+      "name": "activities",
+      "short": "activity",
+      "synonyms": ["activity", "sport", "game", "hobby", "play"]
+    },
     {
       "name": "clocks",
       "short": "clock",
@@ -9,7 +29,7 @@
     {
       "name": "flags",
       "short": "flag",
-      "synonyms": ["flag", "banner"]
+      "synonyms": ["flag", "banner", "country"]
     },
     {
       "name": "blocks",

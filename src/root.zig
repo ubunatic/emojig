@@ -168,6 +168,17 @@ pub fn searchOptions(
             actual_query = "";
         }
     }
+    // Auto-detect: if the first query word matches a known category name or
+    // synonym, treat it as an implicit category filter (no prefix needed).
+    // Only fires when categories_spec is loaded (null → no-op, safe in tests).
+    if (filter_category == null) {
+        const sp = std.mem.indexOfScalar(u8, actual_query, ' ');
+        const first_word = if (sp) |s| actual_query[0..s] else actual_query;
+        if (findCategorySpec(categories_spec, first_word) != null) {
+            filter_category = first_word;
+            actual_query = if (sp) |s| actual_query[s + 1 ..] else "";
+        }
+    }
 
     if (actual_query.len == 0) {
         var mru_indices: [mru.MAX_MRU]usize = undefined;

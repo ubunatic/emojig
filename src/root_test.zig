@@ -379,6 +379,217 @@ fn searchContains(query: []const u8, wanted_emoji: []const u8) bool {
     return false;
 }
 
+/// Returns the 0-based rank of wanted_emoji in the top `limit` results, or
+/// null if not found. Supports limits up to 512.
+fn searchRank(query: []const u8, wanted_emoji: []const u8, limit: usize) ?usize {
+    var top_matches: [512]Match = undefined;
+    var top_count: usize = 0;
+    const actual_limit = @min(limit, top_matches.len);
+    _ = search(query, &top_matches, &top_count, actual_limit);
+    for (top_matches[0..top_count], 0..) |m, i| {
+        if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, wanted_emoji)) return i;
+    }
+    return null;
+}
+
+fn inTop(query: []const u8, wanted_emoji: []const u8, n: usize) bool {
+    const rank = searchRank(query, wanted_emoji, n) orelse return false;
+    return rank < n;
+}
+
+test "ranking: vehicles — car, truck, bike, plane, ship, rocket" {
+    // car: main word → top 3; oncoming variant → top 10
+    try std.testing.expect(inTop("car", "🚗", 3));
+    try std.testing.expect(inTop("car", "🚘", 10));
+    // auto: synonym for automobile → both variants top 10
+    try std.testing.expect(inTop("auto", "🚗", 10));
+    try std.testing.expect(inTop("auto", "🚘", 10));
+    // truck: delivery truck top 3; articulated lorry and pickup top 10
+    try std.testing.expect(inTop("truck", "🚚", 3));
+    try std.testing.expect(inTop("truck", "🚛", 10));
+    try std.testing.expect(inTop("truck", "🛻", 10));
+    // bicycle / bike
+    try std.testing.expect(inTop("bike", "🚲", 5));
+    try std.testing.expect(inTop("bicycle", "🚲", 3));
+    // plane
+    try std.testing.expect(inTop("plane", "✈️", 3));
+    // ship / rocket
+    try std.testing.expect(inTop("ship", "🚢", 5));
+    try std.testing.expect(inTop("rocket", "🚀", 3));
+    // motorbike / scooter
+    try std.testing.expect(inTop("motorcycle", "🏍️", 3));
+}
+
+test "ranking: animals — common mammals" {
+    // big cats
+    try std.testing.expect(inTop("tiger", "🐅", 3));
+    try std.testing.expect(inTop("tiger", "🐯", 10));
+    try std.testing.expect(inTop("lion", "🦁", 3));
+    // dogs and cats
+    try std.testing.expect(inTop("dog", "🐕", 3));
+    try std.testing.expect(inTop("dog", "🐶", 10));
+    try std.testing.expect(inTop("cat", "🐱", 5));
+    try std.testing.expect(inTop("cat", "🐈", 10));
+    // farm animals
+    try std.testing.expect(inTop("horse", "🐎", 10));
+    try std.testing.expect(inTop("horse", "🐴", 10));
+    try std.testing.expect(inTop("cow", "🐮", 3));
+    try std.testing.expect(inTop("cow", "🐄", 10));
+    try std.testing.expect(inTop("pig", "🐷", 3));
+    try std.testing.expect(inTop("pig", "🐖", 10));
+    try std.testing.expect(inTop("rabbit", "🐰", 3));
+    try std.testing.expect(inTop("rabbit", "🐇", 10));
+    // large mammals
+    try std.testing.expect(inTop("elephant", "🐘", 3));
+    try std.testing.expect(inTop("bear", "🐻", 3));
+    try std.testing.expect(inTop("monkey", "🐒", 3));
+    try std.testing.expect(inTop("monkey", "🐵", 10));
+    // misc
+    try std.testing.expect(inTop("snake", "🐍", 3));
+    try std.testing.expect(inTop("frog", "🐸", 3));
+    try std.testing.expect(inTop("dragon", "🐉", 3));
+    try std.testing.expect(inTop("dragon", "🐲", 10));
+    try std.testing.expect(inTop("bat", "🦇", 3));
+    try std.testing.expect(inTop("wolf", "🐺", 3));
+    try std.testing.expect(inTop("fox", "🦊", 3));
+    try std.testing.expect(inTop("panda", "🐼", 3));
+    try std.testing.expect(inTop("koala", "🐨", 3));
+}
+
+test "ranking: animals — birds, fish, insects" {
+    // birds: primary bird emoji + specific species
+    try std.testing.expect(inTop("bird", "🐦", 3));
+    try std.testing.expect(inTop("bird", "🦅", 10));
+    try std.testing.expect(inTop("bird", "🦜", 10));
+    try std.testing.expect(inTop("bird", "🦉", 10));
+    try std.testing.expect(inTop("bird", "🦆", 10));
+    try std.testing.expect(inTop("bird", "🐧", 10));
+    try std.testing.expect(inTop("eagle", "🦅", 3));
+    try std.testing.expect(inTop("owl", "🦉", 3));
+    try std.testing.expect(inTop("penguin", "🐧", 3));
+    try std.testing.expect(inTop("chicken", "🐔", 3));
+    try std.testing.expect(inTop("duck", "🦆", 3));
+    // fish and sea creatures
+    try std.testing.expect(inTop("fish", "🐟", 3));
+    try std.testing.expect(inTop("fish", "🐠", 10));
+    try std.testing.expect(inTop("fish", "🐡", 10));
+    try std.testing.expect(inTop("shark", "🦈", 3));
+    try std.testing.expect(inTop("whale", "🐳", 3));
+    try std.testing.expect(inTop("dolphin", "🐬", 3));
+    // insects
+    try std.testing.expect(inTop("bee", "🐝", 3));
+    try std.testing.expect(inTop("butterfly", "🦋", 3));
+    try std.testing.expect(inTop("bug", "🐛", 3));
+    try std.testing.expect(inTop("ant", "🐜", 3));
+}
+
+test "ranking: nature — plants, trees, flowers, weather, landscapes" {
+    // plants
+    try std.testing.expect(inTop("tree", "🌲", 5));
+    try std.testing.expect(inTop("tree", "🌳", 5));
+    try std.testing.expect(inTop("mushroom", "🍄", 3));
+    try std.testing.expect(inTop("cactus", "🌵", 3));
+    try std.testing.expect(inTop("sunflower", "🌻", 3));
+    try std.testing.expect(inTop("rose", "🌹", 3));
+    // flowers: common term returns rose/tulip/hibiscus
+    try std.testing.expect(inTop("flower", "🌹", 10));
+    try std.testing.expect(inTop("flower", "🌸", 10));
+    try std.testing.expect(inTop("flower", "🌺", 10));
+    try std.testing.expect(inTop("flower", "🌻", 10));
+    // weather
+    try std.testing.expect(inTop("rain", "🌧️", 3));
+    try std.testing.expect(inTop("cloud", "☁️", 3));
+    try std.testing.expect(inTop("snow", "❄️", 10));
+    try std.testing.expect(inTop("snow", "⛄", 10));
+    try std.testing.expect(inTop("lightning", "⚡", 3));
+    try std.testing.expect(inTop("rainbow", "🌈", 3));
+    try std.testing.expect(inTop("sun", "🌞", 5));
+    try std.testing.expect(inTop("sun", "☀️", 10));
+    try std.testing.expect(inTop("moon", "🌙", 10));
+    try std.testing.expect(inTop("moon", "🌝", 10));
+    // landscapes
+    try std.testing.expect(inTop("mountain", "⛰️", 3));
+    try std.testing.expect(inTop("mountain", "🏔️", 10));
+    try std.testing.expect(inTop("wave", "🌊", 5));
+    try std.testing.expect(inTop("volcano", "🌋", 3));
+}
+
+test "ranking: food and drink" {
+    try std.testing.expect(inTop("pizza", "🍕", 3));
+    try std.testing.expect(inTop("coffee", "☕", 3));
+    try std.testing.expect(inTop("beer", "🍺", 3));
+    try std.testing.expect(inTop("burger", "🍔", 3));
+    try std.testing.expect(inTop("sushi", "🍣", 3));
+    try std.testing.expect(inTop("cake", "🎂", 5));
+    try std.testing.expect(inTop("apple", "🍎", 3));
+    try std.testing.expect(inTop("banana", "🍌", 3));
+    try std.testing.expect(inTop("strawberry", "🍓", 3));
+    try std.testing.expect(inTop("grape", "🍇", 3));
+    try std.testing.expect(inTop("bread", "🍞", 3));
+    try std.testing.expect(inTop("egg", "🥚", 3));
+    try std.testing.expect(inTop("cheese", "🧀", 3));
+    try std.testing.expect(inTop("rice", "🍚", 3));
+    try std.testing.expect(inTop("noodle", "🍜", 3));
+}
+
+test "ranking: common objects and symbols" {
+    // keys and locks
+    try std.testing.expect(inTop("key", "🔑", 5));
+    try std.testing.expect(inTop("key", "🗝️", 5));
+    try std.testing.expect(inTop("lock", "🔒", 3));
+    // tools
+    try std.testing.expect(inTop("hammer", "🔨", 3));
+    try std.testing.expect(inTop("wrench", "🔧", 3));
+    try std.testing.expect(inTop("scissors", "✂️", 3));
+    try std.testing.expect(inTop("pencil", "✏️", 3));
+    // communication
+    try std.testing.expect(inTop("phone", "📱", 10));
+    try std.testing.expect(inTop("phone", "☎️", 5));
+    try std.testing.expect(inTop("book", "📖", 5));
+    try std.testing.expect(inTop("book", "📚", 10));
+    try std.testing.expect(inTop("mail", "📧", 24));
+    // symbols
+    try std.testing.expect(inTop("heart", "❤️", 3));
+    try std.testing.expect(inTop("star", "⭐", 3));
+    try std.testing.expect(inTop("fire", "🔥", 3));
+    try std.testing.expect(inTop("ghost", "👻", 3));
+    try std.testing.expect(inTop("robot", "🤖", 3));
+    try std.testing.expect(inTop("crown", "👑", 5));
+    try std.testing.expect(inTop("skull", "💀", 3));
+    try std.testing.expect(inTop("diamond", "💎", 3));
+    try std.testing.expect(inTop("money", "💰", 10));
+    try std.testing.expect(inTop("house", "🏠", 3));
+    try std.testing.expect(inTop("music", "🎵", 10));
+    try std.testing.expect(inTop("music", "🎶", 10));
+}
+
+test "ranking: category keyword injection makes categories searchable" {
+    // The packer injects a canonical keyword for each category into every
+    // emoji's search string.  A combined keyword + term search surfaces the
+    // right emoji from within its category.  Note: querying the keyword alone
+    // may fuzzy-match hundreds of emojis, so we use combined queries here.
+
+    // Animals & Nature → keyword "animal"
+    try std.testing.expect(inTop("animal lion", "🦁", 24));
+    try std.testing.expect(inTop("animal elephant", "🐘", 24));
+    try std.testing.expect(inTop("animal snake", "🐍", 24));
+    try std.testing.expect(inTop("animal fish", "🐟", 24));
+
+    // Food & Drink → keyword "food"
+    try std.testing.expect(inTop("food pizza", "🍕", 24));
+    try std.testing.expect(inTop("food coffee", "☕", 24));
+    try std.testing.expect(inTop("food beer", "🍺", 24));
+
+    // Travel & Places → keyword "travel"
+    try std.testing.expect(inTop("travel car", "🚗", 24));
+    try std.testing.expect(inTop("travel plane", "✈️", 24));
+    try std.testing.expect(inTop("travel ship", "🚢", 24));
+
+    // Activities → keyword "activity"
+    try std.testing.expect(inTop("activity soccer", "⚽", 24));
+    try std.testing.expect(inTop("activity basketball", "🏀", 24));
+}
+
 test "discoverability: sparkle, server, terminal, emojig, and speed adjectives" {
     try std.testing.expect(searchContains("sparkl", "🍾"));
     try std.testing.expect(searchContains("server", "🖥️"));
