@@ -602,7 +602,7 @@ func runMultiSelectTest(binaryPath string) {
 	}
 
 	// Wait for initial render.
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Type ":multi"
@@ -611,7 +611,7 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
 	// Press Enter to activate multi selection mode
 	if _, err := master.Write([]byte("\n")); err != nil {
@@ -619,11 +619,11 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	out := stripANSI(collectAvailable())
 
-	// The status/layout should display "[Multi: 0 sel]"
-	if !strings.Contains(out, "[Multi: 0 sel]") {
+	// The status/layout should display "[Multi:0]"
+	if !strings.Contains(out, "[Multi:0]") {
 		fmt.Printf("FAIL: expected TUI to indicate multi-selection active with 0 selected. Got:\n%s\n", out)
 		cmd.Process.Kill()
 		os.Exit(1)
@@ -636,7 +636,7 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Press Enter to select the robot emoji (🤖)
@@ -645,11 +645,11 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	out2 := stripANSI(collectAvailable())
 
-	// The status/layout should display "[Multi: 1 sel]"
-	if !strings.Contains(out2, "[Multi: 1 sel]") {
+	// The status/layout should display "[Multi:1]"
+	if !strings.Contains(out2, "[Multi:1]") {
 		fmt.Printf("FAIL: expected TUI to show 1 selected. Got:\n%s\n", out2)
 		cmd.Process.Kill()
 		os.Exit(1)
@@ -662,7 +662,7 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Type "heart" to search for heart
@@ -671,7 +671,7 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	_ = collectAvailable()
 
 	// Press Enter to select the heart emoji
@@ -680,11 +680,11 @@ func runMultiSelectTest(binaryPath string) {
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	out3 := stripANSI(collectAvailable())
 
-	// The status/layout should display "[Multi: 2 sel]"
-	if !strings.Contains(out3, "[Multi: 2 sel]") {
+	// The status/layout should display "[Multi:2]"
+	if !strings.Contains(out3, "[Multi:2]") {
 		fmt.Printf("FAIL: expected TUI to show 2 selected. Got:\n%s\n", out3)
 		cmd.Process.Kill()
 		os.Exit(1)

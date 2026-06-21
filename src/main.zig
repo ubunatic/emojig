@@ -13,6 +13,66 @@ const defaults = @import("defaults.zig");
 const spec_mod = @import("spec.zig");
 const tui = @import("tui.zig");
 
+const config = @import("config.zig");
+const integration = @import("integration.zig");
+const pid_lock = @import("pid_lock.zig");
+const color = @import("color.zig");
+const tui_draw = @import("tui_draw.zig");
+
+// ---------------------------------------------------------------------------
+// Namespaced Module Aliases & Forwarding Wrappers
+// ---------------------------------------------------------------------------
+const ScrollbarStyle = config.ScrollbarStyle;
+const scrollbarThumb = tui_draw.scrollbarThumb;
+const deleteAtCursor = tui_draw.deleteAtCursor;
+const ringBell = tui_draw.ringBell;
+const navSelect = tui_draw.navSelect;
+const ansiDisplayWidth = tui_draw.ansiDisplayWidth;
+const formatStatus = tui_draw.formatStatus;
+const expandTemplate = tui_draw.expandTemplate;
+
+const VarSubst = color.VarSubst;
+const expandVars = color.expandVars;
+const bgEscape = color.bgEscape;
+const queryCursorRow = color.queryCursorRow;
+const detectSystemTheme = color.detectSystemTheme;
+
+inline fn effectivePalette(t: Theme, sys: Theme, dim: bool) Palette {
+    return color.effectivePalette(&g_spec, t, sys, dim);
+}
+inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme, alt_screen: bool) void {
+    color.applyTerminalColors(&g_spec, stdout_fd, t, sys, alt_screen);
+}
+
+const loadConfig = config.loadConfig;
+const saveKeyToConfig = config.saveKeyToConfig;
+const saveThemeToConfig = config.saveThemeToConfig;
+const saveUsizeToConfig = config.saveUsizeToConfig;
+const saveDisabledCategories = config.saveDisabledCategories;
+const finalizeGridTyping = config.finalizeGridTyping;
+const applyGridDimClick = config.applyGridDimClick;
+const typeGridDim = config.typeGridDim;
+const stepGridDim = config.stepGridDim;
+const cycleGridDim = config.cycleGridDim;
+const clampGridDim = config.clampGridDim;
+
+inline fn settingDefault(id: []const u8) []const u8 {
+    return config.settingDefault(&g_spec, id);
+}
+inline fn settingDefaultBool(id: []const u8) bool {
+    return config.settingDefaultBool(&g_spec, id);
+}
+
+const printCompletion = integration.printCompletion;
+const detectShell = integration.detectShell;
+const installShellIntegration = integration.installShellIntegration;
+const runUpdate = integration.runUpdate;
+const ensureDesktopIntegration = integration.ensureDesktopIntegration;
+
+const toggleRunningPicker = pid_lock.toggleRunningPicker;
+const writePickerPidFile = pid_lock.writePickerPidFile;
+const removePickerPidFile = pid_lock.removePickerPidFile;
+
 const ScreenState = enum {
     search,
     help,
@@ -32,10 +92,7 @@ extern fn unlink(path: [*:0]const u8) c_int;
 // Holds layout dims, theme palettes, key bindings, and UI strings. Lives in a
 // process-lifetime arena; read-only after load.
 var g_spec: spec_mod.Spec = undefined;
-// Points at g_spec.colors once the spec is loaded; null beforehand (and in
-// tests that never load) so the color-name lookup is safe to consult anywhere.
-var g_colors: ?*const spec_mod.ColorsSpec = null;
-var g_wide_ambiguous: bool = true;
+// (g_colors has been migrated to color.g_colors, g_wide_ambiguous to tui_draw.g_wide_ambiguous)
 
 // Search dedup cache (see searchDedup). The "search key" is the query with
 // outer spaces trimmed, plus the disabled-category mask — the only two inputs
@@ -45,21 +102,6 @@ var g_search_key_len: usize = 0;
 var g_search_disabled: [32]bool = undefined;
 var g_search_total: usize = 0;
 var g_search_initialized: bool = false;
-
-// ---------------------------------------------------------------------------
-// Embedded shell integration scripts
-// ---------------------------------------------------------------------------
-
-const shell_sh = @embedFile("shell/emojig.sh");
-const shell_zsh = @embedFile("shell/emojig.zsh");
-const shell_bash = @embedFile("shell/emojig.bash");
-const shell_fish = @embedFile("shell/emojig.fish");
-
-// Desktop/launcher icon — edit src/assets/emojig-icon.svg to change it.
-// The web-compatible (plain SVG) variant is embedded; regenerate it with
-// scripts/web_logo.sh whenever the source icon changes.
-const icon_svg = @embedFile("assets/emojig-icon.web.svg");
-const icon_png = @embedFile("assets/emojig-icon.png");
 
 // ---------------------------------------------------------------------------
 // Theme, Palette & Terminal Wrappers
@@ -72,21 +114,6 @@ const Palette = term_lib.Palette;
 /// `EMOJIG_SCROLLBAR` env var, or the `scrollbar_style=` config line.
 ///   .expand — proportional thumb whose height tracks the visible fraction
 ///   .bar    — fixed single-cell `▐` thumb that slides along the track
-const ScrollbarStyle = enum { expand, bar };
-
-/// Thumb geometry for a scrollable viewport. `viewport_h` is the number of
-/// visible rows, `total` the number of scrollable rows. For `.bar` the thumb
-/// is always one cell tall; for `.expand` it grows with the visible fraction.
-/// `travel` is the number of track cells the thumb top may move through.
-fn scrollbarThumb(style: ScrollbarStyle, viewport_h: usize, total: usize) struct { thumb_h: usize, travel: usize } {
-    if (total <= viewport_h or viewport_h == 0) return .{ .thumb_h = viewport_h, .travel = 0 };
-    const thumb_h: usize = switch (style) {
-        .bar => 1,
-        .expand => @max(1, viewport_h * viewport_h / total),
-    };
-    const th = @min(thumb_h, viewport_h);
-    return .{ .thumb_h = th, .travel = viewport_h - th };
-}
 var global_orig_termios: ?std.posix.termios = null;
 var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 var global_tui_start_row: ?i32 = null;
@@ -120,457 +147,6 @@ inline fn getMonotonicMs() i64 {
     var ts = std.mem.zeroes(std.posix.system.timespec);
     _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
     return ts.sec * 1000 + @divTrunc(ts.nsec, 1000000);
-}
-
-/// Delete the byte immediately before the text cursor and shift the tail left
-/// (a backspace at an arbitrary cursor position). No-op when the cursor is at
-/// the start. Mutates query_len and query_cursor in lock-step.
-fn deleteAtCursor(query_buf: []u8, query_len: *usize, query_cursor: *usize) void {
-    if (query_cursor.* == 0 or query_len.* == 0) return;
-    const c = query_cursor.*;
-    if (c < query_len.*) {
-        std.mem.copyForwards(u8, query_buf[c - 1 .. query_len.* - 1], query_buf[c..query_len.*]);
-    }
-    query_len.* -= 1;
-    query_cursor.* -= 1;
-}
-
-/// Emit a single BEL to acknowledge an ignored/dead key, but only once per run
-/// of consecutive ignored keys. `armed` is true when the previous key event was
-/// *not* itself an ignored key; this routine then re-suppresses so a repeat is
-/// silent. The terminal's own bell config decides audible vs. visual vs. silent.
-fn ringBell(armed: bool, suppressed: *bool) void {
-    if (armed) writeAll(std.posix.STDOUT_FILENO, "\x07") catch {};
-    suppressed.* = true;
-}
-
-/// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
-/// returning the new index. Wrapping mirrors the historical arrow-key behavior.
-fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
-    if (count == 0) return sel_in;
-    var sel = sel_in;
-    if (std.mem.eql(u8, action, "nav_up")) {
-        if (sel >= cols) {
-            sel -= cols;
-        } else {
-            const target = sel + (rows - 1) * cols;
-            sel = if (target < count) target else count - 1;
-        }
-    } else if (std.mem.eql(u8, action, "nav_down")) {
-        const target = sel + cols;
-        sel = if (target < count) target else sel % cols;
-    } else if (std.mem.eql(u8, action, "nav_left")) {
-        sel = if (sel > 0) sel - 1 else count - 1;
-    } else if (std.mem.eql(u8, action, "nav_right")) {
-        sel = if (sel < count - 1) sel + 1 else 0;
-    }
-    return sel;
-}
-
-fn ansiDisplayWidth(text: []const u8) usize {
-    var width: usize = 0;
-    var i: usize = 0;
-    while (i < text.len) {
-        const b = text[i];
-        if (b == 0x1b) {
-            i += 1;
-            if (i < text.len) {
-                const next = text[i];
-                if (next == '[') { // CSI
-                    i += 1;
-                    while (i < text.len) : (i += 1) {
-                        const c = text[i];
-                        if (c >= 0x40 and c <= 0x7e) {
-                            i += 1;
-                            break;
-                        }
-                    }
-                } else if (next == ']') { // OSC
-                    i += 1;
-                    while (i < text.len) {
-                        if (text[i] == 0x07) {
-                            i += 1;
-                            break;
-                        }
-                        if (text[i] == 0x1b and i + 1 < text.len and text[i + 1] == '\\') {
-                            i += 2;
-                            break;
-                        }
-                        i += 1;
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-        } else {
-            const len = std.unicode.utf8ByteSequenceLength(b) catch 1;
-            if (i + len <= text.len) {
-                const cp_bytes = text[i .. i + len];
-                const cp = std.unicode.utf8Decode(cp_bytes) catch '?';
-                if (cp == 0xFE0F) {
-                    // Variation Selector-16: 0 width
-                } else if (cp >= 0x2E80) {
-                    // CJK and beyond: always double-width
-                    width += 2;
-                } else if (cp >= 0x2000) {
-                    // Ambiguous-width range (arrows, math, symbols, box-drawing…)
-                    width += if (g_wide_ambiguous) @as(usize, 2) else @as(usize, 1);
-                } else if (cp >= 0x20) {
-                    width += 1;
-                }
-                i += len;
-            } else {
-                i += 1;
-            }
-        }
-    }
-    return width;
-}
-
-/// Render a status-bar template from spec/strings.json, substituting the live
-/// match count for a "{count}" placeholder. Templates without the placeholder
-/// (the help hints) are returned unchanged, avoiding a copy.
-fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
-    const ph = "{count}";
-    if (std.mem.indexOf(u8, tmpl, ph)) |pos| {
-        return std.fmt.bufPrint(buf, "{s}{d}{s}", .{ tmpl[0..pos], total, tmpl[pos + ph.len ..] });
-    }
-    return tmpl;
-}
-
-/// Expand a status template with variable substitution and style spans.
-///
-/// Variables: `{count}` → emoji count, `{search_bg}` → theme palette escape.
-/// Style spans: `$name{text}` or `$[attr1,attr2,fg=N]{text}`.
-///   Named styles are looked up from `spec/styles.json`.
-///   Built-in attrs: bold, dim, italic, underline, blink, reverse, strike.
-///   Key-value: fg=N or color=N (0-255 or color name), bg=N.
-///   Color names: black, red, green, yellow, blue, magenta, cyan, white.
-///   After each span, `\x1b[0m` + `search_bg` are emitted automatically.
-fn expandTemplate(
-    buf: []u8,
-    tmpl: []const u8,
-    styles: *const spec_mod.StylesSpec,
-    count: usize,
-    search_bg: []const u8,
-) []const u8 {
-    var out: usize = 0;
-    var i: usize = 0;
-    while (i < tmpl.len and out < buf.len) {
-        if (tmpl[i] == '{') {
-            if (std.mem.startsWith(u8, tmpl[i..], "{count}")) {
-                var num_buf: [20]u8 = undefined;
-                const num_str = std.fmt.bufPrint(&num_buf, "{d}", .{count}) catch "";
-                const n = @min(num_str.len, buf.len - out);
-                @memcpy(buf[out..][0..n], num_str[0..n]);
-                out += n;
-                i += "{count}".len;
-                continue;
-            } else if (std.mem.startsWith(u8, tmpl[i..], "{search_bg}")) {
-                const n = @min(search_bg.len, buf.len - out);
-                @memcpy(buf[out..][0..n], search_bg[0..n]);
-                out += n;
-                i += "{search_bg}".len;
-                continue;
-            }
-        }
-        if (tmpl[i] == '$') {
-            var j = i + 1;
-            var attrs_str: []const u8 = "";
-            var valid = false;
-            if (j < tmpl.len and tmpl[j] == '[') {
-                j += 1;
-                const start = j;
-                while (j < tmpl.len and tmpl[j] != ']') j += 1;
-                if (j < tmpl.len) {
-                    attrs_str = tmpl[start..j];
-                    j += 1;
-                    valid = true;
-                }
-            } else {
-                const start = j;
-                while (j < tmpl.len and styleIdentChar(tmpl[j])) j += 1;
-                if (j > start) {
-                    attrs_str = tmpl[start..j];
-                    valid = true;
-                }
-            }
-            if (valid and j < tmpl.len and tmpl[j] == '{') {
-                j += 1;
-                const content_start = j;
-                var depth: usize = 1;
-                while (j < tmpl.len) {
-                    if (tmpl[j] == '{') {
-                        depth += 1;
-                    } else if (tmpl[j] == '}') {
-                        depth -= 1;
-                        if (depth == 0) break;
-                    }
-                    j += 1;
-                }
-                if (depth == 0) {
-                    const content = tmpl[content_start..j];
-                    j += 1;
-                    var sgr_buf: [128]u8 = undefined;
-                    const sgr = buildSgr(&sgr_buf, attrs_str, styles);
-                    var n: usize = @min(sgr.len, buf.len - out);
-                    @memcpy(buf[out..][0..n], sgr[0..n]);
-                    out += n;
-                    n = @min(content.len, buf.len - out);
-                    @memcpy(buf[out..][0..n], content[0..n]);
-                    out += n;
-                    const reset = "\x1b[0m";
-                    n = @min(reset.len, buf.len - out);
-                    @memcpy(buf[out..][0..n], reset[0..n]);
-                    out += n;
-                    n = @min(search_bg.len, buf.len - out);
-                    @memcpy(buf[out..][0..n], search_bg[0..n]);
-                    out += n;
-                    i = j;
-                    continue;
-                }
-            }
-        }
-        buf[out] = tmpl[i];
-        out += 1;
-        i += 1;
-    }
-    return buf[0..out];
-}
-
-fn styleIdentChar(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or c == '_';
-}
-
-fn buildSgr(buf: []u8, attrs_str: []const u8, styles: *const spec_mod.StylesSpec) []const u8 {
-    var codes: [32]u16 = undefined;
-    var n: usize = 0;
-    collectSgrCodes(attrs_str, styles, &codes, &n, 0);
-    if (n == 0 or buf.len < 4) return "";
-    var out: usize = 0;
-    buf[out] = 0x1b;
-    out += 1;
-    buf[out] = '[';
-    out += 1;
-    for (codes[0..n], 0..) |code, ci| {
-        if (ci > 0) {
-            if (out < buf.len) {
-                buf[out] = ';';
-                out += 1;
-            }
-        }
-        const s = std.fmt.bufPrint(buf[out..], "{d}", .{code}) catch break;
-        out += s.len;
-    }
-    if (out < buf.len) {
-        buf[out] = 'm';
-        out += 1;
-    }
-    return buf[0..out];
-}
-
-fn collectSgrCodes(
-    attrs_str: []const u8,
-    styles: *const spec_mod.StylesSpec,
-    codes: []u16,
-    n: *usize,
-    depth: usize,
-) void {
-    if (depth > 4) return;
-    var it = std.mem.splitScalar(u8, attrs_str, ',');
-    while (it.next()) |raw| {
-        if (n.* + 4 > codes.len) break;
-        const attr = std.mem.trim(u8, raw, " \t");
-        if (attr.len == 0) continue;
-        if (std.mem.indexOfScalar(u8, attr, '=')) |eq| {
-            const key = attr[0..eq];
-            const val = attr[eq + 1 ..];
-            if (std.mem.eql(u8, key, "fg") or std.mem.eql(u8, key, "color")) {
-                appendFgCodes(codes, n, val);
-            } else if (std.mem.eql(u8, key, "bg")) {
-                appendBgCodes(codes, n, val);
-            }
-        } else if (std.mem.eql(u8, attr, "bold")) {
-            codes[n.*] = 1;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "dim")) {
-            codes[n.*] = 2;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "italic")) {
-            codes[n.*] = 3;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "underline")) {
-            codes[n.*] = 4;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "blink")) {
-            codes[n.*] = 5;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "reverse")) {
-            codes[n.*] = 7;
-            n.* += 1;
-        } else if (std.mem.eql(u8, attr, "strike")) {
-            codes[n.*] = 9;
-            n.* += 1;
-        } else if (styles.styles.map.get(attr)) |def| {
-            collectSgrCodes(def, styles, codes, n, depth + 1);
-        }
-    }
-}
-
-/// Emit SGR codes for a 0-255 palette index: the compact 30-37/40-47 (normal)
-/// and 90-97/100-107 (bright) forms for the 16 system colours, else the
-/// `38;5;N` / `48;5;N` extended form. `normal`/`bright`/`ext` are 30/90/38 for
-/// foreground, 40/100/48 for background.
-fn appendIndexedColor(codes: []u16, n: *usize, idx: u16, normal: u16, bright: u16, ext: u16) void {
-    if (idx < 8) {
-        codes[n.*] = normal + idx;
-        n.* += 1;
-    } else if (idx < 16) {
-        codes[n.*] = bright + idx - 8;
-        n.* += 1;
-    } else {
-        codes[n.*] = ext;
-        codes[n.* + 1] = 5;
-        codes[n.* + 2] = idx;
-        n.* += 3;
-    }
-}
-
-/// Resolve a color spec value to a 0-255 palette index: a name from
-/// spec/colors.json (long/short/alias) or a literal numeric index. Returns null
-/// for anything unrecognised. The 8 basic ANSI names are handled separately by
-/// the callers (they prefer the compact 3X/4X form), so they never reach here.
-fn colorNameToIndex(val: []const u8) ?u16 {
-    if (g_colors) |c| {
-        if (c.indexOf(val)) |idx| return idx;
-        if (val.len > 0 and val[0] == '#') {
-            if (spec_mod.parseHex(val)) |rgb| {
-                for (c.colors) |gc| {
-                    if (spec_mod.parseHex(gc.hex)) |g_rgb| {
-                        if (g_rgb[0] == rgb[0] and g_rgb[1] == rgb[1] and g_rgb[2] == rgb[2]) {
-                            return gc.i;
-                        }
-                    }
-                }
-                return c.closestColorIndex(rgb);
-            }
-        }
-    }
-    return std.fmt.parseInt(u16, val, 10) catch null;
-}
-
-fn appendFgCodes(codes: []u16, n: *usize, val: []const u8) void {
-    if (n.* + 3 > codes.len) return;
-    if (colorNameToBasic(val)) |basic| {
-        codes[n.*] = 30 + basic;
-        n.* += 1;
-    } else if (colorNameToIndex(val)) |idx| {
-        appendIndexedColor(codes, n, idx, 30, 90, 38);
-    }
-}
-
-fn appendBgCodes(codes: []u16, n: *usize, val: []const u8) void {
-    if (n.* + 3 > codes.len) return;
-    if (colorNameToBasic(val)) |basic| {
-        codes[n.*] = 40 + basic;
-        n.* += 1;
-    } else if (colorNameToIndex(val)) |idx| {
-        appendIndexedColor(codes, n, idx, 40, 100, 48);
-    }
-}
-
-fn colorNameToBasic(name: []const u8) ?u16 {
-    const names = [_][]const u8{ "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white" };
-    for (names, 0..) |nm, idx| {
-        if (std.mem.eql(u8, name, nm)) return @intCast(idx);
-    }
-    return null;
-}
-
-/// Build a standalone SGR background-color escape from a color name (`green`)
-/// or a 0-255 palette index (`22`). Returns "" for an empty or invalid value.
-fn bgEscape(buf: []u8, val: []const u8) []const u8 {
-    if (val.len == 0) return "";
-    var codes: [4]u16 = undefined;
-    var n: usize = 0;
-    appendBgCodes(&codes, &n, val);
-    if (n == 0) return "";
-    var pos: usize = 0;
-    const prefix = "\x1b[";
-    if (pos + prefix.len > buf.len) return "";
-    @memcpy(buf[pos..][0..prefix.len], prefix);
-    pos += prefix.len;
-    for (codes[0..n], 0..) |code, i| {
-        if (i > 0) {
-            if (pos >= buf.len) return "";
-            buf[pos] = ';';
-            pos += 1;
-        }
-        const s = std.fmt.bufPrint(buf[pos..], "{d}", .{code}) catch return "";
-        pos += s.len;
-    }
-    if (pos >= buf.len) return "";
-    buf[pos] = 'm';
-    pos += 1;
-    return buf[0..pos];
-}
-
-/// A single `$name` → value substitution entry for expandVars.
-const VarSubst = struct { key: []const u8, val: []const u8 };
-
-/// Expand `$name` placeholders in `tmpl` using the provided key-value pairs.
-/// Writes the result into `buf` and returns the populated slice. Longer key
-/// names must appear before shorter ones that share a prefix (e.g.
-/// `shell_integration` before `shell`) to get the right match.
-fn expandVars(buf: []u8, tmpl: []const u8, vars: []const VarSubst) []const u8 {
-    var out: usize = 0;
-    var i: usize = 0;
-    while (i < tmpl.len and out < buf.len) {
-        if (tmpl[i] == '$') {
-            var matched = false;
-            for (vars) |v| {
-                if (i + 1 + v.key.len <= tmpl.len and
-                    std.mem.eql(u8, tmpl[i + 1 ..][0..v.key.len], v.key))
-                {
-                    const copy_len = @min(v.val.len, buf.len - out);
-                    @memcpy(buf[out..][0..copy_len], v.val[0..copy_len]);
-                    out += copy_len;
-                    i += 1 + v.key.len;
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) {
-                buf[out] = tmpl[i];
-                out += 1;
-                i += 1;
-            }
-        } else {
-            buf[out] = tmpl[i];
-            out += 1;
-            i += 1;
-        }
-    }
-    return buf[0..out];
-}
-
-inline fn effectivePalette(t: Theme, sys: Theme, dim: bool) Palette {
-    return g_spec.paletteFor(t, sys, dim);
-}
-
-inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme, alt_screen: bool) void {
-    if (alt_screen) {
-        const c = g_spec.terminalColors(t, sys);
-        term_lib.applyTerminalColors(stdout_fd, c.bg, c.fg);
-    }
-}
-
-inline fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) ?i32 {
-    return term_lib.queryCursorRow(stdin_fd, stdout_fd, raw);
-}
-
-inline fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
-    return term_lib.detectSystemTheme(stdin_fd, stdout_fd, raw);
 }
 
 inline fn readStdin(fd: std.posix.fd_t, buf: []u8) !usize {
@@ -679,543 +255,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 // A GUI-spawned picker records its PID so that a second `emojig --gui`
 // (e.g. the same desktop hotkey pressed again) toggles the open window
 // closed instead of stacking another one. No daemon, no IPC — just one
-// POSIX file write at startup and an unlink on every exit path (§8).
 // ---------------------------------------------------------------------------
-
-fn pickerPidPath(buf: []u8) ?[:0]const u8 {
-    const path = std.fmt.bufPrint(buf, "/tmp/emojig-picker-{d}.pid", .{getuid()}) catch return null;
-    if (path.len + 1 > buf.len) return null;
-    buf[path.len] = 0;
-    return buf[0..path.len :0];
-}
-
-fn writePickerPidFile() void {
-    const path = pickerPidPath(&global_picker_pid_path_buf) orelse return;
-    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o600) catch return;
-    defer _ = std.posix.system.close(fd);
-    var pid_buf: [16]u8 = undefined;
-    const pid_str = std.fmt.bufPrint(&pid_buf, "{d}", .{getpid()}) catch return;
-    _ = std.posix.system.write(fd, pid_str.ptr, pid_str.len);
-    global_picker_pid_path = path;
-}
-
-fn removePickerPidFile() void {
-    if (global_picker_pid_path) |path| {
-        _ = unlink(path);
-        global_picker_pid_path = null;
-    }
-}
-
-/// If a previously spawned GUI picker is still alive (live PID recorded in
-/// the pidfile), terminate it and return true so the launcher exits instead
-/// of opening a second window. Stale pidfiles (dead or recycled PID) are
-/// removed and ignored.
-fn toggleRunningPicker() bool {
-    var path_buf: [64]u8 = undefined;
-    const path = pickerPidPath(&path_buf) orelse return false;
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, rf, 0) catch return false;
-    var pid_buf: [16]u8 = undefined;
-    const n = std.posix.system.read(fd, &pid_buf, pid_buf.len);
-    _ = std.posix.system.close(fd);
-    if (n <= 0) return false;
-    const pid_str = std.mem.trim(u8, pid_buf[0..@intCast(n)], &std.ascii.whitespace);
-    const pid = std.fmt.parseInt(std.posix.pid_t, pid_str, 10) catch return false;
-    if (pid <= 1) return false;
-
-    // Guard against PID reuse: the recorded PID must still be an emojig process.
-    var proc_buf: [48]u8 = undefined;
-    const proc_path = std.fmt.bufPrint(&proc_buf, "/proc/{d}/cmdline", .{pid}) catch return false;
-    const pfd = std.posix.openat(std.posix.AT.FDCWD, proc_path, rf, 0) catch {
-        _ = unlink(path);
-        return false;
-    };
-    var cmd_buf: [256]u8 = undefined;
-    const cn = std.posix.system.read(pfd, &cmd_buf, cmd_buf.len);
-    _ = std.posix.system.close(pfd);
-    if (cn <= 0 or std.mem.indexOf(u8, cmd_buf[0..@intCast(cn)], "emojig") == null) {
-        _ = unlink(path);
-        return false;
-    }
-
-    std.posix.kill(pid, .TERM) catch return false;
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// Config file  (~/.config/emojig/config)
-// ---------------------------------------------------------------------------
-
-fn configPath(buf: []u8) ?[:0]const u8 {
-    const home = std.mem.span(std.c.getenv("HOME") orelse return null);
-    const path = std.fmt.bufPrint(buf, "{s}/.config/emojig/config", .{home}) catch return null;
-    if (path.len + 1 > buf.len) return null;
-    buf[path.len] = 0;
-    return buf[0..path.len :0];
-}
-
-const Config = struct {
-    theme: ?Theme = null,
-    width: ?usize = null,
-    height: ?usize = null,
-    cols: ?usize = null,
-    rows: ?usize = null,
-    border: ?bool = null,
-    safe: ?bool = null,
-    shell_integration: ?bool = null,
-    shell_key_binding: ?[]const u8 = null,
-    show_all_categories: ?bool = null,
-    ambiguous_chars: ?[]const u8 = null,
-    disabled_categories: ?[]const u8 = null,
-    update_cmd: ?[]const u8 = null,
-    scrollbar_style: ?ScrollbarStyle = null,
-};
-
-/// Look up the default value for a setting by ID from the loaded spec.
-fn settingDefault(id: []const u8) []const u8 {
-    for (g_spec.settings.options) |opt| {
-        if (std.mem.eql(u8, opt.id, id)) return opt.default;
-    }
-    return "";
-}
-
-fn settingDefaultBool(id: []const u8) bool {
-    const v = settingDefault(id);
-    return std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1");
-}
-
-/// Read configuration from the config file in a single pass.
-fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
-    var cfg = Config{};
-    var path_buf: [512]u8 = undefined;
-    const path = configPath(&path_buf) orelse return cfg;
-    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return cfg;
-    defer file.close(io);
-    var file_buf: [4096]u8 = undefined;
-    const len = file.readPositionalAll(io, &file_buf, 0) catch return cfg;
-    // If buffer is full the file may be larger; skip parsing to avoid acting on truncated data.
-    if (len == file_buf.len) return cfg;
-    var it = std.mem.splitScalar(u8, file_buf[0..len], '\n');
-    while (it.next()) |raw_line| {
-        const line = std.mem.trim(u8, raw_line, " \t\r");
-        if (line.len == 0 or line[0] == '#') continue;
-        if (std.mem.indexOfScalar(u8, line, '=')) |eq_idx| {
-            const key = line[0..eq_idx];
-            const val = line[eq_idx + 1 ..];
-            if (std.mem.eql(u8, key, "theme")) {
-                if (std.mem.eql(u8, val, "light")) cfg.theme = .light else if (std.mem.eql(u8, val, "dark")) cfg.theme = .dark else if (std.mem.eql(u8, val, "system")) cfg.theme = .system;
-            } else if (std.mem.eql(u8, key, "width")) {
-                cfg.width = std.fmt.parseInt(usize, val, 10) catch null;
-            } else if (std.mem.eql(u8, key, "height")) {
-                cfg.height = std.fmt.parseInt(usize, val, 10) catch null;
-            } else if (std.mem.eql(u8, key, "cols")) {
-                cfg.cols = std.fmt.parseInt(usize, val, 10) catch null;
-            } else if (std.mem.eql(u8, key, "rows")) {
-                cfg.rows = std.fmt.parseInt(usize, val, 10) catch null;
-            } else if (std.mem.eql(u8, key, "border")) {
-                cfg.border = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
-            } else if (std.mem.eql(u8, key, "safe")) {
-                cfg.safe = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
-            } else if (std.mem.eql(u8, key, "shell_integration")) {
-                cfg.shell_integration = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
-            } else if (std.mem.eql(u8, key, "shell_key_binding")) {
-                cfg.shell_key_binding = arena.dupe(u8, val) catch null;
-            } else if (std.mem.eql(u8, key, "show_all_categories")) {
-                cfg.show_all_categories = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
-            } else if (std.mem.eql(u8, key, "ambiguous_chars")) {
-                cfg.ambiguous_chars = arena.dupe(u8, val) catch null;
-            } else if (std.mem.eql(u8, key, "disabled_categories")) {
-                cfg.disabled_categories = arena.dupe(u8, val) catch null;
-            } else if (std.mem.eql(u8, key, "update_cmd") or std.mem.eql(u8, key, "upd_cmd")) {
-                cfg.update_cmd = arena.dupe(u8, val) catch null;
-            } else if (std.mem.eql(u8, key, "scrollbar_style")) {
-                if (std.mem.eql(u8, val, "bar")) cfg.scrollbar_style = .bar else if (std.mem.eql(u8, val, "expand")) cfg.scrollbar_style = .expand;
-            }
-        }
-    }
-    return cfg;
-}
-
-fn saveKeyToConfig(io: std.Io, key: []const u8, val: []const u8) void {
-    const home = std.mem.span(std.c.getenv("HOME") orelse return);
-
-    // Ensure ~/.config/emojig/ exists.
-    var dir_buf: [512]u8 = undefined;
-    const dot_config = std.fmt.bufPrint(&dir_buf, "{s}/.config", .{home}) catch return;
-    if (dot_config.len + 1 > dir_buf.len) return;
-    dir_buf[dot_config.len] = 0;
-    _ = std.c.mkdir(dir_buf[0..dot_config.len :0], 0o755);
-    var cfg_dir_buf: [512]u8 = undefined;
-    const cfg_dir = std.fmt.bufPrint(&cfg_dir_buf, "{s}/.config/emojig", .{home}) catch return;
-    if (cfg_dir.len + 1 > cfg_dir_buf.len) return;
-    cfg_dir_buf[cfg_dir.len] = 0;
-    _ = std.c.mkdir(cfg_dir_buf[0..cfg_dir.len :0], 0o755);
-
-    var path_buf: [512]u8 = undefined;
-    const path = configPath(&path_buf) orelse return;
-
-    // Read existing content
-    var old_buf: [4096]u8 = undefined;
-    var old_len: usize = 0;
-    if (std.Io.Dir.openFileAbsolute(io, path, .{})) |rfile| {
-        old_len = rfile.readPositionalAll(io, &old_buf, 0) catch 0;
-        rfile.close(io);
-        if (old_len == old_buf.len) return;
-    } else |_| {}
-
-    // Rebuild: every non-matching key, non-blank line, then the updated line.
-    var out: [4096 + 128]u8 = undefined;
-    var pos: usize = 0;
-    var lines = std.mem.splitScalar(u8, old_buf[0..old_len], '\n');
-    var prefix_buf: [128]u8 = undefined;
-    const prefix = std.fmt.bufPrint(&prefix_buf, "{s}=", .{key}) catch return;
-
-    while (lines.next()) |raw| {
-        const line = std.mem.trim(u8, raw, " \t\r");
-        if (line.len == 0) continue;
-        if (std.mem.startsWith(u8, line, prefix)) continue;
-        if (pos + line.len + 1 >= out.len) break;
-        @memcpy(out[pos..][0..line.len], line);
-        pos += line.len;
-        out[pos] = '\n';
-        pos += 1;
-    }
-
-    // Append the updated key
-    const val_line = std.fmt.bufPrint(out[pos..], "{s}={s}\n", .{ key, val }) catch "";
-    pos += val_line.len;
-
-    if (std.Io.Dir.createFileAbsolute(io, path, .{ .permissions = std.Io.Dir.Permissions.fromMode(0o600) })) |wfile| {
-        _ = wfile.writePositionalAll(io, out[0..pos], 0) catch {};
-        wfile.close(io);
-    } else |_| {}
-}
-
-/// Rewrite the config file with an updated theme= line, preserving other keys.
-fn saveThemeToConfig(io: std.Io, t: Theme) void {
-    const theme_str: []const u8 = switch (t) {
-        .dark => "dark",
-        .light => "light",
-        .system => "system",
-    };
-    saveKeyToConfig(io, "theme", theme_str);
-}
-
-fn ensureDirExists(home: []const u8, sub_path: []const u8) void {
-    var path_buf: [512]u8 = undefined;
-    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, sub_path }) catch return;
-    if (path.len + 1 > path_buf.len) return;
-    path_buf[path.len] = 0;
-    _ = std.c.mkdir(path_buf[0..path.len :0], 0o755);
-}
-
-fn ensureDesktopIntegration(io: std.Io, home: []const u8, exe_path: []const u8) void {
-    ensureDirExists(home, ".local");
-    ensureDirExists(home, ".local/share");
-    ensureDirExists(home, ".local/share/applications");
-    ensureDirExists(home, ".local/share/icons");
-    ensureDirExists(home, ".local/share/icons/hicolor");
-    ensureDirExists(home, ".local/share/icons/hicolor/scalable");
-    ensureDirExists(home, ".local/share/icons/hicolor/scalable/apps");
-    ensureDirExists(home, ".local/share/icons/hicolor/128x128");
-    ensureDirExists(home, ".local/share/icons/hicolor/128x128/apps");
-
-    var exec_path_buf: [1024]u8 = undefined;
-    var exec_path: []const u8 = exe_path;
-    if (std.mem.indexOf(u8, exe_path, ".zig-cache") != null or std.mem.indexOf(u8, exe_path, "zig-out") != null) {
-        const local_bin = std.fmt.bufPrint(&exec_path_buf, "{s}/.local/bin/emojig", .{home}) catch "";
-        if (local_bin.len > 0) {
-            if (std.posix.openat(std.posix.AT.FDCWD, local_bin, std.posix.O{ .ACCMODE = .RDONLY }, 0)) |fd| {
-                _ = std.posix.system.close(fd);
-                exec_path = local_bin;
-            } else |_| {}
-        }
-    }
-
-    // Write .desktop entry
-    var desktop_path_buf: [512]u8 = undefined;
-    const desktop_path = std.fmt.bufPrint(&desktop_path_buf, "{s}/.local/share/applications/emojig-picker.desktop", .{home}) catch return;
-    var desktop_content: [2048]u8 = undefined;
-    const desktop_text = std.fmt.bufPrint(&desktop_content,
-        \\[Desktop Entry]
-        \\Type=Application
-        \\Name=Emojig Picker
-        \\Comment=Interactive emoji picker
-        \\Exec={s} --gui
-        \\Icon={s}/.local/share/icons/emojig-picker.png
-        \\Terminal=false
-        \\Categories=Utility;
-        \\StartupWMClass=emojig-picker
-        \\
-    , .{ exec_path, home }) catch return;
-
-    if (desktop_path.len + 1 <= desktop_path_buf.len) {
-        desktop_path_buf[desktop_path.len] = 0;
-        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-        if (std.posix.openat(std.posix.AT.FDCWD, desktop_path_buf[0..desktop_path.len :0], wf, 0o644)) |fd| {
-            defer _ = std.posix.system.close(fd);
-            _ = std.posix.system.write(fd, desktop_text.ptr, desktop_text.len);
-        } else |_| {}
-    }
-
-    // Write SVG icon
-    var svg_path_buf: [512]u8 = undefined;
-    const svg_path = std.fmt.bufPrint(&svg_path_buf, "{s}/.local/share/icons/hicolor/scalable/apps/emojig-picker.svg", .{home}) catch return;
-    const svg_text = icon_svg;
-    if (svg_path.len + 1 <= svg_path_buf.len) {
-        svg_path_buf[svg_path.len] = 0;
-        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-        if (std.posix.openat(std.posix.AT.FDCWD, svg_path_buf[0..svg_path.len :0], wf, 0o644)) |fd| {
-            defer _ = std.posix.system.close(fd);
-            _ = std.posix.system.write(fd, svg_text.ptr, svg_text.len);
-        } else |_| {}
-    }
-
-    // Write PNG icon to hicolor 128x128/apps
-    var png_path_buf: [512]u8 = undefined;
-    const png_path = std.fmt.bufPrint(&png_path_buf, "{s}/.local/share/icons/hicolor/128x128/apps/emojig-picker.png", .{home}) catch return;
-    const png_data = icon_png;
-    if (png_path.len + 1 <= png_path_buf.len) {
-        png_path_buf[png_path.len] = 0;
-        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-        if (std.posix.openat(std.posix.AT.FDCWD, png_path_buf[0..png_path.len :0], wf, 0o644)) |fd| {
-            defer _ = std.posix.system.close(fd);
-            _ = std.posix.system.write(fd, png_data.ptr, png_data.len);
-        } else |_| {}
-    }
-
-    // Write PNG icon directly to share/icons fallback
-    var png_fallback_buf: [512]u8 = undefined;
-    const png_fallback_path = std.fmt.bufPrint(&png_fallback_buf, "{s}/.local/share/icons/emojig-picker.png", .{home}) catch return;
-    if (png_fallback_path.len + 1 <= png_fallback_buf.len) {
-        png_fallback_buf[png_fallback_path.len] = 0;
-        const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-        if (std.posix.openat(std.posix.AT.FDCWD, png_fallback_buf[0..png_fallback_path.len :0], wf, 0o644)) |fd| {
-            defer _ = std.posix.system.close(fd);
-            _ = std.posix.system.write(fd, png_data.ptr, png_data.len);
-        } else |_| {}
-    }
-
-    // Run update-desktop-database
-    var app_dir_buf: [512]u8 = undefined;
-    if (std.fmt.bufPrint(&app_dir_buf, "{s}/.local/share/applications", .{home})) |app_dir| {
-        var child = std.process.spawn(io, .{
-            .argv = &.{ "update-desktop-database", app_dir },
-            .stdin = .ignore,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        }) catch null;
-        if (child) |*c| {
-            _ = c.wait(io) catch {};
-        }
-    } else |_| {}
-
-    // Run gtk-update-icon-cache
-    var icon_dir_buf: [512]u8 = undefined;
-    if (std.fmt.bufPrint(&icon_dir_buf, "{s}/.local/share/icons/hicolor", .{home})) |icon_dir| {
-        var child = std.process.spawn(io, .{
-            .argv = &.{ "gtk-update-icon-cache", "-f", "-t", icon_dir },
-            .stdin = .ignore,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        }) catch null;
-        if (child) |*c| {
-            _ = c.wait(io) catch {};
-        }
-    } else |_| {}
-}
-
-// ---------------------------------------------------------------------------
-// Shell integration print / install
-// ---------------------------------------------------------------------------
-
-fn printCompletion(shell: []const u8, key: ?[]const u8) void {
-    if (key) |k| {
-        var buf: [256]u8 = undefined;
-        const line = std.fmt.bufPrint(&buf, "EMOJIG_KEY='{s}'\n", .{k}) catch return;
-        writeAll(std.posix.STDOUT_FILENO, line) catch {};
-    }
-    const script = if (std.mem.eql(u8, shell, "bash"))
-        shell_bash
-    else if (std.mem.eql(u8, shell, "fish"))
-        shell_fish
-    else if (std.mem.eql(u8, shell, "sh"))
-        shell_sh
-    else
-        shell_zsh;
-    writeAll(std.posix.STDOUT_FILENO, script) catch {};
-}
-
-fn detectShell(environ: anytype) []const u8 {
-    const shell_env = environ.get("SHELL") orelse return "zsh";
-    var it = std.mem.splitScalar(u8, shell_env, '/');
-    var last: []const u8 = shell_env;
-    while (it.next()) |part| {
-        if (part.len > 0) last = part;
-    }
-    if (std.mem.eql(u8, last, "bash")) return "bash";
-    if (std.mem.eql(u8, last, "fish")) return "fish";
-    return "zsh";
-}
-
-fn writeFile(path_buf: []u8, path: []const u8, content: []const u8) bool {
-    if (path.len + 1 > path_buf.len) return false;
-    path_buf[path.len] = 0;
-    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path_buf[0..path.len :0], wf, 0o644) catch return false;
-    defer _ = std.posix.system.close(fd);
-    _ = std.posix.system.write(fd, content.ptr, content.len);
-    return true;
-}
-
-fn copyBinary(io: std.Io, home: []const u8) bool {
-    var src_buf: [1024]u8 = undefined;
-    const src_len = std.process.executablePath(io, &src_buf) catch return false;
-    const src_path = src_buf[0..src_len];
-
-    var dst_buf: [1024]u8 = undefined;
-    const dst_path = std.fmt.bufPrint(&dst_buf, "{s}/.local/bin/emojig", .{home}) catch return false;
-
-    // Skip copy if already running from the destination.
-    if (std.mem.eql(u8, src_path, dst_path)) return true;
-
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    if (src_path.len + 1 > src_buf.len) return false;
-    src_buf[src_len] = 0;
-    const src_fd = std.posix.openat(std.posix.AT.FDCWD, src_buf[0..src_len :0], rf, 0) catch return false;
-    defer _ = std.posix.system.close(src_fd);
-
-    if (dst_path.len + 1 > dst_buf.len) return false;
-    dst_buf[dst_path.len] = 0;
-    _ = std.posix.system.unlink(dst_buf[0..dst_path.len :0]);
-    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
-    const dst_fd = std.posix.openat(std.posix.AT.FDCWD, dst_buf[0..dst_path.len :0], wf, 0o755) catch return false;
-    defer _ = std.posix.system.close(dst_fd);
-
-    var copy_buf: [65536]u8 = undefined;
-    while (true) {
-        const n = std.posix.read(src_fd, &copy_buf) catch break;
-        if (n == 0) break;
-        _ = std.posix.system.write(dst_fd, copy_buf[0..n].ptr, n);
-    }
-    return true;
-}
-
-/// Appends `line` to the file at `path` unless `marker` already appears in
-/// the first 16 KiB.  Returns true when written, false when already present or
-/// on error.
-fn fileExists(home: []const u8, rel: []const u8) bool {
-    var path_buf: [512]u8 = undefined;
-    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, rel }) catch return false;
-    if (path.len + 1 > path_buf.len) return false;
-    path_buf[path.len] = 0;
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path_buf[0..path.len :0], rf, 0) catch return false;
-    _ = std.posix.system.close(fd);
-    return true;
-}
-
-fn fileExistsAbs(comptime path: [:0]const u8) bool {
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, path, rf, 0) catch return false;
-    _ = std.posix.system.close(fd);
-    return true;
-}
-
-fn captureShellCmd(io: std.Io, home: []const u8, cmd: []const u8, out: []u8) []const u8 {
-    const log = "/tmp/emojig-update.log";
-    var sh_buf: [2048]u8 = undefined;
-    // Prepend well-known tool directories so the command finds zig/brew/etc.
-    // even when launched from a desktop GUI with a stripped PATH.
-    const sh_cmd = std.fmt.bufPrint(
-        &sh_buf,
-        "export PATH=\"/home/linuxbrew/.linuxbrew/bin:{s}/.linuxbrew/bin:{s}/.local/bin:/usr/local/bin:$PATH\"; {s} >{s} 2>&1",
-        .{ home, home, cmd, log },
-    ) catch {
-        const msg = "Command string too long.";
-        @memcpy(out[0..msg.len], msg);
-        return out[0..msg.len];
-    };
-    var child = std.process.spawn(io, .{
-        .argv = &.{ "sh", "-c", sh_cmd },
-        .stdin = .ignore,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    }) catch {
-        const msg = "Failed to start update process.";
-        @memcpy(out[0..msg.len], msg);
-        return out[0..msg.len];
-    };
-    _ = child.wait(io) catch {};
-
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    const fd = std.posix.openat(std.posix.AT.FDCWD, log, rf, 0) catch {
-        const msg = "Update complete (no log).";
-        @memcpy(out[0..msg.len], msg);
-        return out[0..msg.len];
-    };
-    defer _ = std.posix.system.close(fd);
-    const n = std.posix.system.read(fd, out.ptr, out.len);
-    const read_len = if (n > 0) @as(usize, @intCast(n)) else 0;
-    if (read_len == 0) {
-        const msg = "Update complete.";
-        @memcpy(out[0..msg.len], msg);
-        return out[0..msg.len];
-    }
-    return out[0..read_len];
-}
-
-fn runUpdate(io: std.Io, home: []const u8, cfg_cmd: ?[]const u8, spec_cmd: ?[]const u8, out: []u8) []const u8 {
-    var cmd_buf: [512]u8 = undefined;
-    // Priority: config file > spec/commands.json cmd > auto-detect.
-    var cmd: ?[]const u8 = if (cfg_cmd != null) cfg_cmd else spec_cmd;
-
-    if (cmd != null) {
-        // Explicit command configured — skip auto-detection.
-    } else if (fileExists(home, "projects/emojig")) {
-        cmd = std.fmt.bufPrint(&cmd_buf, "make -C '{s}/projects/emojig' update", .{home}) catch null;
-    } else if (fileExistsAbs("/var/lib/dpkg/info/emojig.list")) {
-        cmd = "sudo apt-get install -y emojig";
-    } else if (fileExists(home, ".local/bin/emojig")) {
-        cmd = "curl -sSf https://ubunatic.com/emojig/install.sh | sh";
-    }
-
-    if (cmd) |c| return captureShellCmd(io, home, c, out);
-
-    const msg = "Unknown install mode.\nSee ~/.local/share/emojig/ for details.";
-    const len = @min(msg.len, out.len);
-    @memcpy(out[0..len], msg[0..len]);
-    return out[0..len];
-}
-
-fn sourceRcFileAbs(path: []const u8, line: []const u8, marker: []const u8) bool {
-    var path_buf: [512]u8 = undefined;
-    if (path.len + 1 > path_buf.len) return false;
-    @memcpy(path_buf[0..path.len], path);
-    path_buf[path.len] = 0;
-    const path_z = path_buf[0..path.len :0];
-
-    const rf = std.posix.O{ .ACCMODE = .RDONLY };
-    if (std.posix.openat(std.posix.AT.FDCWD, path_z, rf, 0)) |rfd| {
-        defer _ = std.posix.system.close(rfd);
-        var content: [16384]u8 = undefined;
-        const n = std.posix.read(rfd, &content) catch 0;
-        if (std.mem.indexOf(u8, content[0..n], marker) != null) return false;
-    } else |_| {}
-
-    const af = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true };
-    const afd = std.posix.openat(std.posix.AT.FDCWD, path_z, af, 0o644) catch return false;
-    defer _ = std.posix.system.close(afd);
-    _ = std.posix.system.write(afd, line.ptr, line.len);
-    return true;
-}
-
-fn sourceRcFile(home: []const u8, rc_rel: []const u8, line: []const u8, marker: []const u8) bool {
-    var path_buf: [512]u8 = undefined;
-    const path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, rc_rel }) catch return false;
-    return sourceRcFileAbs(path, line, marker);
-}
 
 const writeAllStdout = writeAll;
 
@@ -1236,109 +276,6 @@ const BufferWriter = struct {
         self.pos.* += bytes.len;
     }
 };
-
-fn installShellIntegration(io: std.Io, home: []const u8, shell: []const u8, rc_override: ?[]const u8, writer: anytype) void {
-    ensureDirExists(home, ".local");
-    ensureDirExists(home, ".local/bin");
-    ensureDirExists(home, ".local/share");
-    ensureDirExists(home, ".local/share/emojig");
-    ensureDirExists(home, ".local/share/emojig/shell");
-
-    const bin_ok = copyBinary(io, home);
-
-    var buf: [512]u8 = undefined;
-
-    const sh_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.sh", .{home}) catch return;
-    _ = writeFile(&buf, sh_path, shell_sh);
-
-    const zsh_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.zsh", .{home}) catch return;
-    _ = writeFile(&buf, zsh_path, shell_zsh);
-
-    const bash_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.bash", .{home}) catch return;
-    _ = writeFile(&buf, bash_path, shell_bash);
-
-    const fish_path = std.fmt.bufPrint(&buf, "{s}/.local/share/emojig/shell/emojig.fish", .{home}) catch return;
-    _ = writeFile(&buf, fish_path, shell_fish);
-
-    var dst_buf: [1024]u8 = undefined;
-    const dst_path = std.fmt.bufPrint(&dst_buf, "{s}/.local/bin/emojig", .{home}) catch "";
-    if (dst_path.len > 0) {
-        ensureDesktopIntegration(io, home, dst_path);
-    }
-
-    if (bin_ok) {
-        writer.writeAll("Installed binary to ~/.local/bin/emojig\n") catch {};
-    } else {
-        writer.writeAll("Warning: could not copy binary to ~/.local/bin/emojig\n") catch {};
-    }
-
-    writer.writeAll("Installed shell integration to ~/.local/share/emojig/shell/\n") catch {};
-
-    // Fish cannot source POSIX sh — use emojig.fish directly in config.fish.
-    // All other shells (zsh, bash, unknown) use the generic emojig.sh dispatcher.
-    const is_fish = std.mem.eql(u8, shell, "fish");
-    const sh_source_line = "\nif test -f ~/.local/share/emojig/shell/emojig.sh\nthen source ~/.local/share/emojig/shell/emojig.sh\nfi\n";
-    const sh_marker = "emojig/shell/emojig.sh";
-    const fish_source_line = "\nif test -f ~/.local/share/emojig/shell/emojig.fish\n  source ~/.local/share/emojig/shell/emojig.fish\nend\n";
-    const fish_marker = "emojig/shell/emojig.fish";
-
-    if (rc_override) |rc| {
-        // --rc always uses the sh dispatcher (fish users don't set --rc to a sh file).
-        var abs_buf: [512]u8 = undefined;
-        const abs_path = if (rc[0] == '/')
-            rc
-        else
-            (std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ home, rc }) catch return);
-        const added = sourceRcFileAbs(abs_path, sh_source_line, sh_marker);
-        var msg_buf: [512]u8 = undefined;
-        const display = if (rc[0] == '/') rc else (std.fmt.bufPrint(&msg_buf, "~/{s}", .{rc}) catch rc);
-        var out_buf: [600]u8 = undefined;
-        if (added) {
-            const out = std.fmt.bufPrint(&out_buf, "Added to {s} — reload your shell and press Ctrl+E.\n", .{display}) catch return;
-            writer.writeAll(out) catch {};
-        } else {
-            const out = std.fmt.bufPrint(&out_buf, "Already in {s} — press Ctrl+E at any prompt.\n", .{display}) catch return;
-            writer.writeAll(out) catch {};
-        }
-    } else if (is_fish) {
-        ensureDirExists(home, ".config");
-        ensureDirExists(home, ".config/fish");
-        const added = sourceRcFile(home, ".config/fish/config.fish", fish_source_line, fish_marker);
-        if (added) {
-            writer.writeAll("Added to ~/.config/fish/config.fish — reload your shell and press Ctrl+E.\n") catch {};
-        } else {
-            writer.writeAll("Already in ~/.config/fish/config.fish — press Ctrl+E at any prompt.\n") catch {};
-        }
-    } else if (fileExists(home, ".userrc")) {
-        const added = sourceRcFile(home, ".userrc", sh_source_line, sh_marker);
-        if (added) {
-            writer.writeAll("Added to ~/.userrc — reload your shell and press Ctrl+E.\n") catch {};
-        } else {
-            writer.writeAll("Already in ~/.userrc — press Ctrl+E at any prompt.\n") catch {};
-        }
-    } else if (std.mem.eql(u8, shell, "zsh")) {
-        const added = sourceRcFile(home, ".zshrc", sh_source_line, sh_marker);
-        if (added) {
-            writer.writeAll("Added to ~/.zshrc — reload your shell and press Ctrl+E.\n") catch {};
-        } else {
-            writer.writeAll("Already in ~/.zshrc — press Ctrl+E at any prompt.\n") catch {};
-        }
-    } else if (std.mem.eql(u8, shell, "bash")) {
-        const added = sourceRcFile(home, ".bashrc", sh_source_line, sh_marker);
-        if (added) {
-            writer.writeAll("Added to ~/.bashrc — reload your shell and press Ctrl+E.\n") catch {};
-        } else {
-            writer.writeAll("Already in ~/.bashrc — press Ctrl+E at any prompt.\n") catch {};
-        }
-    } else {
-        writer.writeAll("\nAdd one line to your shell rc file:\n\n" ++
-            "  zsh/bash  (~/.zshrc or ~/.bashrc):\n" ++
-            "    source ~/.local/share/emojig/shell/emojig.sh\n\n" ++
-            "  fish (~/.config/fish/config.fish):\n" ++
-            "    source ~/.local/share/emojig/shell/emojig.fish\n\n" ++
-            "Then reload your shell and press Ctrl+E at any prompt.\n") catch {};
-    }
-}
 
 fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
@@ -1466,7 +403,7 @@ fn toggleSetting(
         3 => {
             amb_chars.* = if (std.mem.eql(u8, amb_chars.*, "wide")) "narrow" else "wide";
             saveKeyToConfig(io, "ambiguous_chars", amb_chars.*);
-            g_wide_ambiguous = !std.mem.eql(u8, amb_chars.*, "narrow");
+            tui_draw.g_wide_ambiguous = !std.mem.eql(u8, amb_chars.*, "narrow");
         },
         5 => {
             scrollbar.* = switch (scrollbar.*) {
@@ -1522,93 +459,6 @@ fn adjustScrollTop(selected_idx: usize, scroll_top: *usize, viewport_h: usize, t
     if (scroll_top.* + viewport_h > total_items) {
         scroll_top.* = total_items - viewport_h;
     }
-}
-
-/// Persist a numeric setting (e.g. grid `cols`/`rows`) to the config file.
-fn saveUsizeToConfig(io: std.Io, key: []const u8, val: usize) void {
-    var buf: [16]u8 = undefined;
-    const s = std.fmt.bufPrint(&buf, "{d}", .{val}) catch return;
-    saveKeyToConfig(io, key, s);
-}
-
-/// Nudge a grid dimension by ±1 within `[min, max]` (Left/Right fine-tune).
-fn stepGridDim(val: usize, increase: bool, min: usize, max: usize) usize {
-    const next = if (increase) val + 1 else (if (val > min) val - 1 else min);
-    return @max(min, @min(next, max));
-}
-
-/// Cycle a grid dimension by a larger step within `[min, max]`, wrapping back
-/// to `min` once it would overflow (Space/Enter coarse adjust).
-fn cycleGridDim(val: usize, step: usize, min: usize, max: usize) usize {
-    return if (val + step > max) min else @max(min, val + step);
-}
-
-/// Clamp a freshly edited grid dimension to `[min, max]`, persisting the
-/// corrected value if it changed. Called when a digit-typing run ends so a
-/// transient sub-minimum entry (e.g. a lone "1" en route to "12") is fixed up.
-fn clampGridDim(val: usize, min: usize, max: usize) usize {
-    return @max(min, @min(val, max));
-}
-
-fn finalizeGridDim(io: std.Io, val: *usize, key: []const u8, min: usize, max: usize) void {
-    const clamped = clampGridDim(val.*, min, max);
-    if (clamped != val.*) {
-        val.* = clamped;
-        saveUsizeToConfig(io, key, clamped);
-    }
-}
-
-/// End a digit-typing run on whichever grid-size settings row (`sel` 6 = cols,
-/// 7 = rows) was being edited, clamping the value up to its minimum. A lone "1"
-/// typed en route to "12" stays below the minimum while typing; this fixes it
-/// the moment focus leaves the row.
-fn finalizeGridTyping(io: std.Io, sel: ?usize, cols: *usize, rows: *usize) void {
-    const s = sel orelse return;
-    if (s == 6) finalizeGridDim(io, cols, "cols", defaults.MIN_COLS, defaults.MAX_COLS);
-    if (s == 7) finalizeGridDim(io, rows, "rows", defaults.MIN_ROWS, defaults.MAX_ROWS);
-}
-
-/// Apply a grid-dimension mouse click on a settings row by hit-zone:
-/// the `[‹ NN ›]` widget splits into `‹` (decrement), the number (select-only,
-/// for keyboard entry), and `›` (increment). `local_col` is the 0-indexed
-/// display column of the click. Returns true if the value changed.
-fn applyGridDimClick(io: std.Io, is_cols: bool, local_col: i32, val: *usize) bool {
-    const min = if (is_cols) defaults.MIN_COLS else defaults.MIN_ROWS;
-    const max = if (is_cols) defaults.MAX_COLS else defaults.MAX_ROWS;
-    if (local_col >= 3 and local_col <= 5) {
-        val.* = stepGridDim(val.*, false, min, max);
-    } else if (local_col >= 8 and local_col <= 10) {
-        val.* = stepGridDim(val.*, true, min, max);
-    } else {
-        return false; // middle (the digits): just select for keyboard entry
-    }
-    saveUsizeToConfig(io, if (is_cols) "cols" else "rows", val.*);
-    return true;
-}
-
-/// Append a digit to a grid dimension, clamped to `[1, max]`. `continuing`
-/// chains digits within one typing run (1 then 2 → 12); otherwise the digit
-/// starts a fresh value.
-fn typeGridDim(val: *usize, digit: u8, continuing: bool, max: usize) void {
-    const d: usize = digit - '0';
-    var nv: usize = if (continuing) val.* * 10 + d else d;
-    if (nv > max) nv = max;
-    val.* = @max(1, nv);
-}
-
-fn saveDisabledCategories(io: std.Io, cats: []const emojig.CategorySpec, disabled_cats: []const bool) void {
-    var buf: [1024]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buf);
-    const allocator = fba.allocator();
-    var list = std.ArrayList([]const u8).empty;
-    defer list.deinit(allocator);
-    for (cats, 0..) |cat, i| {
-        if (i < disabled_cats.len and disabled_cats[i]) {
-            list.append(allocator, cat.name) catch {};
-        }
-    }
-    const joined = std.mem.join(allocator, ",", list.items) catch "";
-    saveKeyToConfig(io, "disabled_categories", joined);
 }
 
 fn runSearch(
@@ -1853,7 +703,7 @@ pub fn main(init: std.process.Init) !void {
         try writeAll(std.posix.STDERR_FILENO, "\n");
         std.process.exit(1);
     };
-    g_colors = &g_spec.colors;
+    color.g_colors = &g_spec.colors;
 
     if (opt_completion) {
         const shell = opt_completion_shell orelse detectShell(init.environ_map);
@@ -2555,7 +1405,7 @@ pub fn main(init: std.process.Init) !void {
         var shell_key_binding = cfg.shell_key_binding orelse settingDefault("shell_key_binding");
         var show_all_categories = cfg.show_all_categories orelse settingDefaultBool("show_all_categories");
         var ambiguous_chars = cfg.ambiguous_chars orelse settingDefault("ambiguous_chars");
-        g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
+        tui_draw.g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
 
         var keybind_editing: bool = false;
         var keybind_input_buf: [32]u8 = undefined;
@@ -4698,9 +3548,10 @@ pub fn main(init: std.process.Init) !void {
                             }
                         } else if (std.mem.eql(u8, action, "select")) {
                             if (multi_select_active) {
-                                if (selected_idx) |sel| {
-                                    if (sel < top_count) {
-                                        const entry = emojig.EmojiDb.getEntry(top_matches[sel].index);
+                                const sel = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
+                                if (sel) |s| {
+                                    if (s < top_count) {
+                                        const entry = emojig.EmojiDb.getEntry(top_matches[s].index);
                                         var on_selected = false;
                                         for (multi_selected_emojis.items) |e| {
                                             if (std.mem.eql(u8, e, entry.emoji)) {
@@ -4721,7 +3572,6 @@ pub fn main(init: std.process.Init) !void {
                                         }
                                     }
                                 }
-                                // no cursor → no-op
                             } else {
                                 should_copy_and_exit = true;
                             }
@@ -5055,47 +3905,4 @@ test "scrollbarThumb geometry for both styles" {
     const none = scrollbarThumb(.expand, 6, 6);
     try std.testing.expectEqual(@as(usize, 6), none.thumb_h);
     try std.testing.expectEqual(@as(usize, 0), none.travel);
-}
-
-test "color names from spec/colors.json resolve to palette indices" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    g_spec = try spec_mod.load(arena.allocator(), null);
-    g_colors = &g_spec.colors;
-    defer g_colors = null;
-
-    // Long names, 3-letter shorts, popular names, and systematic cube/gray names.
-    try std.testing.expectEqual(@as(?u16, 2), colorNameToIndex("grn"));
-    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("orange"));
-    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("org"));
-    try std.testing.expectEqual(@as(?u16, 22), colorNameToIndex("forest"));
-    try std.testing.expectEqual(@as(?u16, 232), colorNameToIndex("gray0"));
-    // alt alias keeps the systematic name reachable for renamed slots.
-    try std.testing.expectEqual(@as(?u16, 208), colorNameToIndex("rgb520"));
-    // Numeric fallback and unknown names.
-    try std.testing.expectEqual(@as(?u16, 240), colorNameToIndex("240"));
-    try std.testing.expectEqual(@as(?u16, null), colorNameToIndex("not-a-color"));
-
-    // Verify refactored color system:
-    // a) long name "Midnight Blue" (case-insensitive & space/punctuation-insensitive)
-    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("Midnight Blue"));
-    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("midnight blue"));
-    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("midnight-blue"));
-    // b) short name "blue"
-    try std.testing.expectEqual(@as(?u16, 12), colorNameToIndex("blue"));
-    // c) 3-letter names "blu"
-    try std.testing.expectEqual(@as(?u16, 12), colorNameToIndex("blu"));
-    // d) ansi color number: 220
-    try std.testing.expectEqual(@as(?u16, 220), colorNameToIndex("220"));
-    // e) short or long hex: "#fff" "#ffffff"
-    try std.testing.expectEqual(@as(?u16, 15), colorNameToIndex("#fff"));
-    try std.testing.expectEqual(@as(?u16, 15), colorNameToIndex("#ffffff"));
-    // hex closest match fallback
-    try std.testing.expectEqual(@as(?u16, 24), colorNameToIndex("#005f86"));
-
-    // Extended-form escape for a named colour beyond the 16 system slots.
-    var buf: [16]u8 = undefined;
-    try std.testing.expectEqualStrings("\x1b[48;5;208m", bgEscape(&buf, "orange"));
-    // A 3-letter short for a system colour uses the compact 4X form.
-    try std.testing.expectEqualStrings("\x1b[42m", bgEscape(&buf, "grn"));
 }
