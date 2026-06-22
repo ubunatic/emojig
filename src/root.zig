@@ -398,7 +398,7 @@ pub const EmojiDb = struct {
     /// Get an emoji database entry by index.
     pub fn getEntry(index: usize) Entry {
         if (index >= count) @panic("index out of bounds");
-        const entry_offset = 24 + index * 12;
+        const entry_offset = 32 + index * 12;
         const emoji_off = std.mem.readInt(u32, data[entry_offset..][0..4], .little);
         const name_off = std.mem.readInt(u32, data[entry_offset + 4 ..][0..4], .little);
         const search_off = std.mem.readInt(u32, data[entry_offset + 8 ..][0..4], .little);
@@ -418,6 +418,8 @@ pub const SynonymDb = struct {
 
     pub const synonym_table_offset = std.mem.readInt(u32, data[16..20], .little);
     pub const synonym_count = std.mem.readInt(u32, data[20..24], .little);
+    pub const stem_excl_table_offset = std.mem.readInt(u32, data[24..28], .little);
+    pub const stem_excl_count = std.mem.readInt(u32, data[28..32], .little);
 
     pub const Synonym = struct {
         from: []const u8,
@@ -436,6 +438,18 @@ pub const SynonymDb = struct {
             .from = std.mem.sliceTo(str_table[from_off..], 0),
             .to = std.mem.sliceTo(str_table[to_off..], 0),
         };
+    }
+
+    /// Returns true if the trailing-'e' stem fallback is suppressed for this term.
+    pub fn isStemExcluded(term: []const u8) bool {
+        const str_table = data[EmojiDb.string_table_offset..][0..EmojiDb.string_table_len];
+        var i: usize = 0;
+        while (i < stem_excl_count) : (i += 1) {
+            const off = std.mem.readInt(u32, data[stem_excl_table_offset + i * 4 ..][0..4], .little);
+            const entry = std.mem.sliceTo(str_table[off..], 0);
+            if (std.mem.eql(u8, entry, term)) return true;
+        }
+        return false;
     }
 };
 

@@ -53,7 +53,7 @@ test "verify all entries" {
 
 test "embedded database check" {
     try std.testing.expectEqualSlices(u8, "EMJG", EmojiDb.magic);
-    try std.testing.expectEqual(@as(u16, 2), EmojiDb.version);
+    try std.testing.expectEqual(@as(u16, 3), EmojiDb.version);
     try std.testing.expect(EmojiDb.count > 0);
 
     const first = EmojiDb.getEntry(0);
@@ -739,4 +739,3 @@ test "benchmark: search throughput" {
         try std.testing.expect(ns_plural < max_ns);
     }
 }
-

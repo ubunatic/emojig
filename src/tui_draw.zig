@@ -33,6 +33,27 @@ pub fn deleteAtCursor(query_buf: []u8, query_len: *usize, query_cursor: *usize) 
     query_cursor.* -= 1;
 }
 
+pub fn forwardDeleteAtCursor(query_buf: []u8, query_len: *usize, query_cursor: *usize) void {
+    const c = query_cursor.*;
+    if (c >= query_len.*) return;
+    std.mem.copyForwards(u8, query_buf[c .. query_len.* - 1], query_buf[c + 1 .. query_len.*]);
+    query_len.* -= 1;
+}
+
+pub fn wordLeft(buf: []const u8, cursor: usize) usize {
+    var i = cursor;
+    while (i > 0 and buf[i - 1] == ' ') i -= 1;
+    while (i > 0 and buf[i - 1] != ' ') i -= 1;
+    return i;
+}
+
+pub fn wordRight(buf: []const u8, len: usize, cursor: usize) usize {
+    var i = cursor;
+    while (i < len and buf[i] != ' ') i += 1;
+    while (i < len and buf[i] == ' ') i += 1;
+    return i;
+}
+
 /// Emit a single BEL to acknowledge an ignored/dead key, but only once per run
 /// of consecutive ignored keys. `armed` is true when the previous key event was
 /// *not* itself an ignored key; this routine then re-suppresses so a repeat is

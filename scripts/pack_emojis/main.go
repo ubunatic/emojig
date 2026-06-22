@@ -256,7 +256,8 @@ func main() {
 		os.Exit(1)
 	}
 	type SynonymsJSON struct {
-		Synonyms map[string][]string `json:"synonyms"`
+		Synonyms       map[string][]string `json:"synonyms"`
+		StemExclusions []string            `json:"stem_exclusions"`
 	}
 	var synJSON SynonymsJSON
 	if err := json.Unmarshal(synonymsData, &synJSON); err != nil {
@@ -288,27 +289,40 @@ func main() {
 		}
 	}
 
+	// Collect stem-exclusion offsets (terms for which the trailing-'e' fallback is suppressed)
+	stemExclusions := synJSON.StemExclusions
+	sort.Strings(stemExclusions)
+	var stemExclOffsets []uint32
+	for _, term := range stemExclusions {
+		stemExclOffsets = append(stemExclOffsets, getOrAddString(term))
+	}
+
 	emojiCount := uint16(len(entries))
 	fmt.Printf("Packed %d emojis.\n", emojiCount)
 
 	// Index size: count * 12 bytes
 	indexSize := uint32(emojiCount) * 12
-	headerSize := uint32(24)
+	// Header is 32 bytes: magic(4) version(2) count(2) str_off(4) str_len(4) syn_off(4) syn_cnt(4) excl_off(4) excl_cnt(4)
+	headerSize := uint32(32)
 	stringTableOffset := headerSize + indexSize
 	synonymTableOffset := stringTableOffset + uint32(stringTable.Len())
 	synonymCount := uint32(len(synonymPairs))
+	stemExclTableOffset := synonymTableOffset + synonymCount*8
+	stemExclCount := uint32(len(stemExclOffsets))
 
 	// Write binary file
 	outBuf := &bytes.Buffer{}
 
-	// Header: magic (4s), version (u16), count (u16), string_table_offset (u32), string_table_len (u32), synonym_table_offset (u32), synonym_count (u32)
+	// Header: magic(4) version(u16) count(u16) str_off(u32) str_len(u32) syn_off(u32) syn_cnt(u32) excl_off(u32) excl_cnt(u32)
 	outBuf.Write([]byte("EMJG"))
-	binary.Write(outBuf, binary.LittleEndian, uint16(2))
+	binary.Write(outBuf, binary.LittleEndian, uint16(3))
 	binary.Write(outBuf, binary.LittleEndian, emojiCount)
 	binary.Write(outBuf, binary.LittleEndian, stringTableOffset)
 	binary.Write(outBuf, binary.LittleEndian, uint32(stringTable.Len()))
 	binary.Write(outBuf, binary.LittleEndian, synonymTableOffset)
 	binary.Write(outBuf, binary.LittleEndian, synonymCount)
+	binary.Write(outBuf, binary.LittleEndian, stemExclTableOffset)
+	binary.Write(outBuf, binary.LittleEndian, stemExclCount)
 
 	// Index Entries
 	for _, entry := range entries {
@@ -324,6 +338,11 @@ func main() {
 	for _, pair := range synonymPairs {
 		binary.Write(outBuf, binary.LittleEndian, pair.FromOff)
 		binary.Write(outBuf, binary.LittleEndian, pair.ToOff)
+	}
+
+	// Stem Exclusion Table (one u32 offset per excluded term)
+	for _, off := range stemExclOffsets {
+		binary.Write(outBuf, binary.LittleEndian, off)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {

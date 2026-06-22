@@ -139,7 +139,11 @@ pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
     }
 
     // Fallback: Query stem (if term ends in 'e' and length > 3, e.g. "race" -> "rac")
-    if (term.len > 3 and std.ascii.toLower(term[term.len - 1]) == 'e') {
+    // Suppressed for terms in spec/synonyms.json "stem_exclusions" (e.g. "cute" must not
+    // fall back to "cut", which would match unrelated targets like "cut of meat").
+    if (term.len > 3 and std.ascii.toLower(term[term.len - 1]) == 'e' and
+        !SynonymDb.isStemExcluded(term))
+    {
         const alternate = term[0 .. term.len - 1];
         if (matchTermDirect(alternate, target)) |score| {
             return score - 5;

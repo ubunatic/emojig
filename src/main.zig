@@ -25,6 +25,9 @@ const tui_draw = @import("tui_draw.zig");
 const ScrollbarStyle = config.ScrollbarStyle;
 const scrollbarThumb = tui_draw.scrollbarThumb;
 const deleteAtCursor = tui_draw.deleteAtCursor;
+const forwardDeleteAtCursor = tui_draw.forwardDeleteAtCursor;
+const wordLeft = tui_draw.wordLeft;
+const wordRight = tui_draw.wordRight;
 const ringBell = tui_draw.ringBell;
 const navSelect = tui_draw.navSelect;
 const ansiDisplayWidth = tui_draw.ansiDisplayWidth;
@@ -2978,6 +2981,10 @@ pub fn main(init: std.process.Init) !void {
                         (bytes[4] == '3' or bytes[4] == '9'))
                     {
                         break;
+                    } else if (std.mem.eql(u8, bytes[2..n], "1;5C") or std.mem.eql(u8, bytes[2..n], "5C")) {
+                        logical = "ctrl-right";
+                    } else if (std.mem.eql(u8, bytes[2..n], "1;5D") or std.mem.eql(u8, bytes[2..n], "5D")) {
+                        logical = "ctrl-left";
                     } else if (bytes[2] == 'A') {
                         logical = "up";
                     } else if (bytes[2] == 'B') {
@@ -2986,6 +2993,8 @@ pub fn main(init: std.process.Init) !void {
                         logical = "right";
                     } else if (bytes[2] == 'D') {
                         logical = "left";
+                    } else if (std.mem.eql(u8, bytes[2..n], "3~")) {
+                        logical = "del";
                     } else if (std.mem.eql(u8, bytes[2..n], "5~")) {
                         logical = "pageup";
                     } else if (std.mem.eql(u8, bytes[2..n], "6~")) {
@@ -3276,7 +3285,11 @@ pub fn main(init: std.process.Init) !void {
                 } else if (n > 2 and bytes[1] == 'O') {
                     // Arrow keys — application cursor key mode (\x1bOA/B/C/D).
                     // ZLE keeps the terminal in smkx (application mode) during widget execution.
-                    if (bytes[2] == 'A') {
+                    if (bytes[2] == 'c') {
+                        logical = "ctrl-right";
+                    } else if (bytes[2] == 'd') {
+                        logical = "ctrl-left";
+                    } else if (bytes[2] == 'A') {
                         logical = "up";
                     } else if (bytes[2] == 'B') {
                         logical = "down";
@@ -3697,6 +3710,12 @@ pub fn main(init: std.process.Init) !void {
                                 selected_idx = if (query_len == 0) null else 0;
                                 total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
+                        } else if (std.mem.eql(u8, name, "del")) {
+                            if (query_cursor < query_len) {
+                                forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
+                                selected_idx = if (query_len == 0) null else 0;
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            }
                         }
                     } else if (is_cat_autocomplete) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -3723,6 +3742,12 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, action, "delete")) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
+                                selected_idx = if (query_len == 0) null else 0;
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            }
+                        } else if (std.mem.eql(u8, name, "del")) {
+                            if (query_cursor < query_len) {
+                                forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
                                 total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
@@ -3795,6 +3820,13 @@ pub fn main(init: std.process.Init) !void {
                                 }
                             } else if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
+                                selected_idx = null;
+                                grid_scroll_top = 0;
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            }
+                        } else if (std.mem.eql(u8, name, "del")) {
+                            if (query_cursor < query_len) {
+                                forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = null;
                                 grid_scroll_top = 0;
                                 total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
@@ -3888,6 +3920,12 @@ pub fn main(init: std.process.Init) !void {
                                     grid_scroll_top = 0;
                                 }
                             }
+                        } else if (std.mem.eql(u8, name, "ctrl-left")) {
+                            if (selected_idx == null)
+                                query_cursor = wordLeft(query_buf[0..query_len], query_cursor);
+                        } else if (std.mem.eql(u8, name, "ctrl-right")) {
+                            if (selected_idx == null)
+                                query_cursor = wordRight(query_buf[0..query_len], query_len, query_cursor);
                         }
                     }
                 }
@@ -4026,6 +4064,24 @@ test "deleteAtCursor removes the byte before the cursor" {
     deleteAtCursor(&buf, &len, &cur);
     try std.testing.expectEqual(@as(usize, 2), len);
     try std.testing.expectEqual(@as(usize, 0), cur);
+}
+
+test "wordLeft moves cursor to start of previous word" {
+    const buf = "hello world foo";
+    try std.testing.expectEqual(@as(usize, 12), wordLeft(buf, 15)); // "foo" → before 'f'
+    try std.testing.expectEqual(@as(usize, 6), wordLeft(buf, 11)); // "world" → before 'w'
+    try std.testing.expectEqual(@as(usize, 0), wordLeft(buf, 5)); // "hello" → start
+    try std.testing.expectEqual(@as(usize, 0), wordLeft(buf, 0)); // at start → no-op
+    try std.testing.expectEqual(@as(usize, 6), wordLeft(buf, 12)); // mid-space → before 'w'
+}
+
+test "wordRight moves cursor past next word" {
+    const buf = "hello world foo";
+    const len = buf.len;
+    try std.testing.expectEqual(@as(usize, 6), wordRight(buf, len, 0)); // after "hello " → 'w'
+    try std.testing.expectEqual(@as(usize, 12), wordRight(buf, len, 6)); // after "world " → 'f'
+    try std.testing.expectEqual(@as(usize, 15), wordRight(buf, len, 12)); // after "foo" → end
+    try std.testing.expectEqual(@as(usize, 15), wordRight(buf, len, 15)); // at end → no-op
 }
 
 test "grid dimension editing helpers" {

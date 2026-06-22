@@ -2522,14 +2522,15 @@ const EMOJI_DB = [
 ];
 
 const EMOJI_SYNONYMS = {
+  "adorable": ["pet"],
   "afraid": ["scared"],
   "aircraft": ["airplane"],
   "airplane": ["aircraft", "plane"],
   "angry": ["mad"],
   "app": ["application"],
   "application": ["app"],
-  "auto": ["automobile", "car"],
-  "automobile": ["auto", "car"],
+  "auto": ["automobile", "car", "truck"],
+  "automobile": ["auto", "car", "truck"],
   "backpack": ["bag"],
   "bag": ["backpack"],
   "beverage": ["drink"],
@@ -2554,6 +2555,7 @@ const EMOJI_SYNONYMS = {
   "couch": ["sofa"],
   "cry": ["sad"],
   "crying": ["sobbing"],
+  "cute": ["pet"],
   "delicious": ["tasty"],
   "dog": ["puppy"],
   "drink": ["beverage"],

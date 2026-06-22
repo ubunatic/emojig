@@ -238,7 +238,84 @@ offline.  Run it after bulk emoji data changes to catch regressions.
 
 ---
 
-## 8. Ranking test guidelines
+## 9. The "void term" problem and anti-synonyms
+
+### When a query word has no entries in the database
+
+A **void term** is a query word with zero exact or near-exact matches in any emoji's
+name, keywords, or aliases.  The scorer still runs, so every emoji whose search
+string contains the term's letters as a sparse subsequence gets a positive score.
+This produces nonsense results.
+
+Classic case: `"cute cat"`.
+
+- "cute" is not a tag on any emoji. Nothing is labelled "cute".
+- Cat emojis (🐱 🐈 🐈‍⬛) have search strings like `"cat face pet animal"` — no `u` at
+  all. "cute" cannot even match them sparsely.
+- Results are therefore entirely driven by where c…u…t…e happens to land in *other*
+  emojis' strings: 🥩 "cut of meat" scores highest because "cut" is the first word
+  (word-start + consecutive run = high score) and 'e' appears in "meat" just 5 chars
+  later. VS15 plain-text twins ("couch and lamp plain text", "chipmunk plain text", …)
+  compound the problem — the word "text" contributes t-e, making c-u-t-e easy to
+  assemble across any string that starts with a word containing 'c' and 'u'.
+
+**Two fixes are needed in combination:**
+
+1. **Positive synonym**: map the void term to a word that *does* appear in the
+   relevant entries. `"cute": ["pet"]` routes "cute" through the "pet" keyword common
+   to cat, dog, rabbit, etc. emojis. Cat emojis now score 200+ for "pet" (exact word
+   match) and win decisively.
+
+2. **Stem exclusion** (anti-synonym): the trailing-'e' fallback (`"race"` → `"rac"`)
+   legitimately helps verb stems find gerunds but misfires on adjectives and common
+   nouns ("cute" → "cut", "note" → "not", "care" → "car"). The `"stem_exclusions"`
+   list in `spec/synonyms.json` suppresses the fallback for listed terms without
+   touching the positive-synonym or plural-fallback paths.
+
+Without the positive synonym fix the void term just has fewer false positives — the
+correct entries still score 0 (no match) and are absent. Without the stem exclusion
+the correct entries can win on score but the false positives persist at lower rank.
+Both fixes together are required for clean results.
+
+### The "plain text" suffix amplifies sparse matches
+
+`pack_emojis` appends `"plain text"` to the search string of every VS15 text-
+presentation twin.  Since "text" = t-e-x-t, **any** emoji whose name/keywords
+contain 'c' and 'u' before the end of the string will acquire a cheap c…u…t…e
+subsequence path — enormously widening the false-positive blast radius for void
+adjective terms.  Keep this in mind when debugging unexpected fuzzy matches against
+plain-twin entries (distinguished by `︎` / U+FE0E in the emoji character).
+
+### stem_exclusions: when to add a word
+
+Add a term to `spec/synonyms.json → "stem_exclusions"` when:
+- It ends in `e`, has length 4+, and the stem (drop `e`) is a real common word.
+- The expected search use-case for the term is as a *modifier* or *adjective*, not as
+  a verb infinitive.
+
+Examples already listed: `cute`, `note`, `vote`, `care`, `fire`, `hole`, `role`.
+Do **not** add verb infinitives that genuinely need their gerund found:
+`"race"` (finds "racing"), `"dance"` (finds "dancing"), `"space"` (finds "spacing").
+The heuristic: if you can form a natural English gerund (`<stem>ing`) that exists as
+an emoji keyword, keep the fallback.
+
+### Binary format versioning
+
+The stem-exclusion list is stored in the binary as a new section after the synonym
+table.  The header grew from 24 → 32 bytes (two new `u32` fields: offset and count)
+and the format version bumped from 2 → 3.  The Zig hardcoded `24 + index * 12` emoji
+entry offset was updated to `32 + index * 12`; the `root_test.zig` version assertion
+was bumped to match.
+
+Whenever the header layout changes:
+1. Bump `version` in the Go packer (`uint16(N)`).
+2. Update the corresponding byte-range reads in `src/root.zig` SynonymDb / EmojiDb.
+3. Update `root_test.zig` `"embedded database check"` expectation.
+4. Run `make pack && zig build test` to verify before committing.
+
+---
+
+## 10. Ranking test guidelines
 
 `src/root_test.zig` has a suite of ranking tests.  When adding or tuning one:
 
