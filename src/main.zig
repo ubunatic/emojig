@@ -105,6 +105,8 @@ var g_search_key_len: usize = 0;
 var g_search_disabled: [32]bool = undefined;
 var g_search_total: usize = 0;
 var g_search_initialized: bool = false;
+var g_search_switcher_gen: usize = 0; // bumped whenever g_switcher_cat_filter changes
+var g_search_cached_gen: usize = 0;
 
 // ---------------------------------------------------------------------------
 // Theme, Palette & Terminal Wrappers
@@ -125,6 +127,9 @@ var global_row_off: i32 = 0;
 // True while the alt screen (?1049h) is active; selects RESTORE_ALT (which
 // leaves the alt screen) over RESTORE (which must not touch ?1049 — see term.zig).
 var global_alt_screen: bool = false;
+// Active category filter from the category switcher bar (null = show all).
+// Set by Tab/Shift+Tab when --show-switcher is active.
+var g_switcher_cat_filter: ?[]const u8 = null;
 // Set while this (GUI-spawned) picker owns the single-instance pidfile, so
 // every exit path (defer, sigHandler, panic) can unlink it signal-safely.
 var global_picker_pid_path_buf: [64]u8 = undefined;
@@ -449,6 +454,39 @@ fn cycleTheme(t: Theme, forward: bool) Theme {
     };
 }
 
+/// Number of categories with switcher:true in the spec.
+fn switcherCatCount() usize {
+    var count: usize = 0;
+    for (g_spec.categories.categories) |cat| {
+        if (cat.switcher) count += 1;
+    }
+    return count;
+}
+
+/// Return the name of the i-th switcher category (0-based). Null when out of range.
+fn switcherCatName(idx: usize) ?[]const u8 {
+    var count: usize = 0;
+    for (g_spec.categories.categories) |cat| {
+        if (cat.switcher) {
+            if (count == idx) return cat.name;
+            count += 1;
+        }
+    }
+    return null;
+}
+
+/// Return the icon of the i-th switcher category (0-based). Empty slice when out of range.
+fn switcherCatIcon(idx: usize) []const u8 {
+    var count: usize = 0;
+    for (g_spec.categories.categories) |cat| {
+        if (cat.switcher) {
+            if (count == idx) return cat.icon;
+            count += 1;
+        }
+    }
+    return "";
+}
+
 /// Short, context-sensitive help for the selected settings row, shown as a
 /// modal when the user presses `?`/`h`/`F1`. Lines stay narrow to fit the popup.
 fn settingHelp(idx: usize) []const u8 {
@@ -497,7 +535,7 @@ fn runSearch(
             disabled_cats_count += 1;
         }
     }
-    return emojig.searchOptions(query, top_matches, top_count, limit, categories, disabled_cats_names_buf[0..disabled_cats_count]);
+    return emojig.searchOptions(query, top_matches, top_count, limit, categories, disabled_cats_names_buf[0..disabled_cats_count], g_switcher_cat_filter);
 }
 
 /// Search wrapper that skips re-running an identical query. Leading/trailing
@@ -515,6 +553,7 @@ fn searchDedup(
 ) usize {
     const key = std.mem.trim(u8, query, " ");
     if (g_search_initialized and
+        g_search_cached_gen == g_search_switcher_gen and
         std.mem.eql(u8, key, g_search_key_buf[0..g_search_key_len]) and
         std.mem.eql(bool, &g_search_disabled, &disabled_cats))
     {
@@ -525,6 +564,7 @@ fn searchDedup(
     g_search_key_len = key.len;
     g_search_disabled = disabled_cats;
     g_search_initialized = true;
+    g_search_cached_gen = g_search_switcher_gen;
     return g_search_total;
 }
 
@@ -533,6 +573,7 @@ fn searchDedup(
 // ---------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) !void {
+    @setEvalBranchQuota(10000);
     var opt_tui = false;
     var opt_gui = false;
     var opt_wait = false;
@@ -552,6 +593,7 @@ pub fn main(init: std.process.Init) !void {
     var opt_key: ?[]const u8 = null;
     var opt_borderless = true; // spawn the GUI host terminal without decorations (default)
     var opt_lang: ?[]const u8 = null;
+    var opt_show_switcher: ?bool = null; // null = derive from mode (--gui implies true)
 
     var args_it = init.minimal.args.iterate();
     _ = args_it.next(); // Skip executable path
@@ -668,6 +710,13 @@ pub fn main(init: std.process.Init) !void {
             }
         } else if (std.mem.startsWith(u8, arg, "--lang=")) {
             opt_lang = arg["--lang=".len..];
+        } else if (std.mem.eql(u8, arg, "--show-switcher")) {
+            opt_show_switcher = true;
+        } else if (std.mem.eql(u8, arg, "--no-show-switcher")) {
+            opt_show_switcher = false;
+        } else if (std.mem.startsWith(u8, arg, "--show-switcher=")) {
+            const v = arg["--show-switcher=".len..];
+            opt_show_switcher = std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1");
         } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--version")) {
             try writeAll(std.posix.STDOUT_FILENO, "emojig " ++ build_options.version ++ "\n");
             std.process.exit(0);
@@ -686,6 +735,7 @@ pub fn main(init: std.process.Init) !void {
                 "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
                 "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
+                "  --show-switcher[=true|false] Show horizontal category switcher bar (implied by --gui)\n" ++
                 "  --simple                     Simple fzf/sk-like list picker (use with --height)\n" ++
                 "  --wait                       Wait for spawned window to close (with --gui)\n" ++
                 "  --completion[=sh|zsh|bash|fish]  Print shell integration to stdout (auto-detects $SHELL)\n" ++
@@ -812,6 +862,13 @@ pub fn main(init: std.process.Init) !void {
         break :blk null;
     };
 
+    const env_show_switcher: ?bool = blk: {
+        if (init.environ_map.get("EMOJIG_SHOW_SWITCHER")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk null;
+    };
+
     const env_debug: ?bool = blk: {
         if (init.environ_map.get("EMOJIG_DEBUG")) |env_val| {
             break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
@@ -874,6 +931,9 @@ pub fn main(init: std.process.Init) !void {
     // default 6 columns this reproduces the historical width of 25.
     const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * 4 + 1);
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
+    // show_switcher is resolved after run_gui is determined (--gui implies true).
+    // opt_show_switcher and env_show_switcher take precedence over the mode default.
+    const final_show_switcher_pref: ?bool = opt_show_switcher orelse env_show_switcher;
     const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
     const final_debug = opt_debug or (env_debug orelse false);
     const final_alt_screen = (resize_mode == .altscreen);
@@ -1066,6 +1126,7 @@ pub fn main(init: std.process.Init) !void {
             gui_cols,
             gui_rows,
             &g_spec,
+            final_show_switcher_pref orelse true,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
@@ -1092,6 +1153,10 @@ pub fn main(init: std.process.Init) !void {
     var griddim_typing: bool = false;
     const term_width = final_width;
     const show_border = final_border;
+    // --gui implies show_switcher unless explicitly overridden.
+    const show_switcher: bool = final_show_switcher_pref orelse (init.environ_map.get("EMOJIG_GUI_SPAWNED") != null);
+    // Switcher cat index: null = all emojis; 0..N-1 = specific switcher category.
+    var switcher_cat_idx: ?usize = null;
 
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;
@@ -1224,7 +1289,8 @@ pub fn main(init: std.process.Init) !void {
             if (height_override) |h| break :blk if (h > 2) h - 2 else 1;
             break :blk g_spec.layout.tui.rows;
         } else rows;
-        const content_rows: usize = if (final_simple) list_rows + 2 else rows + g_spec.layout.layout_overhead;
+        const switcher_extra: usize = if (show_switcher) 1 else 0;
+        const content_rows: usize = if (final_simple) list_rows + 2 else rows + g_spec.layout.layout_overhead + switcher_extra;
         var final_h = if (final_simple) content_rows else if (show_border) content_rows + 2 else content_rows;
         if (final_debug and !final_simple) final_h += 2;
         global_tui_height = final_h;
@@ -1467,6 +1533,11 @@ pub fn main(init: std.process.Init) !void {
         // Effective query cap from the spec, never exceeding the stack buffer.
         const max_query_len: usize = @min(g_spec.layout.max_query_len, query_buf.len);
 
+        // visible_rows: when the switcher bar is shown it takes one row from the
+        // grid so the total window height stays constant. visible_rows < rows only
+        // when show_switcher is active and rows > 1 (i.e. there is space for both).
+        const visible_rows: usize = if (show_switcher and rows > 1) rows - 1 else rows;
+
         // In simple mode we cap at MAX_CELLS list items; grid mode uses cols*rows.
         // total_cells is the *viewport* size (visible cells). The search fetches
         // up to fetch_limit results so the grid/list can scroll past one page.
@@ -1538,6 +1609,7 @@ pub fn main(init: std.process.Init) !void {
         var mouse_carry: [32]u8 = undefined;
         var mouse_carry_len: usize = 0;
         const spaces = " " ** 512;
+        const hlines = "─" ** 512; // each ─ is 3 UTF-8 bytes, 1 display column
         const content_width = term_width;
 
         var last_w: usize = term_width;
@@ -1702,8 +1774,9 @@ pub fn main(init: std.process.Init) !void {
                         current_total_rows += 1; // Top padding
                         current_total_rows += 1; // Search bar
                         current_total_rows += 1; // Spacer
-                        current_total_rows += rows; // Grid rows
-                        current_total_rows += 1; // Spacer between grid and description
+                        current_total_rows += rows; // Grid rows (+ switcher if active)
+                        if (show_switcher) current_total_rows += 1; // Hline between grid and switcher
+                        current_total_rows += 1; // Hline between grid/switcher and description
                         current_total_rows += 1; // Description
                         current_total_rows += 1; // Status bar
                         if (show_bottom_border) current_total_rows += 1;
@@ -1774,6 +1847,16 @@ pub fn main(init: std.process.Init) !void {
 
                     fn endRow(self: @This()) !void {
                         try term_lib.writeAll(self.fd, "\x1b[0m\x1b[K");
+                        self.count.* += 1;
+                        if (self.count.* < self.total) {
+                            try term_lib.writeAll(self.fd, "\x1b[B\r");
+                        }
+                    }
+                    // Use for rows that already fill the full terminal width —
+                    // skips \x1b[K so the last character is not erased by EL
+                    // firing from the pending-wrap cursor position.
+                    fn endRowFull(self: @This()) !void {
+                        try term_lib.writeAll(self.fd, "\x1b[0m");
                         self.count.* += 1;
                         if (self.count.* < self.total) {
                             try term_lib.writeAll(self.fd, "\x1b[B\r");
@@ -2194,22 +2277,21 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else {
-                        // Blank spacer row.
+                        // Separator hline between search bar and grid.
                         try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.grid_bg);
-                        try writeAll(stdout_fd, palette.grid_fg);
-                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                        try rw.endRow();
+                        try writeAll(stdout_fd, "\x1b[2m");
+                        try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                        try rw.endRowFull();
 
                         // Grid rows.
                         // Grid scrollbar geometry (only for the genuine emoji grid,
                         // when the result set spans more rows than the viewport).
                         const grid_total_rows = (top_count + cols - 1) / cols;
                         const grid_needs_scroll = !is_cmd_autocomplete and !is_cat_autocomplete and
-                            !is_too_small and !exit_preview and grid_total_rows > rows;
-                        const grid_tg = scrollbarThumb(scrollbar_style, rows, grid_total_rows);
-                        const grid_max_scroll: usize = if (grid_total_rows > rows) grid_total_rows - rows else 0;
+                            !is_too_small and !exit_preview and grid_total_rows > visible_rows;
+                        const grid_tg = scrollbarThumb(scrollbar_style, visible_rows, grid_total_rows);
+                        const grid_max_scroll: usize = if (grid_total_rows > visible_rows) grid_total_rows - visible_rows else 0;
                         const grid_thumb_start: usize = if (grid_needs_scroll and grid_max_scroll > 0)
                             grid_scroll_top * grid_tg.travel / grid_max_scroll
                         else
@@ -2221,7 +2303,7 @@ pub fn main(init: std.process.Init) !void {
                         const check_bg = bgEscape(&check_bg_buf, g_spec.strings.multi_select_bg);
 
                         var r: usize = 0;
-                        while (r < rows) : (r += 1) {
+                        while (r < visible_rows) : (r += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             if (is_too_small) {
                                 const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.grid_bg, spaces[0..@min(max_w, spaces.len)] });
@@ -2446,13 +2528,49 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
 
-                        // Spacer row between grid and description.
+                        // Category switcher bar (visible only when show_switcher and
+                        // visible_rows < rows, i.e. there is a row budget for it).
+                        if (show_switcher and visible_rows < rows) {
+                            // Separator hline between grid and switcher.
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, palette.grid_bg);
+                            try writeAll(stdout_fd, "\x1b[2m");
+                            try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                            try rw.endRowFull();
+
+                            // Switcher row: ✱ All + one slot per category.
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, " ");
+                            try writeAll(stdout_fd, palette.status_bg);
+                            // "All" slot (✱ = U+2731, single-width + space).
+                            if (switcher_cat_idx == null) {
+                                try writeAll(stdout_fd, palette.selection_bg);
+                            }
+                            try writeAll(stdout_fd, "\u{2731} ");
+                            if (switcher_cat_idx == null) try writeAll(stdout_fd, palette.status_bg);
+                            // One slot per switcher category.
+                            const sw_n = switcherCatCount();
+                            var sw_i: usize = 0;
+                            while (sw_i < sw_n) : (sw_i += 1) {
+                                if (switcher_cat_idx != null and switcher_cat_idx.? == sw_i) {
+                                    try writeAll(stdout_fd, palette.selection_bg);
+                                }
+                                const icon = switcherCatIcon(sw_i);
+                                if (icon.len > 0) try writeAll(stdout_fd, icon);
+                                if (switcher_cat_idx != null and switcher_cat_idx.? == sw_i) {
+                                    try writeAll(stdout_fd, palette.status_bg);
+                                }
+                                try writeAll(stdout_fd, " ");
+                            }
+                            try rw.endRow();
+                        }
+
+                        // Separator hline between grid/switcher and description.
                         try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.grid_bg);
-                        try writeAll(stdout_fd, palette.grid_fg);
-                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                        try rw.endRow();
+                        try writeAll(stdout_fd, "\x1b[2m");
+                        try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                        try rw.endRowFull();
 
                         // Description row.
                         try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2526,7 +2644,9 @@ pub fn main(init: std.process.Init) !void {
 
                                 var tags_buf: [80]u8 = undefined;
                                 var tags_len: usize = 0;
-                                var sit = std.mem.splitScalar(u8, search_str, ' ');
+                                // Only scan the fuzzy section (before any '\t' category tag).
+                                const fuzzy_search = if (std.mem.indexOfScalar(u8, search_str, '\t')) |ti| search_str[0..ti] else search_str;
+                                var sit = std.mem.splitScalar(u8, fuzzy_search, ' ');
                                 while (sit.next()) |word| {
                                     if (word.len == 0 or word.len + 2 > 66) continue;
                                     var wpad: [66]u8 = undefined;
@@ -2993,6 +3113,8 @@ pub fn main(init: std.process.Init) !void {
                         logical = "right";
                     } else if (bytes[2] == 'D') {
                         logical = "left";
+                    } else if (bytes[2] == 'Z') {
+                        logical = "shift-tab";
                     } else if (std.mem.eql(u8, bytes[2..n], "3~")) {
                         logical = "del";
                     } else if (std.mem.eql(u8, bytes[2..n], "5~")) {
@@ -3058,7 +3180,7 @@ pub fn main(init: std.process.Init) !void {
                                 const step: usize = 3;
                                 if (current_screen == .search) {
                                     const cc = if (final_simple) @as(usize, 1) else cols;
-                                    const vp = if (final_simple) total_cells else rows;
+                                    const vp = if (final_simple) total_cells else visible_rows;
                                     const trows = (top_count + cc - 1) / cc;
                                     const max_top = if (trows > vp) trows - vp else 0;
                                     grid_scroll_top = if (wheel_down)
@@ -3095,7 +3217,7 @@ pub fn main(init: std.process.Init) !void {
 
                                 // Hover: update selection to item under cursor (no copy/action).
                                 const grid_first_row: i32 = 4 + row_off;
-                                const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
+                                const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
                                 // Settings/categories have title+blank before first item → offset +1.
                                 const list_first_row: i32 = grid_first_row + 1;
                                 if (current_screen == .settings) {
@@ -3118,11 +3240,11 @@ pub fn main(init: std.process.Init) !void {
                                     }
                                 } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                     const total_rows = (top_count + cols - 1) / cols;
-                                    const on_sb = dragging_scrollbar and total_rows > rows;
+                                    const on_sb = dragging_scrollbar and total_rows > visible_rows;
                                     if (on_sb) {
                                         // Scrollbar drag: map the track row to a scroll offset.
-                                        const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
-                                        const max_scroll = total_rows - rows;
+                                        const tg = scrollbarThumb(scrollbar_style, visible_rows, total_rows);
+                                        const max_scroll = total_rows - visible_rows;
                                         const track_row = @as(usize, @intCast(click_row - grid_first_row));
                                         if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
                                         // Write only the scrollbar column so the thumb tracks the
@@ -3135,7 +3257,7 @@ pub fn main(init: std.process.Init) !void {
                                             const new_max = if (max_scroll > 0) max_scroll else 1;
                                             const new_thumb = grid_scroll_top * tg.travel / new_max;
                                             var sb_r: usize = 0;
-                                            while (sb_r < rows) : (sb_r += 1) {
+                                            while (sb_r < visible_rows) : (sb_r += 1) {
                                                 const abs_row = @as(usize, @intCast(tui_top)) +
                                                     3 + @as(usize, @intCast(row_off)) + sb_r;
                                                 const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
@@ -3171,7 +3293,7 @@ pub fn main(init: std.process.Init) !void {
                                 if (now - last_focus_gain_ms > 200) {
                                     const search_row: i32 = 2 + row_off;
                                     const grid_first_row: i32 = 4 + row_off;
-                                    const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(rows)) - 1;
+                                    const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
 
                                     if (click_row == search_row and
                                         local_col >= @as(i32, @intCast(content_width)) - 4)
@@ -3225,15 +3347,15 @@ pub fn main(init: std.process.Init) !void {
                                                 saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
                                             }
                                         } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
-                                            local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > rows)
+                                            local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > visible_rows)
                                         {
                                             // Scrollbar click-to-jump; mark as drag start so
                                             // subsequent motion events continue scrolling even
                                             // when the cursor strays left or right of the track.
                                             dragging_scrollbar = true;
                                             const total_rows = (top_count + cols - 1) / cols;
-                                            const tg = scrollbarThumb(scrollbar_style, rows, total_rows);
-                                            const max_scroll = total_rows - rows;
+                                            const tg = scrollbarThumb(scrollbar_style, visible_rows, total_rows);
+                                            const max_scroll = total_rows - visible_rows;
                                             const track_row = @as(usize, @intCast(click_row - grid_first_row));
                                             if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
                                         } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
@@ -3313,11 +3435,12 @@ pub fn main(init: std.process.Init) !void {
                 logical = "tab";
             } else if (bytes[0] == ' ' and current_screen != .search) {
                 logical = "space";
-            } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x17) {
+            } else if (bytes[0] == 3 or bytes[0] == 4 or bytes[0] == 0x11 or bytes[0] == 0x14 or bytes[0] == 0x17) {
                 logical = switch (bytes[0]) {
                     3 => "ctrl-c",
                     4 => "ctrl-d",
                     0x11 => "ctrl-q",
+                    0x14 => "ctrl-t",
                     0x17 => "ctrl-w",
                     else => unreachable,
                 };
@@ -3831,22 +3954,52 @@ pub fn main(init: std.process.Init) !void {
                                 grid_scroll_top = 0;
                                 total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, action, "cycle_theme")) {
-                            theme = switch (theme) {
-                                .dark => .light,
-                                .light => .system,
-                                .system => .dark,
-                            };
-                            saveThemeToConfig(init.io, theme);
-                            if (theme == .system) {
-                                system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                        } else if (std.mem.eql(u8, action, "cycle_theme") or std.mem.eql(u8, name, "ctrl-t")) {
+                            if (show_switcher and std.mem.eql(u8, action, "cycle_theme")) {
+                                // Tab cycles the category switcher forward when it is visible.
+                                const n_cats = switcherCatCount();
+                                if (n_cats > 0) {
+                                    switcher_cat_idx = if (switcher_cat_idx == null) 0 else blk: {
+                                        const next = switcher_cat_idx.? + 1;
+                                        break :blk if (next >= n_cats) null else next;
+                                    };
+                                    g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                    g_search_switcher_gen +%= 1;
+                                    selected_idx = null;
+                                    grid_scroll_top = 0;
+                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                }
+                            } else {
+                                theme = switch (theme) {
+                                    .dark => .light,
+                                    .light => .system,
+                                    .system => .dark,
+                                };
+                                saveThemeToConfig(init.io, theme);
+                                if (theme == .system) {
+                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                }
+                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             }
-                            applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                        } else if (show_switcher and std.mem.eql(u8, name, "shift-tab")) {
+                            // Shift+Tab cycles the category switcher backward.
+                            const n_cats = switcherCatCount();
+                            if (n_cats > 0) {
+                                switcher_cat_idx = if (switcher_cat_idx == null) n_cats - 1 else blk: {
+                                    if (switcher_cat_idx.? == 0) break :blk null;
+                                    break :blk switcher_cat_idx.? - 1;
+                                };
+                                g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                g_search_switcher_gen +%= 1;
+                                selected_idx = null;
+                                grid_scroll_top = 0;
+                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            }
                         } else if (std.mem.eql(u8, action, "scroll_pageup") or std.mem.eql(u8, action, "scroll_pagedown")) {
                             if (top_count > 0) {
                                 const down = std.mem.eql(u8, action, "scroll_pagedown");
                                 const cc = if (final_simple) @as(usize, 1) else cols;
-                                const vp = if (final_simple) total_cells else rows;
+                                const vp = if (final_simple) total_cells else visible_rows;
                                 const trows = (top_count + cc - 1) / cc;
                                 const step = vp * cc;
                                 const cur = selected_idx orelse 0;
@@ -3859,7 +4012,7 @@ pub fn main(init: std.process.Init) !void {
                             const is_home = std.mem.eql(u8, action, "nav_home");
                             const is_end = std.mem.eql(u8, action, "nav_end");
                             const cc = if (final_simple) @as(usize, 1) else cols;
-                            const vp = if (final_simple) total_cells else rows;
+                            const vp = if (final_simple) total_cells else visible_rows;
                             const trows = (top_count + cc - 1) / cc;
                             if (selected_idx == null) {
                                 // Prompt focus: Left/Right/Home/End move the text

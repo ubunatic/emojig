@@ -27,6 +27,8 @@ pub const CategorySpec = struct {
     name: []const u8,
     short: []const u8,
     synonyms: []const []const u8,
+    icon: []const u8 = "",
+    switcher: bool = false,
 };
 
 pub const CategoriesSpec = struct {
@@ -37,8 +39,8 @@ fn isWordInSearch(search_str: []const u8, word: []const u8) bool {
     var pos: usize = 0;
     while (true) {
         const idx = std.mem.indexOfPos(u8, search_str, pos, word) orelse return false;
-        const start_ok = (idx == 0 or search_str[idx - 1] == ' ');
-        const end_ok = (idx + word.len == search_str.len or search_str[idx + word.len] == ' ');
+        const start_ok = (idx == 0 or search_str[idx - 1] == ' ' or search_str[idx - 1] == '\t');
+        const end_ok = (idx + word.len == search_str.len or search_str[idx + word.len] == ' ' or search_str[idx + word.len] == '\t');
         if (start_ok and end_ok) return true;
         pos = idx + 1;
     }
@@ -77,7 +79,7 @@ fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?Catego
 }
 
 pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) usize {
-    return searchOptions(query, top_matches, top_count, limit, null, &[_][]const u8{});
+    return searchOptions(query, top_matches, top_count, limit, null, &[_][]const u8{}, null);
 }
 
 /// Box-art scores drop by this much in general searches so borders and
@@ -95,6 +97,7 @@ pub fn searchOptions(
     limit: usize,
     categories_spec: ?*const CategoriesSpec,
     disabled_categories: []const []const u8,
+    forced_category: ?[]const u8,
 ) usize {
     top_count.* = 0;
 
@@ -157,26 +160,28 @@ pub fn searchOptions(
         }
     }
 
-    var filter_category: ?[]const u8 = null;
-    if (std.mem.startsWith(u8, actual_query, "c:") or std.mem.startsWith(u8, actual_query, "C:")) {
-        const after_c = actual_query[2..];
-        if (std.mem.indexOfScalar(u8, after_c, ' ')) |space_idx| {
-            filter_category = after_c[0..space_idx];
-            actual_query = after_c[space_idx + 1 ..];
-        } else {
-            filter_category = after_c;
-            actual_query = "";
-        }
-    }
-    // Auto-detect: if the first query word matches a known category name or
-    // synonym, treat it as an implicit category filter (no prefix needed).
-    // Only fires when categories_spec is loaded (null → no-op, safe in tests).
+    var filter_category: ?[]const u8 = forced_category;
     if (filter_category == null) {
-        const sp = std.mem.indexOfScalar(u8, actual_query, ' ');
-        const first_word = if (sp) |s| actual_query[0..s] else actual_query;
-        if (findCategorySpec(categories_spec, first_word) != null) {
-            filter_category = first_word;
-            actual_query = if (sp) |s| actual_query[s + 1 ..] else "";
+        if (std.mem.startsWith(u8, actual_query, "c:") or std.mem.startsWith(u8, actual_query, "C:")) {
+            const after_c = actual_query[2..];
+            if (std.mem.indexOfScalar(u8, after_c, ' ')) |space_idx| {
+                filter_category = after_c[0..space_idx];
+                actual_query = after_c[space_idx + 1 ..];
+            } else {
+                filter_category = after_c;
+                actual_query = "";
+            }
+        }
+        // Auto-detect: if the first query word matches a known category name or
+        // synonym, treat it as an implicit category filter (no prefix needed).
+        // Only fires when categories_spec is loaded (null → no-op, safe in tests).
+        if (filter_category == null) {
+            const sp = std.mem.indexOfScalar(u8, actual_query, ' ');
+            const first_word = if (sp) |s| actual_query[0..s] else actual_query;
+            if (findCategorySpec(categories_spec, first_word) != null) {
+                filter_category = first_word;
+                actual_query = if (sp) |s| actual_query[s + 1 ..] else "";
+            }
         }
     }
 

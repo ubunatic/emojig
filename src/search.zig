@@ -12,22 +12,27 @@ const Match = root.Match;
 pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
 
+    // The fuzzy section ends at the first '\t'; category keywords follow the tab
+    // and are only used by the exact-word c: filter, never by the ranker.
+    const fuzzy_end = std.mem.indexOfScalar(u8, target, '\t') orelse target.len;
+    const ftarget = target[0..fuzzy_end];
+
     var score: i32 = 0;
     var target_idx: usize = 0;
     var term_idx: usize = 0;
     var consecutive: i32 = 0;
 
     while (term_idx < term.len) {
-        if (target_idx >= target.len) return null; // Not a subsequence
+        if (target_idx >= ftarget.len) return null; // Not a subsequence
 
         const term_char = std.ascii.toLower(term[term_idx]);
-        const target_char = std.ascii.toLower(target[target_idx]);
+        const target_char = std.ascii.toLower(ftarget[target_idx]);
 
         if (term_char == target_char) {
             var char_score: i32 = 10;
 
             // Bonus for matching at the start of a word
-            if (target_idx == 0 or target[target_idx - 1] == ' ') {
+            if (target_idx == 0 or ftarget[target_idx - 1] == ' ') {
                 char_score += 40;
             }
 
@@ -54,15 +59,15 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     // Exact word match bonus (consecutive match bounded by word boundaries)
     if (consecutive == term.len) {
         const start_pos = target_idx - term.len;
-        const is_start_boundary = (start_pos == 0 or target[start_pos - 1] == ' ');
-        const is_end_boundary = (target_idx == target.len or target[target_idx] == ' ');
+        const is_start_boundary = (start_pos == 0 or ftarget[start_pos - 1] == ' ');
+        const is_end_boundary = (target_idx == ftarget.len or ftarget[target_idx] == ' ');
         if (is_start_boundary and is_end_boundary) {
             score += 100;
         }
     }
 
     // Tie-breaker penalty for longer targets (prefer shorter, more precise descriptions)
-    score -= @intCast(target.len);
+    score -= @intCast(ftarget.len);
 
     return score;
 }

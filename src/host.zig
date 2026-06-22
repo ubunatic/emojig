@@ -142,7 +142,11 @@ pub fn buildGuiArgv(
             n += 1;
             out[n] = "--override=cursor.blink=yes";
             n += 1;
-            out[n] = "--override=pad=8x4";
+            out[n] = "--override=scrollback.lines=0";
+            n += 1;
+            out[n] = "--override=pad=0x4";
+            n += 1;
+            out[n] = "--override=csd.preferred=none";
             n += 1;
             if (borderless) {
                 // Disable client-side decorations (no title bar),
@@ -335,6 +339,7 @@ pub fn spawnGuiWindow(
     cols_val: usize,
     rows_val: usize,
     spec: *const spec_mod.Spec,
+    show_switcher: bool,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -358,7 +363,8 @@ pub fn spawnGuiWindow(
     const width_val = cols_val * 4 + 1;
 
     // Derive the window height from the GUI grid rows.
-    const gui_content_rows: usize = rows_val + spec.layout.layout_overhead;
+    // GUI always shows the switcher, which adds 1 extra hline row between grid and switcher.
+    const gui_content_rows: usize = rows_val + spec.layout.layout_overhead + 1;
     var final_h = if (border) gui_content_rows + 2 else gui_content_rows;
     if (debug) final_h += 2;
 
@@ -426,6 +432,8 @@ pub fn spawnGuiWindow(
         .{if (spec.layout.animation.exit_preview_gui) "1" else "0"},
     );
 
+    const switcher_arg = if (show_switcher) "EMOJIG_SHOW_SWITCHER=1" else "EMOJIG_SHOW_SWITCHER=0";
+
     // Terminal-independent tail: env VARS... exe_path --tui
     const tail = [_][]const u8{
         "env",
@@ -440,6 +448,7 @@ pub fn spawnGuiWindow(
         env_cols_arg,
         env_rows_arg,
         env_exit_preview_arg,
+        switcher_arg,
         "EMOJIG_GUI_SPAWNED=1",
         exe_path,
         "--tui",

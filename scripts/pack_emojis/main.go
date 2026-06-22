@@ -24,13 +24,28 @@ type EmojiItem struct {
 }
 
 // categoryKeywords injects a canonical keyword for each emoji category so that
-// "c:animal" / "c:food" / "c:travel" filters work without adding tags to every
-// individual emoji in the data file.
-var categoryKeywords = map[string]string{
+// "c:animal" / "c:food" / "c:travel" / "c:smiley" etc. filters work without
+// adding tags to every individual emoji in the data file.
+// fuzzyKeywords go into the space-separated fuzzy search section and participate
+// in both ranking and c: filtering. They were present before the switcher was added
+// and all ranking tests pass with them in place.
+var fuzzyKeywords = map[string]string{
 	"Animals & Nature": "animal",
 	"Food & Drink":     "food",
 	"Travel & Places":  "travel",
 	"Activities":       "activity",
+}
+
+// filterKeywords go after a '\t' delimiter so the fuzzy ranker ignores them
+// (matchTermDirect stops at '\t') while the exact-word c: filter still finds them
+// (isWordInSearch treats '\t' as a word boundary). New GTK-style switcher categories
+// live here to avoid ranking regressions from their common letter combinations.
+var filterKeywords = map[string]string{
+	"Smileys & Emotion": "smiley",
+	"People & Body":     "people",
+	"Objects":           "object",
+	"Symbols":           "symbol",
+	"Flags":             "flag",
 }
 
 func cleanWord(word string) string {
@@ -152,12 +167,22 @@ func main() {
 		for _, t := range item.Tags {
 			addWords(t)
 		}
-		// Inject category keyword so c:animal / c:food / c:travel filters work.
-		if kw, ok := categoryKeywords[item.Category]; ok {
+		// Fuzzy keywords go into the space-separated section (participate in ranking).
+		if kw, ok := fuzzyKeywords[item.Category]; ok {
 			addWords(kw)
 		}
 
+		// Filter-only keyword goes after '\t' so the fuzzy ranker ignores it;
+		// the exact-word c: filter (isWordInSearch) treats '\t' as a word boundary.
+		filterKw := ""
+		if kw, ok := filterKeywords[item.Category]; ok {
+			filterKw = kw
+		}
+
 		searchStr := strings.Join(searchWords, " ")
+		if filterKw != "" {
+			searchStr += "\t" + filterKw
+		}
 
 		addEntry(item.Emoji, item.Description, searchStr)
 
@@ -175,7 +200,12 @@ func main() {
 		if strings.Contains(item.Emoji, vs16) && !strings.Contains(item.Emoji, zwj) {
 			bare := strings.ReplaceAll(item.Emoji, vs16, "")
 			if utf8.RuneCountInString(bare) == 1 && !existing[bare] && !existing[bare+vs15] {
-				addEntry(bare+vs15, item.Description+" plain", searchStr+" plain text")
+				// Build twin search: insert "plain text" before the tab section.
+				twinSearch := strings.Join(searchWords, " ") + " plain text"
+				if filterKw != "" {
+					twinSearch += "\t" + filterKw
+				}
+				addEntry(bare+vs15, item.Description+" plain", twinSearch)
 				plainTwins++
 			}
 		}

@@ -66,11 +66,11 @@ func main() {
 	ws := winsize{Row: rowSize, Col: 50}
 	syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
 
-	cmd := exec.Command(binaryPath, "--tui")
+	cmd := exec.Command(binaryPath, "--tui", "--show-switcher")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
-	cmd.Env = append(os.Environ(), "EMOJIG_WIDTH=45", "EMOJIG_ROWS=4", "EMOJIG_HEIGHT=10", "TERM=xterm-256color")
+	cmd.Env = append(os.Environ(), "EMOJIG_WIDTH=45", "EMOJIG_ROWS=4", "TERM=xterm-256color")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid:  true,
 		Setctty: true,

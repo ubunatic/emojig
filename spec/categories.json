@@ -1,49 +1,95 @@
 {
-  "description": "Category synonyms and keywords for c: filtering. Names/synonyms match against the emoji search string so each category's packer-injected keyword must appear here too.",
+  "description": "Category synonyms and keywords for c: filtering. Names/synonyms match against the emoji search string so each category's packer-injected keyword must appear here too. switcher:true categories appear in the horizontal category switcher bar.",
   "categories": [
+    {
+      "name": "smileys",
+      "short": "smiley",
+      "icon": "😀",
+      "switcher": true,
+      "synonyms": ["smiley", "face", "smile", "emotion", "grin", "laugh", "cry"]
+    },
+    {
+      "name": "people",
+      "short": "person",
+      "icon": "👍",
+      "switcher": true,
+      "synonyms": ["people", "person", "body", "hand", "man", "woman", "child", "baby", "boy", "girl"]
+    },
     {
       "name": "animals",
       "short": "animal",
+      "icon": "🐾",
+      "switcher": true,
       "synonyms": ["animal", "nature", "wildlife", "creature", "pet", "fauna"]
     },
     {
       "name": "food",
       "short": "food",
+      "icon": "🍴",
+      "switcher": true,
       "synonyms": ["food", "drink", "eat", "meal", "beverage", "fruit", "vegetable"]
     },
     {
       "name": "travel",
       "short": "travel",
+      "icon": "✈️",
+      "switcher": true,
       "synonyms": ["travel", "vehicle", "transport", "place", "location", "car", "boat", "plane", "train"]
     },
     {
       "name": "activities",
       "short": "activity",
+      "icon": "⚽",
+      "switcher": true,
       "synonyms": ["activity", "sport", "game", "hobby", "play"]
     },
     {
-      "name": "clocks",
-      "short": "clock",
-      "synonyms": ["clock", "time", "watch"]
+      "name": "objects",
+      "short": "object",
+      "icon": "💡",
+      "switcher": true,
+      "synonyms": ["object", "tool", "item", "device", "clothing", "book", "office"]
+    },
+    {
+      "name": "symbols",
+      "short": "symbol",
+      "icon": "🔣",
+      "switcher": true,
+      "synonyms": ["symbol", "sign", "mark", "heart", "arrow", "geometric"]
     },
     {
       "name": "flags",
       "short": "flag",
+      "icon": "🚩",
+      "switcher": true,
       "synonyms": ["flag", "banner", "country"]
+    },
+    {
+      "name": "clocks",
+      "short": "clock",
+      "icon": "",
+      "switcher": false,
+      "synonyms": ["clock", "time", "watch"]
     },
     {
       "name": "blocks",
       "short": "block",
+      "icon": "",
+      "switcher": false,
       "synonyms": ["block", "square"]
     },
     {
       "name": "borders",
       "short": "border",
+      "icon": "",
+      "switcher": false,
       "synonyms": ["border", "frame"]
     },
     {
       "name": "shades",
       "short": "shade",
+      "icon": "",
+      "switcher": false,
       "synonyms": ["shade", "gradient"]
     }
   ]
