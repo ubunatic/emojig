@@ -24,6 +24,8 @@ const tui_draw = @import("tui_draw.zig");
 // ---------------------------------------------------------------------------
 const ScrollbarStyle = config.ScrollbarStyle;
 const scrollbarThumb = tui_draw.scrollbarThumb;
+const scrollbarCell = tui_draw.scrollbarCell;
+const smoothScrollPos = tui_draw.smoothScrollPos;
 const deleteAtCursor = tui_draw.deleteAtCursor;
 const forwardDeleteAtCursor = tui_draw.forwardDeleteAtCursor;
 const wordLeft = tui_draw.wordLeft;
@@ -2033,8 +2035,10 @@ pub fn main(init: std.process.Init) !void {
                             const warn_pad = if (max_w > display_warn.len) max_w - display_warn.len else 0;
                             try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
                         } else {
-                            if (palette.search_left_cap.len > 0) {
-                                try writeAll(stdout_fd, palette.search_left_cap);
+                            if (palette.search_left_cap_seq.len > 0) {
+                                try writeAll(stdout_fd, palette.search_left_cap_seq);
+                                try writeAll(stdout_fd, g_spec.strings.search_left_cap);
+                                try writeAll(stdout_fd, palette.search_bg);
                             } else {
                                 try writeAll(stdout_fd, palette.app_bg);
                                 try writeAll(stdout_fd, " ");
@@ -2046,25 +2050,46 @@ pub fn main(init: std.process.Init) !void {
                             if (query_len == 0) {
                                 const placeholder = g_spec.strings.search_placeholder;
                                 const placeholder_cols = std.unicode.utf8CountCodepoints(placeholder) catch placeholder.len;
-                                try writeAll(stdout_fd, palette.grid_fg);
+                                // Apply cursor fg then placeholder fg so cursor area gets cursor_fg
+                                // (bar/underline cursor at pos 0 shows in cursor_fg color).
+                                const eff_ph_fg = if (palette.search_placeholder_fg.len > 0)
+                                    palette.search_placeholder_fg
+                                else if (palette.search_cursor_fg.len > 0)
+                                    palette.search_cursor_fg
+                                else
+                                    palette.grid_fg;
+                                try writeAll(stdout_fd, eff_ph_fg);
                                 try writeAll(stdout_fd, placeholder);
                                 try writeAll(stdout_fd, palette.search_bg);
                                 const ph_pad = if (pad_len >= placeholder_cols) pad_len - placeholder_cols else 0;
                                 try writeAll(stdout_fd, spaces[0..@min(ph_pad, spaces.len)]);
                             } else {
+                                // Emit text_fg / cursor_fg for the query text area.
+                                const eff_text_fg = if (palette.search_text_fg.len > 0)
+                                    palette.search_text_fg
+                                else if (palette.search_cursor_fg.len > 0)
+                                    palette.search_cursor_fg
+                                else
+                                    @as([]const u8, "");
+                                if (eff_text_fg.len > 0) try writeAll(stdout_fd, eff_text_fg);
                                 try writeAll(stdout_fd, query_buf[query_view_start .. query_view_start + display_query_len]);
+                                if (eff_text_fg.len > 0) try writeAll(stdout_fd, palette.search_bg);
                                 try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
                             }
                             const theme_hl = if (theme_hovered) palette.selection_bg else "";
                             const menu_hl = if (menu_hovered) palette.selection_bg else "";
-                            const sf = if (palette.search_sep.len > 0) palette.search_sep else palette.toolbar_sep_fg;
+                            // Per-segment separator sequences, falling back to toolbar_sep_fg.
+                            const st_sep_seq = if (palette.search_theme_sep.len > 0) palette.search_theme_sep else palette.toolbar_sep_fg;
+                            const ts_sep_seq = if (palette.theme_settings_sep.len > 0) palette.theme_settings_sep else palette.toolbar_sep_fg;
+                            const st_sep_char = if (g_spec.strings.search_theme_sep.len > 0) g_spec.strings.search_theme_sep else toolbar_sep;
+                            const ts_sep_char = if (g_spec.strings.theme_settings_sep.len > 0) g_spec.strings.theme_settings_sep else toolbar_sep;
                             const sb = palette.search_bg;
-                            const icon_buf = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}", .{
-                                sf,                     toolbar_sep,             sb,
-                                theme_hl,               themeIcon(theme),        sb,
-                                sf,                     toolbar_sep,             sb,
-                                menu_hl,                g_spec.theme.icons.menu, sb,
-                                palette.search_end_cap,
+                            const icon_buf = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}", .{
+                                st_sep_seq,                   st_sep_char,                     sb,
+                                theme_hl,                     themeIcon(theme),                sb,
+                                ts_sep_seq,                   ts_sep_char,                     sb,
+                                menu_hl,                      g_spec.theme.icons.menu,         sb,
+                                palette.search_right_cap_seq, g_spec.strings.search_right_cap,
                             });
                             try writeAll(stdout_fd, icon_buf);
                         }
@@ -2149,6 +2174,7 @@ pub fn main(init: std.process.Init) !void {
                         const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, help_lines.len).thumb_h else 0;
                         const travel_h = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_h > 0) help_scroll_top * travel_h / max_scroll_h else 0;
+                        const pos_eighths_h = if (needs_scroll and max_scroll_h > 0) smoothScrollPos(help_scroll_top, max_scroll_h, travel_h) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2166,13 +2192,24 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [32]u8 = undefined;
-                                const sb_seq = if (on_thumb)
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
-                                else
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
+                                var sb_buf: [64]u8 = undefined;
+                                const sb_seq = if (scrollbar_style == .expand) blk: {
+                                    const cell = scrollbarCell(pos_eighths_h, thumb_h, h_idx);
+                                    if (cell.invert) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else if (cell.char[0] != ' ') {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                } else blk: {
+                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                    if (on_thumb) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                };
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2198,6 +2235,7 @@ pub fn main(init: std.process.Init) !void {
                         const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, about_lines.len).thumb_h else 0;
                         const travel_a = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_a > 0) about_scroll_top * travel_a / max_scroll_a else 0;
+                        const pos_eighths_a = if (needs_scroll and max_scroll_a > 0) smoothScrollPos(about_scroll_top, max_scroll_a, travel_a) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2221,13 +2259,24 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [32]u8 = undefined;
-                                const sb_seq = if (on_thumb)
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
-                                else
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
+                                var sb_buf: [64]u8 = undefined;
+                                const sb_seq = if (scrollbar_style == .expand) blk: {
+                                    const cell = scrollbarCell(pos_eighths_a, thumb_h, h_idx);
+                                    if (cell.invert) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else if (cell.char[0] != ' ') {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                } else blk: {
+                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                    if (on_thumb) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                };
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2258,6 +2307,7 @@ pub fn main(init: std.process.Init) !void {
                         const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, status_lines.len).thumb_h else 0;
                         const travel_s = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
                         const thumb_start = if (needs_scroll and max_scroll_s > 0) status_scroll_top * travel_s / max_scroll_s else 0;
+                        const pos_eighths_s = if (needs_scroll and max_scroll_s > 0) smoothScrollPos(status_scroll_top, max_scroll_s, travel_s) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2275,13 +2325,24 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [32]u8 = undefined;
-                                const sb_seq = if (on_thumb)
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
-                                else
-                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
+                                var sb_buf: [64]u8 = undefined;
+                                const sb_seq = if (scrollbar_style == .expand) blk: {
+                                    const cell = scrollbarCell(pos_eighths_s, thumb_h, h_idx);
+                                    if (cell.invert) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else if (cell.char[0] != ' ') {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                } else blk: {
+                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                    if (on_thumb) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                };
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2394,6 +2455,10 @@ pub fn main(init: std.process.Init) !void {
                         const grid_max_scroll: usize = if (grid_total_rows > visible_rows) grid_total_rows - visible_rows else 0;
                         const grid_thumb_start: usize = if (grid_needs_scroll and grid_max_scroll > 0)
                             grid_scroll_top * grid_tg.travel / grid_max_scroll
+                        else
+                            0;
+                        const grid_pos_eighths: usize = if (grid_needs_scroll and grid_max_scroll > 0)
+                            smoothScrollPos(grid_scroll_top, grid_max_scroll, grid_tg.travel)
                         else
                             0;
 
@@ -2531,13 +2596,24 @@ pub fn main(init: std.process.Init) !void {
                                 gl_pos += blank_len;
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
-                                    const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                    const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                    var sb_buf: [32]u8 = undefined;
-                                    const sb_seq = if (on_thumb)
-                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
-                                    else
-                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
+                                    var sb_buf: [64]u8 = undefined;
+                                    const sb_seq = if (scrollbar_style == .expand) blk: {
+                                        const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
+                                        if (cell.invert) {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        } else if (cell.char[0] != ' ') {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        } else {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        }
+                                    } else blk: {
+                                        const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
+                                        if (on_thumb) {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                        } else {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        }
+                                    };
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             } else {
@@ -2749,13 +2825,24 @@ pub fn main(init: std.process.Init) !void {
                                 }
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
-                                    const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                    const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                    var sb_buf: [32]u8 = undefined;
-                                    const sb_seq = if (on_thumb)
-                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
-                                    else
-                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
+                                    var sb_buf: [64]u8 = undefined;
+                                    const sb_seq = if (scrollbar_style == .expand) blk: {
+                                        const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
+                                        if (cell.invert) {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        } else if (cell.char[0] != ' ') {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        } else {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        }
+                                    } else blk: {
+                                        const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
+                                        if (on_thumb) {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                        } else {
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        }
+                                    };
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             }
@@ -4877,4 +4964,41 @@ test "scrollbarThumb geometry for both styles" {
     const none = scrollbarThumb(.expand, 6, 6);
     try std.testing.expectEqual(@as(usize, 6), none.thumb_h);
     try std.testing.expectEqual(@as(usize, 0), none.travel);
+}
+
+test "scrollbarCell smooth sub-character positioning" {
+    // thumb_h=1 at pos_eighths=0: row 0 is a full cell, row 1 is rail.
+    const full = scrollbarCell(0, 1, 0);
+    try std.testing.expectEqualStrings("█", full.char);
+    try std.testing.expect(!full.invert);
+    try std.testing.expectEqualStrings(" ", scrollbarCell(0, 1, 1).char);
+
+    // thumb_h=1 at pos_eighths=4 (half a cell down):
+    //   row 0: bottom cap — lower 4/8 filled (▄), normal colors
+    const bot = scrollbarCell(4, 1, 0);
+    try std.testing.expectEqualStrings("▄", bot.char);
+    try std.testing.expect(!bot.invert);
+    //   row 1: top cap — top 4/8 filled (▄), inverted colors
+    const top = scrollbarCell(4, 1, 1);
+    try std.testing.expectEqualStrings("▄", top.char);
+    try std.testing.expect(top.invert);
+
+    // thumb_h=2 at pos_eighths=0: rows 0 and 1 full, row 2 rail.
+    try std.testing.expectEqualStrings("█", scrollbarCell(0, 2, 0).char);
+    try std.testing.expectEqualStrings("█", scrollbarCell(0, 2, 1).char);
+    try std.testing.expectEqualStrings(" ", scrollbarCell(0, 2, 2).char);
+
+    // thumb_h=1 at pos_eighths=2: bottom 6/8 of row 0 filled (▆), top 2/8 of row 1 filled (inverted ▆).
+    const b2 = scrollbarCell(2, 1, 0);
+    try std.testing.expectEqualStrings("▆", b2.char);
+    try std.testing.expect(!b2.invert);
+    const t2 = scrollbarCell(2, 1, 1);
+    try std.testing.expectEqualStrings("▆", t2.char);
+    try std.testing.expect(t2.invert);
+
+    // smoothScrollPos: at max scroll the thumb sits exactly at the bottom.
+    // viewport=4, total=16 -> thumb_h=1, travel=3, max_scroll=12
+    const tg = scrollbarThumb(.expand, 4, 16);
+    const pos_max = smoothScrollPos(12, 12, tg.travel); // scroll_top == max_scroll
+    try std.testing.expectEqual(tg.travel * 8, pos_max); // thumb top at last row*8, no overflow
 }

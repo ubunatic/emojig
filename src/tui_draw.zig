@@ -20,6 +20,35 @@ pub fn scrollbarThumb(style: ScrollbarStyle, viewport_h: usize, total: usize) st
     return .{ .thumb_h = th, .travel = viewport_h - th };
 }
 
+// Lower block chars: index = eighths filled from the bottom (0=space, 8=full █).
+const lower_blocks = [9][]const u8{ " ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
+
+pub const SbCell = struct { char: []const u8, invert: bool };
+
+/// Thumb top position in eighths of a cell for `.expand` smooth scrollbars.
+/// `travel` is `scrollbarThumb(...).travel` (whole cells).
+pub fn smoothScrollPos(scroll_top: usize, max_scroll: usize, travel: usize) usize {
+    if (max_scroll == 0 or travel == 0) return 0;
+    return scroll_top * travel * 8 / max_scroll;
+}
+
+/// Per-row block character for a smooth `.expand` scrollbar.
+/// `pos_eighths` = thumb top position (from `smoothScrollPos`).
+/// Returns the char to emit and whether to apply reverse-video (for top caps).
+pub fn scrollbarCell(pos_eighths: usize, thumb_h: usize, row: usize) SbCell {
+    const row_s8 = row * 8;
+    const thumb_end = pos_eighths + thumb_h * 8;
+    const fill_start: usize = if (pos_eighths > row_s8) @min(pos_eighths - row_s8, 8) else 0;
+    const fill_end: usize = if (thumb_end > row_s8) @min(thumb_end - row_s8, 8) else 0;
+    if (fill_end <= fill_start) return .{ .char = " ", .invert = false };
+    const fill = fill_end - fill_start;
+    if (fill >= 8) return .{ .char = "█", .invert = false };
+    // top cap: thumb fills top fill_end/8 — use reverse video so rail bg becomes fg
+    if (fill_start == 0) return .{ .char = lower_blocks[8 - fill_end], .invert = true };
+    // bottom cap: thumb fills bottom (8-fill_start)/8 — normal fg=thumb color
+    return .{ .char = lower_blocks[8 - fill_start], .invert = false };
+}
+
 /// Delete the byte immediately before the text cursor and shift the tail left
 /// (a backspace at an arbitrary cursor position). No-op when the cursor is at
 /// the start. Mutates query_len and query_cursor in lock-step.

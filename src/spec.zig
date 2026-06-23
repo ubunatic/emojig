@@ -83,9 +83,18 @@ pub const PaletteSpec = struct {
     emoji_pane_bg: std.json.Value = .null,
     scrollbar_rail_bg: std.json.Value = .null,
     view_bg: std.json.Value = .null,
+    search_cursor_fg: std.json.Value = .null,
+    search_text_fg: std.json.Value = .null,
+    search_placeholder_fg: std.json.Value = .null,
     search_left_cap_fg: std.json.Value = .null,
+    search_left_cap_bg: std.json.Value = .null,
     search_right_cap_fg: std.json.Value = .null,
+    search_right_cap_bg: std.json.Value = .null,
     search_sep_fg: std.json.Value = .null,
+    search_theme_sep_fg: std.json.Value = .null,
+    search_theme_sep_bg: std.json.Value = .null,
+    theme_settings_sep_fg: std.json.Value = .null,
+    theme_settings_sep_bg: std.json.Value = .null,
     hline_fg: std.json.Value = .null,
     terminal_bg2: ?[]const u8 = null,
     terminal_bg: ?[]const u8 = null,
@@ -288,6 +297,12 @@ pub const Strings = struct {
     // display cell wide (e.g. " ", "│", "|", "▏"). Rendered with the grid
     // background color as foreground so it reads as a subtle divider.
     toolbar_sep: []const u8 = " ",
+    // Per-segment search-bar separators. Empty string falls back to toolbar_sep.
+    search_theme_sep: []const u8 = "",
+    theme_settings_sep: []const u8 = "",
+    // Search-bar half-block cap characters. Must each be one display cell wide.
+    search_left_cap: []const u8 = "▌",
+    search_right_cap: []const u8 = "▐",
     // Horizontal separator line character (default ─).
     hline_char: []const u8 = "─",
     status: StatusStrings = .{},
@@ -592,37 +607,74 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     const warning_fg_idx = try resolveRequiredColorValue(p.warning_fg, colors_spec, 9);
     const success_fg_idx = try resolveRequiredColorValue(p.success_fg, colors_spec, 10);
 
-    // Resolve cap foregrounds (uses app_bg as default, falling back to terminal window background if app_bg is null)
+    // cap_fallback: fg for caps (▌/▐) — must match terminal bg so the half-block
+    // creates a smooth blend from canvas into the search bar.  Uses terminal_bg2
+    // (closest 256-color to the actual window background) or grid bg as proxy.
     const cap_fallback_idx = app_bg_idx orelse term_bg_idx;
+
+    // search_sep_fg: explicit override for ALL separator segments.  Stays null
+    // when not configured — seps use \x1b[39m (terminal default fg) so they are
+    // visible on the search bar bg without inheriting the near-black cap_fallback.
+    const search_sep_fg_idx = try resolveColorValue(p.search_sep_fg, colors_spec);
+
+    // Cap foregrounds — must blend into the canvas, so fall back to cap_fallback.
     const l_cap_fg_idx = try resolveColorValue(p.search_left_cap_fg, colors_spec) orelse cap_fallback_idx;
     const r_cap_fg_idx = try resolveColorValue(p.search_right_cap_fg, colors_spec) orelse cap_fallback_idx;
-    const search_sep_fg_idx = try resolveColorValue(p.search_sep_fg, colors_spec) orelse cap_fallback_idx;
 
-    // Resolve hline_fg (defaults to status_fg_idx, grid_fg_idx, or a default gray like 240)
+    // Cap backgrounds — null falls back to search_bg.
+    const l_cap_bg_idx = try resolveColorValue(p.search_left_cap_bg, colors_spec) orelse s_bg_idx;
+    const r_cap_bg_idx = try resolveColorValue(p.search_right_cap_bg, colors_spec) orelse s_bg_idx;
+
+    // Per-segment separator fgs — null → search_sep_fg → cap_fallback_idx (app bg).
+    // This makes a null sep fg "punch through" to the canvas, matching cap semantics.
+    const search_theme_sep_fg_idx = try resolveColorValue(p.search_theme_sep_fg, colors_spec) orelse search_sep_fg_idx orelse cap_fallback_idx;
+    const theme_settings_sep_fg_idx = try resolveColorValue(p.theme_settings_sep_fg, colors_spec) orelse search_sep_fg_idx orelse cap_fallback_idx;
+    // Per-segment separator bgs — null → cap_fallback_idx (app bg), not search_bg.
+    const search_theme_sep_bg_idx = try resolveColorValue(p.search_theme_sep_bg, colors_spec) orelse cap_fallback_idx;
+    const theme_settings_sep_bg_idx = try resolveColorValue(p.theme_settings_sep_bg, colors_spec) orelse cap_fallback_idx;
+
+    // Search text-area foreground overrides (empty when null — inherit from search_bg).
+    const search_cursor_fg_idx = try resolveColorValue(p.search_cursor_fg, colors_spec);
+    const search_text_fg_idx = try resolveColorValue(p.search_text_fg, colors_spec);
+    const search_placeholder_fg_idx = try resolveColorValue(p.search_placeholder_fg, colors_spec);
+
+    // Resolve hline_fg (defaults to a muted gray)
     const hline_fg_idx = try resolveColorValue(p.hline_fg, colors_spec) orelse 240;
 
-    // Build search bar left/right caps
-    const l_cap = if (s_bg_idx) |sb| blk: {
-        if (l_cap_fg_idx) |lf|
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{258c}", .{ sb, lf })
-        else
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m\u{258c}", .{sb});
-    } else "";
+    // Build a bg+fg escape sequence from optional indices. Returns "" when bg is null.
+    // Helper closure via inline:
+    const buildSeq = struct {
+        fn call(alloc: std.mem.Allocator, bg: ?u8, fg: ?u8) ![]const u8 {
+            if (bg) |b| {
+                if (fg) |f| return std.fmt.allocPrint(alloc, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ b, f });
+                return std.fmt.allocPrint(alloc, "\x1b[48;5;{d}m\x1b[39m", .{b});
+            }
+            if (fg) |f| return std.fmt.allocPrint(alloc, "\x1b[38;5;{d}m", .{f});
+            return "";
+        }
+    }.call;
 
-    const r_cap = if (s_bg_idx) |sb| blk: {
-        if (r_cap_fg_idx) |rf|
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, rf })
-        else
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m\u{2590}", .{sb});
-    } else "";
+    // Search bar left/right cap escape sequences (colors only — no glyph char).
+    const l_cap_seq = try buildSeq(arena, l_cap_bg_idx, l_cap_fg_idx);
+    const r_cap_seq = try buildSeq(arena, r_cap_bg_idx, r_cap_fg_idx);
 
-    // Build search separator (background = search_bg, foreground = search_sep_fg_idx)
-    const search_sep = if (s_bg_idx) |sb| blk: {
-        if (search_sep_fg_idx) |sf_val|
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ sb, sf_val })
-        else
-            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m", .{sb});
-    } else "";
+    // Per-segment separator escape sequences.
+    const search_theme_sep_seq = try buildSeq(arena, search_theme_sep_bg_idx, search_theme_sep_fg_idx);
+    const theme_settings_sep_seq = try buildSeq(arena, theme_settings_sep_bg_idx, theme_settings_sep_fg_idx);
+
+    // Search text-area fg sequences (empty when not configured).
+    const search_cursor_fg_seq = if (search_cursor_fg_idx) |i|
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{i})
+    else
+        @as([]const u8, "");
+    const search_text_fg_seq = if (search_text_fg_idx) |i|
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{i})
+    else
+        @as([]const u8, "");
+    const search_placeholder_fg_seq = if (search_placeholder_fg_idx) |i|
+        try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{i})
+    else
+        @as([]const u8, "");
 
     // Build hline (background = app_bg, foreground = hline_fg_idx)
     const hline = blk: {
@@ -647,7 +699,6 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ border_shade_fg_idx, dim_suffix }),
         .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ warning_fg_idx, dim_suffix_bold }),
         .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ success_fg_idx, dim_suffix_bold }),
-        .search_end_cap = r_cap,
         .toolbar_sep_fg = if (term_bg_idx) |t_val|
             try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{t_val})
         else if (g_bg_idx) |bg_val|
@@ -661,9 +712,13 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .emoji_pane_bg = emoji_pane_bg,
         .scrollbar_rail_bg = scrollbar_rail_bg,
         .view_bg = view_bg,
-        .search_left_cap = l_cap,
-        .search_right_cap = r_cap,
-        .search_sep = search_sep,
+        .search_left_cap_seq = l_cap_seq,
+        .search_right_cap_seq = r_cap_seq,
+        .search_theme_sep = search_theme_sep_seq,
+        .theme_settings_sep = theme_settings_sep_seq,
+        .search_cursor_fg = search_cursor_fg_seq,
+        .search_text_fg = search_text_fg_seq,
+        .search_placeholder_fg = search_placeholder_fg_seq,
         .hline = hline,
     };
 }

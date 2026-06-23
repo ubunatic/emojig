@@ -37,7 +37,10 @@ learned wiring it up.
 | Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
 | Toolbar separator char (between theme/menu icons) | `spec/strings.json`             | `toolbar_sep` (must be exactly 1 display cell) |
 | Pane separator hline character                 | `spec/strings.json`               | `hline_char` (custom separator line glyph) |
-| Container/controls backgrounds, margins, separators, caps | `spec/theme.json` | `app_bg`, `view_bg`, `search_{left,right}_cap_fg`, `search_sep_fg`, `hline_fg`, etc. (see §13) |
+| Container/controls backgrounds, margins, separators, caps | `spec/theme.json` | `app_bg`, `view_bg`, `search_{left,right}_cap_{fg,bg}`, `search_sep_fg`, `hline_fg`, etc. (see §13) |
+| Search bar text area fg colors (cursor, text, placeholder) | `spec/theme.json` | `search_cursor_fg`, `search_text_fg`, `search_placeholder_fg` (see §13) |
+| Search bar per-segment sep char and colors | `spec/theme.json` + `spec/strings.json` | `search_theme_sep_{fg,bg}`, `theme_settings_sep_{fg,bg}`; chars `search_theme_sep`, `theme_settings_sep` (see §13) |
+| Search bar left/right cap character | `spec/strings.json` | `search_left_cap`, `search_right_cap` (default `▌`/`▐`, must be exactly 1 display cell) |
 | Named inline styles for templates       | `spec/styles.json`                | see §10 |
 | Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
 | Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
@@ -429,27 +432,59 @@ hovered slot highlights the whole bracket group in `palette.selection_bg`.
 
 ## 13. Container/Controls Palette Fields
 
-The application styles its layout cells using semantic theme variables resolved from [spec/theme.json](file:///home/uwe/projects/emojig/spec/theme.json) in `buildPalette` under `src/spec.zig`. If these properties are omitted, they fall back to `app_bg`, `grid_bg`, or basic terminal defaults.
+All layout cell colors are semantic theme variables in `spec/theme.json`, resolved in `buildPalette` (`src/spec.zig`). The key fallback rule: **`null` = use `cap_fallback_idx`** (= `app_bg` if set, else the nearest xterm-256 index to `terminal_bg2`). This is the "punch-through" semantics — a null color lets the canvas background show through the search bar.
 
-### Semantic Layout Variables
+### Layout background fields
 
-* **`app_bg`**: The background color applied to the overall margins, borders, and blank rows surrounding UI panels. Prevents visual seam lines when displaying border rows.
-* **`app_topline_bg`**: The background color for the first row of the application (either the top padding line or top border row). Falls back to `border_bg` or `app_bg`.
-* **`emoji_pane_bg`**: The background color of the emoji grid viewport area.
-* **`scrollbar_rail_bg`**: The background color of the vertical scrollbar track column. Defaults to `app_bg`.
-* **`view_bg`**: The background color of text/settings overlay panels (such as help, about, status, categories, or settings screens). Defaults to `app_bg`.
-* **`hline_fg`**: The foreground color applied to horizontal separating lines (`─`). Fallback to `240` (dim gray) when not defined.
-* **`search_left_cap_fg` / `search_right_cap_fg`**: The foreground color of the search bar capsule caps (`▌` and `▐` respectively). Background is styled with `search_bg`. Usually resolves to `app_bg` so the rounded caps blend cleanly with the canvas.
-* **`search_sep_fg`**: The foreground color of vertical dividers (`│`) in the search bar toolbar. Resolves to `app_bg` as foreground and `search_bg` as background to simulate a vertical cut.
+| Field | Fallback | Effect |
+|-------|----------|--------|
+| `app_bg` | terminal bg | Canvas: margins, blank rows, borders |
+| `app_topline_bg` | `border_bg` → `app_bg` | First row (top padding / top border) |
+| `emoji_pane_bg` | `app_bg` | Emoji grid viewport |
+| `scrollbar_rail_bg` | `app_bg` | Scrollbar track column |
+| `view_bg` | `app_bg` | Help / about / settings / categories panes |
+| `hline_fg` | `240` | Foreground of horizontal separator lines (`─`) |
 
-### Computed Palette Constants
+### Search bar cap fields
 
-* **`toolbar_sep_fg`**: The color applied to the icon separator character. Resolves to the `terminal_bg2` hex index, or `grid_bg`.
-* **`search_end_cap` / `search_right_cap`**: The right cap (`▐` RIGHT HALF BLOCK) rendering sequence at the end of the search bar, transitioning cleanly into the margins.
-* **`hline`**: Combined color sequence mapping (`\x1b[48;5;{app_bg}m\x1b[38;5;{hline_fg}m`) to style custom hline characters.
+Caps (`▌` left, `▐` right) are the half-block characters at the edges of the search bar. Their glyph comes from `spec/strings.json` (`search_left_cap` / `search_right_cap`, default `▌`/`▐`, each must be exactly 1 display cell); the color from `spec/theme.json`:
+
+| Field | Fallback | Effect |
+|-------|----------|--------|
+| `search_left_cap_fg` | `cap_fallback_idx` | Left cap foreground — set to app bg to blend into canvas |
+| `search_left_cap_bg` | `search_bg` | Left cap background |
+| `search_right_cap_fg` | `cap_fallback_idx` | Right cap foreground — set to app bg to blend into canvas |
+| `search_right_cap_bg` | `search_bg` | Right cap background |
+
+`cap_fallback_idx` = `app_bg` index if configured, else closest xterm-256 to `terminal_bg2`. This makes null fg "show through" to the canvas — correct for the half-block blend illusion.
+
+### Search bar separator fields
+
+The toolbar has two separator slots: **search↔theme-icon** (`search_theme_sep`) and **theme-icon↔settings-menu** (`theme_settings_sep`). Both the glyph and the colors are configurable:
+
+| Spec file | Field | Fallback | Effect |
+|-----------|-------|----------|--------|
+| `strings.json` | `search_theme_sep` | `toolbar_sep` | Glyph between search area and theme icon |
+| `strings.json` | `theme_settings_sep` | `toolbar_sep` | Glyph between theme icon and menu icon |
+| `theme.json` | `search_theme_sep_fg` | `search_sep_fg` → `cap_fallback_idx` | Sep fg (null = app bg "punch-through") |
+| `theme.json` | `search_theme_sep_bg` | `cap_fallback_idx` | Sep bg (null = app bg, creating a gap) |
+| `theme.json` | `theme_settings_sep_fg` | `search_sep_fg` → `cap_fallback_idx` | Sep fg |
+| `theme.json` | `theme_settings_sep_bg` | `cap_fallback_idx` | Sep bg |
+| `theme.json` | `search_sep_fg` | — | Shared fg override for all sep segments |
+
+**Critical pitfall**: the null fallback for sep fg and bg is `cap_fallback_idx` (app bg), NOT `search_bg`. Setting both to null produces a "slot" in the search bar showing the canvas color, matching the visual behaviour of the caps. Setting sep bg to `search_bg` and sep fg to null gives app-bg-colored text on search-bar-bg — a visible hairline.
+
+### Search bar text area fields
+
+| Field | Fallback | Effect |
+|-------|----------|--------|
+| `search_cursor_fg` | — (inherit from `search_bg` fg) | Cursor and text fg when query is empty |
+| `search_text_fg` | `search_cursor_fg` | Query text fg when query is non-empty |
+| `search_placeholder_fg` | `search_cursor_fg` → `grid_fg` | Placeholder text fg ("search…") |
 
 ### Schema Validation
-During development, if a theme configures a hex color that has no exact equivalent in the xterm-256 palette (e.g. `#2c2c2c`), the resolver maps it to the closest color index. While running unit tests, this mismatch outputs a stderr warning for auditing. At runtime, the warnings are logged silently to `/tmp/emojig.log` to keep the user's terminal clean.
+
+If a theme hex color (e.g. `terminal_bg2: "#2c2c2c"`) has no exact xterm-256 match, `buildPalette` maps it to the closest index. In unit tests the mismatch prints to stderr; at runtime it logs silently to `/tmp/emojig.log`.
 
 
 ---
@@ -471,13 +506,18 @@ src/config.zig          font_size: ?usize field; parsed from config key font_siz
 src/host.zig            spawnGuiWindow takes font_size: usize; --override=font=monospace:size={d};
                         --override=csd.preferred=none; --override=pad=0x4
 src/defaults.zig        comptime MAX_* bounds only
-src/term.zig            Palette fields warning_fg, success_fg; status_bg; toolbar_sep_fg; search_end_cap
+src/term.zig            Palette fields: search_{left,right}_cap_seq (color-only, no glyph); search_theme_sep;
+                        theme_settings_sep; search_{cursor,text,placeholder}_fg; toolbar_sep_fg; hline
 scripts/gen_colors/     generates spec/colors.json (make gen-colors); see §9
 spec/colors.json        generated full xterm-256 palette with name/short/hex/desc/alt
 spec/categories.json    category switcher bar layout + category synonyms; see §11
 spec/styles.json        named SGR style aliases for $fmtvars templates; see §10
 spec/layout.json        animation.{exit_preview_tui,exit_preview_gui}
-spec/theme.json         terminal_border, warning_fg, success_fg; icons.menu; terminal_bg2 (toolbar sep + end cap color source)
-spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint); toolbar_sep
+spec/theme.json         terminal_border, warning_fg, success_fg; icons.menu; terminal_bg2 (cap_fallback source);
+                        search_{left,right}_cap_{fg,bg}; search_{cursor,text,placeholder}_fg;
+                        search_theme_sep_{fg,bg}; theme_settings_sep_{fg,bg}; search_sep_fg
+spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint); toolbar_sep;
+                        search_left_cap, search_right_cap (cap glyphs, 1 cell each);
+                        search_theme_sep, theme_settings_sep (sep glyphs, fallback to toolbar_sep)
 internal/spec/spec.go   Go structs mirror theme and strings fields
 ```

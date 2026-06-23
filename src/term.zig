@@ -13,7 +13,7 @@ pub const Palette = struct {
     grid_bg: []const u8, // background sequence for grid rows
     grid_fg: []const u8, // text color escape sequence for grid rows
     selection_bg: []const u8, // selection background sequence
-    search_bg: []const u8, // entire search-bar row sequence
+    search_bg: []const u8, // entire search-bar row bg+fg sequence
     status_bg: []const u8, // entire status-bar row sequence
     info_bg: []const u8, // info bar background sequence
     info_fg: []const u8, // info bar text color sequence
@@ -24,15 +24,22 @@ pub const Palette = struct {
     warning_fg: []const u8, // warning foreground color sequence
     success_fg: []const u8, // success/action foreground color sequence
     toolbar_sep_fg: []const u8, // fg color for toolbar separators (grid bg color as fg)
-    search_end_cap: []const u8, // half-block end cap: bg=terminal-default, fg=search_bg
     app_bg: []const u8, // overall canvas background sequence
     app_topline_bg: []const u8, // top padding/border row background sequence
     emoji_pane_bg: []const u8, // emoji scroll pane background sequence
     scrollbar_rail_bg: []const u8, // scrollbar rail background sequence
     view_bg: []const u8, // help/about/status/settings view background sequence
-    search_left_cap: []const u8, // left cap escape sequence with ▌
-    search_right_cap: []const u8, // right cap escape sequence with ▐
-    search_sep: []const u8, // search bar separators escape sequence
+    // Search-bar cap escape sequences — bg+fg colors only, no character.
+    // Combine with g_spec.strings.search_left_cap / search_right_cap for the glyph.
+    search_left_cap_seq: []const u8,
+    search_right_cap_seq: []const u8,
+    // Per-segment separator sequences: bg+fg colors for search↔theme and theme↔settings.
+    search_theme_sep: []const u8,
+    theme_settings_sep: []const u8,
+    // Search-bar text area foreground sequences (empty = inherit from search_bg).
+    search_cursor_fg: []const u8,
+    search_text_fg: []const u8,
+    search_placeholder_fg: []const u8,
     hline: []const u8, // horizontal rule escape sequence (app_bg as bg, hline_fg as fg)
 };
 

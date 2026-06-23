@@ -67,7 +67,7 @@ To prevent leaving the user's terminal session in a broken state:
 * **Row Layout** (border off / border on):
   * Row 1 (/ 1): top border row (border on only)
   * Row 1 (/ 2): blank top padding row
-  * Row 2 (/ 3): search bar — `🔍` prompt + query; theme-toggle icon on the right; entire row uses `search_bg` for a clean menu-row look; blinking cursor positioned at col `4 + query_len`
+  * Row 2 (/ 3): search bar — left cap + `🔍` prompt + query text area + `search_theme_sep` + theme icon + `theme_settings_sep` + menu `≡` + right cap; entire row uses `search_bg`; blinking cursor at col `4 + query_len`. Cap and sep glyphs/colors are fully configurable via `spec/strings.json` and `spec/theme.json` — see `docs/SpecDrivenConfig.md §13`. Null sep/cap bg or fg resolves to `cap_fallback_idx` (app bg) for the canvas "punch-through" effect, **not** `search_bg`.
   * Row 3 (/ 4): blank spacer row
   * Rows 4–7 (/ 5–8): 6×4 emoji grid
   * Row 8 (/ 9): blank spacer row between grid and description
