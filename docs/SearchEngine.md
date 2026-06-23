@@ -333,3 +333,96 @@ Whenever the header layout changes:
 - **`c:` prefix cannot be tested via `search()`** — it always returns zero
   results with null `categories_spec` (see §6).  Test the keyword-injection
   behaviour directly (`inTop("animal lion", "🦁", 24)`) instead.
+- **Use `findRank(emoji, matches, count)` for boxart/keyboard probes**, not
+  an `inTop` wrapper.  The helper returns a 1-based rank (0 = not found), which
+  lets the test print the actual rank for every probe via `std.debug.print` —
+  useful for audits even when all assertions pass.  See
+  `test "key symbol discoverability"` in `src/root_test.zig`.
+
+---
+
+## 11. Keyboard key symbols in `spec/boxart.json`
+
+### What they are and why they don't get the box-art penalty
+
+`spec/boxart.json` is not limited to U+2500–U+259F box-drawing characters.  It also
+holds keyboard-key glyphs in scattered Unicode ranges (Miscellaneous Technical,
+Combining Diacritical Marks for Symbols, …).  The `isBoxArt(emoji)` codepoint
+predicate only checks **U+2500–U+259F**.  Keyboard symbols like ↵ (U+21B5), ⭾
+(U+2BBE), ⇥ (U+21E5), ⌫ (U+232B), ⎋ (U+238B) etc. are **not** in that range, so
+they incur **zero** box-art penalty (`−150`) in general searches.  They rank on
+their fuzzy score alone — which means a well-chosen name produces rank #1 for the
+exact query.
+
+The entries added as of June 2026:
+
+| Char | Codepoint | Name in boxart.json | Primary query |
+|------|-----------|---------------------|---------------|
+| ↵ | U+21B5 | `enter return` | `enter`, `enter key` |
+| ⭾ | U+2BBE | `tab` | `tab`, `tab key` |
+| ⇥ | U+21E5 | `tab right` | `tab` (secondary) |
+| ⎵ | U+2395 | `space` | `space key`, `blank key` |
+| ⌫ | U+232B | `backspace` | `backspace`, `backspace key` |
+| ⌦ | U+2326 | `delete forward` | `delete forward`, `del key` |
+| ⇧ | U+21E7 | `shift` | `shift`, `shift key` |
+| ⎋ | U+238B | `escape` | `escape`, `esc key` |
+| ⌃ | U+2303 | `ctrl` | `ctrl`, `control key` |
+| ⌥ | U+2325 | `alt option` | `alt key`, `option key` |
+| ⌘ | U+2318 | `cmd command` | `cmd`, `command key` |
+| ⎀ | U+2380 | `insert` | `insert key` |
+| ⇞ | U+21DE | `page up` | `page up` |
+| ⇟ | U+21DF | `page down` | `page down` |
+| ⇱ | U+21F1 | `home` | `home key` |
+| ⇲ | U+21F2 | `end` | `end key` |
+
+### The greedy-matcher word-order trap
+
+`matchTermDirect` scans the target string left-to-right, matching the term as a
+subsequence with **word-start bonuses** and **consecutive-run bonuses**.  It is
+greedy — it takes the first occurrence of each character it can match.
+
+This creates a pitfall when a short abbreviation appears **inside** a longer word
+earlier in the string.  Example (before fix):
+
+```
+name = "command"   tags = ["cmd", "keyboard", "key", "mac"]
+search string → "command cmd keyboard key mac box ascii art"
+
+query "cmd" greedy path:
+  'c' → matches 'c' at position 0 (word-start +40)
+  'm' → matches 'm' at position 2 (no consecutive bonus, gap penalty ×2)
+  'd' → matches 'd' at position 6 (no consecutive bonus, gap penalty ×4)
+  late-start penalty: startIdx = 7 − 3 = 4
+
+final score ≈ 63   (rank #16 — buried by false c-m-d subsequences elsewhere)
+```
+
+After renaming to `"cmd command"` (putting the abbreviation first):
+
+```
+search string → "cmd command keyboard key mac box ascii art"
+
+query "cmd" greedy path:
+  'c' → position 0 (word-start +40), consecutive +1
+  'm' → position 1 (consecutive +20), consecutive +2
+  'd' → position 2 (consecutive +40), consecutive +3
+  late-start penalty: startIdx = 3 − 3 = 0
+
+final score ≈ 130   (rank #1)
+```
+
+**Rule**: when an abbreviation is the *primary* search word for a boxart entry,
+put the abbreviation as the **first word of `name`**, not in `tags`.  Examples:
+`"cmd command"`, `"ctrl"` (ctrl is short enough that "control" in tags is fine
+because the greedy 'c'-'t'-'r'-'l' subsequence inside "control" happens to be
+consecutive).
+
+### Why `"arrow keys"` needs a `"key"` tag on the emoji entries
+
+`↕` (up down arrow) and `↔` (left right arrow) live in `data/emoji.json`, not in
+`spec/boxart.json`.  Their original tags had no `"key"` keyword.  The query
+`"arrow keys"` is a two-term AND query; `"keys"` uses the plural-fallback to try
+`"key"`, which then fails to match any word in the search string — zero results.
+
+Fix: add `"key"` to both entries' `tags` in `data/emoji.json`, then `make pack`.
+After that, `"arrow keys"` → ↕ rank #1, ↔ rank #2.
