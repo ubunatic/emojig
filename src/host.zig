@@ -363,7 +363,7 @@ pub fn spawnGuiWindow(
     // Content width follows the column count (one trailing scrollbar gutter
     // column), mirroring the in-picker `content_width = cols*cell_w + 1`.
     const cell_w = if (compact) @as(usize, 3) else 4;
-    const width_val = cols_val * cell_w + 1;
+    const width_val = cols_val * cell_w + (if (compact) @as(usize, 2) else 1);
 
     // Derive the window height from the GUI grid rows.
     // GUI always shows the switcher, which adds 1 extra hline row between grid and switcher.
@@ -372,7 +372,7 @@ pub fn spawnGuiWindow(
     if (debug) final_h += 2;
 
     var size_buf: [64]u8 = undefined;
-    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width_val + 2, final_h });
+    const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width_val + 1, final_h });
 
     var bg_buf: [64]u8 = undefined;
     const bg_arg = if (foot_bg.len > 0)

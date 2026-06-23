@@ -953,7 +953,7 @@ pub fn main(init: std.process.Init) !void {
     // Content width follows the column count (one trailing column for the
     // scrollbar gutter) unless an explicit width override is given. For the
     // default 6 columns this reproduces the historical width of 25.
-    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * (if (final_compact) @as(usize, 3) else 4) + 1);
+    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * (if (final_compact) @as(usize, 3) else 4) + (if (final_compact) @as(usize, 2) else 1));
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     // show_switcher is resolved after run_gui is determined (--gui implies true).
     // opt_show_switcher and env_show_switcher take precedence over the mode default.
@@ -1772,7 +1772,7 @@ pub fn main(init: std.process.Init) !void {
                 const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_size));
                 const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else content_width + 1;
                 const current_h = if (size_rc == 0 and ws_size.row > 0) ws_size.row else 10;
-                is_too_small = (current_w < content_width + 2);
+                is_too_small = (current_w < content_width + 1);
                 const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
                 const prefix_cols = 3;
@@ -2122,14 +2122,14 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                // CHA to col content_width-1 (second-to-last); after writing sb,
-                                // cursor lands at content_width for endRow's \x1b[K — preserving sb.
                                 const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
+                                try rw.endRowFull();
+                            } else {
+                                try rw.endRow();
                             }
-                            try rw.endRow();
                         }
                     } else if (current_screen == .about and !is_too_small) {
                         const theme_str: []const u8 = switch (theme) {
@@ -2177,8 +2177,10 @@ pub fn main(init: std.process.Init) !void {
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
+                                try rw.endRowFull();
+                            } else {
+                                try rw.endRow();
                             }
-                            try rw.endRow();
                         }
                     } else if (current_screen == .status and !is_too_small) {
                         const theme_str: []const u8 = switch (theme) {
@@ -2225,8 +2227,10 @@ pub fn main(init: std.process.Init) !void {
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
+                                try rw.endRowFull();
+                            } else {
+                                try rw.endRow();
                             }
-                            try rw.endRow();
                         }
                     } else if (current_screen == .settings and !is_too_small) {
                         const settings_rows = rows + 4;
@@ -2682,7 +2686,11 @@ pub fn main(init: std.process.Init) !void {
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             }
-                            try rw.endRow();
+                            if (grid_needs_scroll) {
+                                try rw.endRowFull();
+                            } else {
+                                try rw.endRow();
+                            }
                         }
 
                         // Category switcher bar (visible only when show_switcher and
