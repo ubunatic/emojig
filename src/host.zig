@@ -338,6 +338,7 @@ pub fn spawnGuiWindow(
     borderless: bool,
     cols_val: usize,
     rows_val: usize,
+    compact: bool,
     spec: *const spec_mod.Spec,
     show_switcher: bool,
     font_size: usize,
@@ -360,8 +361,9 @@ pub fn spawnGuiWindow(
     // GUI grid dimensions are resolved by the caller (config → spec) and passed
     // in so the foot window matches the picker's unified grid size exactly.
     // Content width follows the column count (one trailing scrollbar gutter
-    // column), mirroring the in-picker `content_width = cols*4 + 1`.
-    const width_val = cols_val * 4 + 1;
+    // column), mirroring the in-picker `content_width = cols*cell_w + 1`.
+    const cell_w = if (compact) @as(usize, 3) else 4;
+    const width_val = cols_val * cell_w + 1;
 
     // Derive the window height from the GUI grid rows.
     // GUI always shows the switcher, which adds 1 extra hline row between grid and switcher.
@@ -434,6 +436,9 @@ pub fn spawnGuiWindow(
 
     const switcher_arg = if (show_switcher) "EMOJIG_SHOW_SWITCHER=1" else "EMOJIG_SHOW_SWITCHER=0";
 
+    var env_compact: [64]u8 = undefined;
+    const env_compact_arg = try std.fmt.bufPrint(&env_compact, "EMOJIG_COMPACT={s}", .{if (compact) "1" else "0"});
+
     // Terminal-independent tail: env VARS... exe_path --tui
     const tail = [_][]const u8{
         "env",
@@ -450,6 +455,7 @@ pub fn spawnGuiWindow(
         env_exit_preview_arg,
         switcher_arg,
         "EMOJIG_GUI_SPAWNED=1",
+        env_compact_arg,
         exe_path,
         "--tui",
     };

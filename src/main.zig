@@ -298,7 +298,7 @@ const BufferWriter = struct {
     }
 };
 
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
+fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, grid_compact: bool, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
     const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
 
@@ -386,6 +386,16 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             return std.fmt.bufPrint(buf, " {s}{s}{s}  grid height (rows)\x1b[0m", .{ bg, sel_prefix, padded });
         },
         8 => {
+            const cb = if (grid_compact) "✔" else " ";
+            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
+            const w = ansiDisplayWidth(val_str);
+            var spaces_buf: [10]u8 = undefined;
+            const pad_count = if (w < 9) 9 - w else 0;
+            for (0..pad_count) |j| spaces_buf[j] = ' ';
+            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+            return std.fmt.bufPrint(buf, " {s}{s}{s}  compact grid\x1b[0m", .{ bg, sel_prefix, padded });
+        },
+        9 => {
             return std.fmt.bufPrint(buf, " {s}{s}[clear]    recent (MRU) history\x1b[0m", .{ bg, sel_prefix });
         },
         else => unreachable,
@@ -404,6 +414,7 @@ fn toggleSetting(
     show_cats: *bool,
     amb_chars: *[]const u8,
     scrollbar: *ScrollbarStyle,
+    grid_compact: *bool,
     home: []const u8,
     shell_name: []const u8,
 ) void {
@@ -436,7 +447,11 @@ fn toggleSetting(
             };
             saveKeyToConfig(io, "scrollbar_style", @tagName(scrollbar.*));
         },
-        else => {}, // 1 = text input, 4 = theme, 6/7 = grid dims — handled inline
+        8 => {
+            grid_compact.* = !grid_compact.*;
+            saveKeyToConfig(io, "compact", if (grid_compact.*) "true" else "false");
+        },
+        else => {}, // 1 = text input, 4 = theme, 6/7 = grid dims, 9 = clear MRU — handled inline
     }
 }
 
@@ -499,7 +514,8 @@ fn settingHelp(idx: usize) []const u8 {
         5 => "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell.",
         6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
         7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
-        8 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
+        8 => "Compact grid\n\non/off — 3-column cells\ninstead of 4-columns.\nApplies on next launch.",
+        9 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
         else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
     };
 }
@@ -926,10 +942,18 @@ pub fn main(init: std.process.Init) !void {
         break :blk @max(defaults.MIN_ROWS, @min(raw, defaults.MAX_ROWS));
     };
 
+    const env_compact: ?bool = blk: {
+        if (init.environ_map.get("EMOJIG_COMPACT")) |env_val| {
+            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
+        }
+        break :blk null;
+    };
+    const final_compact = env_compact orelse cfg.compact orelse false;
+
     // Content width follows the column count (one trailing column for the
     // scrollbar gutter) unless an explicit width override is given. For the
     // default 6 columns this reproduces the historical width of 25.
-    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * 4 + 1);
+    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * (if (final_compact) @as(usize, 3) else 4) + 1);
     const final_border = opt_border orelse env_border orelse cfg.border orelse false;
     // show_switcher is resolved after run_gui is determined (--gui implies true).
     // opt_show_switcher and env_show_switcher take precedence over the mode default.
@@ -1131,6 +1155,7 @@ pub fn main(init: std.process.Init) !void {
             opt_borderless,
             gui_cols,
             gui_rows,
+            final_compact,
             &g_spec,
             final_show_switcher_pref orelse true,
             gui_font_size,
@@ -1145,6 +1170,7 @@ pub fn main(init: std.process.Init) !void {
 
     var theme = final_theme;
     var scrollbar_style: ScrollbarStyle = env_scrollbar orelse cfg.scrollbar_style orelse .expand;
+    var grid_compact = final_compact;
     // Pending grid size shown/edited in the Settings screen. Seeded from the
     // resolved launch size; edits persist to config and take effect on the
     // next launch (the live grid keeps its launch dimensions for safety).
@@ -1484,7 +1510,7 @@ pub fn main(init: std.process.Init) !void {
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
         // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
-        const settings_count: usize = 9;
+        const settings_count: usize = 10;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
         var anim_frame: usize = 0;
@@ -2223,7 +2249,7 @@ pub fn main(init: std.process.Init) !void {
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, griddim_hover_left, griddim_hover_right, palette);
+                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2382,16 +2408,24 @@ pub fn main(init: std.process.Init) !void {
                                             const entry = emojig.EmojiDb.getEntry(m.index);
                                             var strip_buf: [32]u8 = undefined;
                                             const render_emoji = if (final_safe) emojig.stripVariationSelectors(entry.emoji, &strip_buf) else entry.emoji;
-                                            if (emojig.getEmojiWidth(render_emoji) == 1) {
-                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
+                                            if (final_compact) {
+                                                if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                                } else {
+                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}", .{render_emoji});
+                                                }
                                             } else {
-                                                cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                                if (emojig.getEmojiWidth(render_emoji) == 1) {
+                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji});
+                                                } else {
+                                                    cell_strings[c] = try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                                }
                                             }
                                         } else {
-                                            cell_strings[c] = "    ";
+                                            cell_strings[c] = if (final_compact) "   " else "    ";
                                         }
                                     } else {
-                                        cell_strings[c] = "    ";
+                                        cell_strings[c] = if (final_compact) "   " else "    ";
                                     }
                                 }
                                 var gl_pos: usize = 0;
@@ -2405,7 +2439,8 @@ pub fn main(init: std.process.Init) !void {
                                     @memcpy(line_buf[gl_pos..][0..cs.len], cs);
                                     gl_pos += cs.len;
                                 }
-                                const grid_rem = if (content_width > cols * 4) content_width - cols * 4 else 0;
+                                const cell_w: usize = if (final_compact) 3 else 4;
+                                const grid_rem = if (content_width > cols * cell_w) content_width - cols * cell_w else 0;
                                 const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
                                 @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
                                 gl_pos += rem_sp.len;
@@ -2434,6 +2469,7 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
                                 var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
+                                var body_temp_bufs: [defaults.MAX_COLS][16]u8 = undefined;
 
                                 var c: usize = 0;
                                 while (c < cols) : (c += 1) {
@@ -2464,49 +2500,114 @@ pub fn main(init: std.process.Init) !void {
                                         const cl = g_spec.strings.cursor_left;
                                         const cr = g_spec.strings.cursor_right;
 
-                                        if (is_hard) {
-                                            if (is_selected_in_multi and use_mark) {
-                                                // Picked + cursor: swap the opening bracket for the
-                                                // mark, keep the closing bracket — full 4 cols.
-                                                cell_strings[c] = if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg })
-                                                else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg });
-                                            } else {
-                                                // Cursor box. If also picked (mark disabled), tint it
-                                                // with the checkcell highlight instead of selection_bg.
-                                                const box_bg = if (is_selected_in_multi) check_bg else palette.selection_bg;
-                                                cell_strings[c] = if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg })
-                                                else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg });
+                                        if (final_compact) {
+                                            const is_prev_hard = (c > 0 and selected_idx != null and ((grid_scroll_top + r) * cols + (c - 1)) == selected_idx.?);
+                                            const is_prev_marker = is_prev_hard or (c > 0 and effective_idx != null and ((grid_scroll_top + r) * cols + (c - 1)) == effective_idx.?);
+
+                                            var is_prev_picked = false;
+                                            if (c > 0 and multi_select_active) {
+                                                const prev_m = top_matches[idx - 1];
+                                                const prev_entry = emojig.EmojiDb.getEntry(prev_m.index);
+                                                for (multi_selected_emojis.items) |e| {
+                                                    if (std.mem.eql(u8, e, prev_entry.emoji)) {
+                                                        is_prev_picked = true;
+                                                        break;
+                                                    }
+                                                }
                                             }
-                                        } else if (is_marker) {
-                                            // Soft marker: brackets in grid colors, no highlight.
-                                            cell_strings[c] = if (w1)
-                                                try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} {s}", .{ cl, render_emoji, cr })
+
+                                            const box_bg = if (is_selected_in_multi) check_bg else palette.selection_bg;
+                                            const prev_box_bg = if (is_prev_picked) check_bg else palette.selection_bg;
+
+                                            const prefix = if (is_marker)
+                                                (if (is_selected_in_multi and use_mark) mark else cl)
+                                            else if (is_prev_marker)
+                                                cr
+                                            else if (is_selected_in_multi and use_mark)
+                                                mark
                                             else
-                                                try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}", .{ cl, render_emoji, cr });
-                                        } else if (is_selected_in_multi) {
-                                            cell_strings[c] = if (use_mark)
-                                                (if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}  ", .{ mark, render_emoji })
-                                                else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} ", .{ mark, render_emoji }))
+                                                @as([]const u8, " ");
+
+                                            const prefix_bg = if (is_marker)
+                                                (if (is_hard) box_bg else @as([]const u8, ""))
+                                            else if (is_prev_marker)
+                                                (if (is_prev_hard) prev_box_bg else @as([]const u8, ""))
+                                            else if (is_selected_in_multi and !use_mark)
+                                                check_bg
                                             else
-                                                // No mark: highlight the whole cell with checkcell bg.
-                                                (if (w1)
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s} {s}  \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg })
-                                                else
-                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s} {s} \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg }));
+                                                @as([]const u8, "");
+
+                                            const body = if (w1)
+                                                try std.fmt.bufPrint(&body_temp_bufs[c], "{s} ", .{render_emoji})
+                                            else
+                                                render_emoji;
+
+                                            const body_bg = if (is_hard)
+                                                box_bg
+                                            else if (is_selected_in_multi and !use_mark)
+                                                check_bg
+                                            else
+                                                @as([]const u8, "");
+
+                                            var cell_pos: usize = 0;
+                                            var cell_buf = &cell_buffers[c];
+
+                                            if (prefix_bg.len > 0) {
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix_bg}) catch @as([]const u8, "")).len;
+                                            }
+                                            cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
+                                            if (prefix_bg.len > 0) {
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                            }
+
+                                            if (body_bg.len > 0) {
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body_bg}) catch @as([]const u8, "")).len;
+                                            }
+                                            cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
+                                            if (body_bg.len > 0) {
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                            }
+
+                                            cell_strings[c] = cell_buf[0..cell_pos];
                                         } else {
-                                            cell_strings[c] = if (w1)
-                                                try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji})
-                                            else
-                                                try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                            if (is_hard) {
+                                                if (is_selected_in_multi and use_mark) {
+                                                    cell_strings[c] = if (w1)
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg })
+                                                    else
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg });
+                                                } else {
+                                                    const box_bg = if (is_selected_in_multi) check_bg else palette.selection_bg;
+                                                    cell_strings[c] = if (w1)
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg })
+                                                    else
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg });
+                                                }
+                                            } else if (is_marker) {
+                                                cell_strings[c] = if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} {s}", .{ cl, render_emoji, cr })
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}", .{ cl, render_emoji, cr });
+                                            } else if (is_selected_in_multi) {
+                                                cell_strings[c] = if (use_mark)
+                                                    (if (w1)
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}  ", .{ mark, render_emoji })
+                                                    else
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} ", .{ mark, render_emoji }))
+                                                else
+                                                    (if (w1)
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s}  \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                    else
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s} \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg }));
+                                            } else {
+                                                cell_strings[c] = if (w1)
+                                                    try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji})
+                                                else
+                                                    try std.fmt.bufPrint(&cell_buffers[c], " {s} ", .{render_emoji});
+                                            }
                                         }
                                     } else {
-                                        cell_strings[c] = "    ";
+                                        cell_strings[c] = if (final_compact) "   " else "    ";
                                     }
                                 }
 
@@ -2521,10 +2622,46 @@ pub fn main(init: std.process.Init) !void {
                                     @memcpy(line_buf[gl_pos..][0..cs.len], cs);
                                     gl_pos += cs.len;
                                 }
-                                const grid_rem = if (content_width > cols * 4) content_width - cols * 4 else 0;
-                                const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
-                                @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
-                                gl_pos += rem_sp.len;
+                                const cell_w: usize = if (final_compact) 3 else 4;
+                                const grid_rem = if (content_width > cols * cell_w) content_width - cols * cell_w else 0;
+
+                                if (final_compact and grid_rem > 0) {
+                                    const last_idx = (grid_scroll_top + r) * cols + (cols - 1);
+                                    const is_last_hard = (last_idx < top_count and selected_idx != null and last_idx == selected_idx.?);
+                                    const is_last_marker = is_last_hard or (last_idx < top_count and effective_idx != null and last_idx == effective_idx.?);
+                                    if (is_last_marker) {
+                                        const last_m = top_matches[last_idx];
+                                        const last_entry = emojig.EmojiDb.getEntry(last_m.index);
+                                        var last_is_selected_in_multi = false;
+                                        if (multi_select_active) {
+                                            for (multi_selected_emojis.items) |e| {
+                                                if (std.mem.eql(u8, e, last_entry.emoji)) {
+                                                    last_is_selected_in_multi = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        const last_box_bg = if (last_is_selected_in_multi) check_bg else palette.selection_bg;
+                                        const cr = g_spec.strings.cursor_right;
+
+                                        var rem_buf: [128]u8 = undefined;
+                                        const rem_str = if (is_last_hard)
+                                            try std.fmt.bufPrint(&rem_buf, "{s}{s}\x1b[0m{s}{s}{s}", .{ last_box_bg, cr, palette.grid_bg, palette.grid_fg, spaces[0..@min(grid_rem - 1, spaces.len)] })
+                                        else
+                                            try std.fmt.bufPrint(&rem_buf, "{s}{s}", .{ cr, spaces[0..@min(grid_rem - 1, spaces.len)] });
+
+                                        @memcpy(line_buf[gl_pos..][0..rem_str.len], rem_str);
+                                        gl_pos += rem_str.len;
+                                    } else {
+                                        const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
+                                        @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
+                                        gl_pos += rem_sp.len;
+                                    }
+                                } else {
+                                    const rem_sp = spaces[0..@min(grid_rem, spaces.len)];
+                                    @memcpy(line_buf[gl_pos..][0..rem_sp.len], rem_sp);
+                                    gl_pos += rem_sp.len;
+                                }
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
                                     const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
@@ -3019,7 +3156,10 @@ pub fn main(init: std.process.Init) !void {
                                 else
                                     std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039} \u{203a}/0-9 ?:help · Esc:back", .{ lbl, val }) catch st.settings.navigate;
                             } else if (current_screen == .settings) {
-                                break :blk st.settings.navigate;
+                                break :blk if (griddim_changed)
+                                    " ↕:nav ←→:change ?:help · next launch"
+                                else
+                                    st.settings.navigate;
                             } else if (current_screen == .categories) {
                                 break :blk st.categories.navigate;
                             } else if (is_cmd_autocomplete) {
@@ -3533,7 +3673,8 @@ pub fn main(init: std.process.Init) !void {
                                         }
                                     } else {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                        const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                        const cell_w: usize = if (final_compact) 3 else 4;
+                                        const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / cell_w;
                                         if (grid_col < cols) {
                                             const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
                                             if (hovered < top_count) selected_idx = hovered;
@@ -3623,10 +3764,15 @@ pub fn main(init: std.process.Init) !void {
                                                     if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
                                                         griddim_changed = true;
                                                     }
+                                                } else if (opt_idx == 9) {
+                                                    mru.clear();
+                                                    popup_title = "✔ done";
+                                                    popup_msg = "Recent history cleared.";
                                                 } else {
                                                     const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                                     const shell_s = detectShell(init.environ_map);
-                                                    toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
+                                                    toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
+                                                    if (opt_idx == 8) griddim_changed = true;
                                                 }
                                             }
                                         } else if (current_screen == .categories and click_row >= list_first_row) {
@@ -3650,7 +3796,8 @@ pub fn main(init: std.process.Init) !void {
                                             if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
                                         } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                             const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / 4;
+                                            const cell_w: usize = if (final_compact) 3 else 4;
+                                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / cell_w;
                                             if (grid_col < cols) {
                                                 const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
                                                 if (clicked_idx < top_count) {
@@ -3927,14 +4074,15 @@ pub fn main(init: std.process.Init) !void {
                                 saveUsizeToConfig(init.io, "rows", grid_rows);
                                 griddim_changed = true;
                                 griddim_typing = false;
-                            } else if (opt_idx == 8) {
+                            } else if (opt_idx == 9) {
                                 mru.clear();
                                 popup_title = "✔ done";
                                 popup_msg = "Recent history cleared.";
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
-                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
+                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
+                                if (opt_idx == 8) griddim_changed = true;
                             }
                         } else if ((std.mem.eql(u8, action, "nav_left") or std.mem.eql(u8, action, "nav_right")) and selected_idx != null) {
                             // Left/Right change the value of the selected setting:
@@ -3957,10 +4105,11 @@ pub fn main(init: std.process.Init) !void {
                                 if (theme == .system)
                                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                            } else if (opt_idx != 1) {
+                            } else if (opt_idx != 1 and opt_idx != 9) {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
-                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, home_s, shell_s);
+                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
+                                if (opt_idx == 8) griddim_changed = true;
                             }
                         } else if (std.mem.eql(u8, name, "f1")) {
                             popup_title = "❔ setting help";

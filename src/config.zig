@@ -27,6 +27,7 @@ pub const Config = struct {
     update_cmd: ?[]const u8 = null,
     scrollbar_style: ?ScrollbarStyle = null,
     font_size: ?usize = null,
+    compact: ?bool = null,
 };
 
 pub fn configPath(buf: []u8) ?[:0]const u8 {
@@ -98,6 +99,8 @@ pub fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 if (std.mem.eql(u8, val, "bar")) cfg.scrollbar_style = .bar else if (std.mem.eql(u8, val, "expand")) cfg.scrollbar_style = .expand;
             } else if (std.mem.eql(u8, key, "font_size")) {
                 cfg.font_size = std.fmt.parseInt(usize, val, 10) catch null;
+            } else if (std.mem.eql(u8, key, "compact")) {
+                cfg.compact = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
             }
         }
     }
