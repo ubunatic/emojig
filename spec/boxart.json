@@ -79,13 +79,19 @@
 
     { "char": "⌫", "name": "backspace", "tags": ["erase", "delete", "keyboard", "key"] },
     { "char": "⌦", "name": "delete forward", "tags": ["erase", "delete", "keyboard", "key"] },
-    { "char": "⌤", "name": "enter", "tags": ["return", "keyboard", "key"] },
+    { "char": "↵", "name": "enter return", "tags": ["newline", "carriage", "keyboard", "key"] },
     { "char": "⌃", "name": "ctrl", "tags": ["control", "keyboard", "key"] },
     { "char": "⌥", "name": "alt option", "tags": ["option", "keyboard", "key"] },
     { "char": "⇧", "name": "shift", "tags": ["keyboard", "key"] },
-    { "char": "⌘", "name": "command", "tags": ["cmd", "keyboard", "key", "mac"] },
+    { "char": "⌘", "name": "cmd command", "tags": ["keyboard", "key", "mac"] },
     { "char": "⎋", "name": "escape", "tags": ["esc", "keyboard", "key"] },
-    { "char": "⇥", "name": "tab", "tags": ["tabulator", "keyboard", "key"] },
-    { "char": "⎵", "name": "space", "tags": ["blank", "keyboard", "key"] }
+    { "char": "⭾", "name": "tab", "tags": ["tabulator", "keyboard", "key"] },
+    { "char": "⇥", "name": "tab right", "tags": ["tabulator", "keyboard", "key"] },
+    { "char": "⎵", "name": "space", "tags": ["blank", "keyboard", "key"] },
+    { "char": "⎀", "name": "insert", "tags": ["ins", "keyboard", "key"] },
+    { "char": "⇞", "name": "page up", "tags": ["pgup", "scroll", "keyboard", "key"] },
+    { "char": "⇟", "name": "page down", "tags": ["pgdn", "scroll", "keyboard", "key"] },
+    { "char": "⇱", "name": "home", "tags": ["keyboard", "key"] },
+    { "char": "⇲", "name": "end", "tags": ["keyboard", "key"] }
   ]
 }

@@ -723,179 +723,191 @@ fn findRank(emoji: []const u8, matches: []const Match, count: usize) usize {
 }
 
 test "key symbol discoverability" {
-    // These checks verify that keyboard-key symbols surface within the visible
-    // grid (top 24) for the queries a developer is likely to type.
-    // Failures here mean a char needs better keywords or aliases in spec/boxart.json.
+    // Verifies keyboard-key symbols surface in the visible grid for typical queries.
+    // Failures mean a char needs better keywords in spec/boxart.json or data/emoji.json.
 
     var top_matches: [1280]Match = undefined;
     var top_count: usize = 0;
 
-    const top24 = 24;
-
     // ── Tab ────────────────────────────────────────────────────────────────
-    // ⇥ U+21E5  search: "tab tabulator keyboard key box ascii art"
+    // ⭾ U+2BBE primary; ⇥ U+21E5 secondary.  Both share name "tab".
     _ = search("tab", &top_matches, &top_count, 1280);
-    const tab_rank_tab = findRank("⇥", top_matches[0..], top_count);
-    std.debug.print("\n  tab        → ⇥ rank #{d}\n", .{tab_rank_tab});
-    try std.testing.expect(tab_rank_tab > 0 and tab_rank_tab <= 6);
+    const tab1 = findRank("⭾", top_matches[0..], top_count);
+    const tab2 = findRank("⇥", top_matches[0..], top_count);
+    std.debug.print("\n  tab        → ⭾ rank #{d}  ⇥ rank #{d}\n", .{ tab1, tab2 });
+    try std.testing.expectEqual(@as(usize, 1), tab1);
+    try std.testing.expect(tab2 > 0 and tab2 <= 6);
 
     _ = search("tab key", &top_matches, &top_count, 1280);
-    const tab_rank_tabkey = findRank("⇥", top_matches[0..], top_count);
-    std.debug.print("  tab key    → ⇥ rank #{d}\n", .{tab_rank_tabkey});
-    try std.testing.expectEqual(@as(usize, 1), tab_rank_tabkey);
+    const tab_key1 = findRank("⭾", top_matches[0..], top_count);
+    std.debug.print("  tab key    → ⭾ rank #{d}\n", .{tab_key1});
+    try std.testing.expectEqual(@as(usize, 1), tab_key1);
 
     // ── Space ──────────────────────────────────────────────────────────────
-    // ⎵ U+2395  search: "space blank keyboard key box ascii art"
+    // ⎵ U+2395  search: "space blank keyboard key …"
     _ = search("space key", &top_matches, &top_count, 1280);
-    const space_rank_spacekey = findRank("⎵", top_matches[0..], top_count);
-    std.debug.print("  space key  → ⎵ rank #{d}\n", .{space_rank_spacekey});
-    try std.testing.expectEqual(@as(usize, 1), space_rank_spacekey);
+    const sp1 = findRank("⎵", top_matches[0..], top_count);
+    std.debug.print("  space key  → ⎵ rank #{d}\n", .{sp1});
+    try std.testing.expectEqual(@as(usize, 1), sp1);
 
     _ = search("blank key", &top_matches, &top_count, 1280);
-    const space_rank_blankkey = findRank("⎵", top_matches[0..], top_count);
-    std.debug.print("  blank key  → ⎵ rank #{d}\n", .{space_rank_blankkey});
-    try std.testing.expect(space_rank_blankkey > 0 and space_rank_blankkey <= 6);
+    const sp2 = findRank("⎵", top_matches[0..], top_count);
+    std.debug.print("  blank key  → ⎵ rank #{d}\n", .{sp2});
+    try std.testing.expect(sp2 > 0 and sp2 <= 6);
 
     // ── Enter / Return ─────────────────────────────────────────────────────
-    // ⌤ U+2324  search: "enter return keyboard key box ascii art"
+    // ↵ U+21B5  search: "enter return newline carriage keyboard key …"
     _ = search("enter key", &top_matches, &top_count, 1280);
-    const enter_rank_enterkey = findRank("⌤", top_matches[0..], top_count);
-    std.debug.print("  enter key  → ⌤ rank #{d}\n", .{enter_rank_enterkey});
-    try std.testing.expectEqual(@as(usize, 1), enter_rank_enterkey);
+    const en1 = findRank("↵", top_matches[0..], top_count);
+    std.debug.print("  enter key  → ↵ rank #{d}\n", .{en1});
+    try std.testing.expectEqual(@as(usize, 1), en1);
 
     _ = search("return key", &top_matches, &top_count, 1280);
-    const enter_rank_returnkey = findRank("⌤", top_matches[0..], top_count);
-    std.debug.print("  return key → ⌤ rank #{d}\n", .{enter_rank_returnkey});
-    try std.testing.expect(enter_rank_returnkey > 0 and enter_rank_returnkey <= 6);
+    const en2 = findRank("↵", top_matches[0..], top_count);
+    std.debug.print("  return key → ↵ rank #{d}\n", .{en2});
+    try std.testing.expect(en2 > 0 and en2 <= 6);
+
+    _ = search("enter", &top_matches, &top_count, 1280);
+    const en3 = findRank("↵", top_matches[0..], top_count);
+    std.debug.print("  enter      → ↵ rank #{d}\n", .{en3});
+    try std.testing.expect(en3 > 0 and en3 <= 6);
 
     // ── Backspace ──────────────────────────────────────────────────────────
-    // ⌫ U+232B  search: "backspace erase delete keyboard key box ascii art"
+    // ⌫ U+232B  search: "backspace erase delete keyboard key …"
     _ = search("backspace", &top_matches, &top_count, 1280);
-    const bs_rank = findRank("⌫", top_matches[0..], top_count);
-    std.debug.print("  backspace  → ⌫ rank #{d}\n", .{bs_rank});
-    try std.testing.expectEqual(@as(usize, 1), bs_rank);
+    const bs1 = findRank("⌫", top_matches[0..], top_count);
+    std.debug.print("  backspace  → ⌫ rank #{d}\n", .{bs1});
+    try std.testing.expectEqual(@as(usize, 1), bs1);
 
     _ = search("backspace key", &top_matches, &top_count, 1280);
-    const bs_rank_key = findRank("⌫", top_matches[0..], top_count);
-    std.debug.print("  backspace key → ⌫ rank #{d}\n", .{bs_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), bs_rank_key);
+    const bs2 = findRank("⌫", top_matches[0..], top_count);
+    std.debug.print("  backspace key → ⌫ rank #{d}\n", .{bs2});
+    try std.testing.expectEqual(@as(usize, 1), bs2);
 
     // ── Shift ──────────────────────────────────────────────────────────────
-    // ⇧ U+21E7  search: "shift keyboard key box ascii art"
+    // ⇧ U+21E7  search: "shift keyboard key …"
     _ = search("shift", &top_matches, &top_count, 1280);
-    const shift_rank = findRank("⇧", top_matches[0..], top_count);
-    std.debug.print("  shift      → ⇧ rank #{d}\n", .{shift_rank});
-    try std.testing.expect(shift_rank > 0 and shift_rank <= 6);
+    const sh1 = findRank("⇧", top_matches[0..], top_count);
+    std.debug.print("  shift      → ⇧ rank #{d}\n", .{sh1});
+    try std.testing.expectEqual(@as(usize, 1), sh1);
 
     _ = search("shift key", &top_matches, &top_count, 1280);
-    const shift_rank_key = findRank("⇧", top_matches[0..], top_count);
-    std.debug.print("  shift key  → ⇧ rank #{d}\n", .{shift_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), shift_rank_key);
+    const sh2 = findRank("⇧", top_matches[0..], top_count);
+    std.debug.print("  shift key  → ⇧ rank #{d}\n", .{sh2});
+    try std.testing.expectEqual(@as(usize, 1), sh2);
 
     // ── Escape ─────────────────────────────────────────────────────────────
-    // ⎋ U+238B  search: "escape esc keyboard key box ascii art"
+    // ⎋ U+238B  search: "escape esc keyboard key …"
     _ = search("escape", &top_matches, &top_count, 1280);
-    const esc_rank = findRank("⎋", top_matches[0..], top_count);
-    std.debug.print("  escape     → ⎋ rank #{d}\n", .{esc_rank});
-    try std.testing.expect(esc_rank > 0 and esc_rank <= 6);
+    const es1 = findRank("⎋", top_matches[0..], top_count);
+    std.debug.print("  escape     → ⎋ rank #{d}\n", .{es1});
+    try std.testing.expect(es1 > 0 and es1 <= 6);
 
     _ = search("esc key", &top_matches, &top_count, 1280);
-    const esc_rank_key = findRank("⎋", top_matches[0..], top_count);
-    std.debug.print("  esc key    → ⎋ rank #{d}\n", .{esc_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), esc_rank_key);
+    const es2 = findRank("⎋", top_matches[0..], top_count);
+    std.debug.print("  esc key    → ⎋ rank #{d}\n", .{es2});
+    try std.testing.expectEqual(@as(usize, 1), es2);
 
-    // ── Delete (forward) ───────────────────────────────────────────────────
-    // ⌦ U+2326  search: "delete forward erase delete keyboard key box ascii art"
+    // ── Delete / Backspace ─────────────────────────────────────────────────
+    // ⌦ U+2326  search: "delete forward erase keyboard key …"
     _ = search("delete forward", &top_matches, &top_count, 1280);
-    const del_rank_fwd = findRank("⌦", top_matches[0..], top_count);
-    std.debug.print("  delete forward → ⌦ rank #{d}\n", .{del_rank_fwd});
-    try std.testing.expectEqual(@as(usize, 1), del_rank_fwd);
+    const dl1 = findRank("⌦", top_matches[0..], top_count);
+    std.debug.print("  delete forward → ⌦ rank #{d}\n", .{dl1});
+    try std.testing.expectEqual(@as(usize, 1), dl1);
 
     _ = search("del key", &top_matches, &top_count, 1280);
-    const del_rank_delkey = findRank("⌦", top_matches[0..], top_count);
-    std.debug.print("  del key    → ⌦ rank #{d}\n", .{del_rank_delkey});
-    try std.testing.expect(del_rank_delkey > 0 and del_rank_delkey <= top24);
+    const dl2 = findRank("⌦", top_matches[0..], top_count);
+    std.debug.print("  del key    → ⌦ rank #{d}\n", .{dl2});
+    try std.testing.expect(dl2 > 0 and dl2 <= 24);
 
-    // ── Ctrl ───────────────────────────────────────────────────────────────
-    // ⌃ U+2303  search: "ctrl control keyboard key box ascii art"
+    // ── Ctrl / Control ─────────────────────────────────────────────────────
+    // ⌃ U+2303  search: "ctrl control keyboard key …"
     _ = search("ctrl", &top_matches, &top_count, 1280);
-    const ctrl_rank = findRank("⌃", top_matches[0..], top_count);
-    std.debug.print("  ctrl       → ⌃ rank #{d}\n", .{ctrl_rank});
-    try std.testing.expectEqual(@as(usize, 1), ctrl_rank);
+    const ct1 = findRank("⌃", top_matches[0..], top_count);
+    std.debug.print("  ctrl       → ⌃ rank #{d}\n", .{ct1});
+    try std.testing.expectEqual(@as(usize, 1), ct1);
 
     _ = search("control key", &top_matches, &top_count, 1280);
-    const ctrl_rank_key = findRank("⌃", top_matches[0..], top_count);
-    std.debug.print("  control key → ⌃ rank #{d}\n", .{ctrl_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), ctrl_rank_key);
+    const ct2 = findRank("⌃", top_matches[0..], top_count);
+    std.debug.print("  control key → ⌃ rank #{d}\n", .{ct2});
+    try std.testing.expectEqual(@as(usize, 1), ct2);
 
     // ── Alt / Option ───────────────────────────────────────────────────────
-    // ⌥ U+2325  search: "alt option option keyboard key box ascii art"
+    // ⌥ U+2325  search: "alt option keyboard key …"
     _ = search("alt key", &top_matches, &top_count, 1280);
-    const alt_rank_key = findRank("⌥", top_matches[0..], top_count);
-    std.debug.print("  alt key    → ⌥ rank #{d}\n", .{alt_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), alt_rank_key);
+    const al1 = findRank("⌥", top_matches[0..], top_count);
+    std.debug.print("  alt key    → ⌥ rank #{d}\n", .{al1});
+    try std.testing.expectEqual(@as(usize, 1), al1);
 
     _ = search("option key", &top_matches, &top_count, 1280);
-    const option_rank_key = findRank("⌥", top_matches[0..], top_count);
-    std.debug.print("  option key → ⌥ rank #{d}\n", .{option_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), option_rank_key);
+    const al2 = findRank("⌥", top_matches[0..], top_count);
+    std.debug.print("  option key → ⌥ rank #{d}\n", .{al2});
+    try std.testing.expectEqual(@as(usize, 1), al2);
 
     // ── Command ────────────────────────────────────────────────────────────
-    // ⌘ U+2318  search: "command cmd keyboard key mac box ascii art"
-    // "cmd" greedily matches c-m-d inside "command" instead of the standalone
-    // "cmd" word, so the score is lower than ideal — top24 is the real bar here.
-    // Fix: put "cmd" first in spec/boxart.json so the greedy match wins early.
+    // ⌘ U+2318  name "cmd command" so greedy match hits "cmd" at position 0.
     _ = search("cmd", &top_matches, &top_count, 1280);
-    const cmd_rank = findRank("⌘", top_matches[0..], top_count);
-    std.debug.print("  cmd        → ⌘ rank #{d}  (gap: 'command' eclipses standalone 'cmd')\n", .{cmd_rank});
-    try std.testing.expect(cmd_rank > 0 and cmd_rank <= top24);
+    const cm1 = findRank("⌘", top_matches[0..], top_count);
+    std.debug.print("  cmd        → ⌘ rank #{d}\n", .{cm1});
+    try std.testing.expectEqual(@as(usize, 1), cm1);
 
     _ = search("command key", &top_matches, &top_count, 1280);
-    const cmd_rank_key = findRank("⌘", top_matches[0..], top_count);
-    std.debug.print("  command key → ⌘ rank #{d}\n", .{cmd_rank_key});
-    try std.testing.expectEqual(@as(usize, 1), cmd_rank_key);
+    const cm2 = findRank("⌘", top_matches[0..], top_count);
+    std.debug.print("  command key → ⌘ rank #{d}\n", .{cm2});
+    try std.testing.expectEqual(@as(usize, 1), cm2);
 
     // ── Arrow keys ─────────────────────────────────────────────────────────
-    // ↕ U+2195 "up down arrow" and ↔ U+2194 "left right arrow" — these
-    // are emoji (not boxart) and lack "key" in their search strings.
+    // ↕/↔ now have "key" tag — "arrow keys" (plural → singular fallback) should find them.
     _ = search("up down arrow", &top_matches, &top_count, 1280);
-    const updown_rank = findRank("↕", top_matches[0..], top_count);
-    std.debug.print("  up down arrow → ↕ rank #{d}\n", .{updown_rank});
-    try std.testing.expect(updown_rank > 0 and updown_rank <= 6);
+    const ud1 = findRank("↕", top_matches[0..], top_count);
+    std.debug.print("  up down arrow → ↕ rank #{d}\n", .{ud1});
+    try std.testing.expect(ud1 > 0 and ud1 <= 6);
 
     _ = search("left right arrow", &top_matches, &top_count, 1280);
-    const leftright_rank = findRank("↔", top_matches[0..], top_count);
-    std.debug.print("  left right arrow → ↔ rank #{d}\n", .{leftright_rank});
-    try std.testing.expect(leftright_rank > 0 and leftright_rank <= 6);
+    const lr1 = findRank("↔", top_matches[0..], top_count);
+    std.debug.print("  left right arrow → ↔ rank #{d}\n", .{lr1});
+    try std.testing.expect(lr1 > 0 and lr1 <= 6);
 
-    // KNOWN GAP: "arrow keys" — ↕/↔ have no "key" keyword so the AND query
-    // returns 0 results.  Fix: add "key" or "navigation key" to their tags in
-    // data/emoji.json, or add a synonym "keys" → ["navigation"] in spec/synonyms.json.
     _ = search("arrow keys", &top_matches, &top_count, 1280);
-    const arrowkeys_updown = findRank("↕", top_matches[0..], top_count);
-    const arrowkeys_leftright = findRank("↔", top_matches[0..], top_count);
-    std.debug.print("  arrow keys → ↕ rank #{d}  ↔ rank #{d}  (gap: no 'key' keyword)\n",
-        .{ arrowkeys_updown, arrowkeys_leftright });
-    // Document current state: both are rank 0 (not found). Update once fixed.
-    try std.testing.expectEqual(@as(usize, 0), arrowkeys_updown);
-    try std.testing.expectEqual(@as(usize, 0), arrowkeys_leftright);
+    const ak1 = findRank("↕", top_matches[0..], top_count);
+    const ak2 = findRank("↔", top_matches[0..], top_count);
+    std.debug.print("  arrow keys → ↕ rank #{d}  ↔ rank #{d}\n", .{ ak1, ak2 });
+    try std.testing.expect(ak1 > 0 and ak1 <= 24);
+    try std.testing.expect(ak2 > 0 and ak2 <= 24);
+
+    // ── Insert / Page Up / Page Down / Home / End ──────────────────────────
+    _ = search("insert key", &top_matches, &top_count, 1280);
+    const ins1 = findRank("⎀", top_matches[0..], top_count);
+    std.debug.print("  insert key → ⎀ rank #{d}\n", .{ins1});
+    try std.testing.expectEqual(@as(usize, 1), ins1);
+
+    _ = search("page up", &top_matches, &top_count, 1280);
+    const pu1 = findRank("⇞", top_matches[0..], top_count);
+    std.debug.print("  page up    → ⇞ rank #{d}\n", .{pu1});
+    try std.testing.expect(pu1 > 0 and pu1 <= 6);
+
+    _ = search("page down", &top_matches, &top_count, 1280);
+    const pd1 = findRank("⇟", top_matches[0..], top_count);
+    std.debug.print("  page down  → ⇟ rank #{d}\n", .{pd1});
+    try std.testing.expectEqual(@as(usize, 1), pd1);
+
+    _ = search("home key", &top_matches, &top_count, 1280);
+    const hm1 = findRank("⇱", top_matches[0..], top_count);
+    std.debug.print("  home key   → ⇱ rank #{d}\n", .{hm1});
+    try std.testing.expectEqual(@as(usize, 1), hm1);
+
+    _ = search("end key", &top_matches, &top_count, 1280);
+    const ed1 = findRank("⇲", top_matches[0..], top_count);
+    std.debug.print("  end key    → ⇲ rank #{d}\n", .{ed1});
+    try std.testing.expectEqual(@as(usize, 1), ed1);
 
     // ── Generic keyboard queries ───────────────────────────────────────────
     _ = search("keyboard", &top_matches, &top_count, 1280);
-    const kb_tab = findRank("⇥", top_matches[0..], top_count);
-    const kb_enter = findRank("⌤", top_matches[0..], top_count);
-    std.debug.print("  keyboard   → ⇥ rank #{d}  ⌤ rank #{d}\n", .{ kb_tab, kb_enter });
-    try std.testing.expect(kb_tab > 0 and kb_tab <= top24);
-    try std.testing.expect(kb_enter > 0 and kb_enter <= top24);
-
-    // "key" alone is noisy: 🔑/🗝️ and many emoji with "key" in name rank above
-    // keyboard symbols. Rank 29 means ⇥ is just off the default 24-cell grid.
-    // Gap: users typing bare "key" expect keyboard symbols; use "tab key" etc. instead.
-    _ = search("key", &top_matches, &top_count, 1280);
-    const key_tab = findRank("⇥", top_matches[0..], top_count);
-    std.debug.print("  key        → ⇥ rank #{d}  (gap: literal-key emojis rank above)\n", .{key_tab});
-    try std.testing.expect(key_tab > 0 and key_tab <= 48);
-
+    const kb1 = findRank("⭾", top_matches[0..], top_count);
+    const kb2 = findRank("↵", top_matches[0..], top_count);
+    std.debug.print("  keyboard   → ⭾ rank #{d}  ↵ rank #{d}\n", .{ kb1, kb2 });
+    try std.testing.expect(kb1 > 0 and kb1 <= 24);
+    try std.testing.expect(kb2 > 0 and kb2 <= 24);
 }
 
 test "benchmark: search throughput" {
