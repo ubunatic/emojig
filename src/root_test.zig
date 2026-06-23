@@ -938,6 +938,75 @@ test "key symbol discoverability" {
     try std.testing.expect(kb2 > 0 and kb2 <= 24);
 }
 
+test "block element discoverability: sparkline and progress bar chars" {
+    // Lower blocks ▁▂▃▄▅▆▇█ (U+2581-2588) — for sparklines / bar charts.
+    // Left  blocks ▏▎▍▌▋▊▉█ (U+258F-2589) — for progress bars / gauges.
+    // All must surface with 'b:' prefix (box-art filter) and their semantic tags.
+
+    var top_matches: [1280]Match = undefined;
+    var top_count: usize = 0;
+
+    // ── sparkline queries ──────────────────────────────────────────────────
+    _ = search("b: sparkline", &top_matches, &top_count, 1280);
+    const sl_tiny = findRank("▁", top_matches[0..], top_count);
+    const sl_qtr = findRank("▂", top_matches[0..], top_count);
+    const sl_half = findRank("▄", top_matches[0..], top_count);
+    const sl_full = findRank("█", top_matches[0..], top_count);
+    std.debug.print("\n  b: sparkline → ▁#{d}  ▂#{d}  ▄#{d}  █#{d}\n", .{ sl_tiny, sl_qtr, sl_half, sl_full });
+    try std.testing.expect(sl_tiny > 0 and sl_tiny <= 10);
+    try std.testing.expect(sl_qtr > 0 and sl_qtr <= 10);
+    try std.testing.expect(sl_half > 0 and sl_half <= 10);
+    try std.testing.expect(sl_full > 0 and sl_full <= 10);
+
+    _ = search("b: spark", &top_matches, &top_count, 1280);
+    const sp1 = findRank("▃", top_matches[0..], top_count);
+    const sp2 = findRank("▇", top_matches[0..], top_count);
+    std.debug.print("  b: spark     → ▃#{d}  ▇#{d}\n", .{ sp1, sp2 });
+    try std.testing.expect(sp1 > 0 and sp1 <= 10);
+    try std.testing.expect(sp2 > 0 and sp2 <= 10);
+
+    _ = search("b: lower block", &top_matches, &top_count, 1280);
+    const lb1 = findRank("▁", top_matches[0..], top_count);
+    const lb2 = findRank("▅", top_matches[0..], top_count);
+    const lb3 = findRank("▆", top_matches[0..], top_count);
+    std.debug.print("  b: lower block → ▁#{d}  ▅#{d}  ▆#{d}\n", .{ lb1, lb2, lb3 });
+    try std.testing.expect(lb1 > 0 and lb1 <= 10);
+    try std.testing.expect(lb2 > 0 and lb2 <= 10);
+    try std.testing.expect(lb3 > 0 and lb3 <= 10);
+
+    // ── progress bar queries ───────────────────────────────────────────────
+    _ = search("b: progress", &top_matches, &top_count, 1280);
+    const pg_eighth = findRank("▏", top_matches[0..], top_count);
+    const pg_half = findRank("▌", top_matches[0..], top_count);
+    const pg_full = findRank("█", top_matches[0..], top_count);
+    std.debug.print("  b: progress  → ▏#{d}  ▌#{d}  █#{d}\n", .{ pg_eighth, pg_half, pg_full });
+    try std.testing.expect(pg_eighth > 0 and pg_eighth <= 10);
+    try std.testing.expect(pg_half > 0 and pg_half <= 10);
+    try std.testing.expect(pg_full > 0 and pg_full <= 10);
+
+    _ = search("b: left block", &top_matches, &top_count, 1280);
+    const lf1 = findRank("▏", top_matches[0..], top_count);
+    const lf2 = findRank("▎", top_matches[0..], top_count);
+    const lf3 = findRank("▍", top_matches[0..], top_count);
+    const lf4 = findRank("▋", top_matches[0..], top_count);
+    const lf5 = findRank("▊", top_matches[0..], top_count);
+    const lf6 = findRank("▉", top_matches[0..], top_count);
+    std.debug.print("  b: left block → ▏#{d} ▎#{d} ▍#{d} ▋#{d} ▊#{d} ▉#{d}\n", .{ lf1, lf2, lf3, lf4, lf5, lf6 });
+    try std.testing.expect(lf1 > 0 and lf1 <= 10);
+    try std.testing.expect(lf2 > 0 and lf2 <= 10);
+    try std.testing.expect(lf3 > 0 and lf3 <= 10);
+    try std.testing.expect(lf4 > 0 and lf4 <= 10);
+    try std.testing.expect(lf5 > 0 and lf5 <= 10);
+    try std.testing.expect(lf6 > 0 and lf6 <= 10);
+
+    _ = search("b: gauge", &top_matches, &top_count, 1280);
+    const ga1 = findRank("▏", top_matches[0..], top_count);
+    const ga2 = findRank("▌", top_matches[0..], top_count);
+    std.debug.print("  b: gauge     → ▏#{d}  ▌#{d}\n", .{ ga1, ga2 });
+    try std.testing.expect(ga1 > 0 and ga1 <= 10);
+    try std.testing.expect(ga2 > 0 and ga2 <= 10);
+}
+
 test "benchmark: search throughput" {
     const duration_ms: u64 = blk: {
         const env = std.c.getenv("EMOJIG_BENCH") orelse break :blk 10;
