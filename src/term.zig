@@ -11,7 +11,8 @@ pub const Theme = enum { dark, light, system };
 
 pub const Palette = struct {
     grid_bg: []const u8, // background sequence for grid rows
-    grid_fg: []const u8, // text color escape sequence for grid rows
+    grid_fg: []const u8, // grid_bg + fg — resets bg; only use inside grid rows
+    grid_fg_only: []const u8, // fg-only (no bg reset); safe to use on any bg
     selection_bg: []const u8, // selection background sequence
     search_bg: []const u8, // entire search-bar row bg+fg sequence
     status_bg: []const u8, // entire status-bar row sequence

@@ -688,6 +688,7 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     return .{
         .grid_bg = g_bg,
         .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ g_bg, grid_fg_idx, dim_suffix }),
+        .grid_fg_only = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ grid_fg_idx, dim_suffix }),
         .selection_bg = sel_bg,
         .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ s_bg, search_fg_idx, dim_suffix }),
         .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ st_bg, status_fg_idx, dim_suffix }),

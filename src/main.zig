@@ -2057,7 +2057,7 @@ pub fn main(init: std.process.Init) !void {
                                 else if (palette.search_cursor_fg.len > 0)
                                     palette.search_cursor_fg
                                 else
-                                    palette.grid_fg;
+                                    palette.grid_fg_only;
                                 try writeAll(stdout_fd, eff_ph_fg);
                                 try writeAll(stdout_fd, placeholder);
                                 try writeAll(stdout_fd, palette.search_bg);
@@ -2196,16 +2196,16 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_h, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
@@ -2263,16 +2263,16 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_a, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
@@ -2329,16 +2329,16 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_s, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
                                         break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
@@ -2600,16 +2600,16 @@ pub fn main(init: std.process.Init) !void {
                                     const sb_seq = if (scrollbar_style == .expand) blk: {
                                         const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
                                         if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else {
                                             break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     } else blk: {
                                         const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                         if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                         } else {
                                             break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
@@ -2829,16 +2829,16 @@ pub fn main(init: std.process.Init) !void {
                                     const sb_seq = if (scrollbar_style == .expand) blk: {
                                         const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
                                         if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else {
                                             break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     } else blk: {
                                         const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                         if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, g_spec.strings.scrollbar_char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                         } else {
                                             break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
