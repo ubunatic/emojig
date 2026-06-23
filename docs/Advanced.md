@@ -165,9 +165,10 @@ picker layout is unaffected.
 ### Category switcher bar
 
 A horizontal row of category icons appears below the emoji grid in GUI mode
-(and when `EMOJIG_SWITCHER=1` / `--switcher`). Click or press <kbd>Tab</kbd>
-to filter by category; click the same category again (or press
-<kbd>Tab</kbd> repeatedly) to cycle back to All.
+(and when `EMOJIG_SHOW_SWITCHER=1` / `--show-switcher`). Hovering an icon displays
+its name (in bold) and its non-redundant synonyms in the bottom label bar. Clicking
+an icon or pressing <kbd>Tab</kbd> filters the emoji grid by that category; click the
+same category again (or press <kbd>Tab</kbd> repeatedly) to cycle back to All.
 
 The switcher layout — icons, bracket chars, highlight colors and outer margins —
 is fully declarative in `spec/categories.json`. See

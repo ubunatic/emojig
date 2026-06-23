@@ -14,6 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 - **Implemented**: A horizontal category switcher bar has been added. Tab and Shift-Tab cycle through categories. c: prefix filters are supported.
 - **Visuals**: Features clean borders, dim hlines separating sections, and interactive mouse/keyboard navigation.
+- **Hover Feedback**: Hovering a category switcher icon shows the category name (in bold ANSI formatting) and its non-redundant synonyms in the description row (label bar), e.g. "**smileys**, face, smile, emotion...". Redundant synonyms (matching category name/short name) are filtered out, and hovering the "All" slot displays "**All**". Padding is calculated using `ansiDisplayWidth` to keep the row highlight clean.
 
 ## Idea
 

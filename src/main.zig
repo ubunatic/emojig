@@ -2806,8 +2806,11 @@ pub fn main(init: std.process.Init) !void {
                             const desc = if (opt_cat) |cat| blk: {
                                 var syn_buf: [128]u8 = undefined;
                                 var syn_len: usize = 0;
-                                for (cat.synonyms, 0..) |syn, s_i| {
-                                    if (s_i > 0) {
+                                for (cat.synonyms) |syn| {
+                                    if (std.mem.eql(u8, syn, cat.name) or std.mem.eql(u8, syn, cat.short)) {
+                                        continue;
+                                    }
+                                    if (syn_len > 0) {
                                         syn_buf[syn_len] = ',';
                                         syn_buf[syn_len + 1] = ' ';
                                         syn_len += 2;
@@ -2817,15 +2820,16 @@ pub fn main(init: std.process.Init) !void {
                                     syn_len += copy_len;
                                 }
                                 if (syn_len > 0) {
-                                    break :blk try std.fmt.bufPrint(&desc_buf, "Category: {s} ({s})", .{ cat.name, syn_buf[0..syn_len] });
+                                    break :blk try std.fmt.bufPrint(&desc_buf, "\x1b[1m{s}\x1b[22m, {s}", .{ cat.name, syn_buf[0..syn_len] });
                                 } else {
-                                    break :blk try std.fmt.bufPrint(&desc_buf, "Category: {s}", .{cat.name});
+                                    break :blk try std.fmt.bufPrint(&desc_buf, "\x1b[1m{s}\x1b[22m", .{cat.name});
                                 }
                             } else blk: {
-                                break :blk "Category: All";
+                                break :blk "\x1b[1mAll\x1b[22m";
                             };
 
-                            const pad_len_desc = if (content_width > desc.len + 1) content_width - desc.len - 1 else 0;
+                            const desc_w = ansiDisplayWidth(desc);
+                            const pad_len_desc = if (content_width > desc_w + 1) content_width - desc_w - 1 else 0;
                             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len_desc, spaces.len)] });
                             try writeAll(stdout_fd, name_line);
                         } else if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
