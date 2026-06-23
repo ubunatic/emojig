@@ -198,20 +198,19 @@ against `search()` returns **zero results**.  Do not write unit tests that call
 ### Auto-detect (implicit category filter)
 
 After the explicit `c:` check, `searchOptions` tries to auto-detect a category
-from the **first word** of the query.  If `findCategorySpec(categories_spec,
-first_word)` succeeds, the first word is silently consumed as a category filter and
-the rest becomes the search term — no prefix needed.
+from the **first word** of the query using `findCategorySpecMatch`. If a category match is found:
+- **Category Names or Short Names** (e.g. `travel`, `animals`, `smiley`): The first word is silently consumed/stripped from the query, and the rest becomes the search term. If it was the only word, the query becomes empty (e.g. browsing the category).
+- **Category Synonyms** (e.g. `car`, `vehicles`, `pet`, `drink`): The first word is **not** stripped from the query. The category filter is still activated (restricting search to that category), but the word remains in the search query so that the search engine ranks the matching items (e.g. cars) at the top of the category, rather than listing the entire category in database order.
 
 ```
-animal         →  Animals & Nature filter, empty term  →  all animals (MRU-ordered)
-animal lion    →  Animals & Nature filter + "lion"     →  🦁
-animals        →  same (synonym match via spec/categories.json)
+travel         →  Travel & Places filter, empty term  →  all travel (database-ordered)
+travel car     →  Travel & Places filter + "car"     →  🚗
+car            →  Travel & Places filter + "car"     →  🚗 (synonym, not stripped)
 food pizza     →  Food & Drink filter + "pizza"        →  🍕
-vehicles       →  Travel & Places filter               →  all travel (synonym)
 ```
 
 **Falls through gracefully** when `categories_spec` is null (unit tests) or when
-the first word is not a known category — it's a no-op in those cases, so existing
+the first word is not a known category or synonym — it's a no-op in those cases, so existing
 query behaviour is unchanged.
 
 ### Spec file: `spec/categories.json`

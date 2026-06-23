@@ -120,8 +120,23 @@ fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?Catego
     return null;
 }
 
+var parsed_categories_spec: ?CategoriesSpec = null;
+var categories_arena_bytes: [64 * 1024]u8 = undefined;
+
+pub fn getGlobalCategoriesSpec() *const CategoriesSpec {
+    if (parsed_categories_spec) |*spec| {
+        return spec;
+    }
+    const categories_json = @embedFile("spec_categories");
+    var fba = std.heap.FixedBufferAllocator.init(&categories_arena_bytes);
+    const parsed = std.json.parseFromSlice(CategoriesSpec, fba.allocator(), categories_json, .{ .ignore_unknown_fields = true }) catch unreachable;
+    parsed_categories_spec = parsed.value;
+    return &parsed_categories_spec.?;
+}
+
 pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit: usize) usize {
-    return searchOptions(query, top_matches, top_count, limit, null, &[_][]const u8{}, null);
+    const cats = getGlobalCategoriesSpec();
+    return searchOptions(query, top_matches, top_count, limit, cats, &[_][]const u8{}, null);
 }
 
 /// Box-art scores drop by this much in general searches so borders and

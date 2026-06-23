@@ -496,15 +496,15 @@ func runCategoryAutocompleteTest(binaryPath string) {
 	time.Sleep(200 * time.Millisecond)
 	out := stripANSI(collectAvailable())
 
-	// The output should display the categories, for example, "clocks"
-	if !strings.Contains(out, "clocks") && !strings.Contains(out, "flags") {
-		fmt.Printf("FAIL: expected category autocomplete list to show clocks/flags. Got:\n%s\n", out)
+	// The output should display the categories, for example, "smileys"
+	if !strings.Contains(out, "smileys") && !strings.Contains(out, "flags") {
+		fmt.Printf("FAIL: expected category autocomplete list to show smileys/flags. Got:\n%s\n", out)
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
 	fmt.Println("PASS: category list is visible in autocomplete grid.")
 
-	// Press Enter to select the first category ("clocks")
+	// Press Enter to select the first category ("smileys")
 	if _, err := master.Write([]byte("\n")); err != nil {
 		fmt.Printf("Error writing Enter: %v\n", err)
 		cmd.Process.Kill()
@@ -513,9 +513,9 @@ func runCategoryAutocompleteTest(binaryPath string) {
 	time.Sleep(200 * time.Millisecond)
 	out2 := stripANSI(collectAvailable())
 
-	// The query should now be "c:clock "
-	if !strings.Contains(out2, "c:clock") {
-		fmt.Printf("FAIL: expected query to be updated to 'c:clock '. Got:\n%s\n", out2)
+	// The query should now be "c:smiley "
+	if !strings.Contains(out2, "c:smiley") {
+		fmt.Printf("FAIL: expected query to be updated to 'c:smiley '. Got:\n%s\n", out2)
 		cmd.Process.Kill()
 		os.Exit(1)
 	}

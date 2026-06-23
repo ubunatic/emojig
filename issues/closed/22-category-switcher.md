@@ -1,4 +1,19 @@
-# 22 — Category Switcher UI
+<!--
+SPDX-FileCopyrightText: 2026 Uwe Jugel
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# Issue 22 — Category Switcher UI
+
+**Status**: Closed (Implemented — 2026-06-23)  
+**Priority**: P3
+
+---
+
+## Resolution
+
+- **Implemented**: A horizontal category switcher bar has been added. Tab and Shift-Tab cycle through categories. c: prefix filters are supported.
+- **Visuals**: Features clean borders, dim hlines separating sections, and interactive mouse/keyboard navigation.
 
 ## Idea
 

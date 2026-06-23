@@ -2786,7 +2786,49 @@ pub fn main(init: std.process.Init) !void {
                         // Description row.
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         const max_len = if (content_width > 1) content_width - 1 else 0;
-                        if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
+                        const is_hovering_sw = switcher_row_hovered and (switcher_hover_idx == null or switcher_hover_idx.? < switcherCatCount());
+                        if (is_hovering_sw and !is_too_small) {
+                            var opt_cat: ?spec_mod.CategorySpec = null;
+                            if (switcher_hover_idx) |sh_idx| {
+                                var count: usize = 0;
+                                for (g_spec.categories.categories) |cat| {
+                                    if (cat.switcher) {
+                                        if (count == sh_idx) {
+                                            opt_cat = cat;
+                                            break;
+                                        }
+                                        count += 1;
+                                    }
+                                }
+                            }
+
+                            var desc_buf: [256]u8 = undefined;
+                            const desc = if (opt_cat) |cat| blk: {
+                                var syn_buf: [128]u8 = undefined;
+                                var syn_len: usize = 0;
+                                for (cat.synonyms, 0..) |syn, s_i| {
+                                    if (s_i > 0) {
+                                        syn_buf[syn_len] = ',';
+                                        syn_buf[syn_len + 1] = ' ';
+                                        syn_len += 2;
+                                    }
+                                    const copy_len = @min(syn.len, syn_buf.len - syn_len);
+                                    @memcpy(syn_buf[syn_len..][0..copy_len], syn[0..copy_len]);
+                                    syn_len += copy_len;
+                                }
+                                if (syn_len > 0) {
+                                    break :blk try std.fmt.bufPrint(&desc_buf, "Category: {s} ({s})", .{ cat.name, syn_buf[0..syn_len] });
+                                } else {
+                                    break :blk try std.fmt.bufPrint(&desc_buf, "Category: {s}", .{cat.name});
+                                }
+                            } else blk: {
+                                break :blk "Category: All";
+                            };
+
+                            const pad_len_desc = if (content_width > desc.len + 1) content_width - desc.len - 1 else 0;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len_desc, spaces.len)] });
+                            try writeAll(stdout_fd, name_line);
+                        } else if ((exit_preview and exit_preview_step >= 3) or (selected_idx == null) or is_too_small) {
                             const pad_len_desc = max_w;
                             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.info_bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                             try writeAll(stdout_fd, name_line);
