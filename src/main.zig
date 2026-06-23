@@ -2552,20 +2552,31 @@ pub fn main(init: std.process.Init) !void {
                                             var cell_pos: usize = 0;
                                             var cell_buf = &cell_buffers[c];
 
-                                            if (prefix_bg.len > 0) {
-                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix_bg}) catch @as([]const u8, "")).len;
-                                            }
-                                            cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
-                                            if (prefix_bg.len > 0) {
-                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
-                                            }
+                                            if (std.mem.eql(u8, prefix_bg, body_bg)) {
+                                                if (prefix_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix_bg}) catch @as([]const u8, "")).len;
+                                                }
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
+                                                if (prefix_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                }
+                                            } else {
+                                                if (prefix_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix_bg}) catch @as([]const u8, "")).len;
+                                                }
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
+                                                if (prefix_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                }
 
-                                            if (body_bg.len > 0) {
-                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body_bg}) catch @as([]const u8, "")).len;
-                                            }
-                                            cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
-                                            if (body_bg.len > 0) {
-                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                if (body_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body_bg}) catch @as([]const u8, "")).len;
+                                                }
+                                                cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
+                                                if (body_bg.len > 0) {
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                }
                                             }
 
                                             cell_strings[c] = cell_buf[0..cell_pos];
