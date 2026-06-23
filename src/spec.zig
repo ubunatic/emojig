@@ -153,6 +153,7 @@ pub const Theme = struct {
         dark: []const u8,
         light: []const u8,
         system: []const u8,
+        menu: []const u8,
     },
     themes: struct {
         dark: PaletteSpec,
@@ -270,6 +271,12 @@ pub const Strings = struct {
     multi_select_bg: []const u8 = "green",
     // Scrollbar thumb character (default ▐). Must be exactly one display cell.
     scrollbar_char: []const u8 = "▐",
+    // Separator between toolbar buttons (theme icon and menu icon). Must be one
+    // display cell wide (e.g. " ", "│", "|", "▏"). Rendered with the grid
+    // background color as foreground so it reads as a subtle divider.
+    toolbar_sep: []const u8 = " ",
+    // Horizontal separator line character (default ─).
+    hline_char: []const u8 = "─",
     status: StatusStrings = .{},
 };
 
@@ -494,6 +501,11 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         "";
 
+    // Resolve the terminal window background (terminal_bg2 hex → closest 256-color
+    // index). Used as the separator fg so │ blends into the terminal background.
+    const term_bg_val: std.json.Value = if (p.terminal_bg2) |hex| .{ .string = hex } else .null;
+    const term_bg_idx = try resolveColorValue(term_bg_val, colors_spec);
+
     const s_bg_idx = try resolveColorValue(p.search_bg, colors_spec);
     const s_bg = if (s_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
@@ -549,5 +561,23 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ border_shade_fg_idx, dim_suffix }),
         .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ warning_fg_idx, dim_suffix_bold }),
         .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ success_fg_idx, dim_suffix_bold }),
+        .search_end_cap = if (s_bg_idx) |sb| blk: {
+            // bg = search bar color (fills cell if char not rendered), fg = terminal bg.
+            // ▐ (RIGHT HALF BLOCK): left half=bg=search_bg, right half=fg=terminal_bg.
+            if (term_bg_idx) |tb|
+                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, tb })
+            else if (b_bg_idx) |bb|
+                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, bb })
+            else
+                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[49m\u{2590}", .{sb});
+        } else "",
+        .toolbar_sep_fg = if (term_bg_idx) |t_val|
+            try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{t_val})
+        else if (g_bg_idx) |bg_val|
+            try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{bg_val})
+        else if (b_bg_idx) |b_val|
+            try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{b_val})
+        else
+            try std.fmt.allocPrint(arena, "\x1b[2m", .{}),
     };
 }

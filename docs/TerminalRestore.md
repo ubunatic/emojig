@@ -217,6 +217,35 @@ Two complementary mechanisms in `src/main.zig`:
    render's relative `\x1b[{1+row_off}A\r` reposition still lands at the
    correct TUI top.
 
+## 8. Pitfall: `\x1b[K` from pending-wrap erases the last-column character
+
+**Symptom.** A character written to the **last column** of a terminal row is
+invisible — but only in exact-width windows (e.g. foot with `--window-size-chars=Nx…`),
+not in a normal interactive terminal that is slightly wider.
+
+**Root cause.** Writing a character to column N (the last column) leaves the cursor in
+**pending-wrap state**: the character was drawn but the cursor has *not yet advanced*
+past it. A subsequent `\x1b[K` (erase to end of line) fires from that same column and
+erases the character just written. The cursor position foot reports and the position the
+erase fires from are both still N.
+
+In an interactive terminal the window is usually a column or two wider than
+`content_width`, so `\x1b[K` fires harmlessly past the rendered content. Only an
+exact-width GUI window (foot `--window-size-chars` sized precisely to `content_width`)
+exposes the bug — there, the last content column IS column N.
+
+**In Emojig.** `endRow()` emits `\x1b[0m\x1b[K`. The search bar row fills
+`content_width` exactly (the end cap `▐` is the last character). The `\x1b[K` in
+`endRow()` silently erased the cap in the GUI window. Fix: use `endRowFull()` for the
+search bar row — it emits only `\x1b[0m`, no `\x1b[K`.
+
+**Rule:** Any row that *exactly* fills `content_width` with a visually significant last
+character must use `endRowFull()`. A trailing space can safely use `endRow()` (the
+erasure is invisible), but a block graphic, bracket, or icon cannot. The
+`endRowFull` method has a comment documenting this contract.
+
+---
+
 **Remaining limitation.** The very first scroll after a cold launch (or after
 scrolling to a section with uncached glyphs) still causes a visible delay:
 foot's HarfBuzz/FreeType rasterization takes ~80–150 ms per viewport of new

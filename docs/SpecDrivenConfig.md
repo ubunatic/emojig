@@ -29,12 +29,14 @@ learned wiring it up.
 | TUI/GUI grid size, content width        | `spec/layout.json`                | `tui`/`gui` `{cols,rows,width}` |
 | Vertical overhead, max query length, top padding | `spec/layout.json`                | `layout_overhead`, `max_query_len`, `top_padding` |
 | Exit-fade in TUI / GUI / both / neither | `spec/layout.json`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
-| Theme icons (🌙🌞🔆)                     | `spec/theme.json`                 | `icons` |
+| Theme icons (🌙🌞🔆≡) + hamburger menu icon | `spec/theme.json`               | `icons` |
 | Grid/selection/search colors            | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints) |
 | Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
 | Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
+| Toolbar separator char (between theme/menu icons) | `spec/strings.json`             | `toolbar_sep` (must be exactly 1 display cell) |
+| Toolbar separator fg color, search bar end cap | `spec/theme.json`               | `terminal_bg2` (hex) drives both; see §13 |
 | Named inline styles for templates       | `spec/styles.json`                | see §10 |
 | Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
 | Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
@@ -158,6 +160,7 @@ query starting with `??` shows the second page (`help_lines_more`, documenting t
 | `help_lines`               | both (help page 1, query `?`) |
 | `help_lines_more`          | both (help page 2, query `??`) |
 | `scrollbar_char`           | both (Scrollbar thumb character, default ▐) |
+| `toolbar_sep`              | Zig only (separator between toolbar icons, default `" "`, must be 1 display cell) |
 
 `{count}` in the status templates is substituted with the live match count
 (`formatStatus`, which returns the template unchanged when there's no placeholder).
@@ -422,6 +425,50 @@ hovered slot highlights the whole bracket group in `palette.selection_bg`.
 
 ---
 
+## 13. Toolbar palette fields (`toolbar_sep_fg`, `search_end_cap`)
+
+The search bar toolbar (right end of the search row) has two computed palette
+entries built by `buildPalette` in `src/spec.zig`:
+
+### `toolbar_sep_fg`
+
+The foreground color applied to the `toolbar_sep` separator character. Ideally
+matches the terminal window background so the separator is a subtle visual
+divider rather than a sharp line. Resolution order:
+
+1. `terminal_bg2` hex string in the theme → `resolveColorValue` → nearest 256-color index
+2. `grid_bg` 256-color index (no `terminal_bg2` present)
+3. SGR `\x1b[2m` dim (last resort)
+
+The `resolveColorValue` call emits a console warning when the hex is not an
+exact 256-color hit (e.g. `"color '#2c2c2c' … matching to closest color 'gray4'
+(index 236)"`). This is expected and benign.
+
+### `search_end_cap`
+
+A `▐` (U+2590 RIGHT HALF BLOCK) placed as the last character of the search bar
+row, creating a smooth half-pixel-wide transition from the search bar into the
+terminal background:
+
+```
+\x1b[48;5;{search_bg}m\x1b[38;5;{terminal_bg}m▐
+```
+
+- **bg = `search_bg`** → left half of `▐` = search bar color (seamless continuation)
+- **fg = `terminal_bg2` index** → right half = terminal background
+
+Using `▐` with `bg=search_bar` is more robust than `▌` with `fg=search_bar`:
+if the block character is not rendered (treated as a space), the cell still
+shows `search_bg` and the search bar appears to end cleanly rather than showing
+a terminal-bg-colored hole.
+
+**`endRowFull()` is required for this row.** The search bar row fills
+`content_width` exactly, putting the cursor in pending-wrap state after `▐`.
+Using `endRow()` (which appends `\x1b[K`) would erase the cap in exact-width
+windows (see [`TerminalRestore.md` §8](./TerminalRestore.md#8-pitfall-xk-from-pending-wrap-erases-the-last-column-character)).
+
+---
+
 ## 12. Files touched
 
 ```
@@ -439,13 +486,13 @@ src/config.zig          font_size: ?usize field; parsed from config key font_siz
 src/host.zig            spawnGuiWindow takes font_size: usize; --override=font=monospace:size={d};
                         --override=csd.preferred=none; --override=pad=0x4
 src/defaults.zig        comptime MAX_* bounds only
-src/term.zig            Palette fields warning_fg, success_fg; status_bg
+src/term.zig            Palette fields warning_fg, success_fg; status_bg; toolbar_sep_fg; search_end_cap
 scripts/gen_colors/     generates spec/colors.json (make gen-colors); see §9
 spec/colors.json        generated full xterm-256 palette with name/short/hex/desc/alt
 spec/categories.json    category switcher bar layout + category synonyms; see §11
 spec/styles.json        named SGR style aliases for $fmtvars templates; see §10
 spec/layout.json        animation.{exit_preview_tui,exit_preview_gui}
-spec/theme.json         terminal_border, warning_fg, success_fg
-spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint)
+spec/theme.json         terminal_border, warning_fg, success_fg; icons.menu; terminal_bg2 (toolbar sep + end cap color source)
+spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint); toolbar_sep
 internal/spec/spec.go   Go structs mirror theme and strings fields
 ```

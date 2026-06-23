@@ -1603,6 +1603,7 @@ pub fn main(init: std.process.Init) !void {
         var exit_preview_step: usize = 0;
         const max_preview_steps: usize = 8;
         var theme_hovered = false;
+        var menu_hovered = false;
         // Which grid-size arrow (if any) the mouse is over, for hover feedback.
         var griddim_hover_left = false;
         var griddim_hover_right = false;
@@ -1648,7 +1649,25 @@ pub fn main(init: std.process.Init) !void {
         var mouse_carry: [32]u8 = undefined;
         var mouse_carry_len: usize = 0;
         const spaces = " " ** 512;
-        const hlines = "─" ** 512; // each ─ is 3 UTF-8 bytes, 1 display column
+        var hlines_buf: [2048]u8 = undefined;
+        const hline_unit_len = if (g_spec.strings.hline_char.len > 0) g_spec.strings.hline_char.len else 3;
+        const hlines = blk: {
+            const char = g_spec.strings.hline_char;
+            var len: usize = 0;
+            if (char.len > 0) {
+                while (len + char.len <= hlines_buf.len) {
+                    @memcpy(hlines_buf[len..][0..char.len], char);
+                    len += char.len;
+                }
+            } else {
+                const fallback = "─";
+                while (len + fallback.len <= hlines_buf.len) {
+                    @memcpy(hlines_buf[len..][0..fallback.len], fallback);
+                    len += fallback.len;
+                }
+            }
+            break :blk hlines_buf[0..len];
+        };
         const content_width = term_width;
 
         var last_w: usize = term_width;
@@ -1780,7 +1799,9 @@ pub fn main(init: std.process.Init) !void {
                 const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
                 const prefix_cols = 3;
-                const icon_cols = 4;
+                const toolbar_sep = g_spec.strings.toolbar_sep;
+                const sep_w = ansiDisplayWidth(toolbar_sep); // expected 1 display cell
+                const icon_cols = sep_w * 2 + 4; // 2 seps + theme(2) + menu(1) + end_cap(1)
                 const max_query_cols = if (content_width > prefix_cols + icon_cols) content_width - prefix_cols - icon_cols else 0;
                 // Horizontal scroll window over the query text so the text
                 // cursor stays visible even when the query is longer than the
@@ -2029,12 +2050,24 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, query_buf[query_view_start .. query_view_start + display_query_len]);
                                 try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
                             }
-                            const icon_hl = if (theme_hovered) palette.selection_bg else "";
-                            const icon_buf = try std.fmt.bufPrint(&line_buf, " {s}{s}{s} ", .{ icon_hl, themeIcon(theme), palette.search_bg });
+                            const theme_hl = if (theme_hovered) palette.selection_bg else "";
+                            const menu_hl = if (menu_hovered) palette.selection_bg else "";
+                            const sf = palette.toolbar_sep_fg;
+                            const sb = palette.search_bg;
+                            const icon_buf = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}", .{
+                                sf,                     toolbar_sep,             sb,
+                                theme_hl,               themeIcon(theme),        sb,
+                                sf,                     toolbar_sep,             sb,
+                                menu_hl,                g_spec.theme.icons.menu, sb,
+                                palette.search_end_cap,
+                            });
                             try writeAll(stdout_fd, icon_buf);
                         }
                     }
-                    try rw.endRow();
+                    // Search bar fills the full terminal width (end cap is the last
+                    // column) — use endRowFull to skip \x1b[K which would erase ▐
+                    // from the pending-wrap cursor position in exact-width windows.
+                    try rw.endRowFull();
 
                     const is_focus_lost = !has_focus;
                     const is_help_mode = (query_len > 0 and query_buf[0] == '?');
@@ -2326,7 +2359,7 @@ pub fn main(init: std.process.Init) !void {
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         try writeAll(stdout_fd, palette.grid_bg);
                         try writeAll(stdout_fd, "\x1b[2m");
-                        try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                        try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
                         // Grid rows.
@@ -2706,7 +2739,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             try writeAll(stdout_fd, palette.grid_bg);
                             try writeAll(stdout_fd, "\x1b[2m");
-                            try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                            try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                             try rw.endRowFull();
 
                             // Switcher row — prefix-theft layout.
@@ -2942,14 +2975,30 @@ pub fn main(init: std.process.Init) !void {
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         try writeAll(stdout_fd, palette.grid_bg);
                         try writeAll(stdout_fd, "\x1b[2m");
-                        try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
+                        try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
                         // Description row.
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         const max_len = if (content_width > 1) content_width - 1 else 0;
                         const is_hovering_sw = switcher_row_hovered and (switcher_hover_idx == null or switcher_hover_idx.? < switcherCatCount());
-                        if (is_hovering_sw and !is_too_small) {
+                        if (theme_hovered and !is_too_small) {
+                            const theme_name = switch (theme) {
+                                .dark => "dark",
+                                .light => "light",
+                                .system => "system",
+                            };
+                            var desc_buf: [64]u8 = undefined;
+                            const desc = try std.fmt.bufPrint(&desc_buf, "theme: {s}", .{theme_name});
+                            const pad_len = if (content_width > desc.len + 1) content_width - desc.len - 1 else 0;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, name_line);
+                        } else if (menu_hovered and !is_too_small) {
+                            const desc = "Settings";
+                            const pad_len = if (content_width > desc.len + 1) content_width - desc.len - 1 else 0;
+                            const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len, spaces.len)] });
+                            try writeAll(stdout_fd, name_line);
+                        } else if (is_hovering_sw and !is_too_small) {
                             var opt_cat: ?spec_mod.CategorySpec = null;
                             if (switcher_hover_idx) |sh_idx| {
                                 var count: usize = 0;
@@ -3632,10 +3681,14 @@ pub fn main(init: std.process.Init) !void {
                                     else if (sp.* > step) sp.* - step else 0;
                                 }
                             } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
-                                // Theme button hover.
+                                // Theme / menu button hover.
                                 const search_row_m: i32 = search_row_idx;
+                                const cw = @as(i32, @intCast(content_width));
+                                const sw = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
                                 theme_hovered = (click_row == search_row_m and
-                                    local_col >= @as(i32, @intCast(content_width)) - 4);
+                                    local_col >= cw - sw * 2 - 4 and local_col < cw - 2);
+                                menu_hovered = (click_row == search_row_m and
+                                    local_col >= cw - 2);
 
                                 // Hover: update selection to item under cursor (no copy/action).
                                 const grid_first_row: i32 = grid_first_row_idx;
@@ -3732,8 +3785,10 @@ pub fn main(init: std.process.Init) !void {
                                     const grid_first_row: i32 = grid_first_row_idx;
                                     const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
 
+                                    const cw_click = @as(i32, @intCast(content_width));
+                                    const sw_click = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
                                     if (click_row == search_row and
-                                        local_col >= @as(i32, @intCast(content_width)) - 4)
+                                        local_col >= cw_click - sw_click * 2 - 4 and local_col < cw_click - 2)
                                     {
                                         // Theme toggle icon — cycle and persist to config.
                                         theme = switch (theme) {
@@ -3745,6 +3800,14 @@ pub fn main(init: std.process.Init) !void {
                                         if (theme == .system)
                                             system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                    } else if (click_row == search_row and local_col >= cw_click - 2) {
+                                        // Menu (hamburger) icon — toggle settings.
+                                        if (current_screen == .settings) {
+                                            current_screen = .search;
+                                        } else {
+                                            current_screen = .settings;
+                                            selected_idx = 0;
+                                        }
                                         // Settings/categories have title+blank before first item → offset +1.
                                     } else if (show_switcher and current_screen == .search and
                                         click_row == grid_first_row + @as(i32, @intCast(visible_rows)) + 1)

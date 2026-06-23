@@ -23,6 +23,8 @@ pub const Palette = struct {
     border_shade_fg: []const u8, // foreground color sequence for border shading
     warning_fg: []const u8, // warning foreground color sequence
     success_fg: []const u8, // success/action foreground color sequence
+    toolbar_sep_fg: []const u8, // fg color for toolbar separators (grid bg color as fg)
+    search_end_cap: []const u8, // half-block end cap: bg=terminal-default, fg=search_bg
 };
 
 // Palettes, the theme icon, and terminal color values now live in the
