@@ -27,14 +27,14 @@ learned wiring it up.
 | Want to change…                         | Edit                              | Key(s) |
 |-----------------------------------------|-----------------------------------|--------|
 | TUI/GUI grid size, content width        | `spec/layout.json`                | `tui`/`gui` `{cols,rows,width}` |
-| Vertical overhead, max query length     | `spec/layout.json`                | `layout_overhead`, `max_query_len` |
+| Vertical overhead, max query length, top padding | `spec/layout.json`                | `layout_overhead`, `max_query_len`, `top_padding` |
 | Exit-fade in TUI / GUI / both / neither | `spec/layout.json`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
 | Theme icons (🌙🌞🔆)                     | `spec/theme.json`                 | `icons` |
 | Grid/selection/search colors            | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints) |
 | Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
-| Search prompt, status bar, help text    | `spec/strings.json`               | see §4 |
+| Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
 | Named inline styles for templates       | `spec/styles.json`                | see §10 |
 | Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
 | Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
@@ -157,6 +157,7 @@ query starting with `??` shows the second page (`help_lines_more`, documenting t
 | `status_help_hint_wide` / `status_matches_wide` | Zig wide only |
 | `help_lines`               | both (help page 1, query `?`) |
 | `help_lines_more`          | both (help page 2, query `??`) |
+| `scrollbar_char`           | both (Scrollbar thumb character, default ▐) |
 
 `{count}` in the status templates is substituted with the live match count
 (`formatStatus`, which returns the template unchanged when there's no placeholder).

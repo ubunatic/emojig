@@ -60,6 +60,7 @@ pub const Layout = struct {
     layout_overhead: usize,
     max_query_len: usize,
     animation: Animation = .{},
+    top_padding: bool = true,
 };
 
 pub const PaletteSpec = struct {
@@ -267,6 +268,8 @@ pub const Strings = struct {
     // any color name from spec/colors.json (long like `forest`/`teal`, 3-letter
     // short like `grn`/`blu`) or a literal 0-255 palette index.
     multi_select_bg: []const u8 = "green",
+    // Scrollbar thumb character (default ▐). Must be exactly one display cell.
+    scrollbar_char: []const u8 = "▐",
     status: StatusStrings = .{},
 };
 
@@ -415,7 +418,10 @@ pub const Spec = struct {
 /// it references) lives as long as `arena` is not freed — pass a process-lifetime
 /// arena and never deinit it.
 pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
-    const layout = try std.json.parseFromSliceLeaky(Layout, arena, layout_json, parse_opts);
+    var layout = try std.json.parseFromSliceLeaky(Layout, arena, layout_json, parse_opts);
+    if (!layout.top_padding) {
+        if (layout.layout_overhead > 0) layout.layout_overhead -= 1;
+    }
     const theme = try std.json.parseFromSliceLeaky(Theme, arena, theme_json, parse_opts);
     const keys = try std.json.parseFromSliceLeaky(Keys, arena, keys_json, parse_opts);
 

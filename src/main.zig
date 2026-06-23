@@ -124,6 +124,7 @@ var global_tty_fd: std.posix.fd_t = std.posix.STDIN_FILENO;
 var global_tui_start_row: ?i32 = null;
 var global_tui_height: usize = 0;
 var global_row_off: i32 = 0;
+var global_top_padding: bool = true;
 // True while the alt screen (?1049h) is active; selects RESTORE_ALT (which
 // leaves the alt screen) over RESTORE (which must not touch ?1049 — see term.zig).
 var global_alt_screen: bool = false;
@@ -180,7 +181,7 @@ fn clearTuiRows(fd: std.posix.fd_t, height: usize, row_off: i32) void {
         const abs = std.fmt.bufPrint(buf[pos..], "\x1b[{d};1H", .{start_row}) catch "";
         pos += abs.len;
     } else {
-        const up_rows = @as(usize, @intCast(1 + row_off));
+        const up_rows = @as(usize, @intCast((if (global_top_padding) @as(i32, 1) else 0) + row_off));
         const initial_up = std.fmt.bufPrint(buf[pos..], "\x1b[{d}A\r", .{up_rows}) catch "";
         pos += initial_up.len;
     }
@@ -1196,6 +1197,9 @@ pub fn main(init: std.process.Init) !void {
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;
     global_row_off = row_off;
+    global_top_padding = g_spec.layout.top_padding;
+    const search_row_idx: i32 = (if (g_spec.layout.top_padding) @as(i32, 2) else 1) + row_off;
+    const grid_first_row_idx: i32 = (if (g_spec.layout.top_padding) @as(i32, 4) else 3) + row_off;
 
     var result_emoji: ?[]const u8 = null;
     var result_safe_buf: [64]u8 = undefined;
@@ -1733,7 +1737,7 @@ pub fn main(init: std.process.Init) !void {
             if (query_cursor > query_len) query_cursor = query_len;
             {
                 const cc = if (final_simple) @as(usize, 1) else cols;
-                const vp = if (final_simple) total_cells else rows;
+                const vp = if (final_simple) total_cells else visible_rows;
                 const trows = (top_count + cc - 1) / cc;
                 const max_top = if (trows > vp) trows - vp else 0;
                 if (grid_scroll_top > max_top) grid_scroll_top = max_top;
@@ -1806,7 +1810,7 @@ pub fn main(init: std.process.Init) !void {
                         current_total_rows = total_cells + 2; // list rows + count + prompt
                     } else {
                         if (show_top_border) current_total_rows += 1;
-                        current_total_rows += 1; // Top padding
+                        if (g_spec.layout.top_padding) current_total_rows += 1; // Top padding
                         current_total_rows += 1; // Search bar
                         current_total_rows += 1; // Spacer
                         current_total_rows += rows; // Grid rows (+ switcher if active)
@@ -1967,12 +1971,14 @@ pub fn main(init: std.process.Init) !void {
                     }
 
                     // Blank top padding row.
-                    try writeAll(stdout_fd, "\x1b[2K\r");
-                    try writeAll(stdout_fd, " ");
-                    try writeAll(stdout_fd, palette.grid_bg);
-                    try writeAll(stdout_fd, palette.grid_fg);
-                    try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                    try rw.endRow();
+                    if (g_spec.layout.top_padding) {
+                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, " ");
+                        try writeAll(stdout_fd, palette.grid_bg);
+                        try writeAll(stdout_fd, palette.grid_fg);
+                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
+                        try rw.endRow();
+                    }
 
                     // Search bar row.
                     try writeAll(stdout_fd, "\x1b[2K\r");
@@ -2122,7 +2128,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
@@ -2173,7 +2179,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
@@ -2223,7 +2229,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) "▐" else " ";
+                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
                                 var sb_buf: [16]u8 = undefined;
                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                 try writeAll(stdout_fd, sb_seq);
@@ -2465,7 +2471,7 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
                                     const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                    const sb: []const u8 = if (on_thumb) "▐" else " ";
+                                    const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
                                     var sb_buf: [16]u8 = undefined;
                                     const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                     try writeAll(stdout_fd, sb_seq);
@@ -2680,7 +2686,7 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
                                     const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                    const sb: []const u8 = if (on_thumb) "▐" else " ";
+                                    const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
                                     var sb_buf: [16]u8 = undefined;
                                     const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
                                     try writeAll(stdout_fd, sb_seq);
@@ -3284,8 +3290,8 @@ pub fn main(init: std.process.Init) !void {
                 // Reposition cursor to the search bar column.
                 if (rctx.repositionCursor()) {
                     var cursor_buf: [64]u8 = undefined;
-                    const cursor_up = if (current_total_rows >= @as(usize, @intCast(2 + row_off)))
-                        current_total_rows - @as(usize, @intCast(2 + row_off))
+                    const cursor_up = if (current_total_rows >= @as(usize, @intCast(search_row_idx)))
+                        current_total_rows - @as(usize, @intCast(search_row_idx))
                     else
                         @as(usize, 0);
 
@@ -3627,12 +3633,12 @@ pub fn main(init: std.process.Init) !void {
                                 }
                             } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
                                 // Theme button hover.
-                                const search_row_m: i32 = 2 + row_off;
+                                const search_row_m: i32 = search_row_idx;
                                 theme_hovered = (click_row == search_row_m and
                                     local_col >= @as(i32, @intCast(content_width)) - 4);
 
                                 // Hover: update selection to item under cursor (no copy/action).
-                                const grid_first_row: i32 = 4 + row_off;
+                                const grid_first_row: i32 = grid_first_row_idx;
                                 const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
                                 // Settings/categories have title+blank before first item → offset +1.
                                 const list_first_row: i32 = grid_first_row + 1;
@@ -3675,9 +3681,9 @@ pub fn main(init: std.process.Init) !void {
                                             var sb_r: usize = 0;
                                             while (sb_r < visible_rows) : (sb_r += 1) {
                                                 const abs_row = @as(usize, @intCast(tui_top)) +
-                                                    3 + @as(usize, @intCast(row_off)) + sb_r;
+                                                    @as(usize, @intCast(grid_first_row_idx - 1)) + sb_r;
                                                 const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
-                                                const sb_char: []const u8 = if (on_t) "▐" else " ";
+                                                const sb_char: []const u8 = if (on_t) g_spec.strings.scrollbar_char else " ";
                                                 var sb_buf: [32]u8 = undefined;
                                                 const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d};{d}H{s}", .{ abs_row, content_width + 1, sb_char });
                                                 try writeAll(stdout_fd, sb_seq);
@@ -3685,7 +3691,7 @@ pub fn main(init: std.process.Init) !void {
                                             // Park cursor at search-bar row so next render's
                                             // relative move (\x1b[{1+row_off}A\r) lands correctly.
                                             const search_row = @as(usize, @intCast(tui_top)) +
-                                                1 + @as(usize, @intCast(row_off));
+                                                @as(usize, @intCast(search_row_idx - 1));
                                             var park_buf: [24]u8 = undefined;
                                             const park_seq = try std.fmt.bufPrint(&park_buf, "\x1b[{d};1H", .{search_row});
                                             try writeAll(stdout_fd, park_seq);
@@ -3722,8 +3728,8 @@ pub fn main(init: std.process.Init) !void {
                                 }
                                 const now = getMonotonicMs();
                                 if (now - last_focus_gain_ms > 200) {
-                                    const search_row: i32 = 2 + row_off;
-                                    const grid_first_row: i32 = 4 + row_off;
+                                    const search_row: i32 = search_row_idx;
+                                    const grid_first_row: i32 = grid_first_row_idx;
                                     const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
 
                                     if (click_row == search_row and
