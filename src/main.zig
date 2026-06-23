@@ -2881,17 +2881,17 @@ pub fn main(init: std.process.Init) !void {
                             const sw_sel_scope_all = !std.mem.eql(u8, sw_cats.select_scope, "icon");
                             const sw_hl_scope_all = !std.mem.eql(u8, sw_cats.hl_scope, "icon");
 
-                            // Resolve bg colors (attrs-only). "none" → status_bg (no highlight).
+                            // Resolve bg colors (attrs-only). "none" → categories_bg (no highlight).
                             var sw_hl_buf: [128]u8 = undefined;
                             const sw_hl_bg: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
-                                palette.status_bg
+                                palette.categories_bg
                             else if (sw_cats.hl_pattern.len > 0)
                                 color.buildSgr(&sw_hl_buf, sw_cats.hl_pattern, &g_spec.styles)
                             else
                                 palette.selection_bg;
                             var sw_sel_buf: [128]u8 = undefined;
                             const sw_sel_bg: []const u8 = if (std.mem.eql(u8, sw_cats.select_pattern, "none"))
-                                palette.status_bg
+                                palette.categories_bg
                             else if (sw_cats.select_pattern.len > 0)
                                 color.buildSgr(&sw_sel_buf, sw_cats.select_pattern, &g_spec.styles)
                             else
@@ -2949,17 +2949,24 @@ pub fn main(init: std.process.Init) !void {
                                 }
                             };
 
-                            var status_bg_only_buf: [64]u8 = undefined;
-                            const status_bg_only: []const u8 = blk: {
-                                switch (palette_spec.status_bg) {
+                            // categories_bg_only: bg-only escape for the switcher row base color.
+                            // Reads categories_bg spec first, falls back to search_bg (same default as buildPalette).
+                            var cat_bg_only_buf: [64]u8 = undefined;
+                            const cat_bg_only: []const u8 = blk: {
+                                const cat_spec_val = palette_spec.categories_bg;
+                                const effective = switch (cat_spec_val) {
+                                    .null => palette_spec.search_bg,
+                                    else => cat_spec_val,
+                                };
+                                switch (effective) {
                                     .null => break :blk "",
                                     .integer => |i| {
                                         var val_buf: [16]u8 = undefined;
                                         const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{i}) catch "";
-                                        break :blk color.bgEscape(&status_bg_only_buf, val_str);
+                                        break :blk color.bgEscape(&cat_bg_only_buf, val_str);
                                     },
                                     .string => |s| {
-                                        break :blk color.bgEscape(&status_bg_only_buf, s);
+                                        break :blk color.bgEscape(&cat_bg_only_buf, s);
                                     },
                                     else => break :blk "",
                                 }
@@ -2967,7 +2974,7 @@ pub fn main(init: std.process.Init) !void {
 
                             var sw_hl_bg_only_buf: [64]u8 = undefined;
                             const sw_hl_bg_only: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
-                                status_bg_only
+                                cat_bg_only
                             else if (sw_cats.hl_pattern.len > 0)
                                 bgOnlyFromPattern(&sw_hl_bg_only_buf, sw_cats.hl_pattern)
                             else
@@ -3040,14 +3047,14 @@ pub fn main(init: std.process.Init) !void {
                             }
                             // all_icon must be exactly 2 display cols (spec-defined).
                             const sw_all_icon = sw_cats.all_icon;
-                            try swRenderSlot(stdout_fd, 0, sw_all_icon, sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.status_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
+                            try swRenderSlot(stdout_fd, 0, sw_all_icon, sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.categories_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
                             var sw_i: usize = 0;
                             while (sw_i < sw_n) : (sw_i += 1) {
-                                try swRenderSlot(stdout_fd, sw_i + 1, switcherCatIcon(sw_i), sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.status_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
+                                try swRenderSlot(stdout_fd, sw_i + 1, switcherCatIcon(sw_i), sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.categories_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
                             }
                             // Fill area: always write fill_prefix with fill_bg (even when it
                             // equals pad_left) so scope="all" hover color reaches the right
-                            // boundary of the last slot. Then reset to status_bg for remainder.
+                            // boundary of the last slot. Then reset to categories_bg for remainder.
                             const sw_slots_used: usize = sw_slot_w * (1 + sw_n) + sw_row_pad_left.len + sw_row_pad_right.len;
                             if (content_width > sw_slots_used) {
                                 const last_slot = sw_n;
@@ -3059,14 +3066,14 @@ pub fn main(init: std.process.Init) !void {
                                     const is_active_bracket = sw_active_slot != null and last_slot == sw_active_slot.?;
                                     if (is_after_hov) {
                                         if (is_active_bracket) {
-                                            break :blk std.fmt.bufPrint(&fill_bg_buf, "{s}{s}", .{ palette.status_bg, sw_hl_bg_only }) catch palette.status_bg;
+                                            break :blk std.fmt.bufPrint(&fill_bg_buf, "{s}{s}", .{ palette.categories_bg, sw_hl_bg_only }) catch palette.categories_bg;
                                         } else {
                                             break :blk sw_hl_bg;
                                         }
                                     } else if (is_after_act) {
                                         break :blk sw_sel_bg;
                                     } else {
-                                        break :blk palette.status_bg;
+                                        break :blk palette.categories_bg;
                                     }
                                 };
                                 // Write fill_prefix with fill_bg — this covers the "right side"
@@ -3074,11 +3081,11 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, "\x1b[0m");
                                 try writeAll(stdout_fd, fill_bg);
                                 try writeAll(stdout_fd, fill_prefix);
-                                // Remaining fill in status_bg.
+                                // Remaining fill in categories_bg.
                                 const rem = content_width - sw_slots_used - fill_prefix.len;
                                 if (rem > 0) {
                                     try writeAll(stdout_fd, "\x1b[0m");
-                                    try writeAll(stdout_fd, palette.status_bg);
+                                    try writeAll(stdout_fd, palette.categories_bg);
                                     try writeAll(stdout_fd, spaces[0..@min(rem, spaces.len)]);
                                 }
                             }

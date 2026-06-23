@@ -327,6 +327,21 @@ pub fn buildGuiArgv(
     return out[0..n];
 }
 
+/// Strip leading '#' and expand 3-char CSS shorthand to 6-digit RGB.
+/// "#abc" → "aabbcc", "#aabbcc" → "aabbcc", "" / no '#' → "".
+/// `buf` must be at least 8 bytes. Returns the bare hex slice (no '#').
+fn expandHex(raw: []const u8, buf: *[8]u8) []const u8 {
+    const hex = if (raw.len > 0 and raw[0] == '#') raw[1..] else raw;
+    if (hex.len == 3) {
+        buf[0] = hex[0]; buf[1] = hex[0];
+        buf[2] = hex[1]; buf[3] = hex[1];
+        buf[4] = hex[2]; buf[5] = hex[2];
+        return buf[0..6];
+    }
+    if (hex.len == 6 or hex.len == 8) return hex;
+    return "";
+}
+
 pub fn spawnGuiWindow(
     init: std.process.Init,
     exe_path: []const u8,
@@ -352,11 +367,16 @@ pub fn spawnGuiWindow(
 
     // GUI window colors come from spec/theme.json (foot wants bare hex, so we
     // strip the leading '#'). `system` falls back to the dark palette here.
+    // Foot requires full 6-digit RGB (rrggbb) or 8-digit ARGB — 3-char shorthand
+    // like "#ccc" must be expanded to "#cccccc" before stripping.
     const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
     const foot_bg_raw = gui_pal.terminal_bg2 orelse gui_pal.terminal_bg;
-    const foot_bg = if (foot_bg_raw) |bg| (if (bg.len > 0) bg[1..] else "") else "";
-    const foot_fg = if (gui_pal.terminal_fg) |fg| (if (fg.len > 0) fg[1..] else "") else "";
-    const foot_border = if (gui_pal.terminal_border) |border_color| (if (border_color.len > 0) border_color[1..] else "") else "";
+    var foot_bg_exp: [8]u8 = undefined;
+    var foot_fg_exp: [8]u8 = undefined;
+    var foot_bd_exp: [8]u8 = undefined;
+    const foot_bg = expandHex(foot_bg_raw orelse "", &foot_bg_exp);
+    const foot_fg = expandHex(gui_pal.terminal_fg orelse "", &foot_fg_exp);
+    const foot_border = expandHex(gui_pal.terminal_border orelse "", &foot_bd_exp);
 
     // GUI grid dimensions are resolved by the caller (config → spec) and passed
     // in so the foot window matches the picker's unified grid size exactly.

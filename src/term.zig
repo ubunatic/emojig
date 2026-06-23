@@ -16,6 +16,7 @@ pub const Palette = struct {
     selection_bg: []const u8, // selection background sequence
     search_bg: []const u8, // entire search-bar row bg+fg sequence
     status_bg: []const u8, // entire status-bar row sequence
+    categories_bg: []const u8, // category switcher row bg+fg sequence (null → search_bg)
     info_bg: []const u8, // info bar background sequence
     info_fg: []const u8, // info bar text color sequence
     border_bg: []const u8, // optional border background sequence

@@ -76,6 +76,7 @@ pub const PaletteSpec = struct {
     status_bg: std.json.Value = .null,
     status_fg: std.json.Value,
     status_shade_fg: std.json.Value,
+    categories_bg: std.json.Value = .null,
     border_bg: std.json.Value = .null,
     border_shade_fg: std.json.Value,
     app_bg: std.json.Value = .null,
@@ -578,6 +579,13 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         "";
 
+    // categories_bg: null → same as search_bg (both bars share the same accent strip by default).
+    const cat_bg_idx = try resolveColorValue(p.categories_bg, colors_spec) orelse s_bg_idx;
+    const cat_bg = if (cat_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
     const i_bg_idx = try resolveColorValue(p.info_bg, colors_spec);
     const i_bg = if (i_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
@@ -692,6 +700,7 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .selection_bg = sel_bg,
         .search_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ s_bg, search_fg_idx, dim_suffix }),
         .status_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ st_bg, status_fg_idx, dim_suffix }),
+        .categories_bg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ cat_bg, status_fg_idx, dim_suffix }),
         .info_bg = i_bg,
         .info_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ i_bg, info_fg_idx, dim_suffix }),
         .border_bg = b_bg,

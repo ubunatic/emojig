@@ -63,7 +63,7 @@
   "theme_settings_sep": "┃",
   "search_left_cap": "▌",
   "search_right_cap": "▐",
-  "hline_char": "┈",
+  "hline_char": " ",
   "search_placeholder": "search…",
   "search_prompt": " 🔍 ",
   "status": {
