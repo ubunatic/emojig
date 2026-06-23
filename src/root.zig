@@ -85,25 +85,37 @@ fn emojiMatchesCategory(entry_search: []const u8, cat: CategorySpec) bool {
     return false;
 }
 
-fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategorySpec {
+pub const CategoryMatch = struct {
+    spec: CategorySpec,
+    is_synonym: bool,
+};
+
+fn findCategorySpecMatch(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategoryMatch {
     const cats = cats_spec orelse return null;
     if (term.len == 0) return null;
     for (cats.categories) |cat| {
         if (std.mem.eql(u8, cat.name, term) or std.mem.eql(u8, cat.short, term)) {
-            return cat;
+            return CategoryMatch{ .spec = cat, .is_synonym = false };
         }
     }
     for (cats.categories) |cat| {
         if (std.mem.startsWith(u8, cat.name, term) or std.mem.startsWith(u8, cat.short, term)) {
-            return cat;
+            return CategoryMatch{ .spec = cat, .is_synonym = false };
         }
     }
     for (cats.categories) |cat| {
         for (cat.synonyms) |syn| {
             if (std.mem.startsWith(u8, syn, term)) {
-                return cat;
+                return CategoryMatch{ .spec = cat, .is_synonym = true };
             }
         }
+    }
+    return null;
+}
+
+fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategorySpec {
+    if (findCategorySpecMatch(cats_spec, term)) |m| {
+        return m.spec;
     }
     return null;
 }
@@ -205,12 +217,16 @@ pub fn searchOptions(
         // Auto-detect: if the first query word matches a known category name or
         // synonym, treat it as an implicit category filter (no prefix needed).
         // Only fires when categories_spec is loaded (null → no-op, safe in tests).
+        // If it is a synonym (not the actual category name/short), we do not strip
+        // the word from the search query so that ranking matches the user's term.
         if (filter_category == null) {
             const sp = std.mem.indexOfScalar(u8, actual_query, ' ');
             const first_word = if (sp) |s| actual_query[0..s] else actual_query;
-            if (findCategorySpec(categories_spec, first_word) != null) {
+            if (findCategorySpecMatch(categories_spec, first_word)) |m| {
                 filter_category = first_word;
-                actual_query = if (sp) |s| actual_query[s + 1 ..] else "";
+                if (!m.is_synonym) {
+                    actual_query = if (sp) |s| actual_query[s + 1 ..] else "";
+                }
             }
         }
     }

@@ -590,6 +590,34 @@ test "ranking: category keyword injection makes categories searchable" {
     try std.testing.expect(inTop("activity basketball", "🏀", 24));
 }
 
+test "ranking: category synonym search does not get confused" {
+    const categories_json = @embedFile("spec_categories");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const categories = try std.json.parseFromSlice(root.CategoriesSpec, arena.allocator(), categories_json, .{ .ignore_unknown_fields = true });
+    defer categories.deinit();
+
+    var top_matches: [512]Match = undefined;
+    var top_count: usize = 0;
+
+    // Search "car" with categories_spec loaded:
+    _ = root.searchOptions("car", &top_matches, &top_count, 24, &categories.value, &[_][]const u8{}, null);
+
+    // We expect a car emoji like "🚗" to be ranked very high (e.g. within top 3),
+    // and definitely not preceded by a page of non-car travel items.
+    var car_rank: ?usize = null;
+    for (top_matches[0..top_count], 0..) |m, i| {
+        if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, "🚗")) {
+            car_rank = i;
+            break;
+        }
+    }
+
+    try std.testing.expect(car_rank != null);
+    try std.testing.expect(car_rank.? < 3);
+}
+
 test "discoverability: sparkle, server, terminal, emojig, and speed adjectives" {
     try std.testing.expect(searchContains("sparkl", "🍾"));
     try std.testing.expect(searchContains("server", "🖥️"));
