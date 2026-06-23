@@ -8,6 +8,7 @@ This document details the architectural decisions, coding standards, and safety 
 * Make sure --tui scrollback logic is always super safe!
 * Make sure --gui/--tui mouse hover logic is always safe!
 * Make sure --tui close behavour is safe!
+* **Before touching search, emoji data, or ranking:** read [`docs/SearchEngine.md`](docs/SearchEngine.md) — documents non-obvious pitfalls (word-order trap, `isBoxArt` codepoint range, synonym-vs-tag tradeoffs, greedy-matcher behaviour) that are easy to re-derive incorrectly from scratch.
 
 ## Assumptions for Agentic Work
 * Assume all tools you need are installed (ffmpeg, go, zig, terminal emulators).
@@ -123,6 +124,8 @@ To prevent leaving the user's terminal session in a broken state:
 ---
 
 ## 4. Fuzzy Search Engine
+
+> **Read [`docs/SearchEngine.md`](docs/SearchEngine.md) before editing search logic, `spec/boxart.json`, `data/emoji.json`, or `spec/synonyms.json`.** It documents the greedy word-order trap, `isBoxArt` codepoint range (U+2500–U+259F only — keyboard symbols are exempt), synonym-vs-direct-tag tradeoffs, and ranking test guidelines.
 
 Implemented at query time in `src/root.zig` with **zero heap allocations**:
 * **Subsequence Scoring** (`matchTermDirect`): Matches a search term as a subsequence of the target with bonuses for word-start positions and consecutive character runs. A late-start penalty discourages sparse matches.
