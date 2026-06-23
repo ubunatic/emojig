@@ -152,6 +152,28 @@ via:
 - `scrollbar_style=` in config
 - Settings screen toggle
 
+### GUI font size
+
+The floating window (`--gui`) uses `monospace` at size 16 by default. Override:
+
+- `EMOJIG_GUI_FONT_SIZE=<n>` env var
+- `font_size=<n>` in `~/.config/emojig/config`
+
+Larger sizes give bigger icons; the window cell count stays the same so the
+picker layout is unaffected.
+
+### Category switcher bar
+
+A horizontal row of category icons appears below the emoji grid in GUI mode
+(and when `EMOJIG_SWITCHER=1` / `--switcher`). Click or press <kbd>Tab</kbd>
+to filter by category; click the same category again (or press
+<kbd>Tab</kbd> repeatedly) to cycle back to All.
+
+The switcher layout — icons, bracket chars, highlight colors and outer margins —
+is fully declarative in `spec/categories.json`. See
+[`docs/SpecDrivenConfig.md §11`](SpecDrivenConfig.md#11-category-switcher-bar-speccategoriesjson)
+for the full field reference.
+
 ### Optional border
 
 Set `EMOJIG_BORDER=1` or `--border` to draw colored border rows above and below

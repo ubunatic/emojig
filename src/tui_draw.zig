@@ -160,12 +160,43 @@ pub fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {
 }
 
 /// Expand a status template with variable substitution and style spans.
+/// Substitute {icon} within a raw content slice into out_buf[out..].
+/// Returns the new `out` offset.
+fn substIcon(out_buf: []u8, out: usize, content: []const u8, icon: []const u8) usize {
+    var o = out;
+    var k: usize = 0;
+    while (k < content.len and o < out_buf.len) {
+        if (std.mem.startsWith(u8, content[k..], "{icon}")) {
+            const n = @min(icon.len, out_buf.len - o);
+            @memcpy(out_buf[o..][0..n], icon[0..n]);
+            o += n;
+            k += "{icon}".len;
+        } else {
+            out_buf[o] = content[k];
+            o += 1;
+            k += 1;
+        }
+    }
+    return o;
+}
+
 pub fn expandTemplate(
     buf: []u8,
     tmpl: []const u8,
     styles: *const spec_mod.StylesSpec,
     count: usize,
     search_bg: []const u8,
+) []const u8 {
+    return expandTemplateIcon(buf, tmpl, styles, count, search_bg, "");
+}
+
+pub fn expandTemplateIcon(
+    buf: []u8,
+    tmpl: []const u8,
+    styles: *const spec_mod.StylesSpec,
+    count: usize,
+    search_bg: []const u8,
+    icon: []const u8,
 ) []const u8 {
     var out: usize = 0;
     var i: usize = 0;
@@ -184,6 +215,12 @@ pub fn expandTemplate(
                 @memcpy(buf[out..][0..n], search_bg[0..n]);
                 out += n;
                 i += "{search_bg}".len;
+                continue;
+            } else if (std.mem.startsWith(u8, tmpl[i..], "{icon}")) {
+                const n = @min(icon.len, buf.len - out);
+                @memcpy(buf[out..][0..n], icon[0..n]);
+                out += n;
+                i += "{icon}".len;
                 continue;
             }
         }
@@ -229,9 +266,8 @@ pub fn expandTemplate(
                     var n: usize = @min(sgr.len, buf.len - out);
                     @memcpy(buf[out..][0..n], sgr[0..n]);
                     out += n;
-                    n = @min(content.len, buf.len - out);
-                    @memcpy(buf[out..][0..n], content[0..n]);
-                    out += n;
+                    // Expand {icon} within the styled content.
+                    out = substIcon(buf, out, content, icon);
                     const reset = "\x1b[0m";
                     n = @min(reset.len, buf.len - out);
                     @memcpy(buf[out..][0..n], reset[0..n]);

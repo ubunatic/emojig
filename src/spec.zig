@@ -197,7 +197,7 @@ pub const StatusDefault = struct {
     on_view_wide: []const u8 = " ?:help e:img t:txt  ↕↔|↵|Esc",
     on_search: []const u8 = " {count}  ↕↔|↵|Esc",
     on_search_wide: []const u8 = " {count} e:img t:txt  ↕↔|↵|Esc",
-    on_grid_wide: []const u8 = " {count}  ␣:multi  ↕↔|↵|Esc",
+    on_grid_wide: []const u8 = " {count}  Tab:cat  ␣:multi  ↕↔|↵|Esc",
 };
 
 pub const StatusMultiSelect = struct {

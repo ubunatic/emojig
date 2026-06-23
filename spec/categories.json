@@ -1,5 +1,17 @@
 {
-  "description": "Category synonyms and keywords for c: filtering. Names/synonyms match against the emoji search string so each category's packer-injected keyword must appear here too. switcher:true categories appear in the horizontal category switcher bar.",
+  "description": "Switcher bar layout. row_pad_left/row_pad_right: outer margins of the whole row (written in status_bg). pad_left: prefix for every normal slot (1 display col, slot width = pad_left.len + 2). select_left/select_right: replace pad_left of the active slot and the slot after it (stealing its space). select_scope: 'all' = hl bg covers left+icon+right; 'icon' = icon only. hl_left/hl_right/hl_scope: same for hover. select_pattern/hl_pattern: $fmtvars attrs for hl bg; empty = palette.selection_bg; 'none' = status_bg.",
+  "row_pad_left": " ",
+  "row_pad_right": "",
+  "all_icon": "🗃️",
+  "pad_left": " ",
+  "select_left": "[",
+  "select_right": "]",
+  "select_scope": "icon",
+  "hl_left": "",
+  "hl_right": "",
+  "hl_scope": "all",
+  "hl_pattern": "",
+  "select_pattern": "none",
   "categories": [
     {
       "name": "smileys",

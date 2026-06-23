@@ -340,6 +340,7 @@ pub fn spawnGuiWindow(
     rows_val: usize,
     spec: *const spec_mod.Spec,
     show_switcher: bool,
+    font_size: usize,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -412,9 +413,8 @@ pub fn spawnGuiWindow(
     var env_timeout: [64]u8 = undefined;
     const env_timeout_arg = try std.fmt.bufPrint(&env_timeout, "EMOJIG_PICKER_TIMEOUT={s}", .{timeout_val});
 
-    const font_size_val = init.environ_map.get("EMOJIG_GUI_FONT_SIZE") orelse "14";
     var font_buf: [64]u8 = undefined;
-    const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={s}", .{font_size_val});
+    const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={d}", .{font_size});
 
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});

@@ -4,6 +4,7 @@ This document details the architectural decisions, coding standards, and safety 
 
 ## Quickstart
 * See `make help` for common build tasks (and use/extend these targets as needed)
+* Always run `make install` after making changes to compile and update the installed binary, shell integrations, and desktop launcher.
 * Make sure --tui scrollback logic is always super safe!
 * Make sure --gui/--tui mouse hover logic is always safe!
 * Make sure --tui close behavour is safe!

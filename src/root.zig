@@ -32,6 +32,36 @@ pub const CategorySpec = struct {
 };
 
 pub const CategoriesSpec = struct {
+    /// Written once at the very start of the switcher row, in status_bg.
+    row_pad_left: []const u8 = "",
+    /// Written once at the very end of the switcher row (after fill), in status_bg.
+    row_pad_right: []const u8 = "",
+    /// Icon for the "All" slot (no category filter). Must be exactly 2 display cols.
+    /// Use a 1-wide char + space (e.g. "✱ ", "* ") or a 2-wide emoji.
+    all_icon: []const u8 = "\u{2731} ",
+    /// Prefix for every normal (unselected, unhovered) slot. Must be 1 display col.
+    pad_left: []const u8 = " ",
+    /// Prefix for the selected (active) slot — replaces pad_left. Same width.
+    select_left: []const u8 = "",
+    /// Prefix for the slot immediately AFTER the selected one — replaces that
+    /// slot's pad_left, "stealing" one col so the total row width stays constant.
+    select_right: []const u8 = "",
+    /// How much of the selected slot the bg color covers.
+    /// "all"  → left + icon + right all get sel_bg (right bracket also highlighted).
+    /// "icon" → only the 2-col icon gets sel_bg; left/right stay in status_bg.
+    select_scope: []const u8 = "all",
+    /// Prefix for the hovered (mouse-over) slot — replaces pad_left.
+    hl_left: []const u8 = "",
+    /// Prefix for the slot immediately after the hovered one — replaces pad_left.
+    hl_right: []const u8 = "",
+    /// Same scope control for hover. "all" or "icon".
+    hl_scope: []const u8 = "all",
+    /// $fmtvars attrs string applied as bg color for the hovered slot.
+    /// Empty → palette.selection_bg.
+    hl_pattern: []const u8 = "",
+    /// $fmtvars attrs string applied as bg color for the selected slot.
+    /// Empty → palette.selection_bg. "none" → status_bg (no highlight).
+    select_pattern: []const u8 = "",
     categories: []const CategorySpec,
 };
 

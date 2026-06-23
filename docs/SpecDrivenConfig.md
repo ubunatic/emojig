@@ -35,8 +35,11 @@ learned wiring it up.
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
 | Search prompt, status bar, help text    | `spec/strings.json`               | see §4 |
+| Named inline styles for templates       | `spec/styles.json`                | see §10 |
 | Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
 | Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
+| Category switcher bar layout            | `spec/categories.json`            | see §11 |
+| Category synonyms / search keywords     | `spec/categories.json`            | `categories[].synonyms` |
 
 The compile-time file `src/defaults.zig` is **not** a layout copy anymore — it only
 holds spec-independent upper bounds (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`,
@@ -294,19 +297,154 @@ and in unit tests that never load it (it just returns `null` → numeric fallbac
 > never per emoji cell). The Go `mojigo` port ignores `colors.json` (unknown spec
 > file); the name system is a Zig-app feature.
 
-## 10. Files touched
+## 10. Named styles and the `$fmtvars` template system (`spec/styles.json`)
+
+`spec/styles.json` defines **named SGR style aliases** used by any string field that
+accepts `$fmtvars` syntax (status-bar templates, switcher patterns, etc.):
+
+```json
+{
+  "styles": {
+    "primary": "bold,fg=white,bg=24",
+    "dim":     "fg=240"
+  }
+}
+```
+
+### `$fmtvars` syntax (in string fields)
+
+| Pattern | Meaning |
+|---------|---------|
+| `$name{text}` | apply named style from `styles.json` around `text`, then reset |
+| `$[attrs]{text}` | apply inline attrs (see below) around `text`, then reset |
+| `{count}` | substituted with the live match count (status templates only) |
+| `{search_bg}` | substituted with the current search-bar SGR bg escape |
+| `{icon}` | substituted with the slot icon (switcher `hl_pattern`/`select_pattern`) |
+
+After the styled span the renderer emits `\x1b[0m` + the ambient background
+(`search_bg` or `status_bg`) so subsequent text is unaffected.
+
+### Attrs string format
+
+Attrs are comma-separated tokens resolved by `color.buildSgr()`:
+
+| Token | SGR effect |
+|-------|------------|
+| `bold` | SGR 1 |
+| `dim` / `faint` | SGR 2 |
+| `italic` | SGR 3 |
+| `underline` | SGR 4 |
+| `reverse` | SGR 7 |
+| `fg=<color>` | foreground — color name, short, or 0-255 index |
+| `bg=<color>` | background — same |
+
+Color names resolve via `spec/colors.json` (§9): `fg=white`, `fg=24`, `fg=grn`,
+`fg=orange` all work.
+
+### Special value `"none"` (switcher patterns only)
+
+In `spec/categories.json` `select_pattern`/`hl_pattern`, the value `"none"` means
+*use `status_bg` — no highlight at all*. Useful when visual selection is conveyed
+by bracket chars (`select_left`/`select_right`) rather than a bg color change.
+
+---
+
+## 11. Category switcher bar (`spec/categories.json`)
+
+The switcher is a single row rendered below the emoji grid (visible in `--gui` mode
+by default; toggle with `--switcher` / `EMOJIG_SWITCHER`). Its layout and appearance
+are fully declarative.
+
+### Slot geometry
+
+Every slot is: **`pad_left` (1 col) + icon (2 cols) = `sw_slot_w` cols**.
+
+- **Slot 0**: "All" (no category filter), icon from `all_icon`
+- **Slots 1..n**: the categories where `"switcher": true`
+
+Total row width = `row_pad_left + n_slots × sw_slot_w + fill + row_pad_right`.
+This must stay ≤ `content_width` (`cols × 4 + 1`). With the default 8-col grid,
+`content_width = 33`. Default `pad_left = " "` → `sw_slot_w = 3` → 10 slots × 3 = 30 ≤ 33.
+
+### Prefix-theft — adding brackets without changing row width
+
+`select_left` / `select_right` (and `hl_left` / `hl_right` for hover) replace
+`pad_left` for the **active slot** and the **slot immediately after** it. Because
+the "stolen" right bracket occupies the neighbor's `pad_left` column, total width is
+unchanged — the same trick as `cursor_left` / `cursor_right` in the emoji grid.
+
+**Width constraint**: `select_left.len == select_right.len == pad_left.len` (all
+exactly 1 display col). E.g. `pad_left=" "`, `select_left="["`, `select_right="]"`.
+
+### Highlight scope
+
+| `select_scope` / `hl_scope` | What gets the bg color |
+|-----------------------------|------------------------|
+| `"all"` (default) | `left + icon + right` — the right bracket (in the next slot) also gets the highlight bg |
+| `"icon"` | The 2-col icon only; left/right stay in `status_bg` |
+
+When a slot is **both** active and hovered, hover wins for the bg color
+(brackets already communicate active state visually).
+
+### Complete field reference
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `row_pad_left` | `""` | Text written before the first slot in `status_bg` (outer left margin) |
+| `row_pad_right` | `""` | Text written after the fill in `status_bg` (outer right margin) |
+| `all_icon` | `"✱ "` | Icon for the All slot — must be **exactly 2 display cols** (1-wide char + space, or a 2-wide emoji) |
+| `pad_left` | `" "` | Normal slot prefix — 1 display col |
+| `select_left` | `""` | Replaces `pad_left` on the active slot |
+| `select_right` | `""` | Replaces `pad_left` on the slot after the active one |
+| `select_scope` | `"all"` | How far the active bg color extends: `"all"` or `"icon"` |
+| `hl_left` | `""` | Replaces `pad_left` on the hovered slot |
+| `hl_right` | `""` | Replaces `pad_left` on the slot after the hovered one |
+| `hl_scope` | `"all"` | Same as `select_scope` but for hover |
+| `hl_pattern` | `""` | $fmtvars attrs for hovered-slot bg; `""` = `palette.selection_bg`; `"none"` = `status_bg` |
+| `select_pattern` | `""` | $fmtvars attrs for active-slot bg; same sentinel values |
+| `categories` | — | Array of `{name, short, icon, switcher, synonyms}` entries |
+
+### Example — bracket selection, color hover
+
+```json
+"pad_left":       " ",
+"select_left":    "[",
+"select_right":   "]",
+"select_scope":   "icon",
+"select_pattern": "none",
+"hl_scope":       "all",
+"hl_pattern":     ""
+```
+
+Result: active slot shows `[icon]` in `status_bg` (brackets only, no color change);
+hovered slot highlights the whole bracket group in `palette.selection_bg`.
+
+---
+
+## 12. Files touched
 
 ```
-build.zig            anonymous imports for the spec files (incl. spec_colors)
-src/spec.zig         embed + parse + palette/binding builders; Animation struct; constructs dark_palette_dim and light_palette_dim; ColorsSpec + indexOf()
-src/defaults.zig     reduced to comptime MAX_* bounds
-src/term.zig         palettes/icon/colors removed; Palette fields warning_fg and success_fg
-src/main.zig         g_spec load; layout/theme/strings/keys consumed; passes !has_focus and gui_spawned to effectivePalette; renders warnings with palette.info_fg; g_colors + colorNameToIndex/appendIndexedColor color-name resolution
-scripts/gen_colors/  generates spec/colors.json (make gen-colors); see §9
-spec/colors.json     generated full xterm-256 palette with name/short/hex/desc/alt
-src/root.zig         updated test Strings struct to mirror focus fields
-internal/spec/spec.go updated Go structs to mirror new theme and strings fields
-spec/layout.json     added animation.{exit_preview_tui,exit_preview_gui}
-spec/theme.json      added terminal_border, warning_fg, success_fg
-spec/strings.json    added status_*_wide, focus_lost_startup_lines, focus_lost_runtime_lines; help_lines_more (page 2, query "??") later replaced the width-based help_lines_wide
+build.zig               anonymous imports for all spec files (incl. spec_colors, spec_categories, spec_styles)
+src/spec.zig            embed + parse all specs; palette/binding builders; Animation struct;
+                        dark_palette_dim/light_palette_dim; ColorsSpec.indexOf(); CategoriesSpec re-export
+src/root.zig            CategoriesSpec + CategorySpec structs (source of truth)
+src/color.zig           buildSgr(buf, attrs, styles): resolves $fmtvars attrs → SGR escape
+src/tui_draw.zig        expandTemplate / expandTemplateIcon: $fmtvars substitution including {icon}
+src/main.zig            switcher bar renderer (swRenderSlot, prefix-theft, scope logic);
+                        g_spec load; g_colors + colorNameToIndex/appendIndexedColor;
+                        switcher_cat_idx, switcher_hover_idx, switcher_row_hovered state;
+                        GUI font size: gui_font_size from EMOJIG_GUI_FONT_SIZE env / cfg.font_size
+src/config.zig          font_size: ?usize field; parsed from config key font_size=
+src/host.zig            spawnGuiWindow takes font_size: usize; --override=font=monospace:size={d};
+                        --override=csd.preferred=none; --override=pad=0x4
+src/defaults.zig        comptime MAX_* bounds only
+src/term.zig            Palette fields warning_fg, success_fg; status_bg
+scripts/gen_colors/     generates spec/colors.json (make gen-colors); see §9
+spec/colors.json        generated full xterm-256 palette with name/short/hex/desc/alt
+spec/categories.json    category switcher bar layout + category synonyms; see §11
+spec/styles.json        named SGR style aliases for $fmtvars templates; see §10
+spec/layout.json        animation.{exit_preview_tui,exit_preview_gui}
+spec/theme.json         terminal_border, warning_fg, success_fg
+spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint)
+internal/spec/spec.go   Go structs mirror theme and strings fields
 ```

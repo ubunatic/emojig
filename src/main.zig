@@ -1113,6 +1113,12 @@ pub fn main(init: std.process.Init) !void {
             };
             break :blk @max(defaults.MIN_ROWS, @min(raw, defaults.MAX_ROWS));
         };
+        const gui_font_size: usize = blk: {
+            if (init.environ_map.get("EMOJIG_GUI_FONT_SIZE")) |v| {
+                if (std.fmt.parseInt(usize, v, 10)) |n| break :blk n else |_| {}
+            }
+            break :blk cfg.font_size orelse 16;
+        };
 
         host.spawnGuiWindow(
             init,
@@ -1127,6 +1133,7 @@ pub fn main(init: std.process.Init) !void {
             gui_rows,
             &g_spec,
             final_show_switcher_pref orelse true,
+            gui_font_size,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
@@ -1157,6 +1164,8 @@ pub fn main(init: std.process.Init) !void {
     const show_switcher: bool = final_show_switcher_pref orelse (init.environ_map.get("EMOJIG_GUI_SPAWNED") != null);
     // Switcher cat index: null = all emojis; 0..N-1 = specific switcher category.
     var switcher_cat_idx: ?usize = null;
+    var switcher_hover_idx: ?usize = null; // null = All slot hovered, none = not on switcher row
+    var switcher_row_hovered = false;
 
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;
@@ -2538,29 +2547,231 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, hlines[0..@min(current_w * 3, hlines.len)]);
                             try rw.endRowFull();
 
-                            // Switcher row: ✱ All + one slot per category.
-                            try writeAll(stdout_fd, "\x1b[2K\r");
-                            try writeAll(stdout_fd, " ");
-                            try writeAll(stdout_fd, palette.status_bg);
-                            // "All" slot (✱ = U+2731, single-width + space).
-                            if (switcher_cat_idx == null) {
-                                try writeAll(stdout_fd, palette.selection_bg);
-                            }
-                            try writeAll(stdout_fd, "\u{2731} ");
-                            if (switcher_cat_idx == null) try writeAll(stdout_fd, palette.status_bg);
-                            // One slot per switcher category.
+                            // Switcher row — prefix-theft layout.
+                            // Every slot: prefix(1 col) + icon(2 cols) = sw_slot_w cols.
+                            // select_left/select_right replace pad_left of active slot and the
+                            // slot after it ("stealing" one col → total row width stays constant).
+                            //
+                            // select_scope / hl_scope control what the bg color covers:
+                            //   "all"  → left + icon + right all get the highlight color.
+                            //            right bracket is the stolen prefix of the next slot,
+                            //            so that slot's bg is also set to sel/hl color.
+                            //   "icon" → only the 2-col icon gets highlight; left/right stay
+                            //            in status_bg (brackets visible, no bg bleed).
+                            const sw_cats = g_spec.categories;
+                            const sw_pad_left = sw_cats.pad_left;
+                            const sw_slot_w = sw_pad_left.len + 2;
+                            const sw_row_pad_left = sw_cats.row_pad_left;
+                            const sw_row_pad_right = sw_cats.row_pad_right;
+                            const sw_sel_scope_all = !std.mem.eql(u8, sw_cats.select_scope, "icon");
+                            const sw_hl_scope_all = !std.mem.eql(u8, sw_cats.hl_scope, "icon");
+
+                            // Resolve bg colors (attrs-only). "none" → status_bg (no highlight).
+                            var sw_hl_buf: [128]u8 = undefined;
+                            const sw_hl_bg: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
+                                palette.status_bg
+                            else if (sw_cats.hl_pattern.len > 0)
+                                color.buildSgr(&sw_hl_buf, sw_cats.hl_pattern, &g_spec.styles)
+                            else
+                                palette.selection_bg;
+                            var sw_sel_buf: [128]u8 = undefined;
+                            const sw_sel_bg: []const u8 = if (std.mem.eql(u8, sw_cats.select_pattern, "none"))
+                                palette.status_bg
+                            else if (sw_cats.select_pattern.len > 0)
+                                color.buildSgr(&sw_sel_buf, sw_cats.select_pattern, &g_spec.styles)
+                            else
+                                palette.selection_bg;
+
                             const sw_n = switcherCatCount();
+                            // slot index: 0 = All, 1..sw_n = categories.
+                            const sw_active_slot: ?usize = if (switcher_cat_idx == null) 0 else switcher_cat_idx.? + 1;
+                            const sw_hover_slot: ?usize = if (!switcher_row_hovered) null else if (switcher_hover_idx == null) 0 else switcher_hover_idx.? + 1;
+
+                            // Return the prefix char(s) for a given slot index.
+                            const swPrefix = struct {
+                                fn call(slot: usize, active: ?usize, hover: ?usize, cats: spec_mod.CategoriesSpec) []const u8 {
+                                    if (active != null and slot == active.?) return if (cats.select_left.len > 0) cats.select_left else cats.pad_left;
+                                    if (active != null and slot > 0 and slot == active.? + 1) return if (cats.select_right.len > 0) cats.select_right else cats.pad_left;
+                                    if (hover != null and slot == hover.?) return if (cats.hl_left.len > 0) cats.hl_left else cats.pad_left;
+                                    if (hover != null and slot > 0 and slot == hover.? + 1) return if (cats.hl_right.len > 0) cats.hl_right else cats.pad_left;
+                                    return cats.pad_left;
+                                }
+                            }.call;
+
+                            const eff_theme = if (theme == .system) system_theme else theme;
+                            const palette_spec = if (eff_theme == .light) g_spec.theme.themes.light else g_spec.theme.themes.dark;
+
+                            const bgOnlyFromPattern = struct {
+                                fn call(buf: []u8, pattern: []const u8) []const u8 {
+                                    var it = std.mem.splitScalar(u8, pattern, ',');
+                                    while (it.next()) |p_raw| {
+                                        const attr = std.mem.trim(u8, p_raw, " \t");
+                                        if (std.mem.indexOfScalar(u8, attr, '=')) |eq| {
+                                            const key = attr[0..eq];
+                                            const val = attr[eq + 1 ..];
+                                            if (std.mem.eql(u8, key, "bg")) {
+                                                return color.bgEscape(buf, val);
+                                            }
+                                        }
+                                    }
+                                    return "";
+                                }
+                            }.call;
+
+                            var sel_bg_only_buf: [64]u8 = undefined;
+                            const sw_sel_bg_only: []const u8 = blk: {
+                                switch (palette_spec.selection_bg) {
+                                    .null => break :blk "",
+                                    .integer => |i| {
+                                        var val_buf: [16]u8 = undefined;
+                                        const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{i}) catch "";
+                                        break :blk color.bgEscape(&sel_bg_only_buf, val_str);
+                                    },
+                                    .string => |s| {
+                                        break :blk color.bgEscape(&sel_bg_only_buf, s);
+                                    },
+                                    else => break :blk "",
+                                }
+                            };
+
+                            var status_bg_only_buf: [64]u8 = undefined;
+                            const status_bg_only: []const u8 = blk: {
+                                switch (palette_spec.status_bg) {
+                                    .null => break :blk "",
+                                    .integer => |i| {
+                                        var val_buf: [16]u8 = undefined;
+                                        const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{i}) catch "";
+                                        break :blk color.bgEscape(&status_bg_only_buf, val_str);
+                                    },
+                                    .string => |s| {
+                                        break :blk color.bgEscape(&status_bg_only_buf, s);
+                                    },
+                                    else => break :blk "",
+                                }
+                            };
+
+                            var sw_hl_bg_only_buf: [64]u8 = undefined;
+                            const sw_hl_bg_only: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
+                                status_bg_only
+                            else if (sw_cats.hl_pattern.len > 0)
+                                bgOnlyFromPattern(&sw_hl_bg_only_buf, sw_cats.hl_pattern)
+                            else
+                                sw_sel_bg_only;
+
+                            // Render one slot. In "all" scope, the slot-after-active also gets
+                            // sel_bg for its prefix (the stolen right bracket).
+                            const swRenderSlot = struct {
+                                fn call(
+                                    fd: i32,
+                                    slot: usize,
+                                    icon: []const u8,
+                                    active: ?usize,
+                                    hover: ?usize,
+                                    sel_bg: []const u8,
+                                    hl_bg: []const u8,
+                                    hl_bg_only: []const u8,
+                                    status_bg: []const u8,
+                                    cats: spec_mod.CategoriesSpec,
+                                    sel_scope_all: bool,
+                                    hl_scope_all: bool,
+                                ) !void {
+                                    const is_active = active != null and slot == active.?;
+                                    const is_hover = hover != null and slot == hover.?;
+                                    const is_after_active = active != null and slot > 0 and slot == active.? + 1;
+                                    const is_after_hover = hover != null and slot > 0 and slot == hover.? + 1;
+
+                                    const prefix = swPrefix(slot, active, hover, cats);
+                                    const is_active_bracket = is_active or is_after_active;
+
+                                    // Hover always wins over active for bg color — the brackets
+                                    // already indicate active state visually.
+                                    var prefix_bg_buf: [128]u8 = undefined;
+                                    const prefix_bg: []const u8 = blk: {
+                                        if (hl_scope_all and (is_hover or is_after_hover)) {
+                                            if (is_active_bracket) {
+                                                break :blk std.fmt.bufPrint(&prefix_bg_buf, "{s}{s}", .{ status_bg, hl_bg_only }) catch status_bg;
+                                            } else {
+                                                break :blk hl_bg;
+                                            }
+                                        } else if (sel_scope_all and (is_active or is_after_active)) {
+                                            break :blk sel_bg;
+                                        } else {
+                                            break :blk status_bg;
+                                        }
+                                    };
+                                    const icon_bg: []const u8 = blk: {
+                                        if (is_hover) break :blk hl_bg;
+                                        if (is_active) break :blk sel_bg;
+                                        break :blk status_bg;
+                                    };
+
+                                    try term_lib.writeAll(fd, "\x1b[0m");
+                                    try term_lib.writeAll(fd, prefix_bg);
+                                    try term_lib.writeAll(fd, prefix);
+                                    if (!std.mem.eql(u8, icon_bg, prefix_bg)) {
+                                        try term_lib.writeAll(fd, "\x1b[0m");
+                                        try term_lib.writeAll(fd, icon_bg);
+                                    }
+                                    if (icon.len > 0) try term_lib.writeAll(fd, icon);
+                                }
+                            }.call;
+
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            // row_pad_left: outer left margin of the entire switcher row.
+                            if (sw_row_pad_left.len > 0) {
+                                try writeAll(stdout_fd, "\x1b[0m");
+                                try writeAll(stdout_fd, palette.status_bg);
+                                try writeAll(stdout_fd, sw_row_pad_left);
+                            }
+                            // all_icon must be exactly 2 display cols (spec-defined).
+                            const sw_all_icon = sw_cats.all_icon;
+                            try swRenderSlot(stdout_fd, 0, sw_all_icon, sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.status_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
                             var sw_i: usize = 0;
                             while (sw_i < sw_n) : (sw_i += 1) {
-                                if (switcher_cat_idx != null and switcher_cat_idx.? == sw_i) {
-                                    try writeAll(stdout_fd, palette.selection_bg);
-                                }
-                                const icon = switcherCatIcon(sw_i);
-                                if (icon.len > 0) try writeAll(stdout_fd, icon);
-                                if (switcher_cat_idx != null and switcher_cat_idx.? == sw_i) {
+                                try swRenderSlot(stdout_fd, sw_i + 1, switcherCatIcon(sw_i), sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.status_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
+                            }
+                            // Fill area: always write fill_prefix with fill_bg (even when it
+                            // equals pad_left) so scope="all" hover color reaches the right
+                            // boundary of the last slot. Then reset to status_bg for remainder.
+                            const sw_slots_used: usize = sw_slot_w * (1 + sw_n) + sw_row_pad_left.len + sw_row_pad_right.len;
+                            if (content_width > sw_slots_used) {
+                                const last_slot = sw_n;
+                                const fill_prefix = swPrefix(last_slot + 1, sw_active_slot, sw_hover_slot, sw_cats);
+                                const is_after_hov = sw_hover_slot != null and last_slot == sw_hover_slot.? and sw_hl_scope_all;
+                                const is_after_act = sw_active_slot != null and last_slot == sw_active_slot.? and sw_sel_scope_all;
+                                var fill_bg_buf: [128]u8 = undefined;
+                                const fill_bg: []const u8 = blk: {
+                                    const is_active_bracket = sw_active_slot != null and last_slot == sw_active_slot.?;
+                                    if (is_after_hov) {
+                                        if (is_active_bracket) {
+                                            break :blk std.fmt.bufPrint(&fill_bg_buf, "{s}{s}", .{ palette.status_bg, sw_hl_bg_only }) catch palette.status_bg;
+                                        } else {
+                                            break :blk sw_hl_bg;
+                                        }
+                                    } else if (is_after_act) {
+                                        break :blk sw_sel_bg;
+                                    } else {
+                                        break :blk palette.status_bg;
+                                    }
+                                };
+                                // Write fill_prefix with fill_bg — this covers the "right side"
+                                // of the last slot in scope="all" even when no bracket char is set.
+                                try writeAll(stdout_fd, "\x1b[0m");
+                                try writeAll(stdout_fd, fill_bg);
+                                try writeAll(stdout_fd, fill_prefix);
+                                // Remaining fill in status_bg.
+                                const rem = content_width - sw_slots_used - fill_prefix.len;
+                                if (rem > 0) {
+                                    try writeAll(stdout_fd, "\x1b[0m");
                                     try writeAll(stdout_fd, palette.status_bg);
+                                    try writeAll(stdout_fd, spaces[0..@min(rem, spaces.len)]);
                                 }
-                                try writeAll(stdout_fd, " ");
+                            }
+                            // row_pad_right: outer right margin.
+                            if (sw_row_pad_right.len > 0) {
+                                try writeAll(stdout_fd, "\x1b[0m");
+                                try writeAll(stdout_fd, palette.status_bg);
+                                try writeAll(stdout_fd, sw_row_pad_right);
                             }
                             try rw.endRow();
                         }
@@ -3283,6 +3494,20 @@ pub fn main(init: std.process.Init) !void {
                                         }
                                     }
                                 }
+                                // Switcher row hover.
+                                const sw_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) + 1;
+                                if (show_switcher and current_screen == .search and click_row == sw_row) {
+                                    switcher_row_hovered = true;
+                                    const sw_slot_w_h = g_spec.categories.pad_left.len + 2;
+                                    const sw_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
+                                    const sw_adj_col = @max(0, local_col - 1 - sw_rpl);
+                                    const slot_idx = @as(usize, @intCast(sw_adj_col)) / sw_slot_w_h;
+                                    const sw_n = switcherCatCount();
+                                    switcher_hover_idx = if (slot_idx == 0) null else if (slot_idx - 1 < sw_n) slot_idx - 1 else sw_n;
+                                } else {
+                                    switcher_row_hovered = false;
+                                    switcher_hover_idx = null;
+                                }
                             } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
                                 // Left click press.
                                 if (popup_msg != null) {
@@ -3309,6 +3534,25 @@ pub fn main(init: std.process.Init) !void {
                                             system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                                         // Settings/categories have title+blank before first item → offset +1.
+                                    } else if (show_switcher and current_screen == .search and
+                                        click_row == grid_first_row + @as(i32, @intCast(visible_rows)) + 1)
+                                    {
+                                        // Click on the switcher bar: map col to slot.
+                                        const sw_click_slot_w = g_spec.categories.pad_left.len + 2;
+                                        const sw_click_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
+                                        const sw_click_col = @max(0, local_col - 1 - sw_click_rpl);
+                                        const slot_idx = @as(usize, @intCast(sw_click_col)) / sw_click_slot_w;
+                                        const sw_n = switcherCatCount();
+                                        if (slot_idx == 0) {
+                                            switcher_cat_idx = null;
+                                        } else if (slot_idx - 1 < sw_n) {
+                                            switcher_cat_idx = slot_idx - 1;
+                                        }
+                                        g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                        g_search_switcher_gen +%= 1;
+                                        selected_idx = null;
+                                        grid_scroll_top = 0;
+                                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                     } else {
                                         const list_first_row: i32 = grid_first_row + 1;
                                         if (current_screen == .settings and click_row >= list_first_row) {
