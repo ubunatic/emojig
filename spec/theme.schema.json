@@ -433,6 +433,21 @@
         "border_shade_fg": {
           "$ref": "#/definitions/color"
         },
+        "app_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "app_topline_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "emoji_pane_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "scrollbar_rail_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "view_bg": {
+          "$ref": "#/definitions/color"
+        },
         "grid_bg": {
           "$ref": "#/definitions/color"
         },
@@ -452,6 +467,18 @@
           "$ref": "#/definitions/color"
         },
         "search_shade_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_left_cap_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_right_cap_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_sep_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "hline_fg": {
           "$ref": "#/definitions/color"
         },
         "selection_bg": {

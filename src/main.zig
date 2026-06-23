@@ -301,7 +301,7 @@ const BufferWriter = struct {
 
 fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, grid_compact: bool, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
-    const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
 
     // The grid-size `‹`/`›` are clickable buttons: always bold so they read as
     // controls, and underlined while hovered (only on the selected/hovered row).
@@ -317,7 +317,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  shell integration\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  shell integration\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         1 => {
             const val_str = if (key_bind_editing)
@@ -329,7 +329,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  shell key binding\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  shell key binding\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         2 => {
             const cb = if (show_cats) "✔" else " ";
@@ -339,7 +339,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  show all categories\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  show all categories\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         3 => {
             const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{amb_chars});
@@ -348,7 +348,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  ambiguous chars\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  ambiguous chars\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         4 => {
             const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(theme)});
@@ -357,7 +357,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  theme\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  theme\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         5 => {
             const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(scrollbar)});
@@ -366,7 +366,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  scrollbar\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  scrollbar\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         6 => {
             const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_cols, rq });
@@ -375,7 +375,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  grid width (cols)\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  grid width (cols)\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         7 => {
             const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_rows, rq });
@@ -384,7 +384,7 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  grid height (rows)\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  grid height (rows)\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         8 => {
             const cb = if (grid_compact) "✔" else " ";
@@ -394,10 +394,10 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
             const pad_count = if (w < 9) 9 - w else 0;
             for (0..pad_count) |j| spaces_buf[j] = ' ';
             const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, " {s}{s}{s}  compact grid\x1b[0m", .{ bg, sel_prefix, padded });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  compact grid\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
         },
         9 => {
-            return std.fmt.bufPrint(buf, " {s}{s}[clear]    recent (MRU) history\x1b[0m", .{ bg, sel_prefix });
+            return std.fmt.bufPrint(buf, "{s} {s}{s}[clear]    recent (MRU) history\x1b[0m", .{ palette.app_bg, bg, sel_prefix });
         },
         else => unreachable,
     }
@@ -1994,9 +1994,8 @@ pub fn main(init: std.process.Init) !void {
                     // Blank top padding row.
                     if (g_spec.layout.top_padding) {
                         try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, palette.app_topline_bg);
                         try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.grid_bg);
-                        try writeAll(stdout_fd, palette.grid_fg);
                         try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                         try rw.endRow();
                     }
@@ -2005,8 +2004,8 @@ pub fn main(init: std.process.Init) !void {
                     try writeAll(stdout_fd, "\x1b[2K\r");
                     if (exit_preview and exit_preview_step >= 3) {
                         // Preview: blank/shade the search bar row.
+                        try writeAll(stdout_fd, palette.app_bg);
                         try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.grid_bg);
                         try writeAll(stdout_fd, palette.status_shade_fg);
                         const shade_str = switch (exit_preview_step) {
                             3 => "\u{2593}",
@@ -2025,6 +2024,7 @@ pub fn main(init: std.process.Init) !void {
                             0;
 
                         if (is_too_small) {
+                            try writeAll(stdout_fd, palette.app_bg);
                             try writeAll(stdout_fd, " ");
                             try writeAll(stdout_fd, palette.search_bg);
                             const warn_text = "Too small";
@@ -2033,8 +2033,13 @@ pub fn main(init: std.process.Init) !void {
                             const warn_pad = if (max_w > display_warn.len) max_w - display_warn.len else 0;
                             try writeAll(stdout_fd, spaces[0..@min(warn_pad, spaces.len)]);
                         } else {
-                            try writeAll(stdout_fd, " ");
-                            try writeAll(stdout_fd, palette.search_bg);
+                            if (palette.search_left_cap.len > 0) {
+                                try writeAll(stdout_fd, palette.search_left_cap);
+                            } else {
+                                try writeAll(stdout_fd, palette.app_bg);
+                                try writeAll(stdout_fd, " ");
+                                try writeAll(stdout_fd, palette.search_bg);
+                            }
                             // The spec prompt carries a leading margin space; trim it
                             // since the Zig renderer emits its own margin above.
                             try writeAll(stdout_fd, std.mem.trimStart(u8, g_spec.strings.search_prompt, " "));
@@ -2052,7 +2057,7 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const theme_hl = if (theme_hovered) palette.selection_bg else "";
                             const menu_hl = if (menu_hovered) palette.selection_bg else "";
-                            const sf = palette.toolbar_sep_fg;
+                            const sf = if (palette.search_sep.len > 0) palette.search_sep else palette.toolbar_sep_fg;
                             const sb = palette.search_bg;
                             const icon_buf = try std.fmt.bufPrint(&line_buf, "{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}{s}", .{
                                 sf,                     toolbar_sep,             sb,
@@ -2087,7 +2092,7 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -2109,7 +2114,7 @@ pub fn main(init: std.process.Init) !void {
 
                             const color_fg = palette.info_fg;
 
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}\x1b[0m", .{ palette.grid_bg, color_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}\x1b[0m", .{ palette.app_bg, palette.view_bg, color_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -2132,7 +2137,7 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -2158,12 +2163,16 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
+                                var sb_buf: [32]u8 = undefined;
+                                const sb_seq = if (on_thumb)
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
+                                else
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2209,12 +2218,16 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
+                                var sb_buf: [32]u8 = undefined;
+                                const sb_seq = if (on_thumb)
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
+                                else
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2259,12 +2272,16 @@ pub fn main(init: std.process.Init) !void {
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                const sb: []const u8 = if (h_idx >= thumb_start and h_idx < thumb_start + thumb_h) g_spec.strings.scrollbar_char else " ";
-                                var sb_buf: [16]u8 = undefined;
-                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
+                                var sb_buf: [32]u8 = undefined;
+                                const sb_seq = if (on_thumb)
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
+                                else
+                                    try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2296,7 +2313,10 @@ pub fn main(init: std.process.Init) !void {
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    if (pad_len > 0) {
+                                        try writeAll(stdout_fd, palette.view_bg);
+                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    }
                                     custom_rendered = true;
                                 }
                             }
@@ -2304,7 +2324,7 @@ pub fn main(init: std.process.Init) !void {
                             if (!custom_rendered) {
                                 const vis_w = ansiDisplayWidth(text);
                                 const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                                 try writeAll(stdout_fd, line);
                             }
                             try rw.endRow();
@@ -2333,15 +2353,18 @@ pub fn main(init: std.process.Init) !void {
                                     const cat = g_spec.categories.categories[cat_idx];
                                     const is_enabled = !disabled_cats[cat_idx];
 
-                                    const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+                                    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
                                     const sel_prefix = if (is_sel) "> " else "  ";
                                     const cb = if (is_enabled) "✔" else " ";
 
-                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}[{s}] {s}\x1b[0m", .{ bg, sel_prefix, cb, cat.name });
+                                    const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}[{s}] {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cb, cat.name });
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    if (pad_len > 0) {
+                                        try writeAll(stdout_fd, palette.view_bg);
+                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    }
                                     custom_rendered = true;
                                 }
                             }
@@ -2349,7 +2372,7 @@ pub fn main(init: std.process.Init) !void {
                             if (!custom_rendered) {
                                 const vis_w = ansiDisplayWidth(text);
                                 const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, " {s}{s}{s}{s}", .{ palette.grid_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
                                 try writeAll(stdout_fd, line);
                             }
                             try rw.endRow();
@@ -2357,8 +2380,7 @@ pub fn main(init: std.process.Init) !void {
                     } else {
                         // Separator hline between search bar and grid.
                         try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, palette.grid_bg);
-                        try writeAll(stdout_fd, "\x1b[2m");
+                        try writeAll(stdout_fd, palette.hline);
                         try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
@@ -2384,7 +2406,7 @@ pub fn main(init: std.process.Init) !void {
                         while (r < visible_rows) : (r += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             if (is_too_small) {
-                                const grid_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.grid_bg, spaces[0..@min(max_w, spaces.len)] });
+                                const grid_line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}", .{ palette.app_bg, palette.view_bg, spaces[0..@min(max_w, spaces.len)] });
                                 try writeAll(stdout_fd, grid_line);
                             } else if (is_cmd_autocomplete) {
                                 var custom_rendered = false;
@@ -2392,17 +2414,20 @@ pub fn main(init: std.process.Init) !void {
                                     const cmd_idx = cmd_matches[r];
                                     const cmd = g_spec.commands.commands[cmd_idx];
                                     const is_sel = (selected_idx != null and selected_idx.? == r);
-                                    const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+                                    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
                                     const sel_prefix = if (is_sel) "> " else "  ";
-                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}{c}{s} - {s}\x1b[0m", .{ bg, sel_prefix, cmd_prefix, cmd.name, cmd.action });
+                                    const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{c}{s} - {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cmd_prefix, cmd.name, cmd.action });
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    if (pad_len > 0) {
+                                        try writeAll(stdout_fd, palette.view_bg);
+                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    }
                                     custom_rendered = true;
                                 }
                                 if (!custom_rendered) {
-                                    const line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.grid_bg, spaces[0..@min(content_width, spaces.len)] });
+                                    const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}", .{ palette.app_bg, palette.view_bg, spaces[0..@min(content_width, spaces.len)] });
                                     try writeAll(stdout_fd, line);
                                 }
                             } else if (is_cat_autocomplete) {
@@ -2411,7 +2436,7 @@ pub fn main(init: std.process.Init) !void {
                                     const cat_idx = cat_matches[r];
                                     const cat = g_spec.categories.categories[cat_idx];
                                     const is_sel = (selected_idx != null and selected_idx.? == r);
-                                    const bg = if (is_sel) palette.selection_bg else palette.grid_bg;
+                                    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
                                     const sel_prefix = if (is_sel) "> " else "  ";
 
                                     var syn_buf: [128]u8 = undefined;
@@ -2426,15 +2451,18 @@ pub fn main(init: std.process.Init) !void {
                                         @memcpy(syn_buf[syn_len..][0..copy_len], syn[0..copy_len]);
                                         syn_len += copy_len;
                                     }
-                                    const row = try std.fmt.bufPrint(&line_buf, " {s}{s}c:{s} ({s})\x1b[0m", .{ bg, sel_prefix, cat.name, syn_buf[0..syn_len] });
+                                    const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}c:{s} ({s})\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cat.name, syn_buf[0..syn_len] });
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    if (pad_len > 0) {
+                                        try writeAll(stdout_fd, palette.view_bg);
+                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
+                                    }
                                     custom_rendered = true;
                                 }
                                 if (!custom_rendered) {
-                                    const line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.grid_bg, spaces[0..@min(content_width, spaces.len)] });
+                                    const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}", .{ palette.app_bg, palette.view_bg, spaces[0..@min(content_width, spaces.len)] });
                                     try writeAll(stdout_fd, line);
                                 }
                             } else if (exit_preview) {
@@ -2494,7 +2522,7 @@ pub fn main(init: std.process.Init) !void {
                                 // The scrollbar thumb is still written so drag position
                                 // tracks live; emojis fill in on the next full render.
                                 var gl_pos: usize = 0;
-                                for ([_][]const u8{ " ", palette.grid_bg, palette.grid_fg }) |s| {
+                                for ([_][]const u8{ palette.app_bg, " ", palette.emoji_pane_bg, palette.grid_fg }) |s| {
                                     @memcpy(line_buf[gl_pos..][0..s.len], s);
                                     gl_pos += s.len;
                                 }
@@ -2505,8 +2533,11 @@ pub fn main(init: std.process.Init) !void {
                                 if (grid_needs_scroll and content_width >= 2) {
                                     const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                     const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                    var sb_buf: [16]u8 = undefined;
-                                    const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                    var sb_buf: [32]u8 = undefined;
+                                    const sb_seq = if (on_thumb)
+                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
+                                    else
+                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             } else {
@@ -2602,7 +2633,7 @@ pub fn main(init: std.process.Init) !void {
                                                 cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
                                                 cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
                                                 if (prefix_bg.len > 0) {
-                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.emoji_pane_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
                                                 }
                                             } else {
                                                 if (prefix_bg.len > 0) {
@@ -2610,7 +2641,7 @@ pub fn main(init: std.process.Init) !void {
                                                 }
                                                 cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{prefix}) catch @as([]const u8, "")).len;
                                                 if (prefix_bg.len > 0) {
-                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.emoji_pane_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
                                                 }
 
                                                 if (body_bg.len > 0) {
@@ -2618,7 +2649,7 @@ pub fn main(init: std.process.Init) !void {
                                                 }
                                                 cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "{s}", .{body}) catch @as([]const u8, "")).len;
                                                 if (body_bg.len > 0) {
-                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.grid_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
+                                                    cell_pos += (std.fmt.bufPrint(cell_buf[cell_pos..], "\x1b[0m{s}{s}", .{ palette.emoji_pane_bg, palette.grid_fg }) catch @as([]const u8, "")).len;
                                                 }
                                             }
 
@@ -2627,15 +2658,15 @@ pub fn main(init: std.process.Init) !void {
                                             if (is_hard) {
                                                 if (is_selected_in_multi and use_mark) {
                                                     cell_strings[c] = if (w1)
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg })
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.emoji_pane_bg, palette.grid_fg })
                                                     else
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.grid_bg, palette.grid_fg });
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ palette.selection_bg, mark, render_emoji, cr, palette.emoji_pane_bg, palette.grid_fg });
                                                 } else {
                                                     const box_bg = if (is_selected_in_multi) check_bg else palette.selection_bg;
                                                     cell_strings[c] = if (w1)
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg })
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s} {s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.emoji_pane_bg, palette.grid_fg })
                                                     else
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.grid_bg, palette.grid_fg });
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s}{s}{s}{s}\x1b[0m{s}{s}", .{ box_bg, cl, render_emoji, cr, palette.emoji_pane_bg, palette.grid_fg });
                                                 }
                                             } else if (is_marker) {
                                                 cell_strings[c] = if (w1)
@@ -2650,9 +2681,9 @@ pub fn main(init: std.process.Init) !void {
                                                         try std.fmt.bufPrint(&cell_buffers[c], "{s}{s} ", .{ mark, render_emoji }))
                                                 else
                                                     (if (w1)
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s}  \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg })
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s}  \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.emoji_pane_bg, palette.grid_fg })
                                                     else
-                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s} \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.grid_bg, palette.grid_fg }));
+                                                        try std.fmt.bufPrint(&cell_buffers[c], "{s} {s} \x1b[0m{s}{s}", .{ check_bg, render_emoji, palette.emoji_pane_bg, palette.grid_fg }));
                                             } else {
                                                 cell_strings[c] = if (w1)
                                                     try std.fmt.bufPrint(&cell_buffers[c], " {s}  ", .{render_emoji})
@@ -2666,7 +2697,7 @@ pub fn main(init: std.process.Init) !void {
                                 }
 
                                 var gl_pos: usize = 0;
-                                for ([_][]const u8{ " ", palette.grid_bg, palette.grid_fg }) |s| {
+                                for ([_][]const u8{ palette.app_bg, " ", palette.emoji_pane_bg, palette.grid_fg }) |s| {
                                     @memcpy(line_buf[gl_pos..][0..s.len], s);
                                     gl_pos += s.len;
                                 }
@@ -2700,7 +2731,7 @@ pub fn main(init: std.process.Init) !void {
 
                                         var rem_buf: [128]u8 = undefined;
                                         const rem_str = if (is_last_hard)
-                                            try std.fmt.bufPrint(&rem_buf, "{s}{s}\x1b[0m{s}{s}{s}", .{ last_box_bg, cr, palette.grid_bg, palette.grid_fg, spaces[0..@min(grid_rem - 1, spaces.len)] })
+                                            try std.fmt.bufPrint(&rem_buf, "{s}{s}\x1b[0m{s}{s}{s}", .{ last_box_bg, cr, palette.emoji_pane_bg, palette.grid_fg, spaces[0..@min(grid_rem - 1, spaces.len)] })
                                         else
                                             try std.fmt.bufPrint(&rem_buf, "{s}{s}", .{ cr, spaces[0..@min(grid_rem - 1, spaces.len)] });
 
@@ -2720,8 +2751,11 @@ pub fn main(init: std.process.Init) !void {
                                 if (grid_needs_scroll and content_width >= 2) {
                                     const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                     const sb: []const u8 = if (on_thumb) g_spec.strings.scrollbar_char else " ";
-                                    var sb_buf: [16]u8 = undefined;
-                                    const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}", .{ content_width + 1, sb });
+                                    var sb_buf: [32]u8 = undefined;
+                                    const sb_seq = if (on_thumb)
+                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg, sb })
+                                    else
+                                        try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, sb });
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             }
@@ -2737,8 +2771,7 @@ pub fn main(init: std.process.Init) !void {
                         if (show_switcher and visible_rows < rows) {
                             // Separator hline between grid and switcher.
                             try writeAll(stdout_fd, "\x1b[2K\r");
-                            try writeAll(stdout_fd, palette.grid_bg);
-                            try writeAll(stdout_fd, "\x1b[2m");
+                            try writeAll(stdout_fd, palette.hline);
                             try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                             try rw.endRowFull();
 
@@ -2915,7 +2948,7 @@ pub fn main(init: std.process.Init) !void {
                             // row_pad_left: outer left margin of the entire switcher row.
                             if (sw_row_pad_left.len > 0) {
                                 try writeAll(stdout_fd, "\x1b[0m");
-                                try writeAll(stdout_fd, palette.status_bg);
+                                try writeAll(stdout_fd, palette.app_bg);
                                 try writeAll(stdout_fd, sw_row_pad_left);
                             }
                             // all_icon must be exactly 2 display cols (spec-defined).
@@ -2965,7 +2998,7 @@ pub fn main(init: std.process.Init) !void {
                             // row_pad_right: outer right margin.
                             if (sw_row_pad_right.len > 0) {
                                 try writeAll(stdout_fd, "\x1b[0m");
-                                try writeAll(stdout_fd, palette.status_bg);
+                                try writeAll(stdout_fd, palette.app_bg);
                                 try writeAll(stdout_fd, sw_row_pad_right);
                             }
                             try rw.endRow();
@@ -2973,8 +3006,7 @@ pub fn main(init: std.process.Init) !void {
 
                         // Separator hline between grid/switcher and description.
                         try writeAll(stdout_fd, "\x1b[2K\r");
-                        try writeAll(stdout_fd, palette.grid_bg);
-                        try writeAll(stdout_fd, "\x1b[2m");
+                        try writeAll(stdout_fd, palette.hline);
                         try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
@@ -3179,8 +3211,8 @@ pub fn main(init: std.process.Init) !void {
                     // Status bar row.
                     try writeAll(stdout_fd, "\x1b[2K\r");
                     if ((exit_preview and exit_preview_step >= 3) or is_too_small) {
+                        try writeAll(stdout_fd, palette.app_bg);
                         try writeAll(stdout_fd, " ");
-                        try writeAll(stdout_fd, palette.grid_bg);
                         if (exit_preview and exit_preview_step >= 3) {
                             try writeAll(stdout_fd, palette.status_shade_fg);
                             const shade_str = switch (exit_preview_step) {
@@ -3197,6 +3229,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                         }
                     } else {
+                        try writeAll(stdout_fd, palette.app_bg);
                         try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.status_bg);
 

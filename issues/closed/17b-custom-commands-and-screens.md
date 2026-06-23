@@ -1,4 +1,7 @@
-# Issue 17: Custom Commands and Interactive Screens
+# Issue #17b — Custom Commands and Interactive Screens
+
+**Status:** Closed (Implemented)
+
 
 ## Tasks
 - [x] Fix Zig 0.16.0 compiler error in `saveKeyToConfig` related to `Io.Dir.CreateFileOptions` having no `mode` field.

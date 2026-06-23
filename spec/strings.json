@@ -57,9 +57,9 @@
   "cursor_right": "⌟",
   "multi_select_mark": "➜",
   "multi_select_bg": "",
-  "scrollbar_char": "▌",
-  "toolbar_sep": "│",
-  "hline_char": "─",
+  "scrollbar_char": "▉",
+  "toolbar_sep": "┃",
+  "hline_char": "┈",
   "search_placeholder": "search…",
   "search_prompt": " 🔍 ",
   "status": {

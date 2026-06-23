@@ -117,3 +117,18 @@ Simulating keyboard/mouse interactions in terminal apps using Unix pseudo-termin
 * **Mitigation**: Introduce short pauses (e.g., 200ms) between keystroke writes to let the application process events and update its internal render tree.
 * **Timing Conservatism**: On local fast machines, 100-200ms sleep is usually enough. However, in automated test harnesses (CI/CD, sandboxed tasks, virtualized environments), scheduling drift can delay the TUI renderer. Standardizing on conservative delays (e.g., 300-500ms) during startup and large viewport updates eliminates test flakiness.
 
+---
+
+## 9. Decoupling Development Schema Warnings from TUI Runtime Streams
+
+When loading structured layout specifications or themes (e.g., `spec/theme.json`), properties may trigger validation checks (such as color mapping or xterm-256 color index compatibility).
+* **Stderr Pollution**: Printing diagnostic warnings directly to `stderr` during terminal execution is useful for developers running locally. However, if the app is launched via standard scripts or graphical wrappers (e.g., `--gui` or inside a launcher), these warnings pollute standard error and can cause visual corruption or console errors.
+* **Logging Delegation**: Separate warnings by build context. During unit testing (`builtin.is_test`), print validations directly to `stderr` for developer visibility. At runtime, write them silently to a diagnostic log file (such as `/tmp/emojig.log` via `term.appendLog`) to ensure production terminal execution streams remain clean.
+
+## 10. Subsequence Matcher Collision Audits
+
+When implementing multi-word alias lists or synonym expansions, subsequence matcher rules can collide.
+* **Greedy Character Theft**: The subsequence matching algorithm processes strings left-to-right. A short alias in a prior slot (e.g., `"glass"`) can match characters (like the first `'s'`) intended for a subsequent keyword (e.g., `"sparkling"`), breaking consecutive character bonuses.
+* **Tag Isolation**: Keep aliases concise. If an alias causes character theft regressions on primary keywords, move the offending alias to the `tags` list or position it after the primary keyword in the database.
+
+

@@ -30,13 +30,14 @@ learned wiring it up.
 | Vertical overhead, max query length, top padding | `spec/layout.json`                | `layout_overhead`, `max_query_len`, `top_padding` |
 | Exit-fade in TUI / GUI / both / neither | `spec/layout.json`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
 | Theme icons (🌙🌞🔆≡) + hamburger menu icon | `spec/theme.json`               | `icons` |
-| Grid/selection/search colors            | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints) |
+| Grid/selection/search/margins/layout colors | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints / hex) |
 | Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
 | Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
 | Toolbar separator char (between theme/menu icons) | `spec/strings.json`             | `toolbar_sep` (must be exactly 1 display cell) |
-| Toolbar separator fg color, search bar end cap | `spec/theme.json`               | `terminal_bg2` (hex) drives both; see §13 |
+| Pane separator hline character                 | `spec/strings.json`               | `hline_char` (custom separator line glyph) |
+| Container/controls backgrounds, margins, separators, caps | `spec/theme.json` | `app_bg`, `view_bg`, `search_{left,right}_cap_fg`, `search_sep_fg`, `hline_fg`, etc. (see §13) |
 | Named inline styles for templates       | `spec/styles.json`                | see §10 |
 | Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
 | Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
@@ -161,6 +162,7 @@ query starting with `??` shows the second page (`help_lines_more`, documenting t
 | `help_lines_more`          | both (help page 2, query `??`) |
 | `scrollbar_char`           | both (Scrollbar thumb character, default ▐) |
 | `toolbar_sep`              | Zig only (separator between toolbar icons, default `" "`, must be 1 display cell) |
+| `hline_char`               | Zig only (horizontal separator line character, default `"─"`) |
 
 `{count}` in the status templates is substituted with the live match count
 (`formatStatus`, which returns the template unchanged when there's no placeholder).
@@ -425,47 +427,30 @@ hovered slot highlights the whole bracket group in `palette.selection_bg`.
 
 ---
 
-## 13. Toolbar palette fields (`toolbar_sep_fg`, `search_end_cap`)
+## 13. Container/Controls Palette Fields
 
-The search bar toolbar (right end of the search row) has two computed palette
-entries built by `buildPalette` in `src/spec.zig`:
+The application styles its layout cells using semantic theme variables resolved from [spec/theme.json](file:///home/uwe/projects/emojig/spec/theme.json) in `buildPalette` under `src/spec.zig`. If these properties are omitted, they fall back to `app_bg`, `grid_bg`, or basic terminal defaults.
 
-### `toolbar_sep_fg`
+### Semantic Layout Variables
 
-The foreground color applied to the `toolbar_sep` separator character. Ideally
-matches the terminal window background so the separator is a subtle visual
-divider rather than a sharp line. Resolution order:
+* **`app_bg`**: The background color applied to the overall margins, borders, and blank rows surrounding UI panels. Prevents visual seam lines when displaying border rows.
+* **`app_topline_bg`**: The background color for the first row of the application (either the top padding line or top border row). Falls back to `border_bg` or `app_bg`.
+* **`emoji_pane_bg`**: The background color of the emoji grid viewport area.
+* **`scrollbar_rail_bg`**: The background color of the vertical scrollbar track column. Defaults to `app_bg`.
+* **`view_bg`**: The background color of text/settings overlay panels (such as help, about, status, categories, or settings screens). Defaults to `app_bg`.
+* **`hline_fg`**: The foreground color applied to horizontal separating lines (`─`). Fallback to `240` (dim gray) when not defined.
+* **`search_left_cap_fg` / `search_right_cap_fg`**: The foreground color of the search bar capsule caps (`▌` and `▐` respectively). Background is styled with `search_bg`. Usually resolves to `app_bg` so the rounded caps blend cleanly with the canvas.
+* **`search_sep_fg`**: The foreground color of vertical dividers (`│`) in the search bar toolbar. Resolves to `app_bg` as foreground and `search_bg` as background to simulate a vertical cut.
 
-1. `terminal_bg2` hex string in the theme → `resolveColorValue` → nearest 256-color index
-2. `grid_bg` 256-color index (no `terminal_bg2` present)
-3. SGR `\x1b[2m` dim (last resort)
+### Computed Palette Constants
 
-The `resolveColorValue` call emits a console warning when the hex is not an
-exact 256-color hit (e.g. `"color '#2c2c2c' … matching to closest color 'gray4'
-(index 236)"`). This is expected and benign.
+* **`toolbar_sep_fg`**: The color applied to the icon separator character. Resolves to the `terminal_bg2` hex index, or `grid_bg`.
+* **`search_end_cap` / `search_right_cap`**: The right cap (`▐` RIGHT HALF BLOCK) rendering sequence at the end of the search bar, transitioning cleanly into the margins.
+* **`hline`**: Combined color sequence mapping (`\x1b[48;5;{app_bg}m\x1b[38;5;{hline_fg}m`) to style custom hline characters.
 
-### `search_end_cap`
+### Schema Validation
+During development, if a theme configures a hex color that has no exact equivalent in the xterm-256 palette (e.g. `#2c2c2c`), the resolver maps it to the closest color index. While running unit tests, this mismatch outputs a stderr warning for auditing. At runtime, the warnings are logged silently to `/tmp/emojig.log` to keep the user's terminal clean.
 
-A `▐` (U+2590 RIGHT HALF BLOCK) placed as the last character of the search bar
-row, creating a smooth half-pixel-wide transition from the search bar into the
-terminal background:
-
-```
-\x1b[48;5;{search_bg}m\x1b[38;5;{terminal_bg}m▐
-```
-
-- **bg = `search_bg`** → left half of `▐` = search bar color (seamless continuation)
-- **fg = `terminal_bg2` index** → right half = terminal background
-
-Using `▐` with `bg=search_bar` is more robust than `▌` with `fg=search_bar`:
-if the block character is not rendered (treated as a space), the cell still
-shows `search_bg` and the search bar appears to end cleanly rather than showing
-a terminal-bg-colored hole.
-
-**`endRowFull()` is required for this row.** The search bar row fills
-`content_width` exactly, putting the cursor in pending-wrap state after `▐`.
-Using `endRow()` (which appends `\x1b[K`) would erase the cap in exact-width
-windows (see [`TerminalRestore.md` §8](./TerminalRestore.md#8-pitfall-xk-from-pending-wrap-erases-the-last-column-character)).
 
 ---
 

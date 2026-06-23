@@ -78,6 +78,15 @@ pub const PaletteSpec = struct {
     status_shade_fg: std.json.Value,
     border_bg: std.json.Value = .null,
     border_shade_fg: std.json.Value,
+    app_bg: std.json.Value = .null,
+    app_topline_bg: std.json.Value = .null,
+    emoji_pane_bg: std.json.Value = .null,
+    scrollbar_rail_bg: std.json.Value = .null,
+    view_bg: std.json.Value = .null,
+    search_left_cap_fg: std.json.Value = .null,
+    search_right_cap_fg: std.json.Value = .null,
+    search_sep_fg: std.json.Value = .null,
+    hline_fg: std.json.Value = .null,
     terminal_bg2: ?[]const u8 = null,
     terminal_bg: ?[]const u8 = null,
     terminal_fg: ?[]const u8 = null,
@@ -124,7 +133,11 @@ fn resolveColorValue(val: std.json.Value, colors_spec: *const ColorsSpec) !?u8 {
                             break;
                         }
                     }
-                    std.debug.print("Warning: color '{s}' is not compatible with the schema, matching to closest color '{s}' (index {d}, hex '{s}')\n", .{ s, name, closest, c_hex });
+                    if (@import("builtin").is_test) {
+                        std.debug.print("Warning: color '{s}' is not compatible with the schema, matching to closest color '{s}' (index {d}, hex '{s}')\n", .{ s, name, closest, c_hex });
+                    } else {
+                        term.appendLog("Warning: color '{s}' is not compatible with the schema, matching to closest color '{s}' (index {d}, hex '{s}')", .{ s, name, closest, c_hex });
+                    }
                     return @intCast(closest);
                 }
                 return error.InvalidHexColor;
@@ -501,6 +514,38 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         "";
 
+    // Resolve overall canvas app background color
+    const app_bg_idx = try resolveColorValue(p.app_bg, colors_spec);
+    const app_bg = if (app_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    // If app_topline_bg is null, default to border_bg (if set) or app_bg.
+    const app_topline_bg_idx = try resolveColorValue(p.app_topline_bg, colors_spec) orelse (try resolveColorValue(p.border_bg, colors_spec)) orelse app_bg_idx;
+    const app_topline_bg = if (app_topline_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const emoji_pane_bg_idx = try resolveColorValue(p.emoji_pane_bg, colors_spec) orelse app_bg_idx;
+    const emoji_pane_bg = if (emoji_pane_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const scrollbar_rail_bg_idx = try resolveColorValue(p.scrollbar_rail_bg, colors_spec) orelse app_bg_idx;
+    const scrollbar_rail_bg = if (scrollbar_rail_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
+    const view_bg_idx = try resolveColorValue(p.view_bg, colors_spec) orelse app_bg_idx;
+    const view_bg = if (view_bg_idx) |bg_val|
+        try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
+    else
+        "";
+
     // Resolve the terminal window background (terminal_bg2 hex → closest 256-color
     // index). Used as the separator fg so │ blends into the terminal background.
     const term_bg_val: std.json.Value = if (p.terminal_bg2) |hex| .{ .string = hex } else .null;
@@ -547,6 +592,47 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     const warning_fg_idx = try resolveRequiredColorValue(p.warning_fg, colors_spec, 9);
     const success_fg_idx = try resolveRequiredColorValue(p.success_fg, colors_spec, 10);
 
+    // Resolve cap foregrounds (uses app_bg as default, falling back to terminal window background if app_bg is null)
+    const cap_fallback_idx = app_bg_idx orelse term_bg_idx;
+    const l_cap_fg_idx = try resolveColorValue(p.search_left_cap_fg, colors_spec) orelse cap_fallback_idx;
+    const r_cap_fg_idx = try resolveColorValue(p.search_right_cap_fg, colors_spec) orelse cap_fallback_idx;
+    const search_sep_fg_idx = try resolveColorValue(p.search_sep_fg, colors_spec) orelse cap_fallback_idx;
+
+    // Resolve hline_fg (defaults to status_fg_idx, grid_fg_idx, or a default gray like 240)
+    const hline_fg_idx = try resolveColorValue(p.hline_fg, colors_spec) orelse 240;
+
+    // Build search bar left/right caps
+    const l_cap = if (s_bg_idx) |sb| blk: {
+        if (l_cap_fg_idx) |lf|
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{258c}", .{ sb, lf })
+        else
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m\u{258c}", .{sb});
+    } else "";
+
+    const r_cap = if (s_bg_idx) |sb| blk: {
+        if (r_cap_fg_idx) |rf|
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, rf })
+        else
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m\u{2590}", .{sb});
+    } else "";
+
+    // Build search separator (background = search_bg, foreground = search_sep_fg_idx)
+    const search_sep = if (s_bg_idx) |sb| blk: {
+        if (search_sep_fg_idx) |sf_val|
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ sb, sf_val })
+        else
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[39m", .{sb});
+    } else "";
+
+    // Build hline (background = app_bg, foreground = hline_fg_idx)
+    const hline = blk: {
+        if (app_bg_idx) |ab| {
+            break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m", .{ ab, hline_fg_idx });
+        } else {
+            break :blk try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{hline_fg_idx});
+        }
+    };
+
     return .{
         .grid_bg = g_bg,
         .grid_fg = try std.fmt.allocPrint(arena, "{s}\x1b[38;5;{d}{s}m", .{ g_bg, grid_fg_idx, dim_suffix }),
@@ -561,16 +647,7 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .border_shade_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ border_shade_fg_idx, dim_suffix }),
         .warning_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ warning_fg_idx, dim_suffix_bold }),
         .success_fg = try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ success_fg_idx, dim_suffix_bold }),
-        .search_end_cap = if (s_bg_idx) |sb| blk: {
-            // bg = search bar color (fills cell if char not rendered), fg = terminal bg.
-            // ▐ (RIGHT HALF BLOCK): left half=bg=search_bg, right half=fg=terminal_bg.
-            if (term_bg_idx) |tb|
-                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, tb })
-            else if (b_bg_idx) |bb|
-                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[38;5;{d}m\u{2590}", .{ sb, bb })
-            else
-                break :blk try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m\x1b[49m\u{2590}", .{sb});
-        } else "",
+        .search_end_cap = r_cap,
         .toolbar_sep_fg = if (term_bg_idx) |t_val|
             try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{t_val})
         else if (g_bg_idx) |bg_val|
@@ -579,5 +656,14 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
             try std.fmt.allocPrint(arena, "\x1b[38;5;{d}m", .{b_val})
         else
             try std.fmt.allocPrint(arena, "\x1b[2m", .{}),
+        .app_bg = app_bg,
+        .app_topline_bg = app_topline_bg,
+        .emoji_pane_bg = emoji_pane_bg,
+        .scrollbar_rail_bg = scrollbar_rail_bg,
+        .view_bg = view_bg,
+        .search_left_cap = l_cap,
+        .search_right_cap = r_cap,
+        .search_sep = search_sep,
+        .hline = hline,
     };
 }

@@ -44,6 +44,9 @@ edit: ⚙️  # edit ED_FILE in terminal or desktop editor
 watch: ⚙️  # watch ED_FILE for changes and recompile
 	@scripts/watch.sh $(ED_FILE)
 
+watch-run: ⚙️  # watch source and spec files, and run the gui app afterwards
+	@scripts/watch_run.sh
+
 edit-strings: ⚙️  # open spec/strings.json in nvim-qt for editing
 edit-art:     ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuild on save
 edit-%:

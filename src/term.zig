@@ -25,6 +25,15 @@ pub const Palette = struct {
     success_fg: []const u8, // success/action foreground color sequence
     toolbar_sep_fg: []const u8, // fg color for toolbar separators (grid bg color as fg)
     search_end_cap: []const u8, // half-block end cap: bg=terminal-default, fg=search_bg
+    app_bg: []const u8, // overall canvas background sequence
+    app_topline_bg: []const u8, // top padding/border row background sequence
+    emoji_pane_bg: []const u8, // emoji scroll pane background sequence
+    scrollbar_rail_bg: []const u8, // scrollbar rail background sequence
+    view_bg: []const u8, // help/about/status/settings view background sequence
+    search_left_cap: []const u8, // left cap escape sequence with ▌
+    search_right_cap: []const u8, // right cap escape sequence with ▐
+    search_sep: []const u8, // search bar separators escape sequence
+    hline: []const u8, // horizontal rule escape sequence (app_bg as bg, hline_fg as fg)
 };
 
 // Palettes, the theme icon, and terminal color values now live in the

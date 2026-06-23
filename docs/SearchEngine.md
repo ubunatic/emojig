@@ -425,3 +425,20 @@ consecutive).
 
 Fix: add `"key"` to both entries' `tags` in `data/emoji.json`, then `make pack`.
 After that, `"arrow keys"` → ↕ rank #1, ↔ rank #2.
+
+### The sparkling alias ordering trap (Greedy Matcher on Multi-Word Aliases/Tags)
+
+Similarly to the abbreviation case, multi-word lists in aliases can lead to unexpected greedy-matching subsequences that break consecutive character runs for other words.
+
+For example, the champagne bottle emoji `🍾` (popped cork) had aliases:
+`["champagne", "glass", "sparkling"]`
+
+When a user queried `"sparkling"`, the search engine matched `"sparkling"` against the concatenated string table representation:
+`"... glass sparkling ..."`
+
+1. `'s'` matched the first available `'s'` in the earlier alias `"glass"` (the final char of "glass").
+2. The remaining characters `'p'-'a'-'r'-'k'-'l'-'i'-'n'-'g'` were forced to match in the subsequent word `"sparkling"`.
+3. Because the match was split across words, it broke the consecutive-run bonus for the first character `'s'`, degrading the match score significantly.
+
+**Fix**: Place `"sparkling"` before `"glass"` in the aliases list, or move `"glass"` to tags entirely, ensuring `"sparkling"` can match cleanly as a single consecutive sequence from its first letter.
+
