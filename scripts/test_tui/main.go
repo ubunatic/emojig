@@ -605,9 +605,9 @@ func runMultiSelectTest(binaryPath string) {
 	time.Sleep(500 * time.Millisecond)
 	_ = collectAvailable()
 
-	// Type ":multi"
-	if _, err := master.Write([]byte(":multi")); err != nil {
-		fmt.Printf("Error typing :multi: %v\n", err)
+	// Type "/multi"
+	if _, err := master.Write([]byte("/multi")); err != nil {
+		fmt.Printf("Error typing /multi: %v\n", err)
 		cmd.Process.Kill()
 		os.Exit(1)
 	}
@@ -762,9 +762,9 @@ func runQuitCommandTest(binaryPath string) {
 		// Wait for initial render.
 		time.Sleep(300 * time.Millisecond)
 
-		// Type ":q"
-		if _, err := master.Write([]byte(":q")); err != nil {
-			fmt.Printf("Error typing :q: %v\n", err)
+		// Type "/q"
+		if _, err := master.Write([]byte("/q")); err != nil {
+			fmt.Printf("Error typing /q: %v\n", err)
 			cmd.Process.Kill()
 			os.Exit(1)
 		}

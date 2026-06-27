@@ -199,6 +199,7 @@ pub const CommandSpec = struct {
 };
 
 pub const Commands = struct {
+    cmd_start_chars: []const u8 = "/",
     commands: []const CommandSpec,
 };
 

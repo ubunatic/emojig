@@ -1251,8 +1251,9 @@ pub fn main(init: std.process.Init) !void {
                 selected_idx = null;
             }
 
-            const is_cmd_autocomplete = (current_screen == .search and query_len > 0 and (query_buf[0] == ':' or query_buf[0] == '/'));
-            const cmd_prefix: u8 = if (is_cmd_autocomplete) query_buf[0] else ':';
+            const is_cmd_autocomplete = (current_screen == .search and query_len > 0 and
+                std.mem.indexOfScalar(u8, g_spec.commands.cmd_start_chars, query_buf[0]) != null);
+            const cmd_prefix: u8 = query_buf[0];
             var cmd_matches: [16]usize = undefined;
             var cmd_match_count: usize = 0;
             if (is_cmd_autocomplete) {
