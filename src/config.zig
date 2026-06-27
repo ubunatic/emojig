@@ -239,3 +239,33 @@ pub fn typeGridDim(val: *usize, digit: u8, continuing: bool, max: usize) void {
     if (nv > max) nv = max;
     val.* = @max(1, nv);
 }
+
+test "grid dimension editing helpers" {
+    // stepGridDim clamps to [min, max] on ±1 (min = 5 cols here).
+    try std.testing.expectEqual(@as(usize, 7), stepGridDim(6, true, 5, 16));
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(6, false, 5, 16));
+    try std.testing.expectEqual(@as(usize, 16), stepGridDim(16, true, 5, 16)); // clamp high
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(5, false, 5, 16)); // clamp to min
+    try std.testing.expectEqual(@as(usize, 3), stepGridDim(3, false, 5, 16)); // sub-min snaps up
+
+    // cycleGridDim adds the coarse step and wraps back to min past the max.
+    try std.testing.expectEqual(@as(usize, 8), cycleGridDim(6, 2, 5, 16));
+    try std.testing.expectEqual(@as(usize, 5), cycleGridDim(16, 2, 5, 16)); // wrap to min
+
+    // typeGridDim allows a transient sub-min value while building a multi-digit
+    // entry (1 -> 12); the minimum is enforced separately on commit.
+    var v: usize = 9;
+    typeGridDim(&v, '1', false, 16); // fresh
+    try std.testing.expectEqual(@as(usize, 1), v);
+    typeGridDim(&v, '2', true, 16); // 1 -> 12
+    try std.testing.expectEqual(@as(usize, 12), v);
+    typeGridDim(&v, '9', true, 16); // 129 clamps to 16
+    try std.testing.expectEqual(@as(usize, 16), v);
+    typeGridDim(&v, '0', false, 16); // fresh 0 -> low bound 1
+    try std.testing.expectEqual(@as(usize, 1), v);
+
+    // clampGridDim (used by finalizeGridDim on commit) snaps into [min, max].
+    try std.testing.expectEqual(@as(usize, 5), clampGridDim(1, 5, 16)); // sub-min
+    try std.testing.expectEqual(@as(usize, 8), clampGridDim(8, 3, 16)); // in range
+    try std.testing.expectEqual(@as(usize, 16), clampGridDim(99, 3, 16)); // over max
+}

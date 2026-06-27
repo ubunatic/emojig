@@ -35,6 +35,7 @@ const navSelect = tui_draw.navSelect;
 const ansiDisplayWidth = tui_draw.ansiDisplayWidth;
 const formatStatus = tui_draw.formatStatus;
 const expandTemplate = tui_draw.expandTemplate;
+const adjustScrollTop = tui_draw.adjustScrollTop;
 
 const VarSubst = color.VarSubst;
 const expandVars = color.expandVars;
@@ -485,21 +486,6 @@ fn settingHelp(idx: usize) []const u8 {
         9 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
         else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
     };
-}
-
-fn adjustScrollTop(selected_idx: usize, scroll_top: *usize, viewport_h: usize, total_items: usize) void {
-    if (total_items <= viewport_h) {
-        scroll_top.* = 0;
-        return;
-    }
-    if (selected_idx < scroll_top.*) {
-        scroll_top.* = selected_idx;
-    } else if (selected_idx >= scroll_top.* + viewport_h) {
-        scroll_top.* = selected_idx - viewport_h + 1;
-    }
-    if (scroll_top.* + viewport_h > total_items) {
-        scroll_top.* = total_items - viewport_h;
-    }
 }
 
 fn runSearch(
@@ -4974,164 +4960,4 @@ fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
     if (!copied) {
         return error.ClipboardFailed;
     }
-}
-
-test "deleteAtCursor removes the byte before the cursor" {
-    var buf: [8]u8 = undefined;
-    @memcpy(buf[0..4], "abcd");
-    var len: usize = 4;
-    var cur: usize = 2; // between 'b' and 'c'
-    deleteAtCursor(&buf, &len, &cur);
-    try std.testing.expectEqual(@as(usize, 3), len);
-    try std.testing.expectEqual(@as(usize, 1), cur);
-    try std.testing.expectEqualStrings("acd", buf[0..len]);
-
-    // Delete at end (cursor == len) trims the last byte.
-    cur = len;
-    deleteAtCursor(&buf, &len, &cur);
-    try std.testing.expectEqual(@as(usize, 2), len);
-    try std.testing.expectEqualStrings("ac", buf[0..len]);
-
-    // Delete at start is a no-op.
-    cur = 0;
-    deleteAtCursor(&buf, &len, &cur);
-    try std.testing.expectEqual(@as(usize, 2), len);
-    try std.testing.expectEqual(@as(usize, 0), cur);
-}
-
-test "wordLeft moves cursor to start of previous word" {
-    const buf = "hello world foo";
-    try std.testing.expectEqual(@as(usize, 12), wordLeft(buf, 15)); // "foo" → before 'f'
-    try std.testing.expectEqual(@as(usize, 6), wordLeft(buf, 11)); // "world" → before 'w'
-    try std.testing.expectEqual(@as(usize, 0), wordLeft(buf, 5)); // "hello" → start
-    try std.testing.expectEqual(@as(usize, 0), wordLeft(buf, 0)); // at start → no-op
-    try std.testing.expectEqual(@as(usize, 6), wordLeft(buf, 12)); // mid-space → before 'w'
-}
-
-test "wordRight moves cursor past next word" {
-    const buf = "hello world foo";
-    const len = buf.len;
-    try std.testing.expectEqual(@as(usize, 6), wordRight(buf, len, 0)); // after "hello " → 'w'
-    try std.testing.expectEqual(@as(usize, 12), wordRight(buf, len, 6)); // after "world " → 'f'
-    try std.testing.expectEqual(@as(usize, 15), wordRight(buf, len, 12)); // after "foo" → end
-    try std.testing.expectEqual(@as(usize, 15), wordRight(buf, len, 15)); // at end → no-op
-}
-
-test "grid dimension editing helpers" {
-    // stepGridDim clamps to [min, max] on ±1 (min = 5 cols here).
-    try std.testing.expectEqual(@as(usize, 7), stepGridDim(6, true, 5, 16));
-    try std.testing.expectEqual(@as(usize, 5), stepGridDim(6, false, 5, 16));
-    try std.testing.expectEqual(@as(usize, 16), stepGridDim(16, true, 5, 16)); // clamp high
-    try std.testing.expectEqual(@as(usize, 5), stepGridDim(5, false, 5, 16)); // clamp to min
-    try std.testing.expectEqual(@as(usize, 5), stepGridDim(3, false, 5, 16)); // sub-min snaps up
-
-    // cycleGridDim adds the coarse step and wraps back to min past the max.
-    try std.testing.expectEqual(@as(usize, 8), cycleGridDim(6, 2, 5, 16));
-    try std.testing.expectEqual(@as(usize, 5), cycleGridDim(16, 2, 5, 16)); // wrap to min
-
-    // typeGridDim allows a transient sub-min value while building a multi-digit
-    // entry (1 -> 12); the minimum is enforced separately on commit.
-    var v: usize = 9;
-    typeGridDim(&v, '1', false, 16); // fresh
-    try std.testing.expectEqual(@as(usize, 1), v);
-    typeGridDim(&v, '2', true, 16); // 1 -> 12
-    try std.testing.expectEqual(@as(usize, 12), v);
-    typeGridDim(&v, '9', true, 16); // 129 clamps to 16
-    try std.testing.expectEqual(@as(usize, 16), v);
-    typeGridDim(&v, '0', false, 16); // fresh 0 -> low bound 1
-    try std.testing.expectEqual(@as(usize, 1), v);
-
-    // clampGridDim (used by finalizeGridDim on commit) snaps into [min, max].
-    try std.testing.expectEqual(@as(usize, 5), clampGridDim(1, 5, 16)); // sub-min
-    try std.testing.expectEqual(@as(usize, 8), clampGridDim(8, 3, 16)); // in range
-    try std.testing.expectEqual(@as(usize, 16), clampGridDim(99, 3, 16)); // over max
-}
-
-test "navSelect wraps with more rows than one viewport" {
-    // 6 columns, 30 results => 5 logical rows. Pass the *total* row count.
-    const cols: usize = 6;
-    const count: usize = 30;
-    const rows: usize = 5;
-
-    // Down from the last row wraps to the same column on the top row.
-    try std.testing.expectEqual(@as(usize, 1), navSelect("nav_down", 25, count, cols, rows));
-    // Down within range advances one row.
-    try std.testing.expectEqual(@as(usize, 7), navSelect("nav_down", 1, count, cols, rows));
-    // Up from the top row wraps to the bottom row (same column).
-    try std.testing.expectEqual(@as(usize, 25), navSelect("nav_up", 1, count, cols, rows));
-    // Left/right wrap at the ends of the whole result set.
-    try std.testing.expectEqual(@as(usize, 29), navSelect("nav_left", 0, count, cols, rows));
-    try std.testing.expectEqual(@as(usize, 0), navSelect("nav_right", 29, count, cols, rows));
-}
-
-test "adjustScrollTop keeps a row selection inside the viewport" {
-    var top: usize = 0;
-    // Viewport of 4 rows over 8 total rows.
-    adjustScrollTop(6, &top, 4, 8); // row 6 -> top must be 3 (rows 3..6)
-    try std.testing.expectEqual(@as(usize, 3), top);
-    adjustScrollTop(0, &top, 4, 8); // back to top
-    try std.testing.expectEqual(@as(usize, 0), top);
-    // Selection already visible leaves scroll untouched.
-    top = 2;
-    adjustScrollTop(3, &top, 4, 8);
-    try std.testing.expectEqual(@as(usize, 2), top);
-}
-
-test "scrollbarThumb geometry for both styles" {
-    // Expand: thumb height tracks the visible fraction.
-    const e = scrollbarThumb(.expand, 4, 16);
-    try std.testing.expectEqual(@as(usize, 1), e.thumb_h);
-    try std.testing.expectEqual(@as(usize, 3), e.travel);
-
-    // Bar: always a single cell, full travel.
-    const b = scrollbarThumb(.bar, 4, 16);
-    try std.testing.expectEqual(@as(usize, 1), b.thumb_h);
-    try std.testing.expectEqual(@as(usize, 3), b.travel);
-
-    // Larger viewport relative to total -> taller expand thumb.
-    const e2 = scrollbarThumb(.expand, 8, 12);
-    try std.testing.expectEqual(@as(usize, 5), e2.thumb_h); // 8*8/12 = 5
-    try std.testing.expectEqual(@as(usize, 3), e2.travel);
-
-    // No scrolling needed -> thumb fills the viewport, no travel.
-    const none = scrollbarThumb(.expand, 6, 6);
-    try std.testing.expectEqual(@as(usize, 6), none.thumb_h);
-    try std.testing.expectEqual(@as(usize, 0), none.travel);
-}
-
-test "scrollbarCell smooth sub-character positioning" {
-    // thumb_h=1 at pos_eighths=0: row 0 is a full cell, row 1 is rail.
-    const full = scrollbarCell(0, 1, 0);
-    try std.testing.expectEqualStrings("█", full.char);
-    try std.testing.expect(!full.invert);
-    try std.testing.expectEqualStrings(" ", scrollbarCell(0, 1, 1).char);
-
-    // thumb_h=1 at pos_eighths=4 (half a cell down):
-    //   row 0: bottom cap — lower 4/8 filled (▄), normal colors
-    const bot = scrollbarCell(4, 1, 0);
-    try std.testing.expectEqualStrings("▄", bot.char);
-    try std.testing.expect(!bot.invert);
-    //   row 1: top cap — top 4/8 filled (▄), inverted colors
-    const top = scrollbarCell(4, 1, 1);
-    try std.testing.expectEqualStrings("▄", top.char);
-    try std.testing.expect(top.invert);
-
-    // thumb_h=2 at pos_eighths=0: rows 0 and 1 full, row 2 rail.
-    try std.testing.expectEqualStrings("█", scrollbarCell(0, 2, 0).char);
-    try std.testing.expectEqualStrings("█", scrollbarCell(0, 2, 1).char);
-    try std.testing.expectEqualStrings(" ", scrollbarCell(0, 2, 2).char);
-
-    // thumb_h=1 at pos_eighths=2: bottom 6/8 of row 0 filled (▆), top 2/8 of row 1 filled (inverted ▆).
-    const b2 = scrollbarCell(2, 1, 0);
-    try std.testing.expectEqualStrings("▆", b2.char);
-    try std.testing.expect(!b2.invert);
-    const t2 = scrollbarCell(2, 1, 1);
-    try std.testing.expectEqualStrings("▆", t2.char);
-    try std.testing.expect(t2.invert);
-
-    // smoothScrollPos: at max scroll the thumb sits exactly at the bottom.
-    // viewport=4, total=16 -> thumb_h=1, travel=3, max_scroll=12
-    const tg = scrollbarThumb(.expand, 4, 16);
-    const pos_max = smoothScrollPos(12, 12, tg.travel); // scroll_top == max_scroll
-    try std.testing.expectEqual(tg.travel * 8, pos_max); // thumb top at last row*8, no overflow
 }
