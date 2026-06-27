@@ -18,6 +18,8 @@ const integration = @import("integration.zig");
 const pid_lock = @import("pid_lock.zig");
 const color = @import("color.zig");
 const tui_draw = @import("tui_draw.zig");
+const clipboard = @import("clipboard.zig");
+const copyToClipboard = clipboard.copyToClipboard;
 
 // ---------------------------------------------------------------------------
 // Namespaced Module Aliases & Forwarding Wrappers
@@ -4860,104 +4862,5 @@ pub fn main(init: std.process.Init) !void {
         _ = std.posix.system.nanosleep(&ts, null);
         writeAll(std.posix.STDOUT_FILENO, emoji) catch {};
         writeAll(std.posix.STDOUT_FILENO, "\n") catch {};
-    }
-}
-
-fn copyToClipboard(init: std.process.Init, text: []const u8, safe: bool) !void {
-    const io = init.io;
-    var buf: [64]u8 = undefined;
-    const clean_text = if (safe) emojig.stripVariationSelectors(text, &buf) else text;
-
-    var copied = false;
-
-    if (std.process.spawn(io, .{
-        .argv = &.{"wl-copy"},
-        .stdin = .pipe,
-        .stdout = .ignore,
-        .stderr = .ignore,
-    })) |spawned| {
-        var child = spawned;
-        try writeAll(child.stdin.?.handle, clean_text);
-        child.stdin.?.close(io);
-        child.stdin = null;
-        if (child.wait(io)) |term| {
-            switch (term) {
-                .exited => |code| {
-                    if (code == 0) copied = true;
-                },
-                else => {},
-            }
-        } else |_| {}
-    } else |_| {}
-
-    if (!copied) {
-        if (std.process.spawn(io, .{
-            .argv = &.{ "xclip", "-selection", "clipboard" },
-            .stdin = .pipe,
-            .stdout = .ignore,
-            .stderr = .ignore,
-        })) |spawned| {
-            var child = spawned;
-            try writeAll(child.stdin.?.handle, clean_text);
-            child.stdin.?.close(io);
-            child.stdin = null;
-            if (child.wait(io)) |term| {
-                switch (term) {
-                    .exited => |code| {
-                        if (code == 0) copied = true;
-                    },
-                    else => {},
-                }
-            } else |_| {}
-        } else |_| {}
-    }
-
-    if (!copied) {
-        if (init.environ_map.get("TMUX") != null) {
-            if (std.process.spawn(io, .{
-                .argv = &.{ "tmux", "load-buffer", "-" },
-                .stdin = .pipe,
-                .stdout = .ignore,
-                .stderr = .ignore,
-            })) |spawned| {
-                var child = spawned;
-                try writeAll(child.stdin.?.handle, clean_text);
-                child.stdin.?.close(io);
-                child.stdin = null;
-                if (child.wait(io)) |term| {
-                    switch (term) {
-                        .exited => |code| {
-                            if (code == 0) copied = true;
-                        },
-                        else => {},
-                    }
-                } else |_| {}
-            } else |_| {}
-        }
-    }
-
-    if (!copied) {
-        // Fallback: OSC 52 escape sequence (remote terminal & browser sandbox compatible)
-        const tty_flags = std.posix.O{ .ACCMODE = .WRONLY };
-        if (std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", tty_flags, 0)) |fd| {
-            defer _ = std.posix.system.close(fd);
-            var base64_buf: [256]u8 = undefined;
-            const base64_str = std.base64.standard.Encoder.encode(&base64_buf, clean_text);
-            var osc_buf: [512]u8 = undefined;
-            // Write to both CLIPBOARD ('c') and PRIMARY ('p') selection buffers
-            const osc_seq_c = std.fmt.bufPrint(&osc_buf, "\x1b]52;c;{s}\x07", .{base64_str}) catch "";
-            if (osc_seq_c.len > 0) {
-                _ = std.posix.system.write(fd, osc_seq_c.ptr, osc_seq_c.len);
-            }
-            const osc_seq_p = std.fmt.bufPrint(&osc_buf, "\x1b]52;p;{s}\x07", .{base64_str}) catch "";
-            if (osc_seq_p.len > 0) {
-                _ = std.posix.system.write(fd, osc_seq_p.ptr, osc_seq_p.len);
-            }
-            copied = true;
-        } else |_| {}
-    }
-
-    if (!copied) {
-        return error.ClipboardFailed;
     }
 }
