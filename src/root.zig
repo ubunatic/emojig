@@ -522,4 +522,5 @@ pub const SynonymDb = struct {
 test {
     std.testing.refAllDecls(@This());
     _ = @import("root_test.zig");
+    _ = @import("ranking_test.zig");
 }
