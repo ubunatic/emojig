@@ -310,99 +310,51 @@ fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bi
     const lq = if (is_sel and hover_left) "\x1b[1;4m\u{2039}\x1b[22;24m" else "\x1b[1m\u{2039}\x1b[22m";
     const rq = if (is_sel and hover_right) "\x1b[1;4m\u{203a}\x1b[22;24m" else "\x1b[1m\u{203a}\x1b[22m";
 
-    switch (idx) {
-        0 => {
-            const cb = if (shell_int) "✔" else " ";
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  shell integration\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        1 => {
-            const val_str = if (key_bind_editing)
-                try std.fmt.bufPrint(buf[200..], "[{s}▋]", .{key_bind})
-            else
-                try std.fmt.bufPrint(buf[200..], "[{s}]", .{key_bind});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  shell key binding\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        2 => {
-            const cb = if (show_cats) "✔" else " ";
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  show all categories\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        3 => {
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{amb_chars});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  ambiguous chars\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        4 => {
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(theme)});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  theme\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        5 => {
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{@tagName(scrollbar)});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  scrollbar\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        6 => {
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_cols, rq });
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  grid width (cols)\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        7 => {
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s} {d:>2} {s}]", .{ lq, grid_rows, rq });
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  grid height (rows)\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        8 => {
-            const cb = if (grid_compact) "✔" else " ";
-            const val_str = try std.fmt.bufPrint(buf[200..], "[{s}]", .{cb});
-            const w = ansiDisplayWidth(val_str);
-            var spaces_buf: [10]u8 = undefined;
-            const pad_count = if (w < 9) 9 - w else 0;
-            for (0..pad_count) |j| spaces_buf[j] = ' ';
-            const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-            return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  compact grid\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded });
-        },
-        9 => {
-            return std.fmt.bufPrint(buf, "{s} {s}{s}[clear]    recent (MRU) history\x1b[0m", .{ palette.app_bg, bg, sel_prefix });
-        },
-        else => unreachable,
+    const opt = g_spec.settings.options[idx];
+    var val_buf: [128]u8 = undefined;
+    var val_str: []const u8 = "";
+
+    if (std.mem.eql(u8, opt.type, "boolean")) {
+        const val = if (std.mem.eql(u8, opt.id, "shell_integration"))
+            shell_int
+        else if (std.mem.eql(u8, opt.id, "show_all_categories"))
+            show_cats
+        else if (std.mem.eql(u8, opt.id, "compact"))
+            grid_compact
+        else
+            false;
+        val_str = try std.fmt.bufPrint(&val_buf, "[{s}]", .{if (val) "✔" else " "});
+    } else if (std.mem.eql(u8, opt.type, "choice")) {
+        const val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
+            key_bind
+        else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
+            amb_chars
+        else if (std.mem.eql(u8, opt.id, "theme"))
+            @tagName(theme)
+        else if (std.mem.eql(u8, opt.id, "scrollbar_style"))
+            @tagName(scrollbar)
+        else
+            "";
+        val_str = if (std.mem.eql(u8, opt.id, "shell_key_binding") and key_bind_editing)
+            try std.fmt.bufPrint(&val_buf, "[{s}▋]", .{val})
+        else
+            try std.fmt.bufPrint(&val_buf, "[{s}]", .{val});
+    } else if (std.mem.eql(u8, opt.type, "integer")) {
+        const val = if (std.mem.eql(u8, opt.id, "cols"))
+            grid_cols
+        else
+            grid_rows;
+        val_str = try std.fmt.bufPrint(&val_buf, "[{s} {d:>2} {s}]", .{ lq, val, rq });
+    } else if (std.mem.eql(u8, opt.type, "action")) {
+        val_str = try std.fmt.bufPrint(&val_buf, "[{s}]", .{opt.default});
     }
+
+    const w = ansiDisplayWidth(val_str);
+    var spaces_buf: [10]u8 = undefined;
+    const pad_count = if (w < 9) 9 - w else 0;
+    for (0..pad_count) |j| spaces_buf[j] = ' ';
+    const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
+    return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded, opt.label });
 }
 
 /// Apply a non-text settings change (toggles and 2-state enums) without any
@@ -1528,7 +1480,7 @@ pub fn main(init: std.process.Init) !void {
         var cat_scroll_top: usize = 0;
         var settings_scroll_top: usize = 0;
         // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
-        const settings_count: usize = 10;
+        const settings_count: usize = g_spec.settings.options.len;
         var help_scroll_top: usize = 0;
         var about_scroll_top: usize = 0;
         var anim_frame: usize = 0;
