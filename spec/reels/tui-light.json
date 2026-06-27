@@ -27,7 +27,7 @@
   ],
   "script": [
     { "type": "echo Hello TUI ", "desc": "simple echo - no CR yet" },
-    { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
+    { "type": "<C-o>", "desc": "open emojig", "show_keys": true },
     { "pause": "1s" },
     { "type": "car", "desc": "search for 'car'", "speed": 0.4 },
     { "pause": "1s" },

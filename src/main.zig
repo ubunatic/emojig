@@ -421,6 +421,7 @@ fn toggleSetting(
     home: []const u8,
     shell_name: []const u8,
 ) void {
+    _ = amb_chars;
     const io = init.io;
     switch (idx) {
         0 => {
@@ -438,11 +439,6 @@ fn toggleSetting(
             show_cats.* = !show_cats.*;
             saveKeyToConfig(io, "show_all_categories", if (show_cats.*) "true" else "false");
         },
-        3 => {
-            amb_chars.* = if (std.mem.eql(u8, amb_chars.*, "wide")) "narrow" else "wide";
-            saveKeyToConfig(io, "ambiguous_chars", amb_chars.*);
-            tui_draw.g_wide_ambiguous = !std.mem.eql(u8, amb_chars.*, "narrow");
-        },
         5 => {
             scrollbar.* = switch (scrollbar.*) {
                 .expand => .bar,
@@ -454,7 +450,23 @@ fn toggleSetting(
             grid_compact.* = !grid_compact.*;
             saveKeyToConfig(io, "compact", if (grid_compact.*) "true" else "false");
         },
-        else => {}, // 1 = text input, 4 = theme, 6/7 = grid dims, 9 = clear MRU — handled inline
+        else => {}, // 1 = text input, 3 = choice, 4 = theme, 6/7 = grid dims, 9 = clear MRU — handled inline
+    }
+}
+
+fn saveChoice(
+    init: std.process.Init,
+    opt_id: []const u8,
+    choice: []const u8,
+    shell_key_binding: *[]const u8,
+    ambiguous_chars: *[]const u8,
+) void {
+    saveKeyToConfig(init.io, opt_id, choice);
+    if (std.mem.eql(u8, opt_id, "shell_key_binding")) {
+        shell_key_binding.* = choice;
+    } else if (std.mem.eql(u8, opt_id, "ambiguous_chars")) {
+        ambiguous_chars.* = choice;
+        tui_draw.g_wide_ambiguous = !std.mem.eql(u8, choice, "narrow");
     }
 }
 
@@ -510,7 +522,7 @@ fn switcherCatIcon(idx: usize) []const u8 {
 fn settingHelp(idx: usize) []const u8 {
     return switch (idx) {
         0 => "Shell integration\n\nAdds an `emojig` shell\nfunction. Enable, then\n`source` your shell rc.",
-        1 => "Shell key binding\n\nEnter edits the keybind\n(e.g. C-e). source your\nshell rc afterwards.",
+        1 => "Shell key binding\n\nChoose a keybinding.\nOverride by selecting 5\nor edit shell_key_binding\nin ~/.config/emojig/config",
         2 => "Show all categories\n\non/off — list every\ncategory filter, or only\nmatching/used ones.",
         3 => "Ambiguous chars\n\nwide | narrow\nColumn width of chars\nlike \u{2192} \u{2248} \u{2605}.",
         4 => "Theme\n\ndark | light | system\nsystem follows the\nterminal background.",
@@ -1546,6 +1558,8 @@ pub fn main(init: std.process.Init) !void {
         tui_draw.g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
 
         var keybind_editing: bool = false;
+        var active_dropdown_opt_idx: ?usize = null;
+        var active_dropdown_sel: usize = 0;
         var keybind_input_buf: [32]u8 = undefined;
         var keybind_input_len: usize = 0;
         var keybind_committed_buf: [32]u8 = undefined;
@@ -1835,11 +1849,15 @@ pub fn main(init: std.process.Init) !void {
                         if (show_top_border) current_total_rows += 1;
                         if (g_spec.layout.top_padding) current_total_rows += 1; // Top padding
                         current_total_rows += 1; // Search bar
-                        current_total_rows += 1; // Spacer
-                        current_total_rows += rows; // Grid rows (+ switcher if active)
-                        if (show_switcher) current_total_rows += 1; // Hline between grid and switcher
-                        current_total_rows += 1; // Hline between grid/switcher and description
-                        current_total_rows += 1; // Description
+                        if (active_dropdown_opt_idx) |opt_idx| {
+                            current_total_rows += 2 + (g_spec.settings.options[opt_idx].choices.?.len);
+                        } else {
+                            current_total_rows += 1; // Spacer
+                            current_total_rows += rows; // Grid rows (+ switcher if active)
+                            if (show_switcher) current_total_rows += 1; // Hline between grid and switcher
+                            current_total_rows += 1; // Hline between grid/switcher and description
+                            current_total_rows += 1; // Description
+                        }
                         current_total_rows += 1; // Status bar
                         if (show_bottom_border) current_total_rows += 1;
                         if (show_debug) current_total_rows += 2;
@@ -1925,6 +1943,37 @@ pub fn main(init: std.process.Init) !void {
                         }
                     }
                 };
+                if (active_dropdown_opt_idx) |opt_idx| {
+                    const opt = g_spec.settings.options[opt_idx];
+                    popup_title = opt.label;
+                    var pos: usize = 0;
+                    if (opt.choices) |choices| {
+                        for (choices, 0..) |choice, ci| {
+                            const is_selected = (ci == active_dropdown_sel);
+                            const prefix = if (is_selected) "> " else "  ";
+                            const bold_start = if (is_selected) "\x1b[1m" else "";
+                            const bold_end = if (is_selected) "\x1b[22m" else "";
+                            if (std.mem.eql(u8, opt.id, "shell_key_binding")) {
+                                const caveat = if (std.mem.eql(u8, choice, "C-o"))
+                                    "leaves C-e free"
+                                else if (std.mem.eql(u8, choice, "C-e"))
+                                    "blocks end-line"
+                                else if (std.mem.eql(u8, choice, "C-x e"))
+                                    "blocks editor"
+                                else if (std.mem.eql(u8, choice, "C-g"))
+                                    "blocks abort key"
+                                else
+                                    "edit config";
+                                const line = std.fmt.bufPrint(popup_buf[pos..], "{s}{s}{s}: {s}{s}\n", .{ prefix, bold_start, choice, caveat, bold_end }) catch break;
+                                pos += line.len;
+                            } else {
+                                const line = std.fmt.bufPrint(popup_buf[pos..], "{s}{s}{s}{s}\n", .{ prefix, bold_start, choice, bold_end }) catch break;
+                                pos += line.len;
+                            }
+                        }
+                    }
+                    popup_msg = if (pos > 0) popup_buf[0 .. pos - 1] else "";
+                }
                 const rw = RowWriter{ .fd = stdout_fd, .total = current_total_rows, .count = &printed_rows };
 
                 if (rctx.is_hidden) {
@@ -2102,7 +2151,7 @@ pub fn main(init: std.process.Init) !void {
                     const is_focus_lost = !has_focus;
                     const is_help_mode = (query_len > 0 and query_buf[0] == '?');
                     if (popup_msg != null and !is_too_small) {
-                        const popup_rows = rows + 3;
+                        const popup_rows = if (active_dropdown_opt_idx) |opt_idx| 2 + (g_spec.settings.options[opt_idx].choices.?.len) else rows + 3;
                         var lines = std.mem.splitScalar(u8, popup_msg.?, '\n');
                         var h_idx: usize = 0;
                         while (h_idx < popup_rows) : (h_idx += 1) {
@@ -3903,6 +3952,7 @@ pub fn main(init: std.process.Init) !void {
                             } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
                                 // Left click press.
                                 if (popup_msg != null) {
+                                    active_dropdown_opt_idx = null;
                                     popup_msg = null;
                                     break :sgr_loop;
                                 }
@@ -3961,12 +4011,28 @@ pub fn main(init: std.process.Init) !void {
                                             const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
                                             if (opt_idx < settings_count) {
                                                 selected_idx = opt_idx;
-                                                if (opt_idx == 1) {
-                                                    keybind_editing = true;
-                                                    keybind_input_len = shell_key_binding.len;
-                                                    const len = @min(shell_key_binding.len, keybind_input_buf.len);
-                                                    @memcpy(keybind_input_buf[0..len], shell_key_binding[0..len]);
-                                                    shell_key_binding = keybind_input_buf[0..len];
+                                                const opt = g_spec.settings.options[opt_idx];
+                                                if (std.mem.eql(u8, opt.type, "choice")) {
+                                                    active_dropdown_opt_idx = opt_idx;
+                                                    const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
+                                                        shell_key_binding
+                                                    else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
+                                                        ambiguous_chars
+                                                    else
+                                                        "";
+                                                    var found_idx: usize = 0;
+                                                    if (opt.choices) |choices| {
+                                                        for (choices, 0..) |choice, ci| {
+                                                            if (std.mem.eql(u8, choice, current_val)) {
+                                                                found_idx = ci;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
+                                                            found_idx = 4; // custom
+                                                        }
+                                                    }
+                                                    active_dropdown_sel = found_idx;
                                                 } else if (opt_idx == 4) {
                                                     theme = cycleTheme(theme, true);
                                                     saveThemeToConfig(init.io, theme);
@@ -4098,7 +4164,32 @@ pub fn main(init: std.process.Init) !void {
                 };
             } else {
                 // Printable text — append to keybind input or search query.
-                if (has_focus and keybind_editing) {
+                if (has_focus and active_dropdown_opt_idx != null) {
+                    const opt_idx = active_dropdown_opt_idx.?;
+                    const opt = g_spec.settings.options[opt_idx];
+                    if (opt.choices) |choices| {
+                        for (bytes) |b| {
+                            if (b >= '1' and b <= '0' + @as(u8, @intCast(choices.len))) {
+                                const sel_idx = b - '1';
+                                const choice = choices[sel_idx];
+                                if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
+                                    active_dropdown_opt_idx = null;
+                                    popup_msg = null;
+                                    keybind_editing = true;
+                                    keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
+                                    @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
+                                    keybind_input_len = keybind_committed_len;
+                                    @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
+                                    shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                                } else {
+                                    saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                    active_dropdown_opt_idx = null;
+                                    popup_msg = null;
+                                }
+                            }
+                        }
+                    }
+                } else if (has_focus and keybind_editing) {
                     for (bytes) |b| {
                         if (b >= 32 and b <= 126 and keybind_input_len < keybind_input_buf.len) {
                             keybind_input_buf[keybind_input_len] = b;
@@ -4205,7 +4296,39 @@ pub fn main(init: std.process.Init) !void {
             // Dispatch the decoded key through the spec/keys.json bindings.
             if (logical) |name| {
                 const action = g_spec.actionFor(name) orelse "";
-                if (popup_msg != null) {
+                if (active_dropdown_opt_idx) |opt_idx| {
+                    const opt = g_spec.settings.options[opt_idx];
+                    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "q") or std.mem.eql(u8, action, "quit")) {
+                        active_dropdown_opt_idx = null;
+                        popup_msg = null;
+                    } else if (std.mem.eql(u8, name, "up") or std.mem.eql(u8, action, "nav_up")) {
+                        if (opt.choices) |choices| {
+                            active_dropdown_sel = if (active_dropdown_sel > 0) active_dropdown_sel - 1 else choices.len - 1;
+                        }
+                    } else if (std.mem.eql(u8, name, "down") or std.mem.eql(u8, action, "nav_down")) {
+                        if (opt.choices) |choices| {
+                            active_dropdown_sel = (active_dropdown_sel + 1) % choices.len;
+                        }
+                    } else if (std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "select")) {
+                        if (opt.choices) |choices| {
+                            const choice = choices[active_dropdown_sel];
+                            if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
+                                active_dropdown_opt_idx = null;
+                                popup_msg = null;
+                                keybind_editing = true;
+                                keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
+                                @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
+                                keybind_input_len = keybind_committed_len;
+                                @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
+                                shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                            } else {
+                                saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                active_dropdown_opt_idx = null;
+                                popup_msg = null;
+                            }
+                        }
+                    }
+                } else if (popup_msg != null) {
                     if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "f1") or std.mem.eql(u8, action, "delete") or std.mem.eql(u8, action, "select") or std.mem.eql(u8, action, "quit")) {
                         popup_msg = null;
                     }
@@ -4266,13 +4389,28 @@ pub fn main(init: std.process.Init) !void {
                             adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
                             const opt_idx = selected_idx orelse 0;
-                            if (opt_idx == 1) {
-                                keybind_editing = true;
-                                keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
-                                @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
-                                keybind_input_len = keybind_committed_len;
-                                @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
-                                shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                            const opt = g_spec.settings.options[opt_idx];
+                            if (std.mem.eql(u8, opt.type, "choice")) {
+                                active_dropdown_opt_idx = opt_idx;
+                                const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
+                                    shell_key_binding
+                                else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
+                                    ambiguous_chars
+                                else
+                                    "";
+                                var found_idx: usize = 0;
+                                if (opt.choices) |choices| {
+                                    for (choices, 0..) |choice, ci| {
+                                        if (std.mem.eql(u8, choice, current_val)) {
+                                            found_idx = ci;
+                                            break;
+                                        }
+                                    }
+                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
+                                        found_idx = 4; // custom
+                                    }
+                                }
+                                active_dropdown_sel = found_idx;
                             } else if (opt_idx == 4) {
                                 theme = cycleTheme(theme, true);
                                 saveThemeToConfig(init.io, theme);
@@ -4320,6 +4458,42 @@ pub fn main(init: std.process.Init) !void {
                                 if (theme == .system)
                                     system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                            } else if (opt_idx < settings_count and std.mem.eql(u8, g_spec.settings.options[opt_idx].type, "choice")) {
+                                const opt = g_spec.settings.options[opt_idx];
+                                if (opt.choices) |choices| {
+                                    const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
+                                        shell_key_binding
+                                    else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
+                                        ambiguous_chars
+                                    else
+                                        "";
+                                    var found_idx: usize = 0;
+                                    for (choices, 0..) |choice, ci| {
+                                        if (std.mem.eql(u8, choice, current_val)) {
+                                            found_idx = ci;
+                                            break;
+                                        }
+                                    }
+                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
+                                        found_idx = 4; // custom
+                                    }
+                                    const next_idx = if (increase)
+                                        (found_idx + 1) % choices.len
+                                    else
+                                        (found_idx + choices.len - 1) % choices.len;
+
+                                    const choice = choices[next_idx];
+                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
+                                        keybind_editing = true;
+                                        keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
+                                        @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
+                                        keybind_input_len = keybind_committed_len;
+                                        @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
+                                        shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                                    } else {
+                                        saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                    }
+                                }
                             } else if (opt_idx != 1 and opt_idx != 9) {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);

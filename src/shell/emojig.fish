@@ -10,7 +10,7 @@ function _emojig_widget
 end
 
 set -l _emojig_integration "true"
-set -l _emojig_key "\ce"
+set -l _emojig_key "\co"
 
 if test -f ~/.config/emojig/config
     set -l _cfg_int (grep "^shell_integration=" ~/.config/emojig/config | cut -d= -f2)
@@ -20,8 +20,14 @@ if test -f ~/.config/emojig/config
     set -l _cfg_key (grep "^shell_key_binding=" ~/.config/emojig/config | cut -d= -f2)
     if test "$_cfg_key" = "none"
         set _emojig_key "none"
+    else if test "$_cfg_key" = "C-o"
+        set _emojig_key \co
     else if test "$_cfg_key" = "C-e"
         set _emojig_key \ce
+    else if test "$_cfg_key" = "C-g"
+        set _emojig_key \cg
+    else if test "$_cfg_key" = "C-x e"
+        set _emojig_key \cxe
     else if test -n "$_cfg_key"
         set _emojig_key $_cfg_key
     end

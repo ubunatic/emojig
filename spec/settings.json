@@ -10,9 +10,10 @@
     },
     {
       "id": "shell_key_binding",
-      "type": "text",
+      "type": "choice",
       "label": "shell key binding",
-      "default": "C-e"
+      "choices": ["C-o", "C-e", "C-x e", "C-g", "custom"],
+      "default": "C-o"
     },
     {
       "id": "show_all_categories",

@@ -22,7 +22,7 @@ _emojig_widget() {
 }
 
 _emojig_integration="true"
-_emojig_key="^E"
+_emojig_key="^O"
 
 if test -f ~/.config/emojig/config; then
   _cfg_int=$(grep "^shell_integration=" ~/.config/emojig/config | cut -d= -f2)
@@ -33,8 +33,14 @@ if test -f ~/.config/emojig/config; then
   if test "$_cfg_key" = "none"; then
     _emojig_key="none"
   elif test -n "$_cfg_key"; then
-    if test "$_cfg_key" = "C-e"; then
+    if test "$_cfg_key" = "C-o"; then
+      _emojig_key="^O"
+    elif test "$_cfg_key" = "C-e"; then
       _emojig_key="^E"
+    elif test "$_cfg_key" = "C-g"; then
+      _emojig_key="^G"
+    elif test "$_cfg_key" = "C-x e"; then
+      _emojig_key="^Xe"
     else
       _emojig_key="$_cfg_key"
     fi

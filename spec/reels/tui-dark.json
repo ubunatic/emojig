@@ -24,7 +24,7 @@
   "pause": "1s",
   "script": [
     { "type": "echo Hello TUI ", "desc": "echo start", "pause": 0 },
-    { "type": "<C-e>", "desc": "open emojig", "show_keys": true },
+    { "type": "<C-o>", "desc": "open emojig", "show_keys": true },
     { "type": "car", "desc": "search for 'car'", "speed": 0.4 },
     { "type": "<bs><bs><bs>", "desc": "delete search", "speed": 0.4, "pause": 0 },
     { "type": "cat", "desc": "search for cat", "speed": 0.4 },

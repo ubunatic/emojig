@@ -333,9 +333,12 @@ pub fn buildGuiArgv(
 fn expandHex(raw: []const u8, buf: *[8]u8) []const u8 {
     const hex = if (raw.len > 0 and raw[0] == '#') raw[1..] else raw;
     if (hex.len == 3) {
-        buf[0] = hex[0]; buf[1] = hex[0];
-        buf[2] = hex[1]; buf[3] = hex[1];
-        buf[4] = hex[2]; buf[5] = hex[2];
+        buf[0] = hex[0];
+        buf[1] = hex[0];
+        buf[2] = hex[1];
+        buf[3] = hex[1];
+        buf[4] = hex[2];
+        buf[5] = hex[2];
         return buf[0..6];
     }
     if (hex.len == 6 or hex.len == 8) return hex;
