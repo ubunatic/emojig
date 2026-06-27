@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Watches spec/art.json and rebuilds on each save.
+# Watches spec files and rebuilds on each save.
 set -euo pipefail
 
 
@@ -33,6 +33,12 @@ do
               _go run ./scripts/gen_about_art/ print
            then echo "INF: art compiled and printed"
            else echo "ERR: failed to compile art"; exit 1
+           fi
+           ;;
+       (input.yaml)
+           if _go run ./scripts/gen_input_spec/
+           then echo "INF: input spec compiled"
+           else echo "ERR: failed to compile input spec"; exit 1
            fi
            ;;
        (*) ;;

@@ -52,13 +52,22 @@ edit-art:     ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuil
 edit-%:
 	($(ED_TUI) "spec/$*.json" || setsid $(ED_GUI) "spec/$*.json" >/dev/null 2>&1)
 
+edit-input: ⚙️  # open spec/input.yaml in nvim-qt for editing
+	($(ED_TUI) "spec/input.yaml" || setsid $(ED_GUI) "spec/input.yaml" >/dev/null 2>&1)
+
 watch-strings: ⚙️
 watch-art:     ⚙️
 watch-%:
 	@scripts/watch.sh spec/$*.json
 
-gen-art: ⚙️  # compile spec/art.json → spec/strings.json
+watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input spec
+	@scripts/watch.sh spec/input.yaml
+
+gen-art: ⚙️  # compile spec/art.json → spec/art.generated.json
 	go run ./scripts/gen_about_art/
+
+gen-input: ⚙️  # compile spec/input.yaml → spec/input.generated.json
+	go run ./scripts/gen_input_spec/
 
 gen-colors: ⚙️  # regenerate spec/colors.json (full xterm-256 palette)
 	go run ./scripts/gen_colors/ > spec/colors.json

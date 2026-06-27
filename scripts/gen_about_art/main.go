@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Reads spec/art.json and compiles pixel-art entries into $[fg=N,bg=M]{char}
-// DSL strings, then upserts the resulting *_lines or *_frames arrays into
-// spec/strings.json.  Single-frame entries use inline "shape"; multi-frame
-// entries use "frames_dir" (directory of numbered .txt files) + "delays_ms".
+// DSL strings, then upserts the resulting *_lines / *_frames arrays into
+// spec/art.generated.json.  Single-frame entries use inline "shape";
+// multi-frame entries use "frames_dir" or "stack" sources.
 // Run: go run ./scripts/gen_about_art/
 
 package main
@@ -54,10 +54,10 @@ var globalRGBs [256]color.NRGBA
 
 // rawArtSpec is the unmarshalled shape before palette resolution.
 type rawArtSpec struct {
-	Colors   map[string]json.RawMessage   `json:"colors"`
-	Palette  map[string]json.RawMessage   `json:"palette"`
-	Priority []string                     `json:"priority"`
-	Art      []ArtEntry                   `json:"art"`
+	Colors   map[string]json.RawMessage `json:"colors"`
+	Palette  map[string]json.RawMessage `json:"palette"`
+	Priority []string                   `json:"priority"`
+	Art      []ArtEntry                 `json:"art"`
 }
 
 type ArtSpec struct {
@@ -209,7 +209,7 @@ func resolvePalette(rawPalette map[string]json.RawMessage, rawColors map[string]
 			out[k] = nil
 			continue
 		}
-		
+
 		// If it matches a local override name or global color name
 		var str string
 		if err := json.Unmarshal(v, &str); err == nil {
@@ -990,22 +990,22 @@ func main() {
 			continue
 		}
 
-		// Write to strings.json.
+		// Write to art.generated.json.
 		if strings.HasSuffix(entry.Target, "_frames") {
-			if err := upsertFrames("spec/strings.json", entry.Target, allFrames); err != nil {
+			if err := upsertFrames("spec/art.generated.json", entry.Target, allFrames); err != nil {
 				fatalf("upsert %s: %v", entry.Target, err)
 			}
 			delaysKey := strings.TrimSuffix(entry.Target, "_frames") + "_delays"
-			if err := upsertInts("spec/strings.json", delaysKey, delays); err != nil {
+			if err := upsertInts("spec/art.generated.json", delaysKey, delays); err != nil {
 				fatalf("upsert %s: %v", delaysKey, err)
 			}
-			fmt.Printf("spec/strings.json: updated %s (%d frames) + %s\n",
+			fmt.Printf("spec/art.generated.json: updated %s (%d frames) + %s\n",
 				entry.Target, len(allFrames), delaysKey)
 		} else {
-			if err := upsertLines("spec/strings.json", entry.Target, allFrames[0]); err != nil {
+			if err := upsertLines("spec/art.generated.json", entry.Target, allFrames[0]); err != nil {
 				fatalf("upsert %s: %v", entry.Target, err)
 			}
-			fmt.Printf("spec/strings.json: updated %s (%d lines)\n", entry.Target, len(allFrames[0]))
+			fmt.Printf("spec/art.generated.json: updated %s (%d lines)\n", entry.Target, len(allFrames[0]))
 		}
 	}
 }

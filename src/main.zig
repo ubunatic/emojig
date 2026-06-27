@@ -12,6 +12,9 @@ const host = @import("host.zig");
 const defaults = @import("defaults.zig");
 const spec_mod = @import("spec.zig");
 const tui = @import("tui.zig");
+const cli = @import("cli.zig");
+const input = @import("input.zig");
+const render = @import("render.zig");
 
 const config = @import("config.zig");
 const integration = @import("integration.zig");
@@ -52,7 +55,6 @@ inline fn applyTerminalColors(stdout_fd: std.posix.fd_t, t: Theme, sys: Theme, a
     color.applyTerminalColors(&g_spec, stdout_fd, t, sys, alt_screen);
 }
 
-const loadConfig = config.loadConfig;
 const saveKeyToConfig = config.saveKeyToConfig;
 const saveThemeToConfig = config.saveThemeToConfig;
 const saveUsizeToConfig = config.saveUsizeToConfig;
@@ -304,62 +306,6 @@ const BufferWriter = struct {
     }
 };
 
-fn renderSettingRow(buf: []u8, idx: usize, is_sel: bool, shell_int: bool, key_bind: []const u8, key_bind_editing: bool, show_cats: bool, amb_chars: []const u8, theme: Theme, scrollbar: ScrollbarStyle, grid_cols: usize, grid_rows: usize, grid_compact: bool, hover_left: bool, hover_right: bool, palette: term_lib.Palette) ![]const u8 {
-    const sel_prefix = if (is_sel) "> " else "  ";
-    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
-
-    // The grid-size `‹`/`›` are clickable buttons: always bold so they read as
-    // controls, and underlined while hovered (only on the selected/hovered row).
-    const lq = if (is_sel and hover_left) "\x1b[1;4m\u{2039}\x1b[22;24m" else "\x1b[1m\u{2039}\x1b[22m";
-    const rq = if (is_sel and hover_right) "\x1b[1;4m\u{203a}\x1b[22;24m" else "\x1b[1m\u{203a}\x1b[22m";
-
-    const opt = g_spec.settings.options[idx];
-    var val_buf: [128]u8 = undefined;
-    var val_str: []const u8 = "";
-
-    if (std.mem.eql(u8, opt.type, "boolean")) {
-        const val = if (std.mem.eql(u8, opt.id, "shell_integration"))
-            shell_int
-        else if (std.mem.eql(u8, opt.id, "show_all_categories"))
-            show_cats
-        else if (std.mem.eql(u8, opt.id, "compact"))
-            grid_compact
-        else
-            false;
-        val_str = try std.fmt.bufPrint(&val_buf, "[{s}]", .{if (val) "✔" else " "});
-    } else if (std.mem.eql(u8, opt.type, "choice")) {
-        const val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
-            key_bind
-        else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
-            amb_chars
-        else if (std.mem.eql(u8, opt.id, "theme"))
-            @tagName(theme)
-        else if (std.mem.eql(u8, opt.id, "scrollbar_style"))
-            @tagName(scrollbar)
-        else
-            "";
-        val_str = if (std.mem.eql(u8, opt.id, "shell_key_binding") and key_bind_editing)
-            try std.fmt.bufPrint(&val_buf, "[{s}▋]", .{val})
-        else
-            try std.fmt.bufPrint(&val_buf, "[{s}]", .{val});
-    } else if (std.mem.eql(u8, opt.type, "integer")) {
-        const val = if (std.mem.eql(u8, opt.id, "cols"))
-            grid_cols
-        else
-            grid_rows;
-        val_str = try std.fmt.bufPrint(&val_buf, "[{s} {d:>2} {s}]", .{ lq, val, rq });
-    } else if (std.mem.eql(u8, opt.type, "action")) {
-        val_str = try std.fmt.bufPrint(&val_buf, "[{s}]", .{opt.default});
-    }
-
-    const w = ansiDisplayWidth(val_str);
-    var spaces_buf: [10]u8 = undefined;
-    const pad_count = if (w < 9) 9 - w else 0;
-    for (0..pad_count) |j| spaces_buf[j] = ' ';
-    const padded = try std.fmt.bufPrint(buf[300..], "{s}{s}", .{ val_str, spaces_buf[0..pad_count] });
-    return std.fmt.bufPrint(buf, "{s} {s}{s}{s}  {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, padded, opt.label });
-}
-
 /// Apply a non-text settings change (toggles and 2-state enums) without any
 /// confirmation popup — the per-setting help modal (`?`/`h`/`F1`) explains what
 /// each does. `forward` only matters for multi-state enums; 2-state toggles
@@ -545,230 +491,30 @@ fn searchDedup(
 
 pub fn main(init: std.process.Init) !void {
     @setEvalBranchQuota(10000);
-    var opt_tui = false;
-    var opt_gui = false;
-    var opt_wait = false;
-    var opt_install = false;
-    var opt_rc: ?[]const u8 = null;
-    var opt_list = false;
-    var opt_theme: ?Theme = null;
-    var opt_width: ?usize = null;
-    var opt_height: ?usize = null;
-    var opt_border: ?bool = null;
-    var opt_safe = false;
-    var opt_debug = false;
-    var opt_alt_screen = false;
-    var opt_simple = false;
-    var opt_completion = false;
-    var opt_completion_shell: ?[]const u8 = null;
-    var opt_key: ?[]const u8 = null;
-    var opt_borderless = true; // spawn the GUI host terminal without decorations (default)
-    var opt_lang: ?[]const u8 = null;
-    var opt_show_switcher: ?bool = null; // null = derive from mode (--gui implies true)
+    const parsed = cli.parseArgs(init);
 
-    var args_it = init.minimal.args.iterate();
-    _ = args_it.next(); // Skip executable path
-    while (args_it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--tui")) {
-            opt_tui = true;
-        } else if (std.mem.eql(u8, arg, "--install")) {
-            opt_install = true;
-        } else if (std.mem.eql(u8, arg, "--rc")) {
-            if (args_it.next()) |v| {
-                opt_rc = v;
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --rc requires a filename (e.g. .userrc).\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.startsWith(u8, arg, "--rc=")) {
-            opt_rc = arg["--rc=".len..];
-        } else if (std.mem.eql(u8, arg, "--list")) {
-            opt_list = true;
-        } else if (std.mem.eql(u8, arg, "--gui")) {
-            opt_gui = true;
-        } else if (std.mem.eql(u8, arg, "--wait")) {
-            opt_wait = true;
-        } else if (std.mem.eql(u8, arg, "--safe")) {
-            opt_safe = true;
-        } else if (std.mem.eql(u8, arg, "--debug")) {
-            opt_debug = true;
-        } else if (std.mem.eql(u8, arg, "--alt-screen")) {
-            opt_alt_screen = true;
-        } else if (std.mem.eql(u8, arg, "--simple")) {
-            opt_simple = true;
-        } else if (std.mem.eql(u8, arg, "--completion")) {
-            opt_completion = true;
-        } else if (std.mem.startsWith(u8, arg, "--completion=")) {
-            opt_completion = true;
-            const v = arg["--completion=".len..];
-            if (std.mem.eql(u8, v, "zsh") or std.mem.eql(u8, v, "bash") or std.mem.eql(u8, v, "fish") or std.mem.eql(u8, v, "sh")) {
-                opt_completion_shell = v;
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --completion= accepts sh, zsh, bash, or fish.\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--key")) {
-            if (args_it.next()) |v| {
-                opt_key = v;
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --key requires an argument (e.g. '^E').\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--borderless")) {
-            opt_borderless = true;
-        } else if (std.mem.eql(u8, arg, "--no-borderless")) {
-            opt_borderless = false;
-        } else if (std.mem.startsWith(u8, arg, "--borderless=")) {
-            const v = arg["--borderless=".len..];
-            if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1")) {
-                opt_borderless = true;
-            } else if (std.mem.eql(u8, v, "false") or std.mem.eql(u8, v, "0")) {
-                opt_borderless = false;
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: invalid --borderless value. Use true/false or 1/0.\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--theme")) {
-            if (args_it.next()) |v| {
-                if (std.mem.eql(u8, v, "light")) opt_theme = .light else if (std.mem.eql(u8, v, "dark")) opt_theme = .dark else if (std.mem.eql(u8, v, "system")) opt_theme = .system else {
-                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid theme. Supported values are 'dark', 'light', or 'system'.\n");
-                    std.process.exit(1);
-                }
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--width")) {
-            if (args_it.next()) |v| {
-                opt_width = std.fmt.parseInt(usize, v, 10) catch {
-                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid width. Must be an integer.\n");
-                    std.process.exit(1);
-                };
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --width requires an argument.\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--height")) {
-            if (args_it.next()) |v| {
-                opt_height = std.fmt.parseInt(usize, v, 10) catch {
-                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid height. Must be an integer.\n");
-                    std.process.exit(1);
-                };
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --height requires an argument.\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--border")) {
-            if (args_it.next()) |v| {
-                if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) {
-                    opt_border = true;
-                } else if (std.mem.eql(u8, v, "0") or std.mem.eql(u8, v, "false")) {
-                    opt_border = false;
-                } else {
-                    try writeAll(std.posix.STDERR_FILENO, "Error: invalid border. Must be 1/0 or true/false.\n");
-                    std.process.exit(1);
-                }
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --border requires an argument.\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.eql(u8, arg, "--lang") or std.mem.eql(u8, arg, "-l")) {
-            if (args_it.next()) |v| {
-                opt_lang = v;
-            } else {
-                try writeAll(std.posix.STDERR_FILENO, "Error: --lang/-l requires an argument (e.g. 'de', 'es').\n");
-                std.process.exit(1);
-            }
-        } else if (std.mem.startsWith(u8, arg, "--lang=")) {
-            opt_lang = arg["--lang=".len..];
-        } else if (std.mem.eql(u8, arg, "--show-switcher")) {
-            opt_show_switcher = true;
-        } else if (std.mem.eql(u8, arg, "--no-show-switcher")) {
-            opt_show_switcher = false;
-        } else if (std.mem.startsWith(u8, arg, "--show-switcher=")) {
-            const v = arg["--show-switcher=".len..];
-            opt_show_switcher = std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1");
-        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--version")) {
-            try writeAll(std.posix.STDOUT_FILENO, "emojig " ++ build_options.version ++ "\n");
-            std.process.exit(0);
-        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            try writeAll(std.posix.STDOUT_FILENO, "Emojig - Premium Zero-Allocation Emoji Picker\n\n" ++
-                "Usage: emojig [options]\n\n" ++
-                "Options:\n" ++
-                "  --theme [dark|light|system]  Set the UI theme\n" ++
-                "  --width [number]             Set the width of the picker\n" ++
-                "  --height [number]            Set the height of the picker\n" ++
-                "  --border [1|0|true|false]    Enable or disable the border\n" ++
-                "  --lang, -l [code]            Set UI language (de, es, fr, it, pt, pl, ru, uk, nl, tr)\n" ++
-                "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
-                "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
-                "  --tui                        Force local interactive TUI session\n" ++
-                "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
-                "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
-                "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
-                "  --show-switcher[=true|false] Show horizontal category switcher bar (implied by --gui)\n" ++
-                "  --simple                     Simple fzf/sk-like list picker (use with --height)\n" ++
-                "  --wait                       Wait for spawned window to close (with --gui)\n" ++
-                "  --completion[=sh|zsh|bash|fish]  Print shell integration to stdout (auto-detects $SHELL)\n" ++
-                "  --key KEY                    Key binding to embed in --completion output (e.g. '^E')\n" ++
-                "  --install                    Install shell integration and source it in your shell rc file\n" ++
-                "  --rc FILE                    RC file for --install (e.g. .userrc); default: .zshrc/.bashrc/config.fish\n" ++
-                "  --list                       Print all emojis as 'emoji<TAB>name' for rofi/wofi/dmenu\n" ++
-                "  -v, --version                Show version and exit\n" ++
-                "  -h, --help                   Show this help message\n");
-            std.process.exit(0);
-        } else {
-            try writeAll(std.posix.STDERR_FILENO, "Error: unknown argument '");
-            try writeAll(std.posix.STDERR_FILENO, arg);
-            try writeAll(std.posix.STDERR_FILENO, "'. Use -h or --help for usage.\n");
-            std.process.exit(1);
-        }
-    }
-
-    // Determine language: CLI option takes precedence, then environment variables
-    const lang = opt_lang orelse blk: {
-        if (init.environ_map.get("EMOJIG_LANG")) |v| break :blk v;
-        if (init.environ_map.get("LANG")) |v| break :blk v;
-        if (init.environ_map.get("LC_ALL")) |v| break :blk v;
-        if (init.environ_map.get("LC_MESSAGES")) |v| break :blk v;
-        break :blk null;
-    };
-
-    // Load the declarative UI spec (spec/*.json) once, into a process-lifetime
-    // arena. The embedded JSON is trusted (shipped in the binary), so a parse
-    // failure is a build-time bug; fail loudly rather than limp on defaults.
-    var spec_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    g_spec = spec_mod.load(spec_arena.allocator(), lang) catch |e| {
-        try writeAll(std.posix.STDERR_FILENO, "Error: failed to load embedded UI spec: ");
-        try writeAll(std.posix.STDERR_FILENO, @errorName(e));
-        try writeAll(std.posix.STDERR_FILENO, "\n");
-        std.process.exit(1);
-    };
-    color.g_colors = &g_spec.colors;
-
-    if (opt_completion) {
-        const shell = opt_completion_shell orelse detectShell(init.environ_map);
-        printCompletion(shell, opt_key);
+    if (parsed.completion) {
+        const shell = parsed.completion_shell orelse detectShell(init.environ_map);
+        printCompletion(shell, parsed.key);
         std.process.exit(0);
     }
 
-    if (opt_install) {
+    if (parsed.install) {
         const home = std.mem.span(std.c.getenv("HOME") orelse {
             try writeAll(std.posix.STDERR_FILENO, "Error: HOME not set.\n");
             std.process.exit(1);
         });
         const install_shell = detectShell(init.environ_map);
-        installShellIntegration(init.io, home, install_shell, opt_rc, StdoutWriter{});
+        installShellIntegration(init.io, home, install_shell, parsed.rc, StdoutWriter{});
         std.process.exit(0);
     }
 
-    if (opt_list) {
+    if (parsed.list) {
         var buf: [4096]u8 = undefined;
         var buf_pos: usize = 0;
         var i: usize = 0;
         while (i < emojig.EmojiDb.count) : (i += 1) {
             const entry = emojig.EmojiDb.getEntry(i);
-            // emoji + tab + name + newline; max emoji ~8 bytes, name ~64 bytes
             const needed = entry.emoji.len + 1 + entry.name.len + 1;
             if (buf_pos + needed > buf.len) {
                 try writeAll(std.posix.STDOUT_FILENO, buf[0..buf_pos]);
@@ -789,188 +535,42 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(0);
     }
 
-    const cfg = loadConfig(spec_arena.allocator(), init.io);
+    const lang = cli.resolveLanguage(init.environ_map, parsed.lang);
 
-    const env_theme: ?Theme = blk: {
-        if (init.environ_map.get("EMOJIG_THEME")) |env_val| {
-            if (std.mem.eql(u8, env_val, "light")) break :blk .light else if (std.mem.eql(u8, env_val, "dark")) break :blk .dark else if (std.mem.eql(u8, env_val, "system")) break :blk .system;
-        }
-        break :blk null;
-    };
-
-    const env_scrollbar: ?ScrollbarStyle = blk: {
-        if (init.environ_map.get("EMOJIG_SCROLLBAR")) |env_val| {
-            if (std.mem.eql(u8, env_val, "bar")) break :blk .bar else if (std.mem.eql(u8, env_val, "expand")) break :blk .expand;
-        }
-        break :blk null;
-    };
-
-    const env_width: ?usize = blk: {
-        if (init.environ_map.get("EMOJIG_WIDTH")) |env_val| {
-            break :blk std.fmt.parseInt(usize, env_val, 10) catch null;
-        }
-        break :blk null;
-    };
-
-    const env_height: ?usize = blk: {
-        if (init.environ_map.get("EMOJIG_HEIGHT")) |env_val| {
-            break :blk std.fmt.parseInt(usize, env_val, 10) catch null;
-        }
-        break :blk null;
-    };
-
-    const env_border: ?bool = blk: {
-        if (init.environ_map.get("EMOJIG_BORDER")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
-        }
-        break :blk null;
-    };
-
-    const env_safe: ?bool = blk: {
-        if (init.environ_map.get("EMOJIG_SAFE")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
-        }
-        break :blk null;
-    };
-
-    const env_show_switcher: ?bool = blk: {
-        if (init.environ_map.get("EMOJIG_SHOW_SWITCHER")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
-        }
-        break :blk null;
-    };
-
-    const env_debug: ?bool = blk: {
-        if (init.environ_map.get("EMOJIG_DEBUG")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
-        }
-        break :blk null;
-    };
-
-    // Resize strategy — EMOJIG_RESIZE_MODE=freeze|hide|eat|altscreen (default: freeze).
-    // EMOJIG_ALT_SCREEN=1 is kept as a backward-compatible alias for altscreen.
-    // See src/resize.zig for a full description of each mode.
-    const resize_mode: resize.Mode = blk: {
-        if (opt_alt_screen) break :blk .altscreen;
-        if (init.environ_map.get("EMOJIG_ALT_SCREEN")) |v| {
-            if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) break :blk resize.Mode.altscreen;
-        }
-        break :blk resize.parseMode(init.environ_map.get("EMOJIG_RESIZE_MODE"));
-    };
-
-    // An explicit height (CLI --height, EMOJIG_HEIGHT, or config) is a total
-    // content-row count; it is converted to a grid-row count where `rows` is
-    // derived below. EMOJIG_ROWS (set by the GUI launcher) expresses grid rows
-    // directly and takes precedence over this override.
-    const height_override: ?usize = opt_height orelse env_height orelse cfg.height;
-
-    const final_theme = opt_theme orelse env_theme orelse cfg.theme orelse .dark;
-
-    // Unified grid size (columns × rows). The single source of truth is the
-    // config (`cols=`/`rows=`), overridable per-launch by EMOJIG_COLS/EMOJIG_ROWS
-    // (the GUI launcher sets these so the child picker matches the foot window).
-    // Both GUI and TUI use the same base because users work on one screen.
-    // Each axis is clamped to its compile-time max so all stack buffers stay
-    // in bounds; with MAX_COLS*MAX_ROWS == MAX_CELLS the product is safe too.
-    // Each axis is clamped to [MIN, MAX]: the MAX keeps stack buffers in bounds,
-    // the MIN guarantees a legible grid even if `cols`/`rows` (env or config)
-    // is misconfigured below 5×3.
-    const base_cols: usize = blk: {
-        const raw: usize = raw: {
-            if (init.environ_map.get("EMOJIG_COLS")) |v| {
-                if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
-            }
-            if (cfg.cols) |c| break :raw c;
-            break :raw g_spec.layout.tui.cols;
-        };
-        break :blk @max(defaults.MIN_COLS, @min(raw, defaults.MAX_COLS));
-    };
-    const base_rows: usize = blk: {
-        const raw: usize = raw: {
-            if (init.environ_map.get("EMOJIG_ROWS")) |v| {
-                if (std.fmt.parseInt(usize, v, 10)) |n| break :raw n else |_| {}
-            }
-            if (height_override) |h| break :raw if (h > g_spec.layout.layout_overhead) h - g_spec.layout.layout_overhead else 0;
-            if (cfg.rows) |r| break :raw r;
-            break :raw g_spec.layout.tui.rows;
-        };
-        break :blk @max(defaults.MIN_ROWS, @min(raw, defaults.MAX_ROWS));
-    };
-
-    const env_compact: ?bool = blk: {
-        if (init.environ_map.get("EMOJIG_COMPACT")) |env_val| {
-            break :blk std.mem.eql(u8, env_val, "1") or std.mem.eql(u8, env_val, "true");
-        }
-        break :blk null;
-    };
-    const final_compact = env_compact orelse cfg.compact orelse false;
-
-    // Content width follows the column count (one trailing column for the
-    // scrollbar gutter) unless an explicit width override is given. For the
-    // default 6 columns this reproduces the historical width of 25.
-    const final_width = opt_width orelse env_width orelse cfg.width orelse (base_cols * (if (final_compact) @as(usize, 3) else 4) + (if (final_compact) @as(usize, 2) else 1));
-    const final_border = opt_border orelse env_border orelse cfg.border orelse false;
-    // show_switcher is resolved after run_gui is determined (--gui implies true).
-    // opt_show_switcher and env_show_switcher take precedence over the mode default.
-    const final_show_switcher_pref: ?bool = opt_show_switcher orelse env_show_switcher;
-    const final_safe = opt_safe or (env_safe orelse cfg.safe orelse false);
-    const final_debug = opt_debug or (env_debug orelse false);
-    const final_alt_screen = (resize_mode == .altscreen);
-    const final_simple = opt_simple;
-
-    const has_gui_session = blk: {
-        const wayland = init.environ_map.get("WAYLAND_DISPLAY");
-        const x11 = init.environ_map.get("DISPLAY");
-        break :blk (wayland != null and wayland.?.len > 0) or (x11 != null and x11.?.len > 0);
-    };
-
-    const can_use_tty = blk: {
-        const flags = std.posix.O{ .ACCMODE = .RDWR };
-        if (std.posix.openat(std.posix.AT.FDCWD, "/dev/tty", flags, 0)) |fd| {
-            _ = std.posix.system.close(fd);
-            break :blk true;
-        } else |_| break :blk false;
-    };
-
-    const is_linux_vt = blk: {
-        const term = init.environ_map.get("TERM");
-        break :blk term != null and std.mem.eql(u8, term.?, "linux");
-    };
-
-    if (is_linux_vt and !opt_gui and !opt_tui) {
-        try writeAll(std.posix.STDERR_FILENO,
-            \\emojig: Linux virtual console detected (TERM=linux).
-            \\Emoji glyphs cannot render in the kernel console font.
-            \\
-            \\Please switch to a graphical terminal emulator (foot, alacritty, kitty, ...)
-            \\or connect via SSH from a machine with a terminal emulator.
-            \\
-        );
+    // Load the declarative UI spec (spec/*.json) once, into a process-lifetime
+    // arena. The embedded JSON is trusted (shipped in the binary), so a parse
+    // failure is a build-time bug; fail loudly rather than limp on defaults.
+    var spec_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    g_spec = spec_mod.load(spec_arena.allocator(), lang) catch |e| {
+        try writeAll(std.posix.STDERR_FILENO, "Error: failed to load embedded UI spec: ");
+        try writeAll(std.posix.STDERR_FILENO, @errorName(e));
+        try writeAll(std.posix.STDERR_FILENO, "\n");
         std.process.exit(1);
-    }
+    };
+    color.g_colors = &g_spec.colors;
 
-    var run_gui = false;
-    if (opt_tui) {
-        if (!can_use_tty) {
-            try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal.\n");
-            std.process.exit(1);
-        }
-    } else if (opt_gui) {
-        if (!has_gui_session) {
-            try writeAll(std.posix.STDERR_FILENO, "Error: No graphical (GUI) session detected.\n");
-            std.process.exit(1);
-        }
-        run_gui = true;
-    } else {
-        if (can_use_tty) {
-            // run TUI in-place
-        } else if (has_gui_session) {
-            run_gui = true;
-        } else {
-            try writeAll(std.posix.STDERR_FILENO, "Error: TUI requires an interactive terminal and no GUI session was detected.\n");
-            std.process.exit(1);
-        }
-    }
+    const runtime = cli.resolveRuntime(init, spec_arena.allocator(), &g_spec, parsed, lang);
+
+    const opt_wait = runtime.opt_wait;
+    const opt_borderless = runtime.opt_borderless;
+
+    const cfg = runtime.cfg;
+    const env_scrollbar = runtime.env_scrollbar;
+    const height_override = runtime.height_override;
+    const final_theme = runtime.final_theme;
+    const base_cols = runtime.base_cols;
+    const base_rows = runtime.base_rows;
+    const final_compact = runtime.final_compact;
+    const final_width = runtime.final_width;
+    const final_border = runtime.final_border;
+    const final_show_switcher_pref = runtime.final_show_switcher_pref;
+    const final_safe = runtime.final_safe;
+    const final_debug = runtime.final_debug;
+    const final_alt_screen = runtime.final_alt_screen;
+    const final_simple = runtime.final_simple;
+    const has_gui_session = runtime.has_gui_session;
+    const resize_mode = runtime.resize_mode;
+    const run_gui = runtime.run_gui;
 
     if (run_gui) {
         var exe_path_buf: [1024]u8 = undefined;
@@ -1440,20 +1040,29 @@ pub fn main(init: std.process.Init) !void {
             logMemoryUsage();
         }
 
-        // Disable line wrap (7l), enable any-motion mouse tracking (1003), SGR coords, blinking cursor, hide cursor.
+        // Disable line wrap (7l), enable any-motion mouse tracking (from spec), SGR coords, blinking cursor, hide cursor.
         // Switch to alternate screen (1049h) if configured.
+        const mouse_enable = g_spec.input.mouse.enable_motion;
         if (final_alt_screen) {
             global_alt_screen = true;
             if (gui_spawned) {
-                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l\x1b[?1004h");
+                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l");
+                try writeAll(stdout_fd, mouse_enable);
+                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l\x1b[?1004h");
             } else {
-                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l");
+                try writeAll(stdout_fd, mouse_enable);
+                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l");
             }
         } else {
             if (gui_spawned) {
-                try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l\x1b[?1004h");
+                try writeAll(stdout_fd, "\x1b[?7l");
+                try writeAll(stdout_fd, mouse_enable);
+                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l\x1b[?1004h");
             } else {
-                try writeAll(stdout_fd, "\x1b[?7l\x1b[?1003h\x1b[?1006h\x1b[?12h\x1b[?25l");
+                try writeAll(stdout_fd, "\x1b[?7l");
+                try writeAll(stdout_fd, mouse_enable);
+                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l");
             }
         }
 
@@ -2359,7 +1968,7 @@ pub fn main(init: std.process.Init) !void {
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try renderSettingRow(&line_buf, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, palette);
+                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -3673,417 +3282,324 @@ pub fn main(init: std.process.Init) !void {
             var logical: ?[]const u8 = null;
 
             if (bytes[0] == 27) {
-                if (n == 1) {
-                    logical = "esc";
-                } else if (n == 2 and bytes[1] == '.') {
-                    logical = "ctrl-.";
-                } else if (n > 2 and bytes[1] == '[') {
-                    if (std.mem.eql(u8, bytes[2..n], "27;5;46~") or std.mem.eql(u8, bytes[2..n], "46;5u")) {
-                        logical = "ctrl-.";
-                    } else if (std.mem.eql(u8, bytes[2..n], "27;2;13~") or std.mem.eql(u8, bytes[2..n], "13;2u")) {
-                        logical = "shift-enter";
-                    } else if (std.mem.eql(u8, bytes[2..n], "27;5;13~") or std.mem.eql(u8, bytes[2..n], "13;5u")) {
-                        logical = "ctrl-enter";
-                    } else if (n >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
-                        (bytes[4] == '3' or bytes[4] == '9'))
-                    {
-                        break;
-                    } else if (std.mem.eql(u8, bytes[2..n], "1;5C") or std.mem.eql(u8, bytes[2..n], "5C")) {
-                        logical = "ctrl-right";
-                    } else if (std.mem.eql(u8, bytes[2..n], "1;5D") or std.mem.eql(u8, bytes[2..n], "5D")) {
-                        logical = "ctrl-left";
-                    } else if (bytes[2] == 'A') {
-                        logical = "up";
-                    } else if (bytes[2] == 'B') {
-                        logical = "down";
-                    } else if (bytes[2] == 'C') {
-                        logical = "right";
-                    } else if (bytes[2] == 'D') {
-                        logical = "left";
-                    } else if (bytes[2] == 'Z') {
-                        logical = "shift-tab";
-                    } else if (std.mem.eql(u8, bytes[2..n], "3~")) {
-                        logical = "del";
-                    } else if (std.mem.eql(u8, bytes[2..n], "5~")) {
-                        logical = "pageup";
-                    } else if (std.mem.eql(u8, bytes[2..n], "6~")) {
-                        logical = "pagedown";
-                    } else if (bytes[2] == 'H' or std.mem.eql(u8, bytes[2..n], "1~") or std.mem.eql(u8, bytes[2..n], "7~")) {
-                        logical = "home";
-                    } else if (bytes[2] == 'F' or std.mem.eql(u8, bytes[2..n], "4~") or std.mem.eql(u8, bytes[2..n], "8~")) {
-                        logical = "end";
-                    } else if (bytes[2] == '<') {
-                        // SGR Mouse — loop through ALL complete events in the read buffer.
-                        // A 512-byte buffer holds ~40 events; the multi-event loop plus the
-                        // carry buffer below prevent partial-event tails from reaching the
-                        // printable-text path and appearing as typed characters in the query.
-                        var sgr_off: usize = 0; // cursor into bytes[3..n]
-                        sgr_loop: while (true) {
-                            const sgr_data = bytes[3 + sgr_off .. n];
-                            var term_pos: usize = 0;
-                            var term_char: u8 = 0;
-                            while (term_pos < sgr_data.len) : (term_pos += 1) {
-                                if (sgr_data[term_pos] == 'M' or sgr_data[term_pos] == 'm') {
-                                    term_char = sgr_data[term_pos];
-                                    break;
+                logical = input.decodeEscapeKeySpec(bytes[0..n], g_spec.input.key_aliases);
+                if (logical == null and n > 2 and bytes[1] == '[' and bytes[2] == '<') {
+                    // SGR Mouse — loop through ALL complete events in the read buffer.
+                    // A 512-byte buffer holds ~40 events; the multi-event loop plus the
+                    // carry buffer below prevent partial-event tails from reaching the
+                    // printable-text path and appearing as typed characters in the query.
+                    var sgr_off: usize = 0; // cursor into bytes[3..n]
+                    sgr_loop: while (true) {
+                        const event = input.nextSgrMouseEvent(bytes[0..n], &sgr_off, mouse_carry[0..], &mouse_carry_len) orelse {
+                            break :sgr_loop;
+                        };
+                        const local_col = event.click_col - 1;
+
+                        // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
+                        const click_row = term_lib.mapSgrRow(event.click_row_raw, global_tui_start_row, global_tty_fd, final_h);
+
+                        const mspec = &g_spec.input.mouse;
+                        const is_motion = (event.button & @as(i32, mspec.btn_motion_flag)) != 0;
+                        const btn_id = event.button & @as(i32, mspec.btn_button_mask); // 0=left, 1=mid, 2=right, 3=no-button
+                        const is_wheel = (event.button & @as(i32, mspec.btn_scroll_flag)) != 0;
+                        last_was_motion = is_motion;
+                        if (event.term_char == 'm') dragging_scrollbar = false;
+
+                        if (is_wheel and event.term_char == 'M' and has_focus and popup_msg == null) {
+                            // Mouse wheel: scroll whichever pane is shown by a fixed
+                            // step, independent of keyboard focus (normal GUI feel).
+                            const wheel_down = (event.button & 1) != 0;
+                            const step: usize = 3;
+                            if (current_screen == .search) {
+                                const cc = if (final_simple) @as(usize, 1) else cols;
+                                const vp = if (final_simple) total_cells else visible_rows;
+                                const trows = (top_count + cc - 1) / cc;
+                                const max_top = if (trows > vp) trows - vp else 0;
+                                grid_scroll_top = if (wheel_down)
+                                    @min(grid_scroll_top + step, max_top)
+                                else if (grid_scroll_top > step) grid_scroll_top - step else 0;
+                            } else if (current_screen == .settings) {
+                                const max_top = if (settings_count > rows) settings_count - rows else 0;
+                                settings_scroll_top = if (wheel_down)
+                                    @min(settings_scroll_top + step, max_top)
+                                else if (settings_scroll_top > step) settings_scroll_top - step else 0;
+                            } else if (current_screen == .categories) {
+                                const total = g_spec.categories.categories.len;
+                                const max_top = if (total > rows) total - rows else 0;
+                                cat_scroll_top = if (wheel_down)
+                                    @min(cat_scroll_top + step, max_top)
+                                else if (cat_scroll_top > step) cat_scroll_top - step else 0;
+                            } else {
+                                // help / about* / status popups.
+                                const viewport_h = rows + 3;
+                                const is_about = current_screen == .about;
+                                const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
+                                const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
+                                const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
+                                sp.* = if (wheel_down)
+                                    @min(sp.* + step, max_scroll)
+                                else if (sp.* > step) sp.* - step else 0;
+                            }
+                        } else if (is_motion and event.term_char == 'M' and has_focus and popup_msg == null) {
+                            // Theme / menu button hover.
+                            const search_row_m: i32 = search_row_idx;
+                            const cw = @as(i32, @intCast(content_width));
+                            const sw = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
+                            theme_hovered = (click_row == search_row_m and
+                                local_col >= cw - sw * 2 - 4 and local_col < cw - 2);
+                            menu_hovered = (click_row == search_row_m and
+                                local_col >= cw - 2);
+
+                            // Hover: update selection to item under cursor (no copy/action).
+                            const grid_first_row: i32 = grid_first_row_idx;
+                            const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
+                            // Settings/categories have title+blank before first item → offset +1.
+                            const list_first_row: i32 = grid_first_row + 1;
+                            if (current_screen == .settings) {
+                                griddim_hover_left = false;
+                                griddim_hover_right = false;
+                                if (click_row >= list_first_row) {
+                                    const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                    if (opt_idx < settings_count) selected_idx = opt_idx;
+                                    // Bold the grid-size arrow under the cursor (same
+                                    // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
+                                    if (opt_idx == 6 or opt_idx == 7) {
+                                        griddim_hover_left = local_col >= 3 and local_col <= 5;
+                                        griddim_hover_right = local_col >= 8 and local_col <= 10;
+                                    }
+                                }
+                            } else if (current_screen == .categories) {
+                                if (click_row >= list_first_row) {
+                                    const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                    if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
+                                }
+                            } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
+                                const total_rows = (top_count + cols - 1) / cols;
+                                const on_sb = dragging_scrollbar and total_rows > visible_rows;
+                                if (on_sb) {
+                                    // Scrollbar drag: map the track row to a scroll offset.
+                                    const tg = scrollbarThumb(scrollbar_style, visible_rows, total_rows);
+                                    const max_scroll = total_rows - visible_rows;
+                                    const track_row = @as(usize, @intCast(click_row - grid_first_row));
+                                    if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
+                                    // Write only the scrollbar column so the thumb tracks the
+                                    // mouse instantly on every event, without waiting for the
+                                    // full-frame render at the end of the batch. Uses absolute
+                                    // cursor positioning so the rest of the frame is untouched.
+                                    // Cursor is parked back at the search bar row afterward so
+                                    // the next render's relative \x1b[NA reposition is correct.
+                                    if (global_tui_start_row) |tui_top| {
+                                        const new_max = if (max_scroll > 0) max_scroll else 1;
+                                        const new_thumb = grid_scroll_top * tg.travel / new_max;
+                                        var sb_r: usize = 0;
+                                        while (sb_r < visible_rows) : (sb_r += 1) {
+                                            const abs_row = @as(usize, @intCast(tui_top)) +
+                                                @as(usize, @intCast(grid_first_row_idx - 1)) + sb_r;
+                                            const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
+                                            const sb_char: []const u8 = if (on_t) g_spec.strings.scrollbar_char else " ";
+                                            var sb_buf: [32]u8 = undefined;
+                                            const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d};{d}H{s}", .{ abs_row, content_width + 1, sb_char });
+                                            try writeAll(stdout_fd, sb_seq);
+                                        }
+                                        // Park cursor at search-bar row so next render's
+                                        // relative move (\x1b[{1+row_off}A\r) lands correctly.
+                                        const search_row = @as(usize, @intCast(tui_top)) +
+                                            @as(usize, @intCast(search_row_idx - 1));
+                                        var park_buf: [24]u8 = undefined;
+                                        const park_seq = try std.fmt.bufPrint(&park_buf, "\x1b[{d};1H", .{search_row});
+                                        try writeAll(stdout_fd, park_seq);
+                                    }
+                                } else {
+                                    const grid_row = @as(usize, @intCast(click_row - grid_first_row));
+                                    const cell_w: usize = if (final_compact) 3 else 4;
+                                    const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / cell_w;
+                                    if (grid_col < cols) {
+                                        const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
+                                        if (hovered < top_count) selected_idx = hovered;
+                                    }
                                 }
                             }
-                            if (term_char == 0) {
-                                // Incomplete event tail — save to carry so next read completes it.
-                                const tail_len = 3 + sgr_data.len; // \x1b[< + partial params
-                                if (tail_len <= mouse_carry.len) {
-                                    mouse_carry[0] = 0x1b;
-                                    mouse_carry[1] = '[';
-                                    mouse_carry[2] = '<';
-                                    @memcpy(mouse_carry[3..][0..sgr_data.len], sgr_data);
-                                    mouse_carry_len = tail_len;
-                                }
+                            // Switcher row hover.
+                            const sw_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) + 1;
+                            if (show_switcher and current_screen == .search and click_row == sw_row) {
+                                switcher_row_hovered = true;
+                                const sw_slot_w_h = g_spec.categories.pad_left.len + 2;
+                                const sw_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
+                                const sw_adj_col = @max(0, local_col - 1 - sw_rpl);
+                                const slot_idx = @as(usize, @intCast(sw_adj_col)) / sw_slot_w_h;
+                                const sw_n = switcherCatCount();
+                                switcher_hover_idx = if (slot_idx == 0) null else if (slot_idx - 1 < sw_n) slot_idx - 1 else sw_n;
+                            } else {
+                                switcher_row_hovered = false;
+                                switcher_hover_idx = null;
+                            }
+                        } else if (!is_motion and btn_id == 0 and event.term_char == 'M' and has_focus) {
+                            // Left click press.
+                            if (popup_msg != null) {
+                                active_dropdown_opt_idx = null;
+                                popup_msg = null;
                                 break :sgr_loop;
                             }
-
-                            var it = std.mem.splitScalar(u8, sgr_data[0..term_pos], ';');
-                            const button_str = it.next() orelse break :sgr_loop;
-                            const col_str = it.next() orelse break :sgr_loop;
-                            const row_str = it.next() orelse break :sgr_loop;
-
-                            const button = std.fmt.parseInt(i32, button_str, 10) catch break :sgr_loop;
-                            const click_col = std.fmt.parseInt(i32, col_str, 10) catch break :sgr_loop;
-                            const click_row_raw = std.fmt.parseInt(i32, row_str, 10) catch break :sgr_loop;
-                            const local_col = click_col - 1;
-
-                            // Map absolute viewport row to TUI-relative row (accounting for cursor start and potential scroll).
-                            const click_row = term_lib.mapSgrRow(click_row_raw, global_tui_start_row, global_tty_fd, final_h);
-
-                            const is_motion = (button & 32) != 0;
-                            const btn_id = button & 3; // 0=left, 1=mid, 2=right, 3=no-button
-                            const is_wheel = (button & 64) != 0;
-                            last_was_motion = is_motion;
-                            if (term_char == 'm') dragging_scrollbar = false;
-
-                            if (is_wheel and term_char == 'M' and has_focus and popup_msg == null) {
-                                // Mouse wheel: scroll whichever pane is shown by a fixed
-                                // step, independent of keyboard focus (normal GUI feel).
-                                const wheel_down = (button & 1) != 0;
-                                const step: usize = 3;
-                                if (current_screen == .search) {
-                                    const cc = if (final_simple) @as(usize, 1) else cols;
-                                    const vp = if (final_simple) total_cells else visible_rows;
-                                    const trows = (top_count + cc - 1) / cc;
-                                    const max_top = if (trows > vp) trows - vp else 0;
-                                    grid_scroll_top = if (wheel_down)
-                                        @min(grid_scroll_top + step, max_top)
-                                    else if (grid_scroll_top > step) grid_scroll_top - step else 0;
-                                } else if (current_screen == .settings) {
-                                    const max_top = if (settings_count > rows) settings_count - rows else 0;
-                                    settings_scroll_top = if (wheel_down)
-                                        @min(settings_scroll_top + step, max_top)
-                                    else if (settings_scroll_top > step) settings_scroll_top - step else 0;
-                                } else if (current_screen == .categories) {
-                                    const total = g_spec.categories.categories.len;
-                                    const max_top = if (total > rows) total - rows else 0;
-                                    cat_scroll_top = if (wheel_down)
-                                        @min(cat_scroll_top + step, max_top)
-                                    else if (cat_scroll_top > step) cat_scroll_top - step else 0;
-                                } else {
-                                    // help / about* / status popups.
-                                    const viewport_h = rows + 3;
-                                    const is_about = current_screen == .about;
-                                    const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
-                                    const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                                    const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
-                                    const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
-                                    sp.* = if (wheel_down)
-                                        @min(sp.* + step, max_scroll)
-                                    else if (sp.* > step) sp.* - step else 0;
-                                }
-                            } else if (is_motion and term_char == 'M' and has_focus and popup_msg == null) {
-                                // Theme / menu button hover.
-                                const search_row_m: i32 = search_row_idx;
-                                const cw = @as(i32, @intCast(content_width));
-                                const sw = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
-                                theme_hovered = (click_row == search_row_m and
-                                    local_col >= cw - sw * 2 - 4 and local_col < cw - 2);
-                                menu_hovered = (click_row == search_row_m and
-                                    local_col >= cw - 2);
-
-                                // Hover: update selection to item under cursor (no copy/action).
+                            const now = getMonotonicMs();
+                            if (now - last_focus_gain_ms > 200) {
+                                const search_row: i32 = search_row_idx;
                                 const grid_first_row: i32 = grid_first_row_idx;
                                 const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
-                                // Settings/categories have title+blank before first item → offset +1.
-                                const list_first_row: i32 = grid_first_row + 1;
-                                if (current_screen == .settings) {
-                                    griddim_hover_left = false;
-                                    griddim_hover_right = false;
-                                    if (click_row >= list_first_row) {
+
+                                const cw_click = @as(i32, @intCast(content_width));
+                                const sw_click = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
+                                if (click_row == search_row and
+                                    local_col >= cw_click - sw_click * 2 - 4 and local_col < cw_click - 2)
+                                {
+                                    // Theme toggle icon — cycle and persist to config.
+                                    theme = switch (theme) {
+                                        .dark => .light,
+                                        .light => .system,
+                                        .system => .dark,
+                                    };
+                                    saveThemeToConfig(init.io, theme);
+                                    if (theme == .system)
+                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                } else if (click_row == search_row and local_col >= cw_click - 2) {
+                                    // Menu (hamburger) icon — toggle settings.
+                                    if (current_screen == .settings) {
+                                        current_screen = .search;
+                                    } else {
+                                        current_screen = .settings;
+                                        selected_idx = 0;
+                                    }
+                                    // Settings/categories have title+blank before first item → offset +1.
+                                } else if (show_switcher and current_screen == .search and
+                                    click_row == grid_first_row + @as(i32, @intCast(visible_rows)) + 1)
+                                {
+                                    // Click on the switcher bar: map col to slot.
+                                    const sw_click_slot_w = g_spec.categories.pad_left.len + 2;
+                                    const sw_click_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
+                                    const sw_click_col = @max(0, local_col - 1 - sw_click_rpl);
+                                    const slot_idx = @as(usize, @intCast(sw_click_col)) / sw_click_slot_w;
+                                    const sw_n = switcherCatCount();
+                                    if (slot_idx == 0) {
+                                        switcher_cat_idx = null;
+                                    } else if (slot_idx - 1 < sw_n) {
+                                        switcher_cat_idx = slot_idx - 1;
+                                    }
+                                    g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                    g_search_switcher_gen +%= 1;
+                                    selected_idx = null;
+                                    grid_scroll_top = 0;
+                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                } else {
+                                    const list_first_row: i32 = grid_first_row + 1;
+                                    if (current_screen == .settings and click_row >= list_first_row) {
                                         const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                        if (opt_idx < settings_count) selected_idx = opt_idx;
-                                        // Bold the grid-size arrow under the cursor (same
-                                        // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
-                                        if (opt_idx == 6 or opt_idx == 7) {
-                                            griddim_hover_left = local_col >= 3 and local_col <= 5;
-                                            griddim_hover_right = local_col >= 8 and local_col <= 10;
+                                        if (opt_idx < settings_count) {
+                                            selected_idx = opt_idx;
+                                            const opt = g_spec.settings.options[opt_idx];
+                                            if (std.mem.eql(u8, opt.type, "choice")) {
+                                                active_dropdown_opt_idx = opt_idx;
+                                                const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
+                                                    shell_key_binding
+                                                else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
+                                                    ambiguous_chars
+                                                else
+                                                    "";
+                                                var found_idx: usize = 0;
+                                                if (opt.choices) |choices| {
+                                                    for (choices, 0..) |choice, ci| {
+                                                        if (std.mem.eql(u8, choice, current_val)) {
+                                                            found_idx = ci;
+                                                            break;
+                                                        }
+                                                    }
+                                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
+                                                        found_idx = 4; // custom
+                                                    }
+                                                }
+                                                active_dropdown_sel = found_idx;
+                                            } else if (opt_idx == 4) {
+                                                theme = cycleTheme(theme, true);
+                                                saveThemeToConfig(init.io, theme);
+                                                if (theme == .system)
+                                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                                applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
+                                            } else if (opt_idx == 6 or opt_idx == 7) {
+                                                griddim_typing = false;
+                                                const v = if (opt_idx == 6) &grid_cols else &grid_rows;
+                                                if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
+                                                    griddim_changed = true;
+                                                }
+                                            } else if (opt_idx == 9) {
+                                                mru.clear();
+                                                popup_title = "✔ done";
+                                                popup_msg = "Recent history cleared.";
+                                            } else {
+                                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
+                                                const shell_s = detectShell(init.environ_map);
+                                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
+                                                if (opt_idx == 8) griddim_changed = true;
+                                            }
                                         }
-                                    }
-                                } else if (current_screen == .categories) {
-                                    if (click_row >= list_first_row) {
+                                    } else if (current_screen == .categories and click_row >= list_first_row) {
                                         const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                        if (cat_idx < g_spec.categories.categories.len) selected_idx = cat_idx;
-                                    }
-                                } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
-                                    const total_rows = (top_count + cols - 1) / cols;
-                                    const on_sb = dragging_scrollbar and total_rows > visible_rows;
-                                    if (on_sb) {
-                                        // Scrollbar drag: map the track row to a scroll offset.
+                                        if (cat_idx < g_spec.categories.categories.len) {
+                                            selected_idx = cat_idx;
+                                            disabled_cats[cat_idx] = !disabled_cats[cat_idx];
+                                            saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
+                                        }
+                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
+                                        local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > visible_rows)
+                                    {
+                                        // Scrollbar click-to-jump; mark as drag start so
+                                        // subsequent motion events continue scrolling even
+                                        // when the cursor strays left or right of the track.
+                                        dragging_scrollbar = true;
+                                        const total_rows = (top_count + cols - 1) / cols;
                                         const tg = scrollbarThumb(scrollbar_style, visible_rows, total_rows);
                                         const max_scroll = total_rows - visible_rows;
                                         const track_row = @as(usize, @intCast(click_row - grid_first_row));
                                         if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
-                                        // Write only the scrollbar column so the thumb tracks the
-                                        // mouse instantly on every event, without waiting for the
-                                        // full-frame render at the end of the batch. Uses absolute
-                                        // cursor positioning so the rest of the frame is untouched.
-                                        // Cursor is parked back at the search bar row afterward so
-                                        // the next render's relative \x1b[NA reposition is correct.
-                                        if (global_tui_start_row) |tui_top| {
-                                            const new_max = if (max_scroll > 0) max_scroll else 1;
-                                            const new_thumb = grid_scroll_top * tg.travel / new_max;
-                                            var sb_r: usize = 0;
-                                            while (sb_r < visible_rows) : (sb_r += 1) {
-                                                const abs_row = @as(usize, @intCast(tui_top)) +
-                                                    @as(usize, @intCast(grid_first_row_idx - 1)) + sb_r;
-                                                const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
-                                                const sb_char: []const u8 = if (on_t) g_spec.strings.scrollbar_char else " ";
-                                                var sb_buf: [32]u8 = undefined;
-                                                const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d};{d}H{s}", .{ abs_row, content_width + 1, sb_char });
-                                                try writeAll(stdout_fd, sb_seq);
-                                            }
-                                            // Park cursor at search-bar row so next render's
-                                            // relative move (\x1b[{1+row_off}A\r) lands correctly.
-                                            const search_row = @as(usize, @intCast(tui_top)) +
-                                                @as(usize, @intCast(search_row_idx - 1));
-                                            var park_buf: [24]u8 = undefined;
-                                            const park_seq = try std.fmt.bufPrint(&park_buf, "\x1b[{d};1H", .{search_row});
-                                            try writeAll(stdout_fd, park_seq);
-                                        }
-                                    } else {
+                                    } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
                                         const grid_row = @as(usize, @intCast(click_row - grid_first_row));
                                         const cell_w: usize = if (final_compact) 3 else 4;
                                         const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / cell_w;
                                         if (grid_col < cols) {
-                                            const hovered = (grid_scroll_top + grid_row) * cols + grid_col;
-                                            if (hovered < top_count) selected_idx = hovered;
-                                        }
-                                    }
-                                }
-                                // Switcher row hover.
-                                const sw_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) + 1;
-                                if (show_switcher and current_screen == .search and click_row == sw_row) {
-                                    switcher_row_hovered = true;
-                                    const sw_slot_w_h = g_spec.categories.pad_left.len + 2;
-                                    const sw_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
-                                    const sw_adj_col = @max(0, local_col - 1 - sw_rpl);
-                                    const slot_idx = @as(usize, @intCast(sw_adj_col)) / sw_slot_w_h;
-                                    const sw_n = switcherCatCount();
-                                    switcher_hover_idx = if (slot_idx == 0) null else if (slot_idx - 1 < sw_n) slot_idx - 1 else sw_n;
-                                } else {
-                                    switcher_row_hovered = false;
-                                    switcher_hover_idx = null;
-                                }
-                            } else if (!is_motion and btn_id == 0 and term_char == 'M' and has_focus) {
-                                // Left click press.
-                                if (popup_msg != null) {
-                                    active_dropdown_opt_idx = null;
-                                    popup_msg = null;
-                                    break :sgr_loop;
-                                }
-                                const now = getMonotonicMs();
-                                if (now - last_focus_gain_ms > 200) {
-                                    const search_row: i32 = search_row_idx;
-                                    const grid_first_row: i32 = grid_first_row_idx;
-                                    const grid_last_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) - 1;
-
-                                    const cw_click = @as(i32, @intCast(content_width));
-                                    const sw_click = @as(i32, @intCast(ansiDisplayWidth(g_spec.strings.toolbar_sep)));
-                                    if (click_row == search_row and
-                                        local_col >= cw_click - sw_click * 2 - 4 and local_col < cw_click - 2)
-                                    {
-                                        // Theme toggle icon — cycle and persist to config.
-                                        theme = switch (theme) {
-                                            .dark => .light,
-                                            .light => .system,
-                                            .system => .dark,
-                                        };
-                                        saveThemeToConfig(init.io, theme);
-                                        if (theme == .system)
-                                            system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                                        applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                    } else if (click_row == search_row and local_col >= cw_click - 2) {
-                                        // Menu (hamburger) icon — toggle settings.
-                                        if (current_screen == .settings) {
-                                            current_screen = .search;
-                                        } else {
-                                            current_screen = .settings;
-                                            selected_idx = 0;
-                                        }
-                                        // Settings/categories have title+blank before first item → offset +1.
-                                    } else if (show_switcher and current_screen == .search and
-                                        click_row == grid_first_row + @as(i32, @intCast(visible_rows)) + 1)
-                                    {
-                                        // Click on the switcher bar: map col to slot.
-                                        const sw_click_slot_w = g_spec.categories.pad_left.len + 2;
-                                        const sw_click_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
-                                        const sw_click_col = @max(0, local_col - 1 - sw_click_rpl);
-                                        const slot_idx = @as(usize, @intCast(sw_click_col)) / sw_click_slot_w;
-                                        const sw_n = switcherCatCount();
-                                        if (slot_idx == 0) {
-                                            switcher_cat_idx = null;
-                                        } else if (slot_idx - 1 < sw_n) {
-                                            switcher_cat_idx = slot_idx - 1;
-                                        }
-                                        g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
-                                        g_search_switcher_gen +%= 1;
-                                        selected_idx = null;
-                                        grid_scroll_top = 0;
-                                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
-                                    } else {
-                                        const list_first_row: i32 = grid_first_row + 1;
-                                        if (current_screen == .settings and click_row >= list_first_row) {
-                                            const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                            if (opt_idx < settings_count) {
-                                                selected_idx = opt_idx;
-                                                const opt = g_spec.settings.options[opt_idx];
-                                                if (std.mem.eql(u8, opt.type, "choice")) {
-                                                    active_dropdown_opt_idx = opt_idx;
-                                                    const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
-                                                        shell_key_binding
-                                                    else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
-                                                        ambiguous_chars
-                                                    else
-                                                        "";
-                                                    var found_idx: usize = 0;
-                                                    if (opt.choices) |choices| {
-                                                        for (choices, 0..) |choice, ci| {
-                                                            if (std.mem.eql(u8, choice, current_val)) {
-                                                                found_idx = ci;
-                                                                break;
-                                                            }
-                                                        }
-                                                        if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
-                                                            found_idx = 4; // custom
+                                            const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
+                                            if (clicked_idx < top_count) {
+                                                selected_idx = clicked_idx;
+                                                if (multi_select_active) {
+                                                    const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
+                                                    var on_selected = false;
+                                                    for (multi_selected_emojis.items) |e| {
+                                                        if (std.mem.eql(u8, e, entry.emoji)) {
+                                                            on_selected = true;
+                                                            break;
                                                         }
                                                     }
-                                                    active_dropdown_sel = found_idx;
-                                                } else if (opt_idx == 4) {
-                                                    theme = cycleTheme(theme, true);
-                                                    saveThemeToConfig(init.io, theme);
-                                                    if (theme == .system)
-                                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
-                                                    applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                                } else if (opt_idx == 6 or opt_idx == 7) {
-                                                    griddim_typing = false;
-                                                    const v = if (opt_idx == 6) &grid_cols else &grid_rows;
-                                                    if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
-                                                        griddim_changed = true;
-                                                    }
-                                                } else if (opt_idx == 9) {
-                                                    mru.clear();
-                                                    popup_title = "✔ done";
-                                                    popup_msg = "Recent history cleared.";
-                                                } else {
-                                                    const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                                    const shell_s = detectShell(init.environ_map);
-                                                    toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
-                                                    if (opt_idx == 8) griddim_changed = true;
-                                                }
-                                            }
-                                        } else if (current_screen == .categories and click_row >= list_first_row) {
-                                            const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                            if (cat_idx < g_spec.categories.categories.len) {
-                                                selected_idx = cat_idx;
-                                                disabled_cats[cat_idx] = !disabled_cats[cat_idx];
-                                                saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
-                                            }
-                                        } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row and
-                                            local_col == @as(i32, @intCast(content_width)) and (top_count + cols - 1) / cols > visible_rows)
-                                        {
-                                            // Scrollbar click-to-jump; mark as drag start so
-                                            // subsequent motion events continue scrolling even
-                                            // when the cursor strays left or right of the track.
-                                            dragging_scrollbar = true;
-                                            const total_rows = (top_count + cols - 1) / cols;
-                                            const tg = scrollbarThumb(scrollbar_style, visible_rows, total_rows);
-                                            const max_scroll = total_rows - visible_rows;
-                                            const track_row = @as(usize, @intCast(click_row - grid_first_row));
-                                            if (tg.travel > 0) grid_scroll_top = @min(track_row * max_scroll / tg.travel, max_scroll);
-                                        } else if (current_screen == .search and click_row >= grid_first_row and click_row <= grid_last_row) {
-                                            const grid_row = @as(usize, @intCast(click_row - grid_first_row));
-                                            const cell_w: usize = if (final_compact) 3 else 4;
-                                            const grid_col = @as(usize, @intCast(@max(0, local_col - 1))) / cell_w;
-                                            if (grid_col < cols) {
-                                                const clicked_idx = (grid_scroll_top + grid_row) * cols + grid_col;
-                                                if (clicked_idx < top_count) {
-                                                    selected_idx = clicked_idx;
-                                                    if (multi_select_active) {
-                                                        const entry = emojig.EmojiDb.getEntry(top_matches[clicked_idx].index);
-                                                        var on_selected = false;
-                                                        for (multi_selected_emojis.items) |e| {
-                                                            if (std.mem.eql(u8, e, entry.emoji)) {
-                                                                on_selected = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                        if (on_selected) {
-                                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                            try copyToClipboard(init, joined, final_safe);
-                                                            result_emoji = joined;
-                                                            should_copy_and_exit = true;
-                                                        } else {
-                                                            const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
-                                                            try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
-                                                            const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
-                                                            try copyToClipboard(init, joined, final_safe);
-                                                        }
-                                                    } else {
+                                                    if (on_selected) {
+                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                        try copyToClipboard(init, joined, final_safe);
+                                                        result_emoji = joined;
                                                         should_copy_and_exit = true;
+                                                    } else {
+                                                        const dupe_emoji = try spec_arena.allocator().dupe(u8, entry.emoji);
+                                                        try multi_selected_emojis.append(spec_arena.allocator(), dupe_emoji);
+                                                        const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
+                                                        try copyToClipboard(init, joined, final_safe);
                                                     }
+                                                } else {
+                                                    should_copy_and_exit = true;
                                                 }
                                             }
                                         }
                                     }
                                 }
                             }
-                            // Advance past this event; continue loop if next event follows.
-                            sgr_off += term_pos + 1; // skip Cb;Cx;CyM/m
-                            const next = 3 + sgr_off;
-                            if (next + 2 < n and bytes[next] == 0x1b and bytes[next + 1] == '[' and bytes[next + 2] == '<') {
-                                sgr_off += 3; // skip \x1b[< prefix of next event
-                            } else {
-                                break :sgr_loop;
-                            }
-                        } // end sgr_loop
-                    }
-                } else if (n > 2 and bytes[1] == 'O') {
-                    // Arrow keys — application cursor key mode (\x1bOA/B/C/D).
-                    // ZLE keeps the terminal in smkx (application mode) during widget execution.
-                    if (bytes[2] == 'c') {
-                        logical = "ctrl-right";
-                    } else if (bytes[2] == 'd') {
-                        logical = "ctrl-left";
-                    } else if (bytes[2] == 'A') {
-                        logical = "up";
-                    } else if (bytes[2] == 'B') {
-                        logical = "down";
-                    } else if (bytes[2] == 'C') {
-                        logical = "right";
-                    } else if (bytes[2] == 'D') {
-                        logical = "left";
-                    } else if (bytes[2] == 'H') {
-                        logical = "home";
-                    } else if (bytes[2] == 'F') {
-                        logical = "end";
-                    } else if (bytes[2] == 'P') {
-                        logical = "f1";
-                    }
+                        }
+                        // Advance past this event; continue loop if next event follows.
+                        if (!event.has_more) break :sgr_loop;
+                    } // end sgr_loop
                 }
             } else if (bytes[0] == 127 or bytes[0] == 8) {
                 logical = "backspace";
@@ -4853,7 +4369,6 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
-
     if (result_emoji) |emoji| {
         const ts = std.posix.system.timespec{
             .sec = 0,

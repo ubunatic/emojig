@@ -1,0 +1,125 @@
+{
+  "$schema": "./input.schema.json",
+  "input": {
+    "key_aliases": {
+      "backspace": "",
+      "bs": "",
+      "cr": "\r",
+      "del": "\u001b[3~",
+      "delete": "\u001b[3~",
+      "down": "\u001b[B",
+      "end": "\u001b[F",
+      "enter": "\r",
+      "esc": "\u001b",
+      "escape": "\u001b",
+      "f1": "\u001bOP",
+      "f10": "\u001b[21~",
+      "f11": "\u001b[23~",
+      "f12": "\u001b[24~",
+      "f2": "\u001bOQ",
+      "f3": "\u001bOR",
+      "f4": "\u001bOS",
+      "f5": "\u001b[15~",
+      "f6": "\u001b[17~",
+      "f7": "\u001b[18~",
+      "f8": "\u001b[19~",
+      "f9": "\u001b[20~",
+      "home": "\u001b[H",
+      "left": "\u001b[D",
+      "lf": "\n",
+      "nl": "\n",
+      "pagedown": "\u001b[6~",
+      "pageup": "\u001b[5~",
+      "pgdn": "\u001b[6~",
+      "pgup": "\u001b[5~",
+      "return": "\r",
+      "right": "\u001b[C",
+      "shift-tab": "\u001b[Z",
+      "space": " ",
+      "tab": "\t",
+      "up": "\u001b[A"
+    },
+    "ctrl_pattern": {
+      "prefix": "ctrl-",
+      "base_char": "a",
+      "base_code": 1
+    },
+    "signals": [
+      {
+        "name": "SIGINT",
+        "number": 2,
+        "event": "quit"
+      },
+      {
+        "name": "SIGTERM",
+        "number": 15,
+        "event": "quit"
+      },
+      {
+        "name": "SIGWINCH",
+        "number": 28,
+        "event": "resize"
+      }
+    ],
+    "terminal_sequences": [
+      {
+        "seq": "\u001b[I",
+        "event": "focus"
+      },
+      {
+        "seq": "\u001b[O",
+        "event": "defocus"
+      }
+    ],
+    "mouse": {
+      "prefix": "\u001b[\u003c",
+      "press_suffix": "M",
+      "release_suffix": "m",
+      "enable_button": "\u001b[?1002h\u001b[?1006h",
+      "enable_motion": "\u001b[?1003h\u001b[?1006h",
+      "disable_button": "\u001b[?1002l\u001b[?1006l",
+      "disable_motion": "\u001b[?1003l\u001b[?1006l",
+      "btn_button_mask": 3,
+      "btn_shift_mask": 4,
+      "btn_meta_mask": 8,
+      "btn_ctrl_mask": 16,
+      "btn_motion_flag": 32,
+      "btn_scroll_flag": 64,
+      "btn_no_button": 3
+    },
+    "tokenizer": {
+      "rules": [
+        {
+          "name": "sgr_mouse",
+          "match": "starts_with",
+          "prefix": "\u001b[\u003c",
+          "scan_until": "Mm",
+          "emit": "mouse"
+        },
+        {
+          "name": "csi_sequence",
+          "match": "starts_with",
+          "prefix": "\u001b[",
+          "scan_class": "alpha_tilde",
+          "emit": "key"
+        },
+        {
+          "name": "bare_escape",
+          "match": "starts_with",
+          "prefix": "\u001b",
+          "emit": "key"
+        },
+        {
+          "name": "utf8_multibyte",
+          "match": "utf8_lead",
+          "emit": "key"
+        },
+        {
+          "name": "any_char",
+          "match": "any",
+          "emit": "key"
+        }
+      ]
+    }
+  }
+}

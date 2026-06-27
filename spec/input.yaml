@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=./input.schema.json
+# Emojig input spec — terminal input state machine.
+# This is the source format for key aliases, signal events, mouse encoding,
+# and tokenizer rules used by the input layer.
+$schema: "./input.schema.json"
+
+input:
+  key_aliases:
+    esc: "\x1b"
+    escape: "\x1b"
+    bs: "\x7f"
+    backspace: "\x7f"
+    cr: "\x0d"
+    enter: "\x0d"
+    return: "\x0d"
+    lf: "\x0a"
+    nl: "\x0a"
+    space: " "
+    tab: "\x09"
+    del: "\x1b[3~"
+    delete: "\x1b[3~"
+    up: "\x1b[A"
+    down: "\x1b[B"
+    right: "\x1b[C"
+    left: "\x1b[D"
+    pgup: "\x1b[5~"
+    pageup: "\x1b[5~"
+    pgdn: "\x1b[6~"
+    pagedown: "\x1b[6~"
+    home: "\x1b[H"
+    end: "\x1b[F"
+    shift-tab: "\x1b[Z"
+    f1: "\x1bOP"
+    f2: "\x1bOQ"
+    f3: "\x1bOR"
+    f4: "\x1bOS"
+    f5: "\x1b[15~"
+    f6: "\x1b[17~"
+    f7: "\x1b[18~"
+    f8: "\x1b[19~"
+    f9: "\x1b[20~"
+    f10: "\x1b[21~"
+    f11: "\x1b[23~"
+    f12: "\x1b[24~"
+
+  ctrl_pattern:
+    prefix: "ctrl-"
+    base_char: "a"
+    base_code: 1
+
+  signals:
+    - name: SIGINT
+      number: 2
+      event: quit
+    - name: SIGTERM
+      number: 15
+      event: quit
+    - name: SIGWINCH
+      number: 28
+      event: resize
+
+  terminal_sequences:
+    - seq: "\x1b[I"
+      event: focus
+    - seq: "\x1b[O"
+      event: defocus
+
+  mouse:
+    prefix: "\x1b[<"
+    press_suffix: "M"
+    release_suffix: "m"
+    enable_button: "\x1b[?1002h\x1b[?1006h"
+    enable_motion: "\x1b[?1003h\x1b[?1006h"
+    disable_button: "\x1b[?1002l\x1b[?1006l"
+    disable_motion: "\x1b[?1003l\x1b[?1006l"
+    btn_button_mask: 3
+    btn_shift_mask: 4
+    btn_meta_mask: 8
+    btn_ctrl_mask: 16
+    btn_motion_flag: 32
+    btn_scroll_flag: 64
+    btn_no_button: 3
+
+  tokenizer:
+    rules:
+      - name: sgr_mouse
+        match: starts_with
+        prefix: "\x1b[<"
+        scan_until: "Mm"
+        emit: mouse
+
+      - name: csi_sequence
+        match: starts_with
+        prefix: "\x1b["
+        scan_class: alpha_tilde
+        emit: key
+
+      - name: bare_escape
+        match: starts_with
+        prefix: "\x1b"
+        emit: key
+
+      - name: utf8_multibyte
+        match: utf8_lead
+        emit: key
+
+      - name: any_char
+        match: any
+        emit: key

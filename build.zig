@@ -131,6 +131,8 @@ pub fn build(b: *std.Build) void {
     mod.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
     mod.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
     mod.addAnonymousImport("spec_colors", .{ .root_source_file = b.path("spec/colors.json") });
+    mod.addAnonymousImport("spec_art_generated", .{ .root_source_file = b.path("spec/art.generated.json") });
+    mod.addAnonymousImport("spec_input_generated", .{ .root_source_file = b.path("spec/input.generated.json") });
 
     exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
     exe.root_module.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
@@ -151,6 +153,8 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
     exe.root_module.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
     exe.root_module.addAnonymousImport("spec_colors", .{ .root_source_file = b.path("spec/colors.json") });
+    exe.root_module.addAnonymousImport("spec_art_generated", .{ .root_source_file = b.path("spec/art.generated.json") });
+    exe.root_module.addAnonymousImport("spec_input_generated", .{ .root_source_file = b.path("spec/input.generated.json") });
 
     const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
     const options = b.addOptions();

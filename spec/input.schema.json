@@ -1,0 +1,213 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key_aliases",
+        "ctrl_pattern",
+        "signals",
+        "terminal_sequences",
+        "mouse",
+        "tokenizer"
+      ],
+      "properties": {
+        "key_aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "ctrl_pattern": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prefix",
+            "base_char",
+            "base_code"
+          ],
+          "properties": {
+            "prefix": {
+              "type": "string"
+            },
+            "base_char": {
+              "type": "string"
+            },
+            "base_code": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "number",
+              "event"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "event": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "terminal_sequences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "seq",
+              "event"
+            ],
+            "properties": {
+              "seq": {
+                "type": "string"
+              },
+              "event": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "mouse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prefix",
+            "press_suffix",
+            "release_suffix",
+            "enable_button",
+            "enable_motion",
+            "disable_button",
+            "disable_motion",
+            "btn_button_mask",
+            "btn_shift_mask",
+            "btn_meta_mask",
+            "btn_ctrl_mask",
+            "btn_motion_flag",
+            "btn_scroll_flag",
+            "btn_no_button"
+          ],
+          "properties": {
+            "prefix": {
+              "type": "string"
+            },
+            "press_suffix": {
+              "type": "string"
+            },
+            "release_suffix": {
+              "type": "string"
+            },
+            "enable_button": {
+              "type": "string"
+            },
+            "enable_motion": {
+              "type": "string"
+            },
+            "disable_button": {
+              "type": "string"
+            },
+            "disable_motion": {
+              "type": "string"
+            },
+            "btn_button_mask": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_shift_mask": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_meta_mask": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_ctrl_mask": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_motion_flag": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_scroll_flag": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "btn_no_button": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        "tokenizer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rules"
+          ],
+          "properties": {
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "match",
+                  "emit"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "match": {
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "scan_until": {
+                    "type": "string"
+                  },
+                  "scan_class": {
+                    "type": "string"
+                  },
+                  "emit": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

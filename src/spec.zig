@@ -34,6 +34,8 @@ const strings_nl = @embedFile("spec_strings_nl");
 const strings_tr = @embedFile("spec_strings_tr");
 const styles_json = @embedFile("spec_styles");
 const colors_json = @embedFile("spec_colors");
+const art_generated_json = @embedFile("spec_art_generated");
+const input_generated_json = @embedFile("spec_input_generated");
 
 const parse_opts = std.json.ParseOptions{ .ignore_unknown_fields = true };
 
@@ -213,9 +215,62 @@ pub const SettingsSpec = struct {
     options: []const SettingOption,
 };
 
+pub const InputFile = struct {
+    input: InputSpec,
+};
+
+pub const InputSpec = struct {
+    key_aliases: std.json.ArrayHashMap([]const u8),
+    ctrl_pattern: struct {
+        prefix: []const u8,
+        base_char: []const u8,
+        base_code: u8,
+    },
+    signals: []const struct {
+        name: []const u8,
+        number: i32,
+        event: []const u8,
+    } = &.{},
+    terminal_sequences: []const struct {
+        seq: []const u8,
+        event: []const u8,
+    } = &.{},
+    mouse: struct {
+        prefix: []const u8,
+        press_suffix: []const u8,
+        release_suffix: []const u8,
+        enable_button: []const u8,
+        enable_motion: []const u8,
+        disable_button: []const u8,
+        disable_motion: []const u8,
+        btn_button_mask: u8,
+        btn_shift_mask: u8,
+        btn_meta_mask: u8,
+        btn_ctrl_mask: u8,
+        btn_motion_flag: u8,
+        btn_scroll_flag: u8,
+        btn_no_button: u8,
+    },
+    tokenizer: struct {
+        rules: []const struct {
+            name: []const u8,
+            match: []const u8,
+            prefix: ?[]const u8 = null,
+            scan_until: ?[]const u8 = null,
+            scan_class: ?[]const u8 = null,
+            emit: []const u8,
+        } = &.{},
+    },
+};
+
 const emojig_mod = @import("emojig");
 pub const CategorySpec = emojig_mod.CategorySpec;
 pub const CategoriesSpec = emojig_mod.CategoriesSpec;
+
+pub const AboutArtFile = struct {
+    about_frames: []const []const []const u8 = &.{},
+    about_delays: []const u16 = &.{},
+};
 
 pub const StatusDefault = struct {
     on_view: []const u8 = " ?:help  ↕↔|↵|Esc",
@@ -407,6 +462,7 @@ pub const Spec = struct {
     theme: Theme,
     keys: Keys,
     strings: Strings,
+    input: InputSpec,
     commands: Commands,
     settings: SettingsSpec,
     categories: CategoriesSpec,
@@ -461,6 +517,9 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     const theme = try std.json.parseFromSliceLeaky(Theme, arena, theme_json, parse_opts);
     const keys = try std.json.parseFromSliceLeaky(Keys, arena, keys_json, parse_opts);
 
+    const input_file = try std.json.parseFromSliceLeaky(InputFile, arena, input_generated_json, parse_opts);
+    const about_art = try std.json.parseFromSliceLeaky(AboutArtFile, arena, art_generated_json, parse_opts);
+
     var strings_content: []const u8 = strings_json;
     if (lang) |l| {
         var lang_buf: [16]u8 = undefined;
@@ -493,7 +552,9 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         }
     }
 
-    const strings = try std.json.parseFromSliceLeaky(Strings, arena, strings_content, parse_opts);
+    var strings = try std.json.parseFromSliceLeaky(Strings, arena, strings_content, parse_opts);
+    strings.about_frames = about_art.about_frames;
+    strings.about_delays = about_art.about_delays;
     const commands = try std.json.parseFromSliceLeaky(Commands, arena, commands_json, parse_opts);
     const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
     const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
@@ -505,6 +566,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .theme = theme,
         .keys = keys,
         .strings = strings,
+        .input = input_file.input,
         .commands = commands,
         .settings = settings,
         .categories = categories,
