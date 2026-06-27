@@ -316,7 +316,7 @@ Whenever the header layout changes:
 
 ## 10. Ranking test guidelines
 
-`src/root_test.zig` has a suite of ranking tests.  When adding or tuning one:
+`src/ranking_test.zig` has a suite of ranking tests.  When adding or tuning one:
 
 - **Use `inTop(query, emoji, n)`**, not `searchContains`.  It checks rank, not
   mere presence.
@@ -336,7 +336,7 @@ Whenever the header layout changes:
   an `inTop` wrapper.  The helper returns a 1-based rank (0 = not found), which
   lets the test print the actual rank for every probe via `std.debug.print` —
   useful for audits even when all assertions pass.  See
-  `test "key symbol discoverability"` in `src/root_test.zig`.
+  `test "key symbol discoverability"` in `src/ranking_test.zig`.
 
 ---
 

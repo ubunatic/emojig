@@ -31,6 +31,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**26**](26-install-and-update-integrity-gap.md) | [`install.sh` and self-update still skip artifact verification](26-install-and-update-integrity-gap.md) | **P1** | The release plan promises verification, but the installer still downloads and extracts without `SHA256SUMS`/`minisign`, and curl-update inherits the same gap. |
 | [**27**](27-persistence-buffer-edges.md) | [Config and MRU persistence still have silent 4 KB edge behavior](27-persistence-buffer-edges.md) | **P2** | The config loader still hard-bails on a full 4 KB read, and MRU still uses the same fixed-size single-read pattern without a full-buffer guard. |
 | [**34**](34-configurable-cmd-start-chars.md) | [Configurable Command Start Characters](34-configurable-cmd-start-chars.md) | **P2** | Remove colon (`:`) prefix for commands and make command start characters configurable via the spec (e.g., defaulting to `/`). |
+| [**37**](37-codebase-modularization.md) | [Codebase Modularization & Refactoring](37-codebase-modularization.md) | **P2** | Divide monolithic `src/main.zig` and `src/root_test.zig` into smaller, cohesive modules (CLI parser, event decoder, renderers). |
 
 ---
 

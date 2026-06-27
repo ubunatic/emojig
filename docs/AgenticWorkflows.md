@@ -72,14 +72,18 @@ When an agent experiences memory/context compaction, it loses fine-grained histo
 ### Safely Splitting Monolithic Files
 When refactoring large files (e.g., modularizing `src/main.zig`'s 5,000+ lines or `src/root.zig`'s 1,200+ lines), modifying hundreds of call sites is highly error-prone.
 * **Forwarding Aliases**: Define aliases and inline forwarding wrappers at the top of the refactored monolithic files (e.g., `const scrollbarThumb = tui_draw.scrollbarThumb;` or `inline fn effectivePalette(...) Palette`). This isolates changes to the file imports without modifying call sites inside massive loops.
+* **Componentizing Domain Responsibilities**: Extract logical, non-UI sub-components (such as system clipboards, subprocess spawning, and OSC 52 sequence formatting) into standalone files like `src/clipboard.zig`. This keeps TUI rendering logic clean and independent of process spawning.
+* **Relocating Helper Tests**: When helper functions (e.g., text cursor navigation, scrollbar bounds math) are moved to dedicated utility files (e.g. `src/tui_draw.zig`), move their respective test blocks to the bottom of the same files. This keeps the tests next to the implementation and keeps the main test runner files clean.
 * **Separate Test Files in Zig**: Unit tests and benchmarks can be cleanly isolated into a separate test file (e.g. `src/root_test.zig`) by using a forwarding test block in the main file:
   ```zig
   test {
       std.testing.refAllDecls(@This());
       _ = @import("root_test.zig");
+      _ = @import("ranking_test.zig");
   }
   ```
   This forces the compiler to include and run tests defined in the separate file while keeping the library file clean of test blocks.
+* **Splitting Testing Categories**: Keep core library algorithm unit tests (subsequence matching, encoding/decoding) separate from heavy semantic/search ranking datasets and benchmarks. Relocating data-driven ranking validation suites to `src/ranking_test.zig` ensures faster build iterations and makes the test suites modular.
 
 ### Fallback Default Restorations
 * **Prompt-to-Grid Keyboard Fallback**: Ensure that keyboard actions (like pressing Enter to `select` on the search screen) preserve original fallback logic such as `selected_idx orelse 0`. If this is refactored to strictly check if `selected_idx` is non-null, keyboard-only/prompt-focused flows will silently break because typing reset the selection index to `null`.
