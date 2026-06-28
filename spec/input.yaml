@@ -43,6 +43,129 @@ input:
     f11: "\x1b[23~"
     f12: "\x1b[24~"
 
+  # Exhaustive sequence → name table used by the decoder. Multiple sequences
+  # can share the same name (terminal variants). Order matters: first match wins.
+  key_sequences:
+    # Single-byte ESC
+    - seq: "\x1b"
+      name: esc
+
+    # ESC + dot (some terminals encode Ctrl+Period this way)
+    - seq: "\x1b."
+      name: ctrl-.
+
+    # CSI cursor keys (most terminals)
+    - seq: "\x1b[A"
+      name: up
+    - seq: "\x1b[B"
+      name: down
+    - seq: "\x1b[C"
+      name: right
+    - seq: "\x1b[D"
+      name: left
+
+    # SS3 cursor keys (VT100 application mode / xterm)
+    - seq: "\x1bOA"
+      name: up
+    - seq: "\x1bOB"
+      name: down
+    - seq: "\x1bOC"
+      name: right
+    - seq: "\x1bOD"
+      name: left
+
+    # Shift-Tab
+    - seq: "\x1b[Z"
+      name: shift-tab
+
+    # Delete, PageUp, PageDown
+    - seq: "\x1b[3~"
+      name: del
+    - seq: "\x1b[5~"
+      name: pageup
+    - seq: "\x1b[6~"
+      name: pagedown
+
+    # Home — CSI canonical, VT220 (1~), rxvt (7~), SS3
+    - seq: "\x1b[H"
+      name: home
+    - seq: "\x1b[1~"
+      name: home
+    - seq: "\x1b[7~"
+      name: home
+    - seq: "\x1bOH"
+      name: home
+
+    # End — CSI canonical, VT220 (4~), rxvt (8~), SS3
+    - seq: "\x1b[F"
+      name: end
+    - seq: "\x1b[4~"
+      name: end
+    - seq: "\x1b[8~"
+      name: end
+    - seq: "\x1bOF"
+      name: end
+
+    # Ctrl+Right — XTerm (1;5C), older xterm (5C), rxvt (Oc)
+    - seq: "\x1b[1;5C"
+      name: ctrl-right
+    - seq: "\x1b[5C"
+      name: ctrl-right
+    - seq: "\x1bOc"
+      name: ctrl-right
+
+    # Ctrl+Left — XTerm (1;5D), older xterm (5D), rxvt (Od)
+    - seq: "\x1b[1;5D"
+      name: ctrl-left
+    - seq: "\x1b[5D"
+      name: ctrl-left
+    - seq: "\x1bOd"
+      name: ctrl-left
+
+    # Ctrl+Period — XTerm modifyOtherKeys, Kitty protocol
+    - seq: "\x1b[27;5;46~"
+      name: ctrl-.
+    - seq: "\x1b[46;5u"
+      name: ctrl-.
+
+    # Shift+Enter — XTerm modifyOtherKeys, Kitty protocol
+    - seq: "\x1b[27;2;13~"
+      name: shift-enter
+    - seq: "\x1b[13;2u"
+      name: shift-enter
+
+    # Ctrl+Enter — XTerm modifyOtherKeys, Kitty protocol
+    - seq: "\x1b[27;5;13~"
+      name: ctrl-enter
+    - seq: "\x1b[13;5u"
+      name: ctrl-enter
+
+    # Function keys
+    - seq: "\x1bOP"
+      name: f1
+    - seq: "\x1bOQ"
+      name: f2
+    - seq: "\x1bOR"
+      name: f3
+    - seq: "\x1bOS"
+      name: f4
+    - seq: "\x1b[15~"
+      name: f5
+    - seq: "\x1b[17~"
+      name: f6
+    - seq: "\x1b[18~"
+      name: f7
+    - seq: "\x1b[19~"
+      name: f8
+    - seq: "\x1b[20~"
+      name: f9
+    - seq: "\x1b[21~"
+      name: f10
+    - seq: "\x1b[23~"
+      name: f11
+    - seq: "\x1b[24~"
+      name: f12
+
   ctrl_pattern:
     prefix: "ctrl-"
     base_char: "a"

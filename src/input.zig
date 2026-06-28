@@ -3,20 +3,21 @@
 
 const std = @import("std");
 
-/// Spec-driven escape-key decoder. Tries a reverse-lookup in the YAML-spec's
-/// `key_aliases` table (sequence → name) before falling back to the hardcoded
-/// table in `decodeEscapeKey` for alternative terminal encodings (SS3 cursor
-/// keys, Kitty protocol sequences, etc.) not listed in the spec.
-pub fn decodeEscapeKeySpec(
-    bytes: []const u8,
-    key_aliases: std.json.ArrayHashMap([]const u8),
-) ?[]const u8 {
+pub const KeySeq = struct {
+    seq: []const u8,
+    name: []const u8,
+};
+
+/// Decode an escape sequence into the logical key name defined in the spec's
+/// `key_sequences` table. Returns null for unrecognised sequences. The table
+/// is authoritative — all variants (CSI, SS3, Kitty, XTerm modifyOtherKeys)
+/// must be listed in spec/input.yaml; there is no hardcoded fallback.
+pub fn decodeEscapeKeySpec(bytes: []const u8, key_sequences: []const KeySeq) ?[]const u8 {
     if (bytes.len == 0 or bytes[0] != 27) return null;
-    var it = key_aliases.map.iterator();
-    while (it.next()) |entry| {
-        if (std.mem.eql(u8, entry.value_ptr.*, bytes)) return entry.key_ptr.*;
+    for (key_sequences) |ks| {
+        if (std.mem.eql(u8, ks.seq, bytes)) return ks.name;
     }
-    return decodeEscapeKey(bytes);
+    return null;
 }
 
 pub const SgrMouseEvent = struct {
@@ -26,57 +27,6 @@ pub const SgrMouseEvent = struct {
     term_char: u8,
     has_more: bool,
 };
-
-/// Translate escape-sequence bytes into the logical key names used by the
-/// binding table. Returns null for sequences that are not handled here.
-pub fn decodeEscapeKey(bytes: []const u8) ?[]const u8 {
-    if (bytes.len == 0 or bytes[0] != 27) return null;
-    if (bytes.len == 1) return "esc";
-    if (bytes.len == 2 and bytes[1] == '.') return "ctrl-.";
-    if (bytes.len > 2 and bytes[1] == '[') {
-        if (std.mem.eql(u8, bytes[2..], "27;5;46~") or std.mem.eql(u8, bytes[2..], "46;5u")) {
-            return "ctrl-.";
-        }
-        if (std.mem.eql(u8, bytes[2..], "27;2;13~") or std.mem.eql(u8, bytes[2..], "13;2u")) {
-            return "shift-enter";
-        }
-        if (std.mem.eql(u8, bytes[2..], "27;5;13~") or std.mem.eql(u8, bytes[2..], "13;5u")) {
-            return "ctrl-enter";
-        }
-        if (bytes.len >= 6 and bytes[2] == '1' and bytes[3] == ';' and bytes[5] == 'S' and
-            (bytes[4] == '3' or bytes[4] == '9'))
-        {
-            return null;
-        }
-        if (std.mem.eql(u8, bytes[2..], "1;5C") or std.mem.eql(u8, bytes[2..], "5C")) {
-            return "ctrl-right";
-        }
-        if (std.mem.eql(u8, bytes[2..], "1;5D") or std.mem.eql(u8, bytes[2..], "5D")) {
-            return "ctrl-left";
-        }
-        if (bytes[2] == 'A') return "up";
-        if (bytes[2] == 'B') return "down";
-        if (bytes[2] == 'C') return "right";
-        if (bytes[2] == 'D') return "left";
-        if (bytes[2] == 'Z') return "shift-tab";
-        if (std.mem.eql(u8, bytes[2..], "3~")) return "del";
-        if (std.mem.eql(u8, bytes[2..], "5~")) return "pageup";
-        if (std.mem.eql(u8, bytes[2..], "6~")) return "pagedown";
-        if (bytes[2] == 'H' or std.mem.eql(u8, bytes[2..], "1~") or std.mem.eql(u8, bytes[2..], "7~")) return "home";
-        if (bytes[2] == 'F' or std.mem.eql(u8, bytes[2..], "4~") or std.mem.eql(u8, bytes[2..], "8~")) return "end";
-    } else if (bytes.len > 2 and bytes[1] == 'O') {
-        if (bytes[2] == 'c') return "ctrl-right";
-        if (bytes[2] == 'd') return "ctrl-left";
-        if (bytes[2] == 'A') return "up";
-        if (bytes[2] == 'B') return "down";
-        if (bytes[2] == 'C') return "right";
-        if (bytes[2] == 'D') return "left";
-        if (bytes[2] == 'H') return "home";
-        if (bytes[2] == 'F') return "end";
-        if (bytes[2] == 'P') return "f1";
-    }
-    return null;
-}
 
 /// Parse the next SGR mouse event from a read buffer that begins with ESC[<.
 /// `sgr_off` is updated to the byte position after the parsed event, and
@@ -129,25 +79,42 @@ pub fn nextSgrMouseEvent(bytes: []const u8, sgr_off: *usize, carry: []u8, carry_
     };
 }
 
-test "decodeEscapeKey maps cursor and function keys" {
-    try std.testing.expectEqualStrings("up", decodeEscapeKey("\x1b[A").?);
-    try std.testing.expectEqualStrings("down", decodeEscapeKey("\x1bOB").?);
-    try std.testing.expectEqualStrings("f1", decodeEscapeKey("\x1bOP").?);
-    try std.testing.expectEqualStrings("ctrl-right", decodeEscapeKey("\x1b[1;5C").?);
-}
+const test_key_sequences = [_]KeySeq{
+    .{ .seq = "\x1b", .name = "esc" },
+    .{ .seq = "\x1b[A", .name = "up" },
+    .{ .seq = "\x1bOA", .name = "up" },
+    .{ .seq = "\x1b[B", .name = "down" },
+    .{ .seq = "\x1bOB", .name = "down" },
+    .{ .seq = "\x1bOP", .name = "f1" },
+    .{ .seq = "\x1b[1;5C", .name = "ctrl-right" },
+    .{ .seq = "\x1b[5C", .name = "ctrl-right" },
+    .{ .seq = "\x1bOc", .name = "ctrl-right" },
+    .{ .seq = "\x1b[27;5;46~", .name = "ctrl-." },
+    .{ .seq = "\x1b[13;2u", .name = "shift-enter" },
+    .{ .seq = "\x1b[H", .name = "home" },
+    .{ .seq = "\x1b[7~", .name = "home" },
+    .{ .seq = "\x1bOH", .name = "home" },
+};
 
-test "decodeEscapeKeySpec uses spec aliases then falls back to hardcoded" {
-    var map = std.json.ArrayHashMap([]const u8){};
-    try map.map.put(std.testing.allocator, "up", "\x1b[A");
-    try map.map.put(std.testing.allocator, "pageup", "\x1b[5~");
-    defer map.map.deinit(std.testing.allocator);
-
-    // spec hit: canonical CSI form
-    try std.testing.expectEqualStrings("up", decodeEscapeKeySpec("\x1b[A", map).?);
-    // spec hit: pageup
-    try std.testing.expectEqualStrings("pageup", decodeEscapeKeySpec("\x1b[5~", map).?);
-    // fallback: SS3 down not in spec
-    try std.testing.expectEqualStrings("down", decodeEscapeKeySpec("\x1bOB", map).?);
-    // fallback: ctrl-right not in spec
-    try std.testing.expectEqualStrings("ctrl-right", decodeEscapeKeySpec("\x1b[1;5C", map).?);
+test "decodeEscapeKeySpec resolves all variants from the spec table" {
+    try std.testing.expectEqualStrings("esc", decodeEscapeKeySpec("\x1b", &test_key_sequences).?);
+    // CSI canonical
+    try std.testing.expectEqualStrings("up", decodeEscapeKeySpec("\x1b[A", &test_key_sequences).?);
+    // SS3 variant (would have needed hardcoded fallback before)
+    try std.testing.expectEqualStrings("up", decodeEscapeKeySpec("\x1bOA", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("down", decodeEscapeKeySpec("\x1bOB", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("f1", decodeEscapeKeySpec("\x1bOP", &test_key_sequences).?);
+    // ctrl-right variants
+    try std.testing.expectEqualStrings("ctrl-right", decodeEscapeKeySpec("\x1b[1;5C", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("ctrl-right", decodeEscapeKeySpec("\x1b[5C", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("ctrl-right", decodeEscapeKeySpec("\x1bOc", &test_key_sequences).?);
+    // Kitty/XTerm extended sequences
+    try std.testing.expectEqualStrings("ctrl-.", decodeEscapeKeySpec("\x1b[27;5;46~", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("shift-enter", decodeEscapeKeySpec("\x1b[13;2u", &test_key_sequences).?);
+    // home variants
+    try std.testing.expectEqualStrings("home", decodeEscapeKeySpec("\x1b[H", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("home", decodeEscapeKeySpec("\x1b[7~", &test_key_sequences).?);
+    try std.testing.expectEqualStrings("home", decodeEscapeKeySpec("\x1bOH", &test_key_sequences).?);
+    // unknown sequence returns null — no fallback
+    try std.testing.expect(decodeEscapeKeySpec("\x1b[1;9S", &test_key_sequences) == null);
 }

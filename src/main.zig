@@ -3283,7 +3283,7 @@ pub fn main(init: std.process.Init) !void {
             var logical: ?[]const u8 = null;
 
             if (bytes[0] == 27) {
-                logical = input.decodeEscapeKeySpec(bytes[0..n], g_spec.input.key_aliases);
+                logical = input.decodeEscapeKeySpec(bytes[0..n], g_spec.input.key_sequences);
                 if (logical == null and n > 2 and bytes[1] == '[' and bytes[2] == '<') {
                     // SGR Mouse — loop through ALL complete events in the read buffer.
                     // A 512-byte buffer holds ~40 events; the multi-event loop plus the

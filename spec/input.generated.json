@@ -39,6 +39,192 @@
       "tab": "\t",
       "up": "\u001b[A"
     },
+    "key_sequences": [
+      {
+        "seq": "\u001b",
+        "name": "esc"
+      },
+      {
+        "seq": "\u001b.",
+        "name": "ctrl-."
+      },
+      {
+        "seq": "\u001b[A",
+        "name": "up"
+      },
+      {
+        "seq": "\u001b[B",
+        "name": "down"
+      },
+      {
+        "seq": "\u001b[C",
+        "name": "right"
+      },
+      {
+        "seq": "\u001b[D",
+        "name": "left"
+      },
+      {
+        "seq": "\u001bOA",
+        "name": "up"
+      },
+      {
+        "seq": "\u001bOB",
+        "name": "down"
+      },
+      {
+        "seq": "\u001bOC",
+        "name": "right"
+      },
+      {
+        "seq": "\u001bOD",
+        "name": "left"
+      },
+      {
+        "seq": "\u001b[Z",
+        "name": "shift-tab"
+      },
+      {
+        "seq": "\u001b[3~",
+        "name": "del"
+      },
+      {
+        "seq": "\u001b[5~",
+        "name": "pageup"
+      },
+      {
+        "seq": "\u001b[6~",
+        "name": "pagedown"
+      },
+      {
+        "seq": "\u001b[H",
+        "name": "home"
+      },
+      {
+        "seq": "\u001b[1~",
+        "name": "home"
+      },
+      {
+        "seq": "\u001b[7~",
+        "name": "home"
+      },
+      {
+        "seq": "\u001bOH",
+        "name": "home"
+      },
+      {
+        "seq": "\u001b[F",
+        "name": "end"
+      },
+      {
+        "seq": "\u001b[4~",
+        "name": "end"
+      },
+      {
+        "seq": "\u001b[8~",
+        "name": "end"
+      },
+      {
+        "seq": "\u001bOF",
+        "name": "end"
+      },
+      {
+        "seq": "\u001b[1;5C",
+        "name": "ctrl-right"
+      },
+      {
+        "seq": "\u001b[5C",
+        "name": "ctrl-right"
+      },
+      {
+        "seq": "\u001bOc",
+        "name": "ctrl-right"
+      },
+      {
+        "seq": "\u001b[1;5D",
+        "name": "ctrl-left"
+      },
+      {
+        "seq": "\u001b[5D",
+        "name": "ctrl-left"
+      },
+      {
+        "seq": "\u001bOd",
+        "name": "ctrl-left"
+      },
+      {
+        "seq": "\u001b[27;5;46~",
+        "name": "ctrl-."
+      },
+      {
+        "seq": "\u001b[46;5u",
+        "name": "ctrl-."
+      },
+      {
+        "seq": "\u001b[27;2;13~",
+        "name": "shift-enter"
+      },
+      {
+        "seq": "\u001b[13;2u",
+        "name": "shift-enter"
+      },
+      {
+        "seq": "\u001b[27;5;13~",
+        "name": "ctrl-enter"
+      },
+      {
+        "seq": "\u001b[13;5u",
+        "name": "ctrl-enter"
+      },
+      {
+        "seq": "\u001bOP",
+        "name": "f1"
+      },
+      {
+        "seq": "\u001bOQ",
+        "name": "f2"
+      },
+      {
+        "seq": "\u001bOR",
+        "name": "f3"
+      },
+      {
+        "seq": "\u001bOS",
+        "name": "f4"
+      },
+      {
+        "seq": "\u001b[15~",
+        "name": "f5"
+      },
+      {
+        "seq": "\u001b[17~",
+        "name": "f6"
+      },
+      {
+        "seq": "\u001b[18~",
+        "name": "f7"
+      },
+      {
+        "seq": "\u001b[19~",
+        "name": "f8"
+      },
+      {
+        "seq": "\u001b[20~",
+        "name": "f9"
+      },
+      {
+        "seq": "\u001b[21~",
+        "name": "f10"
+      },
+      {
+        "seq": "\u001b[23~",
+        "name": "f11"
+      },
+      {
+        "seq": "\u001b[24~",
+        "name": "f12"
+      }
+    ],
     "ctrl_pattern": {
       "prefix": "ctrl-",
       "base_char": "a",

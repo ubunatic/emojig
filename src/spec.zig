@@ -14,6 +14,8 @@
 
 const std = @import("std");
 const term = @import("term.zig");
+const input_mod = @import("input.zig");
+pub const KeySeq = input_mod.KeySeq;
 
 const layout_json = @embedFile("spec_layout");
 const theme_json = @embedFile("spec_theme");
@@ -222,6 +224,7 @@ pub const InputFile = struct {
 
 pub const InputSpec = struct {
     key_aliases: std.json.ArrayHashMap([]const u8),
+    key_sequences: []const KeySeq = &.{},
     ctrl_pattern: struct {
         prefix: []const u8,
         base_char: []const u8,

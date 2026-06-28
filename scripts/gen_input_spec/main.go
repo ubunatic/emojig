@@ -22,8 +22,14 @@ type inputFile struct {
 	Input  Input  `json:"input"`
 }
 
+type KeySeq struct {
+	Seq  string `yaml:"seq" json:"seq"`
+	Name string `yaml:"name" json:"name"`
+}
+
 type Input struct {
 	KeyAliases       map[string]string `yaml:"key_aliases" json:"key_aliases"`
+	KeySequences     []KeySeq          `yaml:"key_sequences" json:"key_sequences"`
 	CtrlPattern      CtrlPattern       `yaml:"ctrl_pattern" json:"ctrl_pattern"`
 	Signals          []Signal          `yaml:"signals" json:"signals"`
 	TerminalSequence []TerminalSeq     `yaml:"terminal_sequences" json:"terminal_sequences"`
