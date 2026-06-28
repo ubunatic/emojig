@@ -7,15 +7,15 @@
   "status_help_hint_wide": " ?:Hilfe e:Bild t:Text  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:Bild t:Text  ↕↔|↵|Esc",
   "help_lines": [
-    "Hilfe & Tastenbelegung:",
+    "Hilfe \u0026 Tastenbelegung:",
     "  Tippen: Suchen",
     "  Pfeile: Navigieren",
-    "  Enter:  Kopieren & Beenden",
+    "  Enter:  Kopieren \u0026 Beenden",
     "  Tab:    Design umschalten",
     "  Esc:    Beenden"
   ],
   "help_lines_more": [
-    "Hilfe & Tastenbelegung:",
+    "Hilfe \u0026 Tastenbelegung:",
     "",
     " e:abc 🔍 Nur Emojis",
     " t:abc 🔍 Nur Symbole",

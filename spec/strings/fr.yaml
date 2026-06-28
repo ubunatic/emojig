@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Chaînes de caractères de l'interface utilisateur pour le sélecteur (Français).
+search_prompt: " \U0001F50D "
+search_placeholder: rechercher…
+status_help_hint: ' ?:aide  ↕↔|↵|Échap'
+status_matches: ' {count}  ↕↔|↵|Échap'
+status_help_hint_wide: ' ?:aide e:img t:txt  ↕↔|↵|Échap'
+status_matches_wide: ' {count} e:img t:txt  ↕↔|↵|Échap'
+help_lines:
+    - 'Aide et Raccourcis Clavier :'
+    - '  Saisir : Rechercher'
+    - '  Flèches : Naviguer'
+    - '  Entrée :  Copier & Quitter'
+    - '  Tab :     Changer de Thème'
+    - '  Échap :   Quitter'
+help_lines_more:
+    - 'Aide et Raccourcis Clavier :'
+    - ""
+    - " e:abc \U0001F50D Émojis seulement"
+    - " t:abc \U0001F50D Symboles seulement"
+    - " b:abc \U0001F50D Bordures seulement"
+    - " a b \U0001F50D   Tous les mots"
+    - ' ⌫        Retour…'
+focus_lost_startup_lines:
+    - ⚠️  Impossible d'obtenir
+    - le focus du popup ?
+    - ""
+    - Cliquez pour focaliser !
+focus_lost_runtime_lines:
+    - ⚠️  Sélecteur non focalisé.
+    - ""
+    - ""
+    - Cliquez pour focaliser !

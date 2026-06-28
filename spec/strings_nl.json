@@ -7,15 +7,15 @@
   "status_help_hint_wide": " ?:hulp e:afb t:tekst  ↕↔|↵|Esc",
   "status_matches_wide": " {count} e:afb t:tekst  ↕↔|↵|Esc",
   "help_lines": [
-    "Hulp & Sneltoetsen:",
+    "Hulp \u0026 Sneltoetsen:",
     "  Typen: Zoeken",
     "  Pijlen: Navigeren",
-    "  Enter: Kopieer & Sluit",
+    "  Enter: Kopieer \u0026 Sluit",
     "  Tab:   Thema Wisselen",
     "  Esc:   Sluiten"
   ],
   "help_lines_more": [
-    "Hulp & Sneltoetsen:",
+    "Hulp \u0026 Sneltoetsen:",
     "",
     " e:abc 🔍 Alleen emoji's",
     " t:abc 🔍 Alleen symbolen",

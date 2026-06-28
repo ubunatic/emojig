@@ -1,0 +1,151 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: 'Switcher bar layout. row_pad_left/row_pad_right: outer margins of the whole row (written in status_bg). pad_left: prefix for every normal slot (1 display col, slot width = pad_left.len + 2). select_left/select_right: replace pad_left of the active slot and the slot after it (stealing its space). select_scope: ''all'' = hl bg covers left+icon+right; ''icon'' = icon only. hl_left/hl_right/hl_scope: same for hover. select_pattern/hl_pattern: $fmtvars attrs for hl bg; empty = palette.selection_bg; ''none'' = status_bg.'
+row_pad_left: ' '
+row_pad_right: ""
+all_icon: "\U0001F5C3️"
+pad_left: ' '
+select_left: '['
+select_right: ']'
+select_scope: icon
+hl_left: ""
+hl_right: ""
+hl_scope: all
+hl_pattern: ""
+select_pattern: none
+categories:
+    - name: smileys
+      short: smiley
+      icon: "\U0001F600"
+      switcher: true
+      synonyms:
+        - smiley
+        - face
+        - smile
+        - emotion
+        - grin
+        - laugh
+        - cry
+    - name: people
+      short: person
+      icon: "\U0001F44D"
+      switcher: true
+      synonyms:
+        - people
+        - person
+        - body
+        - hand
+        - man
+        - woman
+        - child
+        - baby
+        - boy
+        - girl
+    - name: animals
+      short: animal
+      icon: "\U0001F43E"
+      switcher: true
+      synonyms:
+        - animal
+        - nature
+        - wildlife
+        - creature
+        - pet
+        - fauna
+    - name: food
+      short: food
+      icon: "\U0001F374"
+      switcher: true
+      synonyms:
+        - food
+        - drink
+        - eat
+        - meal
+        - beverage
+        - fruit
+        - vegetable
+    - name: travel
+      short: travel
+      icon: ✈️
+      switcher: true
+      synonyms:
+        - travel
+        - vehicle
+        - transport
+        - place
+        - location
+        - car
+        - boat
+        - plane
+        - train
+    - name: activities
+      short: activity
+      icon: ⚽
+      switcher: true
+      synonyms:
+        - activity
+        - sport
+        - game
+        - hobby
+        - play
+    - name: objects
+      short: object
+      icon: "\U0001F4A1"
+      switcher: true
+      synonyms:
+        - object
+        - tool
+        - item
+        - device
+        - clothing
+        - book
+        - office
+    - name: symbols
+      short: symbol
+      icon: "\U0001F523"
+      switcher: true
+      synonyms:
+        - symbol
+        - sign
+        - mark
+        - heart
+        - arrow
+        - geometric
+    - name: flags
+      short: flag
+      icon: "\U0001F6A9"
+      switcher: true
+      synonyms:
+        - flag
+        - banner
+        - country
+    - name: clocks
+      short: clock
+      icon: ""
+      switcher: false
+      synonyms:
+        - clock
+        - time
+        - watch
+    - name: blocks
+      short: block
+      icon: ""
+      switcher: false
+      synonyms:
+        - block
+        - square
+    - name: borders
+      short: border
+      icon: ""
+      switcher: false
+      synonyms:
+        - border
+        - frame
+    - name: shades
+      short: shade
+      icon: ""
+      switcher: false
+      synonyms:
+        - shade
+        - gradient

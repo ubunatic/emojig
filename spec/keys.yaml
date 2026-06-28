@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Language-neutral key bindings. Each logical key name maps to an action. The renderer/input layer is responsible for decoding raw terminal bytes into these logical key names. Mirrors the key switch in src/main.zig.
+bindings:
+    esc: quit
+    ctrl-c: quit
+    ctrl-d: quit
+    ctrl-q: quit
+    ctrl-w: quit
+    enter: select
+    shift-enter: confirm_multi_exit
+    ctrl-enter: confirm_multi_exit
+    backspace: delete
+    tab: cycle_theme
+    ctrl-.: open_settings
+    up: nav_up
+    down: nav_down
+    left: nav_left
+    right: nav_right
+    pageup: scroll_pageup
+    pagedown: scroll_pagedown
+    home: nav_home
+    end: nav_end

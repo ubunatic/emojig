@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: 'Language-neutral UI text strings for the picker. Edit these to change the search prompt, status bar, and help screen without touching code. {count} is substituted with the live match count. Keep lines within the rendered content width (spec/layout.json) or they are truncated. Consumed by the Zig app. help_lines is the default help page (query starts with ''?''); help_lines_more is the second page shown when the query starts with ''??'' and documents the e:/t: width filters. cursor_left/cursor_right are the cursor box drawn around the focused emoji (default ⌜ ⌟; try [ ], ⟨ ⟩, ▏ ▕ — each must be one display cell). multi_select_mark is the glyph prefixed to emojis picked in multi-select mode — keep it a single display cell wide (e.g. ✓ ✔ · • ▸) so the 4-column grid stays aligned. When multi_select_mark is "" the mark is dropped and picked cells are instead highlighted with multi_select_bg (any color name from spec/colors.json — long like forest/teal or 3-letter short like grn/blu — or a 0-255 palette index). Rebuild (zig build) after editing since specs are embedded at compile time.'
+focus_lost_runtime_lines:
+    - "\U0001F575️ Picker unfocused."
+    - '   Click or switch window'
+    - '   to focus!'
+focus_lost_startup_lines:
+    - "\U0001F6E1️ OS prevented focus change."
+    - '   Click or switch window'
+    - '   to change focus!'
+    - ""
+    - "\U0001F4A1 GTK apps have native picker."
+    - '   Try Ctrl + ''.'' to open.'
+help_lines:
+    - "\U0001F600 \e]8;;https://ubunatic.com/emojig\e\\ubunatic.com/emojig\e]8;;\e\\"
+    - ""
+    - ' ⌨️|abc|↕↔ Search, Navigate'
+    - " \U0001F5B1️|↵|Esc  Select, Exit"
+    - ' ␣ (Space) Multi-select'
+    - " ⭾ (Tab)   Switch category \U0001F5D8 "
+    - ' ??        More…'
+help_lines_more:
+    - "\U0001F600 \e]8;;https://ubunatic.com/emojig\e\\ubunatic.com/emojig\e]8;;\e\\"
+    - ""
+    - " e:abc \U0001F50D Emojis only"
+    - " t:abc \U0001F50D Symbols only"
+    - " b:abc \U0001F50D Box art only"
+    - " a b \U0001F50D   Match all words"
+    - ' ␣/↵ pick  ⇧↵ done'
+    - ' ⌫        Back…'
+cursor_left: ⌜
+cursor_right: ⌟
+multi_select_mark: ➜
+multi_select_bg: ""
+scrollbar_char: ▉
+toolbar_sep: │
+search_theme_sep: ▋
+theme_settings_sep: ┃
+search_left_cap: ▌
+search_right_cap: ▐
+hline_char: ' '
+search_placeholder: search…
+search_prompt: " \U0001F50D "
+status:
+    default:
+        on_view: ' ?:help  ↕↔|↵|Esc'
+        on_view_wide: ' ?:help e:img t:txt  ↕↔|↵|Esc'
+        on_search: ' {count}  ↕↔|↵|Esc'
+        on_search_wide: ' {count} e:img t:txt  ↕↔|↵|Esc'
+    multi_select:
+        no_cursor: ' [Multi:{count}] ↕↔'
+        on_add: ' [Multi:{count}] $action{↵:add} ↕↔'
+        on_done: ' [Multi:{count}] $success{↵:done} ⌫:remove'
+    settings:
+        navigate: ' ↕:nav ←→:change ?:help Esc:back'
+        keybind: ' Type binding  Enter:save  Esc:cancel'
+    categories:
+        navigate: ' ↕:navigate Space:toggle Esc:back'
+    view:
+        default: ' q/Esc:close'
+        scrollable: ' ↕:scroll  q/Esc:close'
+        about: ' Space:replay  q/Esc:close'
+        about_scrollable: ' ↕:scroll Space:replay  q/Esc:close'
+    commands:
+        navigate: ' ↕:navigate Enter:run Esc:back'
+    cat_filter:
+        navigate: ' ↕:navigate Enter/Space:select Esc:back'
+    popup:
+        default: ' Space/Enter/Esc:close'
+status_lines:
+    - ℹ️  emojig $version
+    - ""
+    - ' theme:       $theme'
+    - ' shell:       $shell'
+    - ' key binding: $shell_key_binding'
+    - ' integration: $shell_integration'
+    - ' categories:  $show_all_categories'
+    - ' ambiguous:   $ambiguous_chars'
+    - ' update cmd:  $update_cmd'
+    - ""
+    - ' $emojis emojis indexed'

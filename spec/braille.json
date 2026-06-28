@@ -1,5 +1,5 @@
 {
-  "description": "Unicode Braille Patterns block (U+2800–U+28FF), all 256 8-dot cells. Names list the raised dot numbers in the standard Braille cell layout (1,2,3 top-to-bottom left column; 4,5,6 top-to-bottom right column; 7,8 the lower two extra dots), e.g. 'braille dots 1 4' or 'braille blank' for the empty cell. The packer and the Go loader append a 'braille' keyword to every entry and rank Braille patterns below emojis in general searches; the 'br:' query prefix filters to these entries only, and 'br:<n>' (e.g. 'br:3' or 'br:3:') lists only the cells with exactly n raised dots, ordered by ascending dot count.",
+  "description": "Unicode Braille Patterns block (U+2800–U+28FF), all 256 8-dot cells. Names list the raised dot numbers in the standard Braille cell layout (1,2,3 top-to-bottom left column; 4,5,6 top-to-bottom right column; 7,8 the lower two extra dots), e.g. 'braille dots 1 4' or 'braille blank' for the empty cell. The packer and the Go loader append a 'braille' keyword to every entry and rank Braille patterns below emojis in general searches; the 'br:' query prefix filters to these entries only, and 'br:\u003cn\u003e' (e.g. 'br:3' or 'br:3:') lists only the cells with exactly n raised dots, ordered by ascending dot count.",
   "entries": [
     {
       "char": "⠀",

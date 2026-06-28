@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Teksty interfejsu użytkownika dla wyboru emoji (Polski).
+search_prompt: " \U0001F50D "
+search_placeholder: szukaj…
+status_help_hint: ' ?:pomoc  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:pomoc e:obr t:tekst  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:obr t:tekst  ↕↔|↵|Esc'
+help_lines:
+    - 'Pomoc i Skróty Klawiszowe:'
+    - '  Pisanie: Szukaj'
+    - '  Strzałki: Nawigacja'
+    - '  Enter:   Kopiuj i Wyjdź'
+    - '  Tab:     Zmień Motyw'
+    - '  Esc:     Wyjdź'
+help_lines_more:
+    - 'Pomoc i Skróty Klawiszowe:'
+    - ""
+    - " e:abc \U0001F50D Tylko emoji"
+    - " t:abc \U0001F50D Tylko symbole"
+    - " b:abc \U0001F50D Tylko ramki"
+    - " a b \U0001F50D   Wszystkie słowa"
+    - ' ⌫        Wstecz…'
+focus_lost_startup_lines:
+    - ⚠️  Brak fokusu popupu
+    - Wayland?
+    - ""
+    - Kliknij, aby skupić!
+focus_lost_runtime_lines:
+    - ⚠️  Brak fokusu.
+    - ""
+    - ""
+    - Kliknij, aby skupić!

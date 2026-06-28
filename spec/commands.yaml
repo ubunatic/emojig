@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Custom commands mapping. Each command is matched as a prefix of the typed text after the cmd_start_chars prefix and executed on Enter (<cr>).
+cmd_start_chars: '/:'
+commands:
+    - name: help
+      short: h
+      action: open_help
+    - name: about
+      short: a
+      action: open_about
+    - name: settings
+      short: s
+      action: open_settings
+    - name: menu
+      short: mn
+      action: open_settings
+    - name: hamburger
+      short: hb
+      action: open_settings
+    - name: categories
+      short: c
+      action: open_categories
+    - name: multi
+      short: m
+      action: start_multi_selection
+    - name: update
+      short: u
+      action: run_update
+    - name: status
+      short: st
+      action: open_status
+    - name: quit
+      short: q
+      action: quit_app

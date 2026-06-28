@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+$schema: ./art.schema.json
+description: Pixel art for emojig about screens. Mode 'quad' maps 2×2 pixel blocks to terminal cells using U+2596–U+259F block chars. Each shape row is a sequence of palette chars (one char per pixel column); spaced=true means alternate chars are visual separators and are ignored.
+colors:
+    Bright Amber: 214
+    Dark Gold: 178
+    Orange-Brown: 172
+    Dark Goldenrod: 136
+    Dark Blue: 18
+    Navy Blue: 19
+    Deep Blue: 21
+    Midnight Blue: 24
+    Steel Blue: 67
+    Cornflower Blue: 69
+    Royal Blue: 75
+    Bright Blue: 27
+    Electric Blue: 33
+    Sky Blue: 39
+    Light Blue: 111
+    Dodger Blue: 45
+    Cyan / Aqua: 51
+    Pale Ice Blue: 153
+    Powder Blue: 195
+    yellow: 220
+    gold: 220
+    white: 255
+    dark: 232
+    gray: 238
+    purple: 54
+    Rose Pink: 209
+palette:
+    '*': Bright Amber
+    '#': white
+    +: gray
+    ' ': dark
+    p: Rose Pink
+    P: purple
+    b: Midnight Blue
+    y: Dark Goldenrod
+    .: null
+    '-': null
+    _: null
+priority:
+    - .
+    - '-'
+    - _
+    - ' '
+    - '#'
+    - '*'
+    - +
+    - p
+    - b
+    - y
+art:
+    - name: about
+      target: about_frames
+      mode: quad
+      spaced: false
+      indent: '   '
+      stack:
+        - spec/art/frames/emojig_fall
+        - path: spec/art/frames/emojig_spin_emo
+          fps: 10
+      fps: 30
+      start_delay_ms: 200
+      end_delay_ms: 0
+      header:
+        - ""
+        - "\U0001F600 $link"
+        - ""
+        - ' Emojig $version — lightning-fast,'
+        - ' zero-allocation emoji picker in Zig.'
+      footer:
+        - ""
+        - " Made with \U0001F499+\U0001F916 in Dresden, DE"
+        - ""

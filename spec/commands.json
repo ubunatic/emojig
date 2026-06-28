@@ -1,6 +1,6 @@
 {
-  "description": "Custom commands mapping. Each command is matched as a prefix of the typed text after the cmd_start_chars prefix and executed on Enter (<cr>).",
-  "cmd_start_chars": "/",
+  "description": "Custom commands mapping. Each command is matched as a prefix of the typed text after the cmd_start_chars prefix and executed on Enter (\u003ccr\u003e).",
+  "cmd_start_chars": "/:",
   "commands": [
     {
       "name": "help",

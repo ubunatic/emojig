@@ -1,109 +1,916 @@
 {
-  "description": "Box-drawing and block-element characters (U+2500–U+259F) added to the picker database. Names follow a systematic '<position> [style] border' scheme so queries like 'top left double border' or 'bottom border round' hit exactly one glyph. The packer and the Go loader append 'box ascii art' keywords to every entry and rank box art below emojis in general searches; the 'b:' query prefix filters to these entries only. The rarely used mixed single/double forms (U+2552–U+256C subset) are intentionally omitted.",
+  "description": "Box-drawing and block-element characters (U+2500–U+259F) added to the picker database. Names follow a systematic '\u003cposition\u003e [style] border' scheme so queries like 'top left double border' or 'bottom border round' hit exactly one glyph. The packer and the Go loader append 'box ascii art' keywords to every entry and rank box art below emojis in general searches; the 'b:' query prefix filters to these entries only. The rarely used mixed single/double forms (U+2552–U+256C subset) are intentionally omitted.",
   "entries": [
-    { "char": "─", "name": "horizontal border", "tags": ["line", "top", "bottom", "single"] },
-    { "char": "│", "name": "vertical border", "tags": ["line", "left", "right", "side", "single"] },
-    { "char": "┌", "name": "top left border", "tags": ["corner", "single"] },
-    { "char": "┐", "name": "top right border", "tags": ["corner", "single"] },
-    { "char": "└", "name": "bottom left border", "tags": ["corner", "single"] },
-    { "char": "┘", "name": "bottom right border", "tags": ["corner", "single"] },
-    { "char": "├", "name": "left border tee", "tags": ["junction", "branch", "single"] },
-    { "char": "┤", "name": "right border tee", "tags": ["junction", "branch", "single"] },
-    { "char": "┬", "name": "top border tee", "tags": ["junction", "branch", "single"] },
-    { "char": "┴", "name": "bottom border tee", "tags": ["junction", "branch", "single"] },
-    { "char": "┼", "name": "border cross", "tags": ["junction", "intersection", "single"] },
-
-    { "char": "━", "name": "horizontal bold border", "tags": ["line", "heavy", "thick"] },
-    { "char": "┃", "name": "vertical bold border", "tags": ["line", "heavy", "thick", "side"] },
-    { "char": "┏", "name": "top left bold border", "tags": ["corner", "heavy", "thick"] },
-    { "char": "┓", "name": "top right bold border", "tags": ["corner", "heavy", "thick"] },
-    { "char": "┗", "name": "bottom left bold border", "tags": ["corner", "heavy", "thick"] },
-    { "char": "┛", "name": "bottom right bold border", "tags": ["corner", "heavy", "thick"] },
-    { "char": "┣", "name": "left bold border tee", "tags": ["junction", "heavy", "thick"] },
-    { "char": "┫", "name": "right bold border tee", "tags": ["junction", "heavy", "thick"] },
-    { "char": "┳", "name": "top bold border tee", "tags": ["junction", "heavy", "thick"] },
-    { "char": "┻", "name": "bottom bold border tee", "tags": ["junction", "heavy", "thick"] },
-    { "char": "╋", "name": "bold border cross", "tags": ["junction", "heavy", "thick"] },
-
-    { "char": "═", "name": "horizontal double border", "tags": ["line"] },
-    { "char": "║", "name": "vertical double border", "tags": ["line", "side"] },
-    { "char": "╔", "name": "top left double border", "tags": ["corner"] },
-    { "char": "╗", "name": "top right double border", "tags": ["corner"] },
-    { "char": "╚", "name": "bottom left double border", "tags": ["corner"] },
-    { "char": "╝", "name": "bottom right double border", "tags": ["corner"] },
-    { "char": "╠", "name": "left double border tee", "tags": ["junction"] },
-    { "char": "╣", "name": "right double border tee", "tags": ["junction"] },
-    { "char": "╦", "name": "top double border tee", "tags": ["junction"] },
-    { "char": "╩", "name": "bottom double border tee", "tags": ["junction"] },
-    { "char": "╬", "name": "double border cross", "tags": ["junction", "intersection"] },
-
-    { "char": "╭", "name": "top left border round", "tags": ["corner", "rounded", "arc", "curve"] },
-    { "char": "╮", "name": "top right border round", "tags": ["corner", "rounded", "arc", "curve"] },
-    { "char": "╰", "name": "bottom left border round", "tags": ["corner", "rounded", "arc", "curve"] },
-    { "char": "╯", "name": "bottom right border round", "tags": ["corner", "rounded", "arc", "curve"] },
-
-    { "char": "╱", "name": "diagonal slash", "tags": ["line", "forward"] },
-    { "char": "╲", "name": "diagonal backslash", "tags": ["line", "backward"] },
-    { "char": "╳", "name": "diagonal cross", "tags": ["times", "x"] },
-
-    { "char": "┄", "name": "horizontal dashed border", "tags": ["line", "triple", "dash"] },
-    { "char": "┅", "name": "horizontal dashed bold border", "tags": ["line", "triple", "dash", "heavy"] },
-    { "char": "┆", "name": "vertical dashed border", "tags": ["line", "triple", "dash"] },
-    { "char": "┇", "name": "vertical dashed bold border", "tags": ["line", "triple", "dash", "heavy"] },
-    { "char": "┈", "name": "horizontal dotted border", "tags": ["line", "quadruple", "dash"] },
-    { "char": "┉", "name": "horizontal dotted bold border", "tags": ["line", "quadruple", "dash", "heavy"] },
-    { "char": "┊", "name": "vertical dotted border", "tags": ["line", "quadruple", "dash"] },
-    { "char": "┋", "name": "vertical dotted bold border", "tags": ["line", "quadruple", "dash", "heavy"] },
-    { "char": "╌", "name": "horizontal double dash border", "tags": ["line", "dash"] },
-    { "char": "╍", "name": "horizontal double dash bold border", "tags": ["line", "dash", "heavy"] },
-    { "char": "╎", "name": "vertical double dash border", "tags": ["line", "dash"] },
-    { "char": "╏", "name": "vertical double dash bold border", "tags": ["line", "dash", "heavy"] },
-
-    { "char": "╴", "name": "left half border", "tags": ["stub", "end", "line"] },
-    { "char": "╵", "name": "up half border", "tags": ["stub", "end", "line", "top"] },
-    { "char": "╶", "name": "right half border", "tags": ["stub", "end", "line"] },
-    { "char": "╷", "name": "down half border", "tags": ["stub", "end", "line", "bottom"] },
-    { "char": "╸", "name": "left half bold border", "tags": ["stub", "end", "line", "heavy"] },
-    { "char": "╹", "name": "up half bold border", "tags": ["stub", "end", "line", "heavy", "top"] },
-    { "char": "╺", "name": "right half bold border", "tags": ["stub", "end", "line", "heavy"] },
-    { "char": "╻", "name": "down half bold border", "tags": ["stub", "end", "line", "heavy", "bottom"] },
-
-    { "char": "█", "name": "full block", "tags": ["solid", "square", "fill", "cursor", "sparkline", "spark", "bar", "progress", "chart"] },
-    { "char": "▀", "name": "top half block", "tags": ["upper", "fill"] },
-    { "char": "▄", "name": "bottom half block", "tags": ["lower", "fill", "sparkline", "spark", "bar", "chart", "histogram", "step"] },
-    { "char": "▁", "name": "lower one eighth block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▂", "name": "lower one quarter block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▃", "name": "lower three eighths block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▅", "name": "lower five eighths block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▆", "name": "lower three quarters block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▇", "name": "lower seven eighths block", "tags": ["sparkline", "spark", "bar", "chart", "histogram", "fill", "step"] },
-    { "char": "▌", "name": "left half block", "tags": ["fill", "progress", "bar", "gauge", "level", "step"] },
-    { "char": "▐", "name": "right half block", "tags": ["fill"] },
-    { "char": "▉", "name": "left seven eighths block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "▊", "name": "left three quarters block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "▋", "name": "left five eighths block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "▍", "name": "left three eighths block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "▎", "name": "left one quarter block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "▏", "name": "left one eighth block", "tags": ["progress", "bar", "gauge", "level", "fill", "step"] },
-    { "char": "░", "name": "light shade", "tags": ["dither", "pattern", "transparent", "fill"] },
-    { "char": "▒", "name": "medium shade", "tags": ["dither", "pattern", "fill"] },
-    { "char": "▓", "name": "dark shade", "tags": ["dither", "pattern", "fill"] },
-
-    { "char": "⌫", "name": "backspace", "tags": ["erase", "delete", "keyboard", "key"] },
-    { "char": "⌦", "name": "delete forward", "tags": ["erase", "delete", "keyboard", "key"] },
-    { "char": "↵", "name": "enter return", "tags": ["newline", "carriage", "keyboard", "key"] },
-    { "char": "⌃", "name": "ctrl", "tags": ["control", "keyboard", "key"] },
-    { "char": "⌥", "name": "alt option", "tags": ["option", "keyboard", "key"] },
-    { "char": "⇧", "name": "shift", "tags": ["keyboard", "key"] },
-    { "char": "⌘", "name": "cmd command", "tags": ["keyboard", "key", "mac"] },
-    { "char": "⎋", "name": "escape", "tags": ["esc", "keyboard", "key"] },
-    { "char": "⭾", "name": "tab", "tags": ["tabulator", "keyboard", "key"] },
-    { "char": "⇥", "name": "tab right", "tags": ["tabulator", "keyboard", "key"] },
-    { "char": "⎵", "name": "space", "tags": ["blank", "keyboard", "key"] },
-    { "char": "⎀", "name": "insert", "tags": ["ins", "keyboard", "key"] },
-    { "char": "⇞", "name": "page up", "tags": ["pgup", "scroll", "keyboard", "key"] },
-    { "char": "⇟", "name": "page down", "tags": ["pgdn", "scroll", "keyboard", "key"] },
-    { "char": "⇱", "name": "home", "tags": ["keyboard", "key"] },
-    { "char": "⇲", "name": "end", "tags": ["keyboard", "key"] }
+    {
+      "char": "─",
+      "name": "horizontal border",
+      "tags": [
+        "line",
+        "top",
+        "bottom",
+        "single"
+      ]
+    },
+    {
+      "char": "│",
+      "name": "vertical border",
+      "tags": [
+        "line",
+        "left",
+        "right",
+        "side",
+        "single"
+      ]
+    },
+    {
+      "char": "┌",
+      "name": "top left border",
+      "tags": [
+        "corner",
+        "single"
+      ]
+    },
+    {
+      "char": "┐",
+      "name": "top right border",
+      "tags": [
+        "corner",
+        "single"
+      ]
+    },
+    {
+      "char": "└",
+      "name": "bottom left border",
+      "tags": [
+        "corner",
+        "single"
+      ]
+    },
+    {
+      "char": "┘",
+      "name": "bottom right border",
+      "tags": [
+        "corner",
+        "single"
+      ]
+    },
+    {
+      "char": "├",
+      "name": "left border tee",
+      "tags": [
+        "junction",
+        "branch",
+        "single"
+      ]
+    },
+    {
+      "char": "┤",
+      "name": "right border tee",
+      "tags": [
+        "junction",
+        "branch",
+        "single"
+      ]
+    },
+    {
+      "char": "┬",
+      "name": "top border tee",
+      "tags": [
+        "junction",
+        "branch",
+        "single"
+      ]
+    },
+    {
+      "char": "┴",
+      "name": "bottom border tee",
+      "tags": [
+        "junction",
+        "branch",
+        "single"
+      ]
+    },
+    {
+      "char": "┼",
+      "name": "border cross",
+      "tags": [
+        "junction",
+        "intersection",
+        "single"
+      ]
+    },
+    {
+      "char": "━",
+      "name": "horizontal bold border",
+      "tags": [
+        "line",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┃",
+      "name": "vertical bold border",
+      "tags": [
+        "line",
+        "heavy",
+        "thick",
+        "side"
+      ]
+    },
+    {
+      "char": "┏",
+      "name": "top left bold border",
+      "tags": [
+        "corner",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┓",
+      "name": "top right bold border",
+      "tags": [
+        "corner",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┗",
+      "name": "bottom left bold border",
+      "tags": [
+        "corner",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┛",
+      "name": "bottom right bold border",
+      "tags": [
+        "corner",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┣",
+      "name": "left bold border tee",
+      "tags": [
+        "junction",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┫",
+      "name": "right bold border tee",
+      "tags": [
+        "junction",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┳",
+      "name": "top bold border tee",
+      "tags": [
+        "junction",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "┻",
+      "name": "bottom bold border tee",
+      "tags": [
+        "junction",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "╋",
+      "name": "bold border cross",
+      "tags": [
+        "junction",
+        "heavy",
+        "thick"
+      ]
+    },
+    {
+      "char": "═",
+      "name": "horizontal double border",
+      "tags": [
+        "line"
+      ]
+    },
+    {
+      "char": "║",
+      "name": "vertical double border",
+      "tags": [
+        "line",
+        "side"
+      ]
+    },
+    {
+      "char": "╔",
+      "name": "top left double border",
+      "tags": [
+        "corner"
+      ]
+    },
+    {
+      "char": "╗",
+      "name": "top right double border",
+      "tags": [
+        "corner"
+      ]
+    },
+    {
+      "char": "╚",
+      "name": "bottom left double border",
+      "tags": [
+        "corner"
+      ]
+    },
+    {
+      "char": "╝",
+      "name": "bottom right double border",
+      "tags": [
+        "corner"
+      ]
+    },
+    {
+      "char": "╠",
+      "name": "left double border tee",
+      "tags": [
+        "junction"
+      ]
+    },
+    {
+      "char": "╣",
+      "name": "right double border tee",
+      "tags": [
+        "junction"
+      ]
+    },
+    {
+      "char": "╦",
+      "name": "top double border tee",
+      "tags": [
+        "junction"
+      ]
+    },
+    {
+      "char": "╩",
+      "name": "bottom double border tee",
+      "tags": [
+        "junction"
+      ]
+    },
+    {
+      "char": "╬",
+      "name": "double border cross",
+      "tags": [
+        "junction",
+        "intersection"
+      ]
+    },
+    {
+      "char": "╭",
+      "name": "top left border round",
+      "tags": [
+        "corner",
+        "rounded",
+        "arc",
+        "curve"
+      ]
+    },
+    {
+      "char": "╮",
+      "name": "top right border round",
+      "tags": [
+        "corner",
+        "rounded",
+        "arc",
+        "curve"
+      ]
+    },
+    {
+      "char": "╰",
+      "name": "bottom left border round",
+      "tags": [
+        "corner",
+        "rounded",
+        "arc",
+        "curve"
+      ]
+    },
+    {
+      "char": "╯",
+      "name": "bottom right border round",
+      "tags": [
+        "corner",
+        "rounded",
+        "arc",
+        "curve"
+      ]
+    },
+    {
+      "char": "╱",
+      "name": "diagonal slash",
+      "tags": [
+        "line",
+        "forward"
+      ]
+    },
+    {
+      "char": "╲",
+      "name": "diagonal backslash",
+      "tags": [
+        "line",
+        "backward"
+      ]
+    },
+    {
+      "char": "╳",
+      "name": "diagonal cross",
+      "tags": [
+        "times",
+        "x"
+      ]
+    },
+    {
+      "char": "┄",
+      "name": "horizontal dashed border",
+      "tags": [
+        "line",
+        "triple",
+        "dash"
+      ]
+    },
+    {
+      "char": "┅",
+      "name": "horizontal dashed bold border",
+      "tags": [
+        "line",
+        "triple",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "┆",
+      "name": "vertical dashed border",
+      "tags": [
+        "line",
+        "triple",
+        "dash"
+      ]
+    },
+    {
+      "char": "┇",
+      "name": "vertical dashed bold border",
+      "tags": [
+        "line",
+        "triple",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "┈",
+      "name": "horizontal dotted border",
+      "tags": [
+        "line",
+        "quadruple",
+        "dash"
+      ]
+    },
+    {
+      "char": "┉",
+      "name": "horizontal dotted bold border",
+      "tags": [
+        "line",
+        "quadruple",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "┊",
+      "name": "vertical dotted border",
+      "tags": [
+        "line",
+        "quadruple",
+        "dash"
+      ]
+    },
+    {
+      "char": "┋",
+      "name": "vertical dotted bold border",
+      "tags": [
+        "line",
+        "quadruple",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "╌",
+      "name": "horizontal double dash border",
+      "tags": [
+        "line",
+        "dash"
+      ]
+    },
+    {
+      "char": "╍",
+      "name": "horizontal double dash bold border",
+      "tags": [
+        "line",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "╎",
+      "name": "vertical double dash border",
+      "tags": [
+        "line",
+        "dash"
+      ]
+    },
+    {
+      "char": "╏",
+      "name": "vertical double dash bold border",
+      "tags": [
+        "line",
+        "dash",
+        "heavy"
+      ]
+    },
+    {
+      "char": "╴",
+      "name": "left half border",
+      "tags": [
+        "stub",
+        "end",
+        "line"
+      ]
+    },
+    {
+      "char": "╵",
+      "name": "up half border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "top"
+      ]
+    },
+    {
+      "char": "╶",
+      "name": "right half border",
+      "tags": [
+        "stub",
+        "end",
+        "line"
+      ]
+    },
+    {
+      "char": "╷",
+      "name": "down half border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "bottom"
+      ]
+    },
+    {
+      "char": "╸",
+      "name": "left half bold border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "heavy"
+      ]
+    },
+    {
+      "char": "╹",
+      "name": "up half bold border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "heavy",
+        "top"
+      ]
+    },
+    {
+      "char": "╺",
+      "name": "right half bold border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "heavy"
+      ]
+    },
+    {
+      "char": "╻",
+      "name": "down half bold border",
+      "tags": [
+        "stub",
+        "end",
+        "line",
+        "heavy",
+        "bottom"
+      ]
+    },
+    {
+      "char": "█",
+      "name": "full block",
+      "tags": [
+        "solid",
+        "square",
+        "fill",
+        "cursor",
+        "sparkline",
+        "spark",
+        "bar",
+        "progress",
+        "chart"
+      ]
+    },
+    {
+      "char": "▀",
+      "name": "top half block",
+      "tags": [
+        "upper",
+        "fill"
+      ]
+    },
+    {
+      "char": "▄",
+      "name": "bottom half block",
+      "tags": [
+        "lower",
+        "fill",
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "step"
+      ]
+    },
+    {
+      "char": "▁",
+      "name": "lower one eighth block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▂",
+      "name": "lower one quarter block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▃",
+      "name": "lower three eighths block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▅",
+      "name": "lower five eighths block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▆",
+      "name": "lower three quarters block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▇",
+      "name": "lower seven eighths block",
+      "tags": [
+        "sparkline",
+        "spark",
+        "bar",
+        "chart",
+        "histogram",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▌",
+      "name": "left half block",
+      "tags": [
+        "fill",
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "step"
+      ]
+    },
+    {
+      "char": "▐",
+      "name": "right half block",
+      "tags": [
+        "fill"
+      ]
+    },
+    {
+      "char": "▉",
+      "name": "left seven eighths block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▊",
+      "name": "left three quarters block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▋",
+      "name": "left five eighths block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▍",
+      "name": "left three eighths block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▎",
+      "name": "left one quarter block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "▏",
+      "name": "left one eighth block",
+      "tags": [
+        "progress",
+        "bar",
+        "gauge",
+        "level",
+        "fill",
+        "step"
+      ]
+    },
+    {
+      "char": "░",
+      "name": "light shade",
+      "tags": [
+        "dither",
+        "pattern",
+        "transparent",
+        "fill"
+      ]
+    },
+    {
+      "char": "▒",
+      "name": "medium shade",
+      "tags": [
+        "dither",
+        "pattern",
+        "fill"
+      ]
+    },
+    {
+      "char": "▓",
+      "name": "dark shade",
+      "tags": [
+        "dither",
+        "pattern",
+        "fill"
+      ]
+    },
+    {
+      "char": "⌫",
+      "name": "backspace",
+      "tags": [
+        "erase",
+        "delete",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⌦",
+      "name": "delete forward",
+      "tags": [
+        "erase",
+        "delete",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "↵",
+      "name": "enter return",
+      "tags": [
+        "newline",
+        "carriage",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⌃",
+      "name": "ctrl",
+      "tags": [
+        "control",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⌥",
+      "name": "alt option",
+      "tags": [
+        "option",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇧",
+      "name": "shift",
+      "tags": [
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⌘",
+      "name": "cmd command",
+      "tags": [
+        "keyboard",
+        "key",
+        "mac"
+      ]
+    },
+    {
+      "char": "⎋",
+      "name": "escape",
+      "tags": [
+        "esc",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⭾",
+      "name": "tab",
+      "tags": [
+        "tabulator",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇥",
+      "name": "tab right",
+      "tags": [
+        "tabulator",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⎵",
+      "name": "space",
+      "tags": [
+        "blank",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⎀",
+      "name": "insert",
+      "tags": [
+        "ins",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇞",
+      "name": "page up",
+      "tags": [
+        "pgup",
+        "scroll",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇟",
+      "name": "page down",
+      "tags": [
+        "pgdn",
+        "scroll",
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇱",
+      "name": "home",
+      "tags": [
+        "keyboard",
+        "key"
+      ]
+    },
+    {
+      "char": "⇲",
+      "name": "end",
+      "tags": [
+        "keyboard",
+        "key"
+      ]
+    }
   ]
 }

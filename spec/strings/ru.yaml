@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Текстовые строки интерфейса для выбора эмодзи (Русский).
+search_prompt: " \U0001F50D "
+search_placeholder: поиск…
+status_help_hint: ' ?:справка  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:справка e:избр t:текст  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:избр t:текст  ↕↔|↵|Esc'
+help_lines:
+    - 'Справка и Горячие Клавиши:'
+    - '  Ввод:   Поиск'
+    - '  Стрелки:Навигация'
+    - '  Enter:  Копировать и Выйти'
+    - '  Tab:    Сменить Тему'
+    - '  Esc:    Выйти'
+help_lines_more:
+    - 'Справка и Горячие Клавиши:'
+    - ""
+    - " e:abc \U0001F50D Только эмодзи"
+    - " t:abc \U0001F50D Только символы"
+    - " b:abc \U0001F50D Только рамки"
+    - " a b \U0001F50D   Все слова"
+    - ' ⌫        Назад…'
+focus_lost_startup_lines:
+    - ⚠️  Нет фокуса
+    - всплывающего окна?
+    - ""
+    - Нажмите для фокуса!
+focus_lost_runtime_lines:
+    - ⚠️  Нет фокуса.
+    - ""
+    - ""
+    - Нажмите для фокуса!

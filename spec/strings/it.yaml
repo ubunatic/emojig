@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Stringhe di testo dell'interfaccia utente per il selettore (Italiano).
+search_prompt: " \U0001F50D "
+search_placeholder: cerca…
+status_help_hint: ' ?:aiuto  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:aiuto e:img t:txt  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:img t:txt  ↕↔|↵|Esc'
+help_lines:
+    - 'Aiuto e Scorciatoie da Tastiera:'
+    - '  Scrivere: Cerca'
+    - '  Frecce:   Naviga'
+    - '  Invio:    Copia ed Esci'
+    - '  Tab:      Cambia Tema'
+    - '  Esc:      Esci'
+help_lines_more:
+    - 'Aiuto e Scorciatoie da Tastiera:'
+    - ""
+    - " e:abc \U0001F50D Solo emoji"
+    - " t:abc \U0001F50D Solo simboli"
+    - " b:abc \U0001F50D Solo bordi"
+    - " a b \U0001F50D   Tutte le parole"
+    - ' ⌫        Indietro…'
+focus_lost_startup_lines:
+    - ⚠️  Impossibile attivare
+    - il focus del popup?
+    - ""
+    - Clicca per focalizzare!
+focus_lost_runtime_lines:
+    - ⚠️  Selettore non focalizzato.
+    - ""
+    - ""
+    - Clicca per focalizzare!

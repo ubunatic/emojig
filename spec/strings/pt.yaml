@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Strings de texto da interface do usuário para o seletor (Português).
+search_prompt: " \U0001F50D "
+search_placeholder: buscar…
+status_help_hint: ' ?:ajuda  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:ajuda e:img t:txt  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:img t:txt  ↕↔|↵|Esc'
+help_lines:
+    - 'Ajuda e Atalhos do Teclado:'
+    - '  Digitar: Buscar'
+    - '  Setas:   Navegar'
+    - '  Enter:   Copiar e Sair'
+    - '  Tab:     Alternar Tema'
+    - '  Esc:     Sair'
+help_lines_more:
+    - 'Ajuda e Atalhos do Teclado:'
+    - ""
+    - " e:abc \U0001F50D Só emojis"
+    - " t:abc \U0001F50D Só símbolos"
+    - " b:abc \U0001F50D Só bordas"
+    - " a b \U0001F50D   Todas as palavras"
+    - ' ⌫        Voltar…'
+focus_lost_startup_lines:
+    - ⚠️  Não focar popup
+    - do Wayland?
+    - ""
+    - Clique para focar!
+focus_lost_runtime_lines:
+    - ⚠️  Seletor sem foco.
+    - ""
+    - ""
+    - Clique para focar!

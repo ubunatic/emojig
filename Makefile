@@ -4,6 +4,9 @@ SHELL = bash
 VERSION = $(shell grep '\.version' build.zig.zon | grep -o '[0-9][0-9.]*')
 
 export WAYREEL_FAST ?= 3
+export GOCACHE ?= /tmp/emojig-gocache
+export ZIG_GLOBAL_CACHE_DIR ?= /tmp/emojig-zig-global
+export ZIG_LOCAL_CACHE_DIR ?= /tmp/emojig-zig-local
 
 # `make install` defaults to a fast dev build: ReleaseFast without LLVM's
 # optimizer (zig's self-hosted backend), since LLVM codegen — not linking —
@@ -18,19 +21,22 @@ help: ⚙️
 	@printf "Emojig Makefile Targets:\n\n"
 	@awk -F':.*# ' '/^[a-zA-Z0-9_-]+:.*# / { printf "  %-18s %s\n", $$1, $$2 }' Makefile
 
+status: ⚙️  # show open issues, recent commits, and working-tree state
+	@go run ./scripts/status/
+
 zig-help: ⚙️  # show zig build targets
 	zig build --list-steps
 	@echo
 	@echo "ℹ️ 'zig build <step>' is used internally to manage building and testing."
 	@echo "   Most zig build steps have a convenience Makefile target (see 'make help')."
 
-build: ⚙️  # compile the application (OPTIMIZE=ReleaseFast, LLVM=false by default)
+build: gen-spec ⚙️  # compile the application (OPTIMIZE=ReleaseFast, LLVM=false by default)
 	zig build -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM)
 
-run: ⚙️  # run the inline TUI picker in current terminal
+run: gen-spec ⚙️  # run the inline TUI picker in current terminal
 	zig build run
 
-picker: ⚙️  # launch the emoji picker in a floating foot window (non-blocking)
+picker: gen-spec ⚙️  # launch the emoji picker in a floating foot window (non-blocking)
 	zig build picker
 
 export EDITOR ?= nvim
@@ -47,24 +53,60 @@ watch: ⚙️  # watch ED_FILE for changes and recompile
 watch-run: ⚙️  # watch source and spec files, and run the gui app afterwards
 	@scripts/watch_run.sh
 
-edit-strings: ⚙️  # open spec/strings.json in nvim-qt for editing
-edit-art:     ⚙️  # open spec/art.json in nvim-qt, then recompile and rebuild on save
+edit-strings: ⚙️  # open spec/strings/en.yaml in nvim-qt for editing
+	($(ED_TUI) "spec/strings/en.yaml" || setsid $(ED_GUI) "spec/strings/en.yaml" >/dev/null 2>&1)
+edit-art:     ⚙️  # open spec/art.yaml in nvim-qt, then recompile and rebuild on save
+	($(ED_TUI) "spec/art.yaml" || setsid $(ED_GUI) "spec/art.yaml" >/dev/null 2>&1)
+edit-strings-%:
+	($(ED_TUI) "spec/strings/$*.yaml" || setsid $(ED_GUI) "spec/strings/$*.yaml" >/dev/null 2>&1)
 edit-%:
-	($(ED_TUI) "spec/$*.json" || setsid $(ED_GUI) "spec/$*.json" >/dev/null 2>&1)
+	($(ED_TUI) "spec/$*.yaml" || setsid $(ED_GUI) "spec/$*.yaml" >/dev/null 2>&1)
 
 edit-input: ⚙️  # open spec/input.yaml in nvim-qt for editing
 	($(ED_TUI) "spec/input.yaml" || setsid $(ED_GUI) "spec/input.yaml" >/dev/null 2>&1)
 
 watch-strings: ⚙️
+	@scripts/watch.sh spec/strings/en.yaml
 watch-art:     ⚙️
+	@scripts/watch.sh spec/art.yaml
+watch-strings-%:
+	@scripts/watch.sh spec/strings/$*.yaml
 watch-%:
-	@scripts/watch.sh spec/$*.json
+	@scripts/watch.sh spec/$*.yaml
 
 watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input spec
 	@scripts/watch.sh spec/input.yaml
 
-gen-art: ⚙️  # compile spec/art.json → spec/art.generated.json
+gen-spec: ⚙️  # compile YAML spec sources to generated JSON artifacts
+	go run ./scripts/convert_spec/ spec/layout.yaml spec/layout.json
+	go run ./scripts/convert_spec/ spec/theme.yaml spec/theme.json
+	go run ./scripts/convert_spec/ spec/keys.yaml spec/keys.json
+	go run ./scripts/convert_spec/ spec/commands.yaml spec/commands.json
+	go run ./scripts/convert_spec/ spec/settings.yaml spec/settings.json
+	go run ./scripts/convert_spec/ spec/categories.yaml spec/categories.json
+	go run ./scripts/convert_spec/ spec/styles.yaml spec/styles.json
+	go run ./scripts/convert_spec/ spec/art.yaml spec/art.json
+	go run ./scripts/convert_spec/ spec/boxart.yaml spec/boxart.json
+	go run ./scripts/convert_spec/ spec/braille.yaml spec/braille.json
+	go run ./scripts/convert_spec/ spec/synonyms.yaml spec/synonyms.json
+	go run ./scripts/convert_spec/ spec/jsdemo.yaml spec/jsdemo.json
+	go run ./scripts/convert_spec/ spec/crt-theme.yaml spec/crt-theme.json
+	go run ./scripts/convert_spec/ spec/strings/en.yaml spec/strings.json
+	go run ./scripts/convert_spec/ spec/strings/de.yaml spec/strings_de.json
+	go run ./scripts/convert_spec/ spec/strings/es.yaml spec/strings_es.json
+	go run ./scripts/convert_spec/ spec/strings/fr.yaml spec/strings_fr.json
+	go run ./scripts/convert_spec/ spec/strings/it.yaml spec/strings_it.json
+	go run ./scripts/convert_spec/ spec/strings/nl.yaml spec/strings_nl.json
+	go run ./scripts/convert_spec/ spec/strings/pl.yaml spec/strings_pl.json
+	go run ./scripts/convert_spec/ spec/strings/pt.yaml spec/strings_pt.json
+	go run ./scripts/convert_spec/ spec/strings/ru.yaml spec/strings_ru.json
+	go run ./scripts/convert_spec/ spec/strings/tr.yaml spec/strings_tr.json
+	go run ./scripts/convert_spec/ spec/strings/uk.yaml spec/strings_uk.json
+	go run ./scripts/gen_input_spec/
 	go run ./scripts/gen_about_art/
+
+gen-art: gen-spec ⚙️  # compile spec/art.json → spec/art.generated.json
+	@true
 
 gen-input: ⚙️  # compile spec/input.yaml → spec/input.generated.json
 	go run ./scripts/gen_input_spec/
@@ -72,22 +114,22 @@ gen-input: ⚙️  # compile spec/input.yaml → spec/input.generated.json
 gen-colors: ⚙️  # regenerate spec/colors.json (full xterm-256 palette)
 	go run ./scripts/gen_colors/ > spec/colors.json
 
-test: ⚙️  # run the unit tests
+test: gen-spec ⚙️  # run the unit tests
 	zig build test
 	go vet ./...
 	go test ./...
 
-bench: ⚙️  # run search benchmarks comparing debug vs release (5 s per query)
+bench: gen-spec ⚙️  # run search benchmarks comparing debug vs release (5 s per query)
 	EMOJIG_BENCH=5000 zig build test
 	EMOJIG_BENCH=5000 zig build test -Doptimize=ReleaseFast
 
-tui: ⚙️  # run TUI mode (stdout path: prints selected emoji to terminal)
+tui: gen-spec ⚙️  # run TUI mode (stdout path: prints selected emoji to terminal)
 	zig build && zig-out/bin/emojig --tui | cat
 
 tui-rust: ⚙️  # run Rust TUI demo in the current terminal
 	cargo run --bin inline-demo -- --height 10
 
-gui: ⚙️  # launch the floating terminal picker window (requires foot)
+gui: gen-spec ⚙️  # launch the floating terminal picker window (requires foot)
 	zig build gui
 
 gui-watch: ⚙️  # tail /tmp/emojig.log live while using the gui picker
@@ -96,13 +138,13 @@ gui-watch: ⚙️  # tail /tmp/emojig.log live while using the gui picker
 gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ctrl+.)
 	python3 explore_gtk_emoji.py
 
-jsdemo: ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.json
+jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.yaml
 	@printf '// generated from spec/jsdemo.json — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/jsdemo.json)" > website/jsdemo.js
 
 browse: ⚙️ jsdemo  # open the website homepage in the default web browser
 	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"
 
-screenshot: ⚙️ build  # capture TUI screenshot for agent frame inspection
+screenshot: gen-spec build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run ./scripts/screenshot/ zig-out/bin/emojig
 
 termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, raw mode, cursor)
@@ -190,11 +232,11 @@ ttylaunch-borderless: ⚙️ build  # launch terminals in borderless mode with e
 	@sleep 3
 	@go run ./scripts/tty_bench/
 
-pack: ⚙️  # compress and pack emoji database json into src/emojis.bin
+pack: gen-spec ⚙️  # compress and pack emoji database json into src/emojis.bin
 	@go run ./scripts/pack_emojis/
 
 reuse: ⚙️  # verify license compliance linting
-	@reuse lint
+	@reuse --no-multiprocessing lint
 
 deps: ⚙️  # install package manager and CLI binary tooling dependencies
 	@sudo apt-get install -y foot minisign reuse
@@ -239,6 +281,7 @@ install-small: ⚙️  # install the smallest possible binary (LLVM ReleaseSmall
 	@$(MAKE) install OPTIMIZE=ReleaseSmall LLVM=true
 
 install: ⚙️  # install binary, shell integrations, and desktop launcher (fast build, default)
+	@$(MAKE) gen-spec >/dev/null
 	@zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) && exit 1)
 	@echo "✅ Emojig installed successfully!"
 	@echo "   - Binary:    ~/.local/bin/emojig"
@@ -252,17 +295,18 @@ update: ⚙️  # update emojig from source: git pull + rebuild + reinstall
 	$(MAKE) install
 
 install-ssh: ⚙️  # install to remote host via SSH (usage: make install-ssh HOST=hostname [SSH_ARCH=aarch64-linux-musl])
+	@$(MAKE) gen-spec >/dev/null
 	zig build -Doptimize=ReleaseSmall -Dtarget=$(SSH_ARCH)
 	test -n "$(HOST)"  # ensure HOST var is set
 	ssh $(HOST) 'mkdir -p ~/.local/bin'
 	scp zig-out/bin/emojig $(HOST):~/.local/bin/emojig
 	@echo "✅ emojig copied to $(HOST):~/.local/bin/emojig"
 
-install-verbose: ⚙️  # install with verbose compilation output
+install-verbose: gen-spec ⚙️  # install with verbose compilation output
 	zig build shell-install -Doptimize=ReleaseSmall
 
-preflight: ⚙️  # run license check, unit tests, and code formatting lint
-	reuse lint
+preflight: gen-spec ⚙️  # run license check, unit tests, and code formatting lint
+	reuse --no-multiprocessing lint
 	zig build test
 	@echo "Note: 'failed command' message above is OK (Zig test runner info, all tests pass)"
 	zig fmt --check src/
@@ -272,13 +316,13 @@ preflight: ⚙️  # run license check, unit tests, and code formatting lint
 
 export MINISIGN_KEY_FILE ?= $(HOME)/.minisign/minisign.key
 
-release-build: ⚙️  # build release binaries locally using GoReleaser
+release-build: gen-spec ⚙️  # build release binaries locally using GoReleaser
 	goreleaser release --clean --skip=publish --skip=sign
 	cp dist/emojig-linux_x86_64-linux-musl/emojig dist/emojig-x86_64-linux-musl
 	cp dist/emojig-linux_aarch64-linux-musl/emojig dist/emojig-aarch64-linux-musl
 	@echo "✅ binaries built and copied to dist/ root"
 
-release-snapshot: ⚙️  # build local snapshot release artifacts (no tag, no publish, no sign)
+release-snapshot: gen-spec ⚙️  # build local snapshot release artifacts (no tag, no publish, no sign)
 	goreleaser release --snapshot --clean --skip=sign
 
 _dist_files = $(wildcard \

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: UI-Texte für die Emoji-Auswahl (Deutsch).
+search_prompt: " \U0001F50D "
+search_placeholder: Suche…
+status_help_hint: ' ?:Hilfe  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:Hilfe e:Bild t:Text  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:Bild t:Text  ↕↔|↵|Esc'
+help_lines:
+    - 'Hilfe & Tastenbelegung:'
+    - '  Tippen: Suchen'
+    - '  Pfeile: Navigieren'
+    - '  Enter:  Kopieren & Beenden'
+    - '  Tab:    Design umschalten'
+    - '  Esc:    Beenden'
+help_lines_more:
+    - 'Hilfe & Tastenbelegung:'
+    - ""
+    - " e:abc \U0001F50D Nur Emojis"
+    - " t:abc \U0001F50D Nur Symbole"
+    - " b:abc \U0001F50D Nur Rahmen"
+    - " a b \U0001F50D   Alle Wörter"
+    - ' ⌫        Zurück…'
+focus_lost_startup_lines:
+    - ⚠️  Wayland-Popup-Fokus
+    - fehlgeschlagen?
+    - ""
+    - Klicken zum Fokussieren!
+focus_lost_runtime_lines:
+    - ⚠️  Auswahl nicht fokussiert.
+    - ""
+    - ""
+    - Klicken zum Fokussieren!

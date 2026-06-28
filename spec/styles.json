@@ -1,14 +1,14 @@
 {
   "description": "Named style tokens for use in template strings (spec/strings.json). Use $name{text} or $[attr1,attr2]{text} syntax in any template string. Attrs can be composed: $[action,underline]{text}. Built-in attrs: bold, dim, italic, underline, blink, reverse, strike. Key-value params: fg=N (0-255 or color name), bg=N (0-255 or color name), color=N (alias for fg). Color names: black, red, green, yellow, blue, magenta, cyan, white.",
   "styles": {
-    "action":  "bold,fg=blue",
+    "action": "bold,fg=blue",
     "success": "bold,fg=green",
-    "warn":    "bold,fg=yellow",
-    "danger":  "bold,fg=red",
-    "muted":   "dim",
-    "em":      "bold",
-    "key":     "bold,fg=cyan",
-    "info":    "fg=cyan",
+    "warn": "bold,fg=yellow",
+    "danger": "bold,fg=red",
+    "muted": "dim",
+    "em": "bold",
+    "key": "bold,fg=cyan",
+    "info": "fg=cyan",
     "primary": "bold,fg=blue"
   }
 }

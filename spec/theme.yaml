@@ -1,0 +1,115 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+$schema: ./theme.schema.json
+description: Language-neutral theme/palette spec. Colors are stored as semantic values (xterm 256-color indices, or hex for OSC terminal colors) so any renderer can emit its own escape sequences. Mirrors src/term.zig.
+notes:
+    "0": Black
+    "1": Red
+    "2": Green
+    "3": Yellow
+    "4": Blue
+    "5": Magenta
+    "6": Cyan
+    "7": White
+    "8": Bright Black (Gray)
+    "9": Bright Red
+    "10": Bright Green
+    "11": Bright Yellow
+    "12": Bright Blue
+    "13": Bright Magenta
+    "14": Bright Cyan
+    "15": Bright White
+    16-231: 6x6x6 RGB color cube
+    232-255: Grayscale ramp (232=darkest, 255=brightest)
+    common_indices:
+        "24": Muted blue/teal (selection_bg dark)
+        "111": Sky blue (selection_bg light)
+        "238": Dark gray (search/status bar bg dark)
+        "248": Medium light gray (grid/desc text dark)
+        "251": Light gray (search/status bar bg light)
+        "255": Pure white
+icons:
+    dark: "\U0001F319"
+    light: "\U0001F31E"
+    system: "\U0001F506"
+    menu: ≡
+themes:
+    dark:
+        app_bg: null
+        app_topline_bg: null
+        emoji_pane_bg: null
+        scrollbar_rail_bg: 238
+        view_bg: null
+        grid_bg: 235
+        grid_fg: 248
+        selection_bg: 24
+        selection_fg: 255
+        search_bg: 238
+        search_fg: 255
+        search_shade_fg: 238
+        search_cursor_fg: null
+        search_text_fg: null
+        search_placeholder_fg: null
+        search_left_cap_fg: null
+        search_left_cap_bg: null
+        search_right_cap_fg: null
+        search_right_cap_bg: null
+        search_sep_fg: null
+        search_theme_sep_fg: 238
+        search_theme_sep_bg: null
+        theme_settings_sep_fg: null
+        theme_settings_sep_bg: 238
+        hline_fg: 240
+        info_bg: null
+        info_fg: 248
+        status_bg: null
+        status_fg: 240
+        status_shade_fg: 238
+        border_bg: null
+        border_shade_fg: 236
+        terminal_bg2: '#2c2c2c'
+        terminal_bg: null
+        terminal_fg: '#a8a8a8'
+        terminal_border: '#5c5c5c'
+        warning_fg: 9
+        success_fg: 10
+    light:
+        app_bg: null
+        app_topline_bg: null
+        emoji_pane_bg: null
+        scrollbar_rail_bg: '#eef'
+        view_bg: null
+        grid_bg: '#fff'
+        grid_fg: 238
+        selection_bg: 111
+        selection_fg: 232
+        search_bg: '#eef'
+        search_fg: 232
+        search_shade_fg: 251
+        search_cursor_fg: null
+        search_text_fg: null
+        search_placeholder_fg: null
+        search_left_cap_fg: null
+        search_left_cap_bg: null
+        search_right_cap_fg: null
+        search_right_cap_bg: null
+        search_sep_fg: null
+        search_theme_sep_fg: '#f0f0ff'
+        search_theme_sep_bg: null
+        theme_settings_sep_fg: null
+        theme_settings_sep_bg: '#f0f0ff'
+        hline_fg: '#eef'
+        info_bg: null
+        info_fg: 240
+        status_bg: null
+        status_fg: 248
+        status_shade_fg: 251
+        border_bg: null
+        border_shade_fg: 252
+        terminal_bg2: '#d0d0df'
+        terminal_bg: null
+        terminal_fg: '#444444'
+        terminal_border: '#cccccc'
+        warning_fg: 1
+        success_fg: 2

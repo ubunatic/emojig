@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Interactive settings configuration options for the picker.
+title: ⚙️ emojig settings
+options:
+    - id: shell_integration
+      type: boolean
+      label: shell integration
+      default: "false"
+    - id: shell_key_binding
+      type: choice
+      label: shell key binding
+      choices:
+        - C-o
+        - C-e
+        - C-x e
+        - C-g
+        - custom
+      default: C-o
+    - id: show_all_categories
+      type: boolean
+      label: show all categories
+      default: "true"
+    - id: ambiguous_chars
+      type: choice
+      label: ambiguous chars
+      choices:
+        - wide
+        - narrow
+      default: narrow
+    - id: theme
+      type: choice
+      label: theme
+      choices:
+        - dark
+        - light
+        - system
+      default: dark
+    - id: scrollbar_style
+      type: choice
+      label: scrollbar
+      choices:
+        - expand
+        - bar
+      default: expand
+    - id: cols
+      type: integer
+      label: grid width (cols)
+      default: "6"
+    - id: rows
+      type: integer
+      label: grid height (rows)
+      default: "4"
+    - id: compact
+      type: boolean
+      label: compact grid
+      default: "false"
+    - id: clear_mru
+      type: action
+      label: recent (MRU) history
+      default: clear

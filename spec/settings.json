@@ -12,7 +12,13 @@
       "id": "shell_key_binding",
       "type": "choice",
       "label": "shell key binding",
-      "choices": ["C-o", "C-e", "C-x e", "C-g", "custom"],
+      "choices": [
+        "C-o",
+        "C-e",
+        "C-x e",
+        "C-g",
+        "custom"
+      ],
       "default": "C-o"
     },
     {
@@ -25,21 +31,31 @@
       "id": "ambiguous_chars",
       "type": "choice",
       "label": "ambiguous chars",
-      "choices": ["wide", "narrow"],
+      "choices": [
+        "wide",
+        "narrow"
+      ],
       "default": "narrow"
     },
     {
       "id": "theme",
       "type": "choice",
       "label": "theme",
-      "choices": ["dark", "light", "system"],
+      "choices": [
+        "dark",
+        "light",
+        "system"
+      ],
       "default": "dark"
     },
     {
       "id": "scrollbar_style",
       "type": "choice",
       "label": "scrollbar",
-      "choices": ["expand", "bar"],
+      "choices": [
+        "expand",
+        "bar"
+      ],
       "default": "expand"
     },
     {

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: Cadenas de texto de la interfaz de usuario para el selector (Español).
+search_prompt: " \U0001F50D "
+search_placeholder: buscar…
+status_help_hint: ' ?:ayuda  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:ayuda e:img t:txt  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:img t:txt  ↕↔|↵|Esc'
+help_lines:
+    - 'Ayuda y Atajos de Teclado:'
+    - '  Escribir: Buscar'
+    - '  Flechas:  Navegar'
+    - '  Enter:    Copiar y Salir'
+    - '  Tab:      Cambiar Tema'
+    - '  Esc:      Salir'
+help_lines_more:
+    - 'Ayuda y Atajos de Teclado:'
+    - ""
+    - " e:abc \U0001F50D Solo emojis"
+    - " t:abc \U0001F50D Solo símbolos"
+    - " b:abc \U0001F50D Solo bordes"
+    - " a b \U0001F50D   Todas las palabras"
+    - ' ⌫        Atrás…'
+focus_lost_startup_lines:
+    - ⚠️  ¿No se puede enfocar
+    - el menú desplegable?
+    - ""
+    - ¡Haz clic para enfocar!
+focus_lost_runtime_lines:
+    - ⚠️  Menú sin enfoque.
+    - ""
+    - ""
+    - ¡Haz clic para enfocar!

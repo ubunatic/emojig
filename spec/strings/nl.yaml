@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: UI-tekstreeksen voor de emoji-kiezer (Nederlands).
+search_prompt: " \U0001F50D "
+search_placeholder: zoeken…
+status_help_hint: ' ?:hulp  ↕↔|↵|Esc'
+status_matches: ' {count}  ↕↔|↵|Esc'
+status_help_hint_wide: ' ?:hulp e:afb t:tekst  ↕↔|↵|Esc'
+status_matches_wide: ' {count} e:afb t:tekst  ↕↔|↵|Esc'
+help_lines:
+    - 'Hulp & Sneltoetsen:'
+    - '  Typen: Zoeken'
+    - '  Pijlen: Navigeren'
+    - '  Enter: Kopieer & Sluit'
+    - '  Tab:   Thema Wisselen'
+    - '  Esc:   Sluiten'
+help_lines_more:
+    - 'Hulp & Sneltoetsen:'
+    - ""
+    - " e:abc \U0001F50D Alleen emoji's"
+    - " t:abc \U0001F50D Alleen symbolen"
+    - " b:abc \U0001F50D Alleen randen"
+    - " a b \U0001F50D   Alle woorden"
+    - ' ⌫        Terug…'
+focus_lost_startup_lines:
+    - ⚠️  Kan Wayland popup-fokus
+    - niet stelen?
+    - ""
+    - Klik om te focussen!
+focus_lost_runtime_lines:
+    - ⚠️  Kiezer niet gefocust.
+    - ""
+    - ""
+    - Klik om te focussen!
