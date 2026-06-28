@@ -3,6 +3,12 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+title: "Config and MRU persistence: silent 4 KB buffer edge behavior"
+status: open
+priority: p2
+---
+
 # 27 — Config and MRU persistence still have silent 4 KB edge behavior
 
 **Status:** Open  

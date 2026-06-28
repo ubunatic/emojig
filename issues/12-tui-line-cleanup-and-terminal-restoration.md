@@ -1,3 +1,8 @@
+---
+status: open
+priority: p1
+---
+
 # TUI Line Cleanup & Terminal Restoration
 
 ## Update 2026-06-10 — residual "extra lines on close" root-caused (VTE terminals)

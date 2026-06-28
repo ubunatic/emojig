@@ -3,6 +3,12 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+title: "Zig TUI flickering during rapid redraws"
+status: open
+priority: p2
+---
+
 # Issue 16 — Zig TUI flickering during rapid redraws
 
 **Status:** Open

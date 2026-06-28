@@ -3,6 +3,10 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+description: "Architecture notes for key dispatch: escape-sequence decoding via spec/input.yaml, name→action two-layer pipeline, text-editing helpers"
+---
+
 # Key Dispatch: Adding New Keyboard Features
 
 Architecture notes and gotchas for adding new key bindings or text-editing
@@ -46,28 +50,53 @@ runtime error.
 
 ---
 
-## 2. Escape-sequence decoder locations
+## 2. Escape-sequence decoder: spec-table, not hardcoded
 
-Terminal keys arrive as raw byte sequences.  They must be decoded to a logical `name`
-string before dispatch.  The decoder lives in the `readKey` / `readInput` section of
-`main.zig`.  Two sub-branches handle `\x1b[` (CSI) and `\x1b O` (SS3 / application
-cursor mode):
+Terminal keys arrive as raw byte sequences. They are decoded to a logical `name` string
+by `input.decodeEscapeKeySpec` in `src/input.zig`. The function does a linear scan of
+the `key_sequences` table loaded from `spec/input.yaml` at startup — there is **no
+hardcoded fallback**.
 
 ```
-\x1b [          →  CSI sequences  →  bytes[2..n] match patterns
-\x1b O          →  SS3 sequences  →  bytes[2] character
+raw bytes  →  decodeEscapeKeySpec(bytes, g_spec.input.key_sequences)  →  name
 ```
 
-Common additions:
+**To add a new key sequence**, edit `spec/input.yaml` under `input.key_sequences`:
 
-| Key         | CSI form(s)              | SS3 form | Logical name  |
-|-------------|--------------------------|----------|---------------|
-| Del (fwd)   | `\x1b[3~`                | —        | `"del"`       |
-| Ctrl+Right  | `\x1b[1;5C`, `\x1b[5C`  | `\x1bOc` | `"ctrl-right"`|
-| Ctrl+Left   | `\x1b[1;5D`, `\x1b[5D`  | `\x1bOd` | `"ctrl-left"` |
+```yaml
+key_sequences:
+  - seq: "\x1b[1;5C"
+    name: ctrl-right
+  - seq: "\x1b[5C"       # older xterm variant
+    name: ctrl-right
+  - seq: "\x1bOc"        # rxvt variant
+    name: ctrl-right
+```
 
-Terminals vary.  Emit both CSI and SS3 forms when in doubt — the additional `eql`
-checks are free.
+Multiple entries can share the same `name` (N → 1 mapping). First match wins.
+After editing, regenerate the embedded JSON:
+
+```sh
+go run ./scripts/gen_input_spec/
+```
+
+The generated `spec/input.generated.json` is embedded at compile time via
+`build.zig` anonymous imports (`addAnonymousImport("spec_input_generated", …)`).
+
+**Common sequences** (already in the spec):
+
+| Key         | Sequences in spec                              | Logical name  |
+|-------------|------------------------------------------------|---------------|
+| Del (fwd)   | `\x1b[3~`                                      | `"del"`       |
+| Home        | `\x1b[H`, `\x1b[1~`, `\x1b[7~`, `\x1bOH`     | `"home"`      |
+| Ctrl+Right  | `\x1b[1;5C`, `\x1b[5C`, `\x1bOc`             | `"ctrl-right"`|
+| Ctrl+Left   | `\x1b[1;5D`, `\x1b[5D`, `\x1bOd`             | `"ctrl-left"` |
+| Shift+Enter | `\x1b[27;2;13~` (XTerm), `\x1b[13;2u` (Kitty)| `"shift-enter"`|
+
+The SGR mouse parser (`nextSgrMouseEvent`) lives alongside the key decoder in
+`src/input.zig`. Mouse bit masks (`btn_button_mask`, `btn_motion_flag`,
+`btn_scroll_flag`) and enable/disable sequences are also read from
+`g_spec.input.mouse` at startup — see `spec/input.yaml` `mouse:` block.
 
 ---
 

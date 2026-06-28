@@ -1,3 +1,9 @@
+---
+title: ":update command: Homebrew install mode"
+status: blocked
+priority: p3
+---
+
 # Issue 19 — `:update` command: Homebrew install mode
 
 **Priority:** P3 (blocked on brew tap being set up — see issue 02)

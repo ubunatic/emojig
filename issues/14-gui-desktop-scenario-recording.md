@@ -1,3 +1,8 @@
+---
+status: open
+priority: p3
+---
+
 # GUI Desktop Scenario Recording
 
 ## Problem

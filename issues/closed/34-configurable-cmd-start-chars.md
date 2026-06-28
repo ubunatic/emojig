@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # 34 — Configurable Command Start Characters
 
-**Status:** Open  
+**Status:** Closed  
 **Priority:** P2
 
 ## Problem
@@ -67,3 +67,11 @@ The user wants to reclaim the `:` character for a future, yet-to-be-disclosed fe
    Update `scripts/test_tui/main.go` to use the `/` prefix instead of `:`:
    - `:multi` -> `/multi`
    - `:q` -> `/q`
+
+## ✅ Resolution (commit `9df4406`)
+
+All four steps implemented:
+- `spec/commands.json` gained `"cmd_start_chars": "/:"` (both `/` and `:` are active).
+- `src/spec.zig` `Commands` struct has `cmd_start_chars: []const u8 = "/"`.
+- `src/main.zig` uses `std.mem.indexOfScalar(u8, g_spec.commands.cmd_start_chars, query_buf[0])`.
+- `scripts/test_tui/main.go` updated: `:multi` → `/multi`, `:q` → `/q`.

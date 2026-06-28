@@ -1,3 +1,9 @@
+---
+title: "German search 'pferd' does not find the horse emoji"
+status: open
+priority: p2
+---
+
 # Issue: German Search "pferd" Does Not Find the Horse Emoji
 
 ## Problem

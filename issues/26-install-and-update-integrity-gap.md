@@ -3,6 +3,12 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+title: "install.sh and self-update still skip artifact verification"
+status: open
+priority: p1
+---
+
 # 26 — `install.sh` and self-update still skip artifact verification
 
 **Status:** Open  

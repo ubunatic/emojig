@@ -1,3 +1,8 @@
+---
+status: open
+priority: p3
+---
+
 # Emojig: Distribution & Release Plan
 
 > [!NOTE]

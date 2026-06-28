@@ -3,6 +3,10 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+description: "All spec/*.json (and spec/input.yaml) fields, embedding pipeline, null-color punch-through contract, and edit map"
+---
+
 # Spec-Driven UI Configuration (`spec/*.json`)
 
 The picker's layout, theme, key bindings, and on-screen text are **not** hardcoded
@@ -33,7 +37,10 @@ learned wiring it up.
 | Grid/selection/search/margins/layout colors | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints / hex) |
 | Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
+| Raw byte sequence → logical key name    | `spec/input.yaml` (→ gen-input)   | `input.key_sequences[].{seq,name}` — add terminal variants here; see §4 |
+| Mouse encoding (masks, enable seqs)     | `spec/input.yaml`                 | `input.mouse.*` |
 | What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
+| Command start chars (`:` vs `/`)        | `spec/commands.json`              | `cmd_start_chars` |
 | Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
 | Toolbar separator char (between theme/menu icons) | `spec/strings.json`             | `toolbar_sep` (must be exactly 1 display cell) |
 | Pane separator hline character                 | `spec/strings.json`               | `hline_char` (custom separator line glyph) |
@@ -55,7 +62,7 @@ holds spec-independent upper bounds (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`,
 
 ## 2. How it's consumed: embed + parse at startup
 
-`src/spec.zig` `@embedFile`s the four JSON files and parses them **once at startup**
+`src/spec.zig` `@embedFile`s the spec JSON files and parses them **once at startup**
 into a `Spec`, using a process-lifetime arena (page-allocator backed, never freed —
 parsing is off the hot path; the picker render/input loop stays allocation-free).
 All renderer/input code reads from a module-level `g_spec`.
@@ -132,18 +139,54 @@ reservation (the terminal-state-safety rule in `AGENTS.md`).
 
 ## 4. Keys: bytes → logical name → action
 
-`keys.json` maps **logical** names to actions; it does *not* describe raw bytes —
-its own description says decoding bytes into logical names is the input layer's job.
-The picker loop therefore:
+The picker loop has **two spec layers** for keyboard input:
 
-1. Decodes the raw escape/byte sequence into a logical name
-   (`esc`, `up`, `ctrl-c`, `tab`, …). Mouse (SGR `\x1b[<`), Alt+F4, and printable
-   text are handled inline, not via bindings.
-2. Looks up `g_spec.actionFor(name)` → `quit`/`select`/`delete`/`cycle_theme`/`nav_*`.
-3. Dispatches on the action.
+### Layer 1 — raw bytes → logical name (`spec/input.yaml`)
+
+`spec/input.yaml` `input.key_sequences` is a flat ordered array of `{seq, name}`
+pairs. `input.decodeEscapeKeySpec(bytes, g_spec.input.key_sequences)` linearly scans
+it and returns the first matching name. There is **no hardcoded fallback**: all
+terminal variants (CSI, SS3, rxvt alternates, XTerm modifyOtherKeys, Kitty protocol)
+must be listed in the YAML.
+
+```yaml
+key_sequences:
+  - seq: "\x1b[A"    # CSI
+    name: up
+  - seq: "\x1bOA"    # SS3 / application mode
+    name: up
+```
+
+The YAML is compiled to `spec/input.generated.json` by
+`go run ./scripts/gen_input_spec/` and embedded via `build.zig`:
+
+```zig
+exe.root_module.addAnonymousImport("spec_input_generated",
+    .{ .root_source_file = b.path("spec/input.generated.json") });
+```
+
+`spec/input.yaml` also carries the mouse encoding spec (`mouse.enable_motion`,
+`mouse.btn_button_mask`, `mouse.btn_motion_flag`, …) and tokenizer rules.
+
+### Layer 2 — logical name → action (`spec/keys.json`)
+
+`keys.json` maps logical names to semantic actions (`quit`, `select`, `delete`,
+`cycle_theme`, `nav_*`). `g_spec.actionFor(name)` returns `""` for unbound keys.
+The dispatcher branches on `action` first, then on `name` for keys that intentionally
+have no binding (see [KeyDispatch.md](KeyDispatch.md)).
+
+The two steps combined:
+
+```
+raw bytes
+  → decodeEscapeKeySpec(bytes, g_spec.input.key_sequences)  → name
+  → g_spec.actionFor(name)                                  → action
+  → dispatch
+```
 
 A side benefit: the two duplicated arrow-key navigation blocks (CSI `\x1b[A` and SS3
-`\x1bOA`) collapsed into a single `navSelect(action, …)` helper.
+`\x1bOA`) collapsed into a single `navSelect(action, …)` helper, because both now
+produce `name="up"` from the spec table.
 
 ---
 

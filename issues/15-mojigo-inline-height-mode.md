@@ -3,6 +3,12 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+title: "mojigo inline --height mode (skim-style) + /dev/tty I/O"
+status: open
+priority: p2
+---
+
 # Issue 15 — mojigo inline `--height` mode (skim-style) + `/dev/tty` I/O
 
 **Status:** Implemented.

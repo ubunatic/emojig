@@ -3,6 +3,10 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+status: report
+---
+
 # UX & Resilience Review — 2026-06-21
 
 ## Scope

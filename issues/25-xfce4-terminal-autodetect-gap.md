@@ -3,6 +3,12 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+title: "GUI auto-mode misses xfce4-terminal despite built-in host support"
+status: open
+priority: p2
+---
+
 # 25 — GUI auto-mode misses `xfce4-terminal` despite built-in host support
 
 **Status:** Open  

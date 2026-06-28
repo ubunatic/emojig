@@ -3,6 +3,10 @@ SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+---
+description: "Fuzzy search: subsequence scoring, plural/stem fallbacks, word-order trap, isBoxArt range, synonym-vs-tag tradeoffs"
+---
+
 # Search Engine: Filters, Synonyms, and Discoverability
 
 This records the non-obvious things learned adding the `br:` Braille filter and

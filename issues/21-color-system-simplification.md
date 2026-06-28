@@ -1,3 +1,8 @@
+---
+status: open
+priority: p2
+---
+
 # Color System Simplification & Single Source of Truth
 
 **Status:** Open  

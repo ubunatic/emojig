@@ -1,3 +1,9 @@
+---
+title: "WASM build fails under rootless podman: mknod blocked in user namespace"
+status: in-progress
+priority: p1
+---
+
 # Issue 09 — WASM (c2w) build fails under rootless podman: `mknod` blocked in user namespace
 
 **Status:** 🟠 In progress — fix implemented (rootful podman), pending end-to-end verification

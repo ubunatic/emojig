@@ -1,3 +1,8 @@
+---
+status: open
+priority: p2
+---
+
 # Fast Multi-Select calls wl-clipboard as visible desktop app
 
 ## Effects

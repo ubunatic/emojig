@@ -1,3 +1,9 @@
+---
+title: ":update command: RPM install mode"
+status: open
+priority: p3
+---
+
 # Issue 18 — `:update` command: RPM install mode
 
 **Priority:** P3

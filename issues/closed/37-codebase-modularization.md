@@ -1,6 +1,6 @@
 # Codebase Modularization & Refactoring
 
-**Status:** Open  
+**Status:** Closed  
 **Priority:** P2  
 
 ---
@@ -32,18 +32,23 @@ We successfully initiated the modularization plan by separating concerns into de
 
 ---
 
-## 🔴 Remaining Refactoring Tasks
+## ✅ Work Completed (Session 2)
 
-To complete the modularization proposal, the following splits should be performed in future sessions:
+The three remaining splits from the original plan were all landed in commit `150f6a6`
+and follow-up work:
 
-### 1. CLI Parsing & Env Resolution (`src/cli.zig`)
-* **What to move**: The CLI flag iteration (`args_it.next()`), environment variables resolution (`EMOJIG_THEME`, `EMOJIG_WIDTH`, etc.), config loading (`loadConfig`), and final settings resolution.
-* **Goal**: Isolate entry-point handling and subcommand execution from the interactive loop, outputting a clean read-only `Config` or `Args` struct.
+### 1. CLI Parsing & Env Resolution (`src/cli.zig`) — **DONE**
+Extracted CLI flag iteration, env-var resolution (`EMOJIG_THEME`, `EMOJIG_COLS`,
+`EMOJIG_ROWS`, etc.), `loadConfig`, and settings finalisation into `src/cli.zig`
+(465 lines). `main.zig` now calls `cli.parseArgs()` to get a `Config` struct.
 
-### 2. Escape Sequence Decoder & Keyboard Dispatch (`src/input.zig`)
-* **What to move**: The SGR mouse tracking parser (`sgr_loop` for coordinate parsing) and key sequence translation tables.
-* **Goal**: Isolate terminal input decoding, making mouse hover/click actions testable independently.
+### 2. Escape Sequence Decoder & Keyboard Dispatch (`src/input.zig`) — **DONE**
+Extracted `SgrMouseEvent` / `nextSgrMouseEvent` (SGR parser) and `decodeEscapeKeySpec`
+into `src/input.zig`. Critically, the hardcoded sequence table was **deleted entirely**
+and replaced with a spec-table loaded from `spec/input.yaml` at startup — see
+[SpecDrivenConfig.md §4](SpecDrivenConfig.md) and [KeyDispatch.md §2](KeyDispatch.md).
+`pub const KeySeq` is defined here and re-exported from `spec.zig`.
 
-### 3. Canvas Layout & Screen Renderers (`src/render.zig`)
-* **What to move**: Page-specific drawing routines, settings row renderers, border rendering, and choice dropdown overlays.
-* **Goal**: Decouple the TUI rendering loop from event-handling state machines.
+### 3. Canvas Layout & Screen Renderers (`src/render.zig`) — **DONE**
+Settings row rendering and related display logic extracted to `src/render.zig` (89
+lines). `main.zig` calls `render.renderSettingRow(…)` instead of inlining the logic.
