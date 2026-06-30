@@ -32,10 +32,61 @@ emojig | wl-copy
 ### Floating GUI Popup (`emojig --gui`)
 When invoked from a desktop hotkey or launcher shortcut, standard input is non-interactive (`can_use_tty == false`). Emojig automatically detects the graphical session and spawns a new instance of a lightweight terminal window (prefers `foot`, fallback to others like `kitty`, `alacritty`, `ghostty`) running `emojig --tui` in a borderless popup configuration by default.
 
-* **Borderless GUI Option** (`--borderless`): Hides window decorations for terminals that expose CLI control flags (e.g. `foot -D csd.server-side=none`, `kitty --o hide_window_decorations=yes`, etc.).
+* **Borderless GUI Option** (`--borderless`): Hides window decorations for terminals that expose CLI control flags (e.g. `foot csd.preferred=client csd.size=0`, `kitty --o hide_window_decorations=yes`, etc.).
 * **Decorated GUI Option** (`--decorated` / `--window-decorations`): Keeps the terminal's normal title bar/window decorations so the picker can be dragged by the window manager. This is equivalent to `--borderless=false`.
+* **Title Size** (`--title-size N`): Sets the foot CSD title bar height in pixels. Default (0) auto-detects from the GNOME system font size and text-scaling-factor via `gsettings` (formula: `pt × scale × 2.5`).
+* **Window Title**: foot window always shows `😀 Emojig` (passed via `--override=title=...`).
 * **Placement**: On Wayland, exact caret-relative popup placement is not a stable cross-desktop primitive. Focused-window placement should be compositor-specific and best-effort; see `issues/40-wayland-focused-window-placement.md`.
 * **Auto-Dismiss**: Once an emoji is chosen, the terminal helper exits, auto-closing the popup instantly.
+
+---
+
+## 1b. Foot CSD Engineering Pitfalls
+
+Foot's Client Side Decorations have several non-obvious behaviours that have bitten us. Record them here to avoid re-discovering them.
+
+### GNOME Wayland: `csd.preferred=server` is a no-op
+
+GNOME Shell does not implement the `xdg-decoration` Wayland protocol, so `csd.preferred=server` silently falls back to CSD anyway. Always use `csd.preferred=client` when you want a title bar under GNOME.
+
+### `csd.size=0` in emojig's own foot.ini disables the bar
+
+The borderless launch writes `csd.size=0` to foot.ini (which hides the bar and keeps only the border). When re-launching with `--decorated`, the inline `--override=csd.size=26` (then the auto-sized override) must come **after** the config load — it does, because `--override` flags win over config file values.
+
+### `csd.font` `:size` attribute is ignored
+
+From the foot man page: *"the font will be sized using the title bar size. That is, all :size and :pixelsize attributes will be ignored."* To change the visual weight of the title text, set `csd.font=monospace:bold` (the font family/weight are honoured; only the size is overridden by `csd.size`).
+
+### Auto-detecting title bar height from the system font
+
+The default 26px bar is too small when GNOME has a large or scaled UI font. Emojig queries:
+
+```
+gsettings get org.gnome.desktop.interface font-name       → 'Ubuntu Sans 11'
+gsettings get org.gnome.desktop.interface text-scaling-factor → 1.0999999999999999
+```
+
+**Watch out:** `text-scaling-factor` returns a floating-point value as a string with full IEEE754 noise (`1.0999...` instead of `1.1`). Parse the first two decimal digits and round to nearest tenth before using.
+
+Formula used: `csd_size = pt × round(scale, 1tenth) × 2.5` — integer arithmetic, all in tenths:
+```
+pt=11, scale10=11 (rounded from 1.0999...)
+csd_size = 11 × 11 × 25 / 100 = 30
+```
+
+### `gtk-launch` relaunch strips CLI flags
+
+When `emojig --gui` is invoked without `XDG_ACTIVATION_TOKEN` / `DESKTOP_STARTUP_ID` (e.g. from a key binding that hasn't gone through an activation-aware launcher), Wayland focus-stealing prevention rejects the new window. Emojig works around this by re-launching via `gtk-launch emojig-picker` which sends an activation token.
+
+**But** `gtk-launch` reads the `.desktop` file's `Exec=` line, which is `emojig --gui` — no extra flags. Any CLI flags from the original invocation (e.g. `--decorated`, `--title-size=30`) are lost.
+
+**Fix**: Before calling `gtk-launch`, write a timestamped lock file at `/tmp/emojig-relaunch-<uid>.lock` encoding all flags:
+
+```
+TIMESTAMP:BORDERLESS:TITLE_SIZE
+```
+
+The relaunched process reads the file within a 5-second window and restores the flags. New flag fields must be appended to this format (colon-separated), and the reader must be forward-compatible (ignore unknown trailing fields).
 
 ---
 

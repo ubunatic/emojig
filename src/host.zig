@@ -168,6 +168,9 @@ pub fn buildGuiArgv(
                 n += 1;
                 out[n] = "--override=csd.size=26";
                 n += 1;
+                // Bold title font; :size is ignored by foot for CSD (auto-scales to csd.size).
+                out[n] = "--override=csd.font=monospace:bold";
+                n += 1;
                 if (csd_font_arg.len > 0) {
                     out[n] = csd_font_arg;
                     n += 1;
