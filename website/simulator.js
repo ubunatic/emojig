@@ -18,6 +18,7 @@ class EmojigSimulator {
     // real mousemove.
     this.suppressHover = false;
     const spec  = (typeof jsdemoSpec !== "undefined") ? jsdemoSpec : null;
+    this.webSpec = (typeof EMOJIG_WEB_SPEC !== "undefined") ? EMOJIG_WEB_SPEC : null;
     this.shellUser     = spec?.user   ?? "you";
     this.shellHost     = spec?.host   ?? "emojig";
     this.promptTpl     = spec?.prompt ?? "{user@host}:{cwd}{sym} ";
@@ -50,9 +51,10 @@ class EmojigSimulator {
     this.shellDraft = ""; // in-progress line stashed when history browsing begins
     this.maxShellRows = 16; // visible rows before older lines scroll off the top
 
-    this.cols = 6;
-    this.rows = 4;
-    this.contentWidth = 25;
+    this.cols = this.webSpec?.layout?.cols ?? 6;
+    this.rows = this.webSpec?.layout?.rows ?? 4;
+    this.contentWidth = this.webSpec?.layout?.width ?? (this.cols * 4 + 1);
+    this.maxResults = this.webSpec?.layout?.max_results ?? (5 * 16 * 16);
 
     this.detectSystemTheme();
     this.setupMediaListeners();
@@ -247,18 +249,29 @@ class EmojigSimulator {
 
   // --- Search Logic ---
 
-  // Box-drawing / block-element glyphs (U+2500–U+259F, spec/boxart.json).
-  isBoxArt(emoji) {
-    if (!emoji) return false;
-    const cp = emoji.codePointAt(0);
-    return cp >= 0x2500 && cp <= 0x259f;
+  rangeFilter(name, fallbackMin, fallbackMax, fallbackPenalty) {
+    const spec = this.webSpec?.filters?.[name] ?? null;
+    return {
+      min: spec?.min_codepoint ?? fallbackMin,
+      max: spec?.max_codepoint ?? fallbackMax,
+      penalty: spec?.penalty ?? fallbackPenalty,
+    };
   }
 
-  // Braille pattern glyphs (U+2800–U+28FF, spec/braille.json).
+  // Box-drawing / block-element glyphs generated from spec/boxart.json.
+  isBoxArt(emoji) {
+    if (!emoji) return false;
+    const range = this.rangeFilter("box_art", 0x2500, 0x259f, 150);
+    const cp = emoji.codePointAt(0);
+    return cp >= range.min && cp <= range.max;
+  }
+
+  // Braille pattern glyphs generated from spec/braille.json.
   isBraille(emoji) {
     if (!emoji) return false;
+    const range = this.rangeFilter("braille", 0x2800, 0x28ff, 150);
     const cp = emoji.codePointAt(0);
-    return cp >= 0x2800 && cp <= 0x28ff;
+    return cp >= range.min && cp <= range.max;
   }
 
   // Number of raised dots (0-8) encoded by a Braille pattern codepoint.
@@ -323,15 +336,77 @@ class EmojigSimulator {
     return 1;
   }
 
-  getFilteredMatches() {
-    if (typeof EMOJI_DB === "undefined") return [];
-    const db = EMOJI_DB;
+  isWordBoundary(ch) {
+    return ch === undefined || ch === " " || ch === "\t" || ch === "-" || ch === "_";
+  }
 
+  isWordInSearch(search, word) {
+    if (!search || !word) return false;
+    const hay = search.toLowerCase();
+    const needle = word.toLowerCase();
+    let idx = hay.indexOf(needle);
+    while (idx !== -1) {
+      const before = idx === 0 || this.isWordBoundary(hay[idx - 1]);
+      const afterIdx = idx + needle.length;
+      const after = afterIdx >= hay.length || this.isWordBoundary(hay[afterIdx]);
+      if (before && after) return true;
+      idx = hay.indexOf(needle, idx + 1);
+    }
+    return false;
+  }
+
+  findCategorySpecMatch(term, allowPrefix) {
+    const categories = this.webSpec?.categories ?? [];
+    if (!term) return null;
+    const q = term.toLowerCase();
+    for (const cat of categories) {
+      const name = (cat.name ?? "").toLowerCase();
+      const short = (cat.short ?? "").toLowerCase();
+      if (name === q || short === q) {
+        return { spec: cat, isSynonym: !cat.switcher };
+      }
+    }
+    if (allowPrefix) {
+      for (const cat of categories) {
+        const name = (cat.name ?? "").toLowerCase();
+        const short = (cat.short ?? "").toLowerCase();
+        if (name.startsWith(q) || short.startsWith(q)) {
+          return { spec: cat, isSynonym: !cat.switcher };
+        }
+      }
+    }
+    for (const cat of categories) {
+      for (const syn of cat.synonyms ?? []) {
+        if (syn.toLowerCase() === q) {
+          return { spec: cat, isSynonym: true };
+        }
+      }
+    }
+    return null;
+  }
+
+  findCategorySpec(term) {
+    return this.findCategorySpecMatch(term, true)?.spec ?? null;
+  }
+
+  emojiMatchesCategory(search, cat) {
+    if (!cat) return false;
+    if (this.isWordInSearch(search, cat.name)) return true;
+    if (this.isWordInSearch(search, cat.short)) return true;
+    for (const syn of cat.synonyms ?? []) {
+      if (this.isWordInSearch(search, syn)) return true;
+    }
+    return false;
+  }
+
+  parseSearchOptions() {
     let actualQuery = this.query;
     let filterWidth = null;
     let filterBox = false;
     let filterBraille = false;
     let brailleDotFilter = null;
+    let filterCategory = null;
+
     if (this.query.length >= 3 &&
         (this.query[0] === 'b' || this.query[0] === 'B') &&
         (this.query[1] === 'r' || this.query[1] === 'R') && this.query[2] === ':') {
@@ -357,11 +432,65 @@ class EmojigSimulator {
       }
     }
 
+    if (actualQuery.startsWith("c:") || actualQuery.startsWith("C:")) {
+      const afterC = actualQuery.slice(2);
+      const spaceIdx = afterC.indexOf(" ");
+      if (spaceIdx === -1) {
+        filterCategory = afterC;
+        actualQuery = "";
+      } else {
+        filterCategory = afterC.slice(0, spaceIdx);
+        actualQuery = afterC.slice(spaceIdx + 1);
+      }
+    }
+
+    if (filterCategory === null) {
+      const trimmed = actualQuery.trimStart();
+      const leading = actualQuery.length - trimmed.length;
+      const spaceIdx = trimmed.indexOf(" ");
+      const firstWord = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+      const match = this.findCategorySpecMatch(firstWord, false);
+      if (match) {
+        filterCategory = firstWord;
+        if (!match.isSynonym) {
+          actualQuery = spaceIdx === -1 ? "" : actualQuery.slice(leading + spaceIdx + 1);
+        }
+      }
+    }
+
+    return {
+      actualQuery,
+      filterWidth,
+      filterBox,
+      filterBraille,
+      brailleDotFilter,
+      filterCategory,
+    };
+  }
+
+  getFilteredMatches() {
+    if (typeof EMOJI_DB === "undefined") return [];
+    const db = EMOJI_DB;
+    const {
+      actualQuery,
+      filterWidth,
+      filterBox,
+      filterBraille,
+      brailleDotFilter,
+      filterCategory,
+    } = this.parseSearchOptions();
+    const categorySpec = filterCategory === null ? null : this.findCategorySpec(filterCategory);
+
     const braillePasses = (emoji) => {
       if (!filterBraille) return true;
       if (!this.isBraille(emoji)) return false;
       if (brailleDotFilter !== null && this.brailleDotCount(emoji) !== brailleDotFilter) return false;
       return true;
+    };
+
+    const categoryPasses = (item) => {
+      if (filterCategory === null) return true;
+      return this.emojiMatchesCategory(item[2], categorySpec);
     };
 
     if (actualQuery.trim() === "") {
@@ -377,6 +506,9 @@ class EmojigSimulator {
         if (!braillePasses(item[0])) {
           continue;
         }
+        if (!categoryPasses(item)) {
+          continue;
+        }
         filtered.push({
           emoji: item[0],
           description: item[1],
@@ -387,7 +519,7 @@ class EmojigSimulator {
       if (filterBraille) {
         filtered.sort((a, b) => this.brailleDotCount(a.emoji) - this.brailleDotCount(b.emoji));
       }
-      return filtered.slice(0, 60);
+      return filtered.slice(0, this.maxResults);
     }
 
     const matches = [];
@@ -402,12 +534,15 @@ class EmojigSimulator {
       if (!braillePasses(item[0])) {
         continue;
       }
+      if (!categoryPasses(item)) {
+        continue;
+      }
       let score = this.fuzzyMatch(actualQuery, item[2]);
       if (score !== null) {
         // Box art and Braille patterns rank below genuine emoji matches in
         // general searches; br: searches sort purely by ascending dot count.
-        if (this.isBoxArt(item[0])) score -= 150;
-        if (this.isBraille(item[0])) score -= 150;
+        if (this.isBoxArt(item[0])) score -= this.rangeFilter("box_art", 0x2500, 0x259f, 150).penalty;
+        if (this.isBraille(item[0])) score -= this.rangeFilter("braille", 0x2800, 0x28ff, 150).penalty;
         if (filterBraille) score = -this.brailleDotCount(item[0]);
         matches.push({
           emoji: item[0],
@@ -439,6 +574,23 @@ class EmojigSimulator {
     return this.safeMode ? this.stripVariationSelectors(emoji) : emoji;
   }
 
+  displayWidth(str) {
+    let width = 0;
+    for (const ch of [...str]) {
+      width += (ch.codePointAt(0) > 0x1f000 || ch === "🔍") ? 2 : 1;
+    }
+    return width;
+  }
+
+  formatSpecLine(line) {
+    const oscLink = /^\u001b]8;;([^\u001b]+)\u001b\\([^\u001b]+)\u001b]8;;\u001b\\$/;
+    const match = line.match(oscLink);
+    if (match) {
+      return `<a class="sim-link" href="${this.escapeHtml(match[1])}">${this.escapeHtml(match[2])}</a>`;
+    }
+    return this.escapeHtml(line.replace(/\u001b\][^\u001b]*\u001b\\/g, ""));
+  }
+
   updateThemeClass() {
     const screenEl = document.getElementById("sim-screen");
     if (!screenEl) return;
@@ -459,7 +611,8 @@ class EmojigSimulator {
 
     const matches = this.getFilteredMatches();
     const totalMatches = matches.length;
-    const topCount = Math.min(60, totalMatches);
+    const visibleCells = this.cols * this.rows;
+    const topCount = Math.min(visibleCells, totalMatches);
     const topMatches = matches.slice(0, topCount);
 
     // Keep selection in bounds
@@ -480,16 +633,7 @@ class EmojigSimulator {
       // Emoji characters count as 2 columns, but standard strings count as 1.
       // In a simple web representation, we just pad using standard lengths.
       // To ensure character-perfect terminal alignments, we count the visual length.
-      let chars = [...str];
-      let visualWidth = 0;
-      for (let ch of chars) {
-        // Check if it is a double-width char (emojis, CJK)
-        if (ch.codePointAt(0) > 0x1f000 || ch === "🔍") {
-          visualWidth += 2;
-        } else {
-          visualWidth += 1;
-        }
-      }
+      const visualWidth = this.displayWidth(str);
       const diff = len - visualWidth;
       return str + (diff > 0 ? " ".repeat(diff) : "");
     };
@@ -503,10 +647,10 @@ class EmojigSimulator {
     html += `<div class="sim-row"> </div>`;
 
     // 3. Search Bar
-    const searchPrompt = "🔍 ";
+    const searchPrompt = this.webSpec?.strings?.search_prompt ?? "🔍 ";
+    const searchPlaceholder = this.webSpec?.strings?.search_placeholder ?? "search…";
     const queryText = this.query;
-    // Remaining spacer logic: content_width(25) - prompt(3) - icon(4) = 18.
-    const maxQueryCols = 18;
+    const maxQueryCols = Math.max(1, this.contentWidth - this.displayWidth(searchPrompt) - 4);
     const displayQuery =
       queryText.length > maxQueryCols
         ? queryText.slice(0, maxQueryCols)
@@ -518,11 +662,11 @@ class EmojigSimulator {
 
     const placeholderHtml =
       displayQuery.length === 0
-        ? `<span class="sim-cursor">█</span><span class="sim-search-placeholder">search…</span><span>${" ".repeat(Math.max(0, padLen - 8))}</span>`
+        ? `<span class="sim-cursor">█</span><span class="sim-search-placeholder">${this.escapeHtml(searchPlaceholder)}</span><span>${" ".repeat(Math.max(0, padLen - this.displayWidth(searchPlaceholder)))}</span>`
         : `<span class="sim-search-query">${displayQuery}</span><span class="sim-cursor">█</span><span>${" ".repeat(Math.max(0, padLen - 1))}</span>`;
     html +=
-      `<div class="sim-row sim-search"> ` +
-      `<span class="sim-search-prompt">${searchPrompt}</span>` +
+      `<div class="sim-row sim-search">` +
+      `<span class="sim-search-prompt">${this.escapeHtml(searchPrompt)}</span>` +
       placeholderHtml +
       `<span class="sim-theme-icon" id="sim-theme-toggle" title="Cycle Theme (Tab)"> ${themeIcon} </span>` +
       `</div>`;
@@ -530,33 +674,14 @@ class EmojigSimulator {
     const isHelpMode = this.query.startsWith("?");
 
     if (isHelpMode) {
-      // Paged help, mirroring spec/strings.json: "?" shows page 1
-      // (help_lines), "??" shows page 2 (help_lines_more: e:/t: filters).
       const isMorePage = this.query.startsWith("??");
-      const linkLine =
-        `😀 <a class="sim-link" href="https://ubunatic.com/emojig">ubunatic.com/emojig</a>`;
       const helpLines = isMorePage
-        ? [
-            linkLine,
-            "",
-            " e:abc 🔍 Emojis only",
-            " t:abc 🔍 Symbols only",
-            " b:abc 🔍 Box art only",
-            " a b 🔍   Match all words",
-            " ⌫        Back…",
-          ]
-        : [
-            linkLine,
-            "",
-            " ⌨️|abc|↕↔ Search, Navigate",
-            " 🖱️|↵|Esc  Select, Exit",
-            " ⭾ (Tab)   Theme 🗘 (🌞|🌙|🔆)",
-            " ??        More…",
-          ];
+        ? (this.webSpec?.strings?.help_lines_more ?? [])
+        : (this.webSpec?.strings?.help_lines ?? []);
       for (let i = 0; i < this.rows + 3; i++) {
         let text = "";
         if (i < helpLines.length) {
-          text = helpLines[i];
+          text = this.formatSpecLine(helpLines[i]);
         }
         html += `<div class="sim-row sim-help"> ${text}</div>`;
       }
@@ -575,7 +700,9 @@ class EmojigSimulator {
             const formattedEmoji = this.formatEmoji(match.emoji);
             const isSelected = this.selectedIdx === idx;
             if (isSelected) {
-              rowHtml += `<span class="sim-cell selected" data-idx="${idx}">[${formattedEmoji}]</span>`;
+              const left = this.webSpec?.strings?.cursor_left ?? "[";
+              const right = this.webSpec?.strings?.cursor_right ?? "]";
+              rowHtml += `<span class="sim-cell selected" data-idx="${idx}">${this.escapeHtml(left)}${formattedEmoji}${this.escapeHtml(right)}</span>`;
             } else {
               rowHtml += `<span class="sim-cell" data-idx="${idx}"> ${formattedEmoji} </span>`;
             }
@@ -605,9 +732,12 @@ class EmojigSimulator {
     }
 
     // 8. Status Bar Row
-    const statusText = this.query.length === 0
-      ? ` ?:help  ↕↔|↵|Esc`
-      : ` ${totalMatches}  ↕↔|↵|Esc`;
+    const statusSpec = this.webSpec?.strings?.status_default ?? {};
+    const statusTemplate = this.query.length === 0
+      ? (this.contentWidth >= 32 ? statusSpec.on_view_wide : statusSpec.on_view)
+      : (this.contentWidth >= 32 ? statusSpec.on_search_wide : statusSpec.on_search);
+    const statusText = (statusTemplate ?? (this.query.length === 0 ? " ?:help  ↕↔|↵|Esc" : " {count}  ↕↔|↵|Esc"))
+      .replace("{count}", String(totalMatches));
     html += `<div class="sim-row sim-status">${padRight(statusText, this.contentWidth + 1)}</div>`;
 
     // 9. Bottom Border

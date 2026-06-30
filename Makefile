@@ -140,6 +140,7 @@ gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ct
 
 jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.yaml
 	@printf '// generated from spec/jsdemo.json — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/jsdemo.json)" > website/jsdemo.js
+	go run ./scripts/gen_web_spec/
 
 browse: ⚙️ jsdemo  # open the website homepage in the default web browser
 	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"

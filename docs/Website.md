@@ -19,6 +19,7 @@ docs: [WebSandbox.md](WebSandbox.md) (WASM demo), [HeadlessRecording.md](Headles
 | `website/simulator.js` / `simulator.css` | Interactive shell + picker simulator (see §3). |
 | `website/emojis.js` | Generated emoji DB for the simulator (mirror of the packed binary DB). |
 | `website/jsdemo.js` | **Generated** from `spec/jsdemo.json` via `make jsdemo` — do not edit by hand. |
+| `website/webspec.js` | **Generated** from `spec/layout.json`, `spec/strings.json`, `spec/categories.json`, `spec/boxart.json`, and `spec/braille.json` via `make jsdemo` — do not edit by hand. |
 | `website/*.webm`, `*.png` | Shared recordings/screenshots, written by the reel pipeline. |
 | `website/reels/` | Output directory for the newer `.reel`-scripted recordings. |
 
@@ -48,8 +49,10 @@ history has it if ever needed).
 ## 3. Simulator DOM contract
 
 `simulator.js` boots on `DOMContentLoaded` and is a 1:1 JS port of the Zig
-search engine (same scoring, stem/plural fallbacks, `e:`/`t:` width filters,
-paged `?` / `??` help mirroring `spec/strings.json`).
+search engine (same scoring, stem/plural fallbacks, `e:`/`t:`/`b:`/`br:`/`c:`
+filters, category auto-detect, paged `?` / `??` help mirroring
+`spec/strings.json`). Spec-owned web data comes from `website/webspec.js`;
+regenerate it with `make jsdemo` instead of hand-editing simulator constants.
 
 Required element (boot throws without it):
 
