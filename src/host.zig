@@ -557,24 +557,27 @@ pub fn spawnGuiWindow(
     var size_buf: [64]u8 = undefined;
     const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width_val + 1, final_h });
 
+    // Resolve the title bar hex early — needed for both csd.color and the
+    // colors.background contrast override below.
+    var title_hex_buf_early: [6]u8 = undefined;
+    const title_hex_early = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf_early);
+
+    // In decorated mode foot renders the CSD title text using colors.background
+    // (confirmed by testing — foot has no csd.foreground option).  Override it
+    // with a luminance-computed contrast color so the title text is legible on
+    // any title-bar preset.  The TUI is unaffected: emojig paints every cell
+    // with explicit ANSI escape codes so colors.background is never visible
+    // inside the terminal content area.
     var bg_buf: [64]u8 = undefined;
-    const bg_arg = if (foot_bg.len > 0)
+    const bg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
+        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{csdTitleFgHex(title_hex_early)})
+    else if (foot_bg.len > 0)
         try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg})
     else
         "";
 
-    // Compute title_hex early so we can use it to derive the CSD title text color.
-    // In decorated (non-borderless) mode we override colors.foreground with a
-    // luminance-computed contrast color so the title text is legible regardless of
-    // the title-bar preset.  Foot uses colors.foreground for CSD title text; there
-    // is no separate csd.foreground option.
-    var title_hex_buf_early: [6]u8 = undefined;
-    const title_hex_early = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf_early);
-
     var fg_buf: [64]u8 = undefined;
-    const fg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
-        try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{csdTitleFgHex(title_hex_early)})
-    else if (foot_fg.len > 0)
+    const fg_arg: []const u8 = if (foot_fg.len > 0)
         try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg})
     else
         "";
