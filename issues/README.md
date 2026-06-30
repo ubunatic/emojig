@@ -30,6 +30,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**25**](25-xfce4-terminal-autodetect-gap.md) | [GUI auto-mode misses `xfce4-terminal` despite built-in host support](25-xfce4-terminal-autodetect-gap.md) | **P2** | The host kind and argv builder support `xfce4-terminal`, but `selectTerminalHost()` never auto-detects it. |
 | [**26**](26-install-and-update-integrity-gap.md) | [`install.sh` and self-update still skip artifact verification](26-install-and-update-integrity-gap.md) | **P1** | The release plan promises verification, but the installer still downloads and extracts without `SHA256SUMS`/`minisign`, and curl-update inherits the same gap. |
 | [**27**](27-persistence-buffer-edges.md) | [Config and MRU persistence still have silent 4 KB edge behavior](27-persistence-buffer-edges.md) | **P2** | The config loader still hard-bails on a full 4 KB read, and MRU still uses the same fixed-size single-read pattern without a full-buffer guard. |
+| [**38**](38-more-common-search-tests.md) | [Tests for common searches](38-more-common-search-tests.md) | **P2** | Phase 1+2 done: 55 ranking tests + 23 synonyms added; Phase 3 open (food/drinks/feelings: ~20 more tests need synonyms/tags). |
 
 ---
 

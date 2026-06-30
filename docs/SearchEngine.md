@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-description: "Fuzzy search: subsequence scoring, plural/stem fallbacks, word-order trap, isBoxArt range, synonym-vs-tag tradeoffs"
+description: "Fuzzy search: subsequence scoring, plural/stem fallbacks, word-order trap, isBoxArt range, synonym-vs-tag tradeoffs, synonym `to` pitfalls, test assertion traps"
 ---
 
 # Search Engine: Filters, Synonyms, and Discoverability
@@ -445,4 +445,82 @@ When a user queried `"sparkling"`, the search engine matched `"sparkling"` again
 3. Because the match was split across words, it broke the consecutive-run bonus for the first character `'s'`, degrading the match score significantly.
 
 **Fix**: Place `"sparkling"` before `"glass"` in the aliases list, or move `"glass"` to tags entirely, ensuring `"sparkling"` can match cleanly as a single consecutive sequence from its first letter.
+
+---
+
+## 12. Synonym `to` value pitfalls
+
+### The multi-word `to` value is matched as a single subsequence
+
+`spec/synonyms.yaml` `to` values are passed directly to `matchTermDirect` as a
+single string, spaces and all.  The scorer treats the entire value (e.g. `"cold
+face freezing"`) as one subsequence to find inside the target emoji's search string.
+This works well for phrases that appear **verbatim** in the target — `"cold face
+freezing"` is consecutive in 🥶's search string `"cold face freezing ice smiley"`,
+so it scores very high (perfect word-start + consecutive bonus).
+
+It fails silently when the words don't appear together.  Classic trap: `🏍️`
+(motorcycle) has search string `"motorcycle travel"`.  The synonym value
+`"motorcycle racing"` needs `"racing"` to follow `"motorcycle "`, but "travel" has
+no 'c' after the 'r'+'a' in "travel", so the subsequence match breaks mid-word and
+the emoji is not surfaced.
+
+**Rule**: before writing a multi-word `to` value, verify it in `website/emojis.js`:
+
+```
+grep '"🏍️"' website/emojis.js
+# → ["🏍️", "motorcycle", "motorcycle travel"]
+```
+
+The third field is the exact search string.  The `to` value must be a contiguous
+subsequence of that string — ideally a leading word (highest scoring).  If the
+target only has one useful word, use that single word as `to` (e.g. `"motorcycle"`
+not `"motorcycle racing"`).
+
+### Duplicate YAML keys: last definition wins
+
+YAML allows duplicate top-level keys; the convert_spec tool (Go's `encoding/json`)
+silently uses the **last** value.  This bit us when new synonyms were appended to
+`spec/synonyms.yaml` for terms that already existed earlier in the file (`chilly`,
+`galaxy`).  The new entries override the old ones — which happens to be the desired
+behaviour in these cases — but it leaves stale dead entries in the file.
+
+**Rule**: before adding a synonym, `grep -n "^    term:"
+spec/synonyms.yaml` to confirm the key doesn't already exist.  If it does, edit
+the existing entry rather than appending a new one.
+
+### Common test assertion traps (search ranking vs. expectation)
+
+When writing `inTop` tests, always verify what the engine *actually* returns first
+(`grep '"emoji"' website/emojis.js` to see the search string, then reason through
+the scorer).  Repeated surprises from this session:
+
+| Query | Wrong assumption | Actual winner | Why |
+|-------|-----------------|---------------|-----|
+| `"bee"` | 🍺 (beer) | 🐝 (honeybee) | "bee" is the *first* word of 🐝's search; "beer" starts with "bee" but requires 'r' |
+| `"sunset"` | 🌇 (sunset) | 🌆 (cityscape at dusk) | 🌆 has `"city sunset"` → "sunset" at word #1 (pos 5); 🌇 has it at word #2 (pos 13) — earlier position wins |
+| `"stars"` | ✨ (sparkles) | ⭐ (star) | ✨ search is `"sparkles shiny activity"` — no 's','t','a','r' sequence possible |
+| `"cool"` | 😎 (sunglasses) | 🆒 (COOL button) | 🆒 search is `"cool button"` — "cool" at position 0 with maximum bonus |
+| `"partly cloudy"` | ⛅ in top 3 | no result | ⛅ search is `"partly sunny sun behind cloud"` — has "partly" but NOT "cloudy" |
+| `"moon"` | 🌙 in top 5 | 🌑 at #1 | 13+ moon emojis all score for "moon"; 🌑 wins because "moon" is at position 4 (smallest offset) |
+| `"motorbike"` | any | nothing useful | 🏍️ search is `"motorcycle travel"` — no 'b' char, direct match impossible; synonym must use `"motorcycle"` not `"motorcycle racing"` |
+| `"french fries"` | 🍟 in top 3 | rank #100+ | 🍟 search string is `"fries french food"` (reversed from display name); subsequence `"french fries"` fails — after matching `"french f"`, no 'r' remains in `"ood"`. Synonym must use `"fries"` (single word, matches at pos 0) |
+| `"sick"` | 🤢 in top 5 | 🤢 at rank #30 | Greedy theft: 's' in `"nauseated"` (pos 3) is consumed before 's' in `"sick"` (pos 15), forcing a sparse jump → low score. 🤒 `"face with thermometer sick"` has no earlier 's' → "sick" hits word-start → top 5. Test `inTop("nauseated", "🤢", 3)` for the green face |
+
+### Checking what's in the binary before writing tests
+
+The canonical source of search strings is `src/emojis.bin` — not `website/emojis.js`
+(which is a derivative generated last).  Before writing an `inTop` assertion:
+
+1. Run `go run ./scripts/check_synonyms/` — catches duplicate YAML keys and multi-word
+   `to` values where no emoji has all the words.  Runs automatically as part of
+   `make preflight`.
+2. To read a specific emoji's search string without grep gymnastics, add a one-off
+   `std.debug.print` inside an *existing* test block that calls `EmojiDb.getEntry`.
+   Remove it before committing — do not leave debug test blocks in the file.
+3. Reason about the scorer: does the query term (or its plural/stem fallback) appear
+   as an actual word in the search string?  At what character position?  Earlier
+   position = higher score.
+4. The website file (`website/emojis.js`) can serve as a quick human-readable
+   cross-check, but treat it as a last resort — the binary is the ground truth.
 

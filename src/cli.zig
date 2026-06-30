@@ -92,6 +92,26 @@ fn exitOk(fd: std.posix.fd_t, msg: []const u8) noreturn {
     std.process.exit(0);
 }
 
+const BoolFlagParse = enum {
+    no_match,
+    invalid,
+    true_value,
+    false_value,
+};
+
+fn parseBorderlessFlag(arg: []const u8) BoolFlagParse {
+    if (std.mem.eql(u8, arg, "--borderless")) return .true_value;
+    if (std.mem.eql(u8, arg, "--no-borderless")) return .false_value;
+    if (std.mem.eql(u8, arg, "--decorated") or std.mem.eql(u8, arg, "--window-decorations")) return .false_value;
+    if (std.mem.startsWith(u8, arg, "--borderless=")) {
+        const v = arg["--borderless=".len..];
+        if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1")) return .true_value;
+        if (std.mem.eql(u8, v, "false") or std.mem.eql(u8, v, "0")) return .false_value;
+        return .invalid;
+    }
+    return .no_match;
+}
+
 pub fn parseArgs(init: std.process.Init) ParsedArgs {
     var parsed = ParsedArgs{};
     var args_it = init.minimal.args.iterate();
@@ -138,19 +158,6 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 parsed.key = v;
             } else {
                 fail(std.posix.STDERR_FILENO, "Error: --key requires an argument (e.g. '^E').\n");
-            }
-        } else if (std.mem.eql(u8, arg, "--borderless")) {
-            parsed.borderless = true;
-        } else if (std.mem.eql(u8, arg, "--no-borderless")) {
-            parsed.borderless = false;
-        } else if (std.mem.startsWith(u8, arg, "--borderless=")) {
-            const v = arg["--borderless=".len..];
-            if (std.mem.eql(u8, v, "true") or std.mem.eql(u8, v, "1")) {
-                parsed.borderless = true;
-            } else if (std.mem.eql(u8, v, "false") or std.mem.eql(u8, v, "0")) {
-                parsed.borderless = false;
-            } else {
-                fail(std.posix.STDERR_FILENO, "Error: invalid --borderless value. Use true/false or 1/0.\n");
             }
         } else if (std.mem.eql(u8, arg, "--theme")) {
             if (args_it.next()) |v| {
@@ -215,6 +222,8 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
                 "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
+                "  --decorated                  Spawn the GUI terminal with its title bar/window decorations\n" ++
+                "  --window-decorations         Alias for --decorated\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --show-switcher[=true|false] Show horizontal category switcher bar (implied by --gui)\n" ++
                 "  --simple                     Simple fzf/sk-like list picker (use with --height)\n" ++
@@ -227,13 +236,31 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 "  -v, --version                Show version and exit\n" ++
                 "  -h, --help                   Show this help message\n");
         } else {
-            writeAll(std.posix.STDERR_FILENO, "Error: unknown argument '");
-            writeAll(std.posix.STDERR_FILENO, arg);
-            fail(std.posix.STDERR_FILENO, "'. Use -h or --help for usage.\n");
+            switch (parseBorderlessFlag(arg)) {
+                .true_value => parsed.borderless = true,
+                .false_value => parsed.borderless = false,
+                .invalid => fail(std.posix.STDERR_FILENO, "Error: invalid --borderless value. Use true/false or 1/0.\n"),
+                .no_match => {
+                    writeAll(std.posix.STDERR_FILENO, "Error: unknown argument '");
+                    writeAll(std.posix.STDERR_FILENO, arg);
+                    fail(std.posix.STDERR_FILENO, "'. Use -h or --help for usage.\n");
+                },
+            }
         }
     }
 
     return parsed;
+}
+
+test "parseBorderlessFlag handles decorated aliases" {
+    try std.testing.expectEqual(BoolFlagParse.false_value, parseBorderlessFlag("--decorated"));
+    try std.testing.expectEqual(BoolFlagParse.false_value, parseBorderlessFlag("--window-decorations"));
+    try std.testing.expectEqual(BoolFlagParse.false_value, parseBorderlessFlag("--no-borderless"));
+    try std.testing.expectEqual(BoolFlagParse.true_value, parseBorderlessFlag("--borderless"));
+    try std.testing.expectEqual(BoolFlagParse.true_value, parseBorderlessFlag("--borderless=1"));
+    try std.testing.expectEqual(BoolFlagParse.false_value, parseBorderlessFlag("--borderless=false"));
+    try std.testing.expectEqual(BoolFlagParse.invalid, parseBorderlessFlag("--borderless=maybe"));
+    try std.testing.expectEqual(BoolFlagParse.no_match, parseBorderlessFlag("--gui"));
 }
 
 pub fn resolveLanguage(environ_map: anytype, opt_lang: ?[]const u8) ?[]const u8 {

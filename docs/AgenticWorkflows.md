@@ -135,4 +135,16 @@ When implementing multi-word alias lists or synonym expansions, subsequence matc
 * **Greedy Character Theft**: The subsequence matching algorithm processes strings left-to-right. A short alias in a prior slot (e.g., `"glass"`) can match characters (like the first `'s'`) intended for a subsequent keyword (e.g., `"sparkling"`), breaking consecutive character bonuses.
 * **Tag Isolation**: Keep aliases concise. If an alias causes character theft regressions on primary keywords, move the offending alias to the `tags` list or position it after the primary keyword in the database.
 
+---
+
+## 11. Synonym authoring rules & preflight guard
+
+See `docs/SearchEngine.md §12` for the full synonym pitfall table.  Short rules for writing `spec/synonyms.yaml` entries:
+
+1. **`to` word must appear in at least one emoji's search string.** For multi-word `to` values, ALL words must appear in at least one *single* emoji's search (not spread across different emojis). Verify with `grep '"<emoji>"' src/emojis.bin` — but the canonical source is the binary, not the website file.
+2. **Check for duplicate keys before adding.** Run `grep -n "^    <term>:" spec/synonyms.yaml`. The YAML-to-JSON converter silently takes the last duplicate — old entries become invisible dead code.
+3. **`make preflight` catches both.** `go run ./scripts/check_synonyms/` runs automatically; it errors on duplicate YAML keys and on multi-word `to` values where no emoji contains all the words.
+4. **Website output is a derivative, not the source.** The canonical data flow is `spec/synonyms.yaml` → `make gen-spec` → `spec/synonyms.json` → `make pack` → `src/emojis.bin`. Focus on the Zig binary; `website/emojis.js` is generated last and checked last.
+5. **No debug test blocks in committed code.** Use a one-off `std.debug.print` inside an *existing* test, verify, then remove before committing. The debug block will show up in `zig build test` output even when all assertions pass, causing noise and fmt failures.
+
 

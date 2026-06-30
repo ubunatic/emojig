@@ -58,6 +58,7 @@ sudo zypper install noto-coloremoji-fonts      # openSUSE
 emojig              # auto: GUI popup or inline TUI
 emojig --tui        # force inline TUI (SSH, VT, anywhere)
 emojig --gui        # force floating popup window
+emojig --gui --decorated  # show terminal title bar for dragging
 ```
 
 Type to search, arrows to navigate, <kbd>Enter</kbd> to pick. Done.
@@ -101,7 +102,7 @@ See **[Advanced Usage](docs/Advanced.md)** for:
 - Theming & configuration
 - Output modes (clipboard, stdout, pipe)
 - All CLI flags
-- GUI terminal selection & borderless mode
+- GUI terminal selection & window decorations
 - Requirements & system compatibility
 
 ## Performance

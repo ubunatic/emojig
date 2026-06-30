@@ -110,17 +110,42 @@
     "chef": [
       "cook"
     ],
-    "chilly": [
-      "cold"
-    ],
     "clock": [
       "time"
     ],
     "cola": [
       "soda"
     ],
+    "bake": [
+      "bread"
+    ],
+    "boba": [
+      "bubble tea"
+    ],
+    "caffeine": [
+      "coffee hot beverage"
+    ],
+    "celebrate": [
+      "clinking beer mugs"
+    ],
+    "chili": [
+      "hot pepper"
+    ],
+    "chips": [
+      "fries"
+    ],
     "cold": [
-      "chilly"
+      "chilly",
+      "ice cube"
+    ],
+    "hype": [
+      "star struck"
+    ],
+    "silent": [
+      "zipper mouth"
+    ],
+    "wow": [
+      "exploding head"
     ],
     "computer": [
       "pc"
@@ -192,9 +217,6 @@
     ],
     "funny": [
       "humorous"
-    ],
-    "galaxy": [
-      "space"
     ],
     "garbage": [
       "trash"
@@ -474,6 +496,64 @@
       "thermometer temp weather travel",
       "snowflake winter cold weather"
     ],
+    "blizzard": [
+      "cloud with snow"
+    ],
+    "caterpillar": [
+      "bug animal"
+    ],
+    "chilly": [
+      "cold face freezing"
+    ],
+    "daisy": [
+      "blossom flower"
+    ],
+    "dawn": [
+      "sunrise"
+    ],
+    "drizzle": [
+      "sun behind rain cloud"
+    ],
+    "frozen": [
+      "cold face freezing"
+    ],
+    "galaxy": [
+      "milky way"
+    ],
+    "hail": [
+      "cloud with snow"
+    ],
+    "humidity": [
+      "droplet water"
+    ],
+    "juice": [
+      "beverage box"
+    ],
+    "morning": [
+      "sunrise"
+    ],
+    "midnight": [
+      "night with stars"
+    ],
+    "night": [
+      "crescent moon night",
+      "night with stars"
+    ],
+    "oak": [
+      "deciduous tree"
+    ],
+    "pine": [
+      "evergreen tree"
+    ],
+    "subway": [
+      "metro"
+    ],
+    "ufo": [
+      "flying saucer"
+    ],
+    "warm": [
+      "thermometer temp"
+    ],
     "winner": [
       "champion"
     ],
@@ -485,6 +565,18 @@
     ],
     "wrong": [
       "incorrect"
+    ],
+    "midday": [
+      "twelve oclock"
+    ],
+    "motorbike": [
+      "motorcycle"
+    ],
+    "noon": [
+      "twelve oclock"
+    ],
+    "xmas": [
+      "christmas tree"
     ],
     "yell": [
       "shout"

@@ -30,9 +30,11 @@ emojig | wl-copy
 ```
 
 ### Floating GUI Popup (`emojig --gui`)
-When invoked from a desktop hotkey or launcher shortcut, standard input is non-interactive (`can_use_tty == false`). Emojig automatically detects the graphical session and spawns a new instance of a lightweight terminal window (prefers `foot`, fallback to others like `kitty`, `alacritty`, `ghostty`) running `emojig --tui` in a borderless popup configuration.
+When invoked from a desktop hotkey or launcher shortcut, standard input is non-interactive (`can_use_tty == false`). Emojig automatically detects the graphical session and spawns a new instance of a lightweight terminal window (prefers `foot`, fallback to others like `kitty`, `alacritty`, `ghostty`) running `emojig --tui` in a borderless popup configuration by default.
 
 * **Borderless GUI Option** (`--borderless`): Hides window decorations for terminals that expose CLI control flags (e.g. `foot -D csd.server-side=none`, `kitty --o hide_window_decorations=yes`, etc.).
+* **Decorated GUI Option** (`--decorated` / `--window-decorations`): Keeps the terminal's normal title bar/window decorations so the picker can be dragged by the window manager. This is equivalent to `--borderless=false`.
+* **Placement**: On Wayland, exact caret-relative popup placement is not a stable cross-desktop primitive. Focused-window placement should be compositor-specific and best-effort; see `issues/40-wayland-focused-window-placement.md`.
 * **Auto-Dismiss**: Once an emoji is chosen, the terminal helper exits, auto-closing the popup instantly.
 
 ---

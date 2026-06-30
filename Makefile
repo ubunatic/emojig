@@ -114,8 +114,8 @@ gen-input: ⚙️  # compile spec/input.yaml → spec/input.generated.json
 gen-colors: ⚙️  # regenerate spec/colors.json (full xterm-256 palette)
 	go run ./scripts/gen_colors/ > spec/colors.json
 
-test: gen-spec ⚙️  # run the unit tests
-	zig build test
+test: gen-spec ⚙️  # run the unit tests (ReleaseSafe, self-hosted backend for fast iteration)
+	zig build test -Doptimize=ReleaseSafe -Dllvm=false
 	go vet ./...
 	go test ./...
 
@@ -266,7 +266,7 @@ worktree: ⚙️  # create a sibling git worktree ready to build (usage: make wo
 	@# tracked src/emojis.bin and work without this link).
 	@test -d data && ln -sfn $(CURDIR)/data $(WORKTREE_DIR)/data && echo "🔗 linked data/ into worktree" || true
 	@echo "✅ worktree ready at $(WORKTREE_DIR) on branch $(WORKTREE_BRANCH)"
-	@echo "   cd $(WORKTREE_DIR) && zig build test"
+	@echo "   cd $(WORKTREE_DIR) && zig build test -Doptimize=ReleaseSafe -Dllvm=false"
 	@echo "   remove later with: git worktree remove $(WORKTREE_DIR)"
 
 uninstall: ⚙️  # remove binary, shell integration, and desktop entry
@@ -308,7 +308,8 @@ install-verbose: gen-spec ⚙️  # install with verbose compilation output
 
 preflight: gen-spec ⚙️  # run license check, unit tests, and code formatting lint
 	reuse --no-multiprocessing lint
-	zig build test
+	go run ./scripts/check_synonyms/
+	zig build test -Doptimize=ReleaseSafe -Dllvm=false
 	@echo "Note: 'failed command' message above is OK (Zig test runner info, all tests pass)"
 	zig fmt --check src/
 	go vet ./...

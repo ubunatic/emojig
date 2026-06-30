@@ -52,13 +52,21 @@ chosen by precedence:
 [`foot`](https://codeberg.org/dnkl/foot) is recommended — it launches
 instantly, uses minimal resources, and gives pixel-perfect cell sizing.
 
-### Borderless mode
+### Window decorations
 
 The window spawns **borderless** (no title bar) by default for a clean popup
 look, where the terminal supports it (foot, kitty, alacritty, ghostty, wezterm).
 
-Disable with `--borderless=false` if your compositor needs the decorations to
-move the window.
+Use `--decorated` when you want the terminal's normal OS-themed title bar and
+window decorations, for example to drag the picker into place. The older
+spelling `--borderless=false` is equivalent.
+
+### Window placement
+
+On Wayland, generic apps cannot reliably inspect another app's text caret
+position or force an arbitrary top-level window position. Emojig therefore lets
+the compositor place `--gui` today. Best-effort focused-window placement for
+wlroots compositors is tracked in [issue 40](../issues/40-wayland-focused-window-placement.md).
 
 ### Single-instance toggle
 

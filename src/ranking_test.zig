@@ -746,6 +746,382 @@ test "ranking: bugs query" {
     try std.testing.expect(inTop("bug", "🕷︎", 24));
 }
 
+// ── 3-letter prefix tests ────────────────────────────────────────────────────
+
+test "prefix: plants" {
+    try std.testing.expect(inTop("tre", "🌲", 10)); // tree
+    try std.testing.expect(inTop("lea", "🍃", 10)); // leaf / leaves (leafy green is #1, leaf is #3)
+    try std.testing.expect(inTop("cac", "🌵", 5)); // cactus (#1)
+    try std.testing.expect(inTop("see", "🌱", 10)); // seed → seedling (#2)
+    try std.testing.expect(inTop("her", "🌿", 10)); // herb (#1 or #2)
+}
+
+test "prefix: flowers" {
+    try std.testing.expect(inTop("ros", "🌹", 5)); // rose
+    try std.testing.expect(inTop("tul", "🌷", 5)); // tulip
+    try std.testing.expect(inTop("blo", "🌸", 10)); // blossom
+    try std.testing.expect(inTop("flo", "🌹", 24) or inTop("flo", "🌸", 24)); // flower prefix (competitive)
+}
+
+test "prefix: insects" {
+    try std.testing.expect(inTop("but", "🦋", 10)); // butterfly
+    try std.testing.expect(inTop("spi", "🕷️", 10)); // spider
+    try std.testing.expect(inTop("coc", "🪳", 10)); // cockroach
+    try std.testing.expect(inTop("mos", "🦟", 10)); // mosquito
+}
+
+test "prefix: birds" {
+    try std.testing.expect(inTop("bir", "🐦", 5)); // bird
+    try std.testing.expect(inTop("duc", "🦆", 5)); // duck
+    try std.testing.expect(inTop("eag", "🦅", 5)); // eagle
+    try std.testing.expect(inTop("chi", "🐔", 10)); // chicken
+}
+
+test "prefix: fish and sea creatures" {
+    try std.testing.expect(inTop("sha", "🦈", 5)); // shark
+    try std.testing.expect(inTop("cra", "🦀", 10)); // crab
+    try std.testing.expect(inTop("lob", "🦞", 5)); // lobster
+    try std.testing.expect(inTop("oct", "🐙", 5)); // octopus
+    try std.testing.expect(inTop("shr", "🦐", 10)); // shrimp
+    try std.testing.expect(inTop("jel", "🪼", 10)); // jellyfish
+}
+
+test "prefix: drinks" {
+    try std.testing.expect(inTop("coffee", "☕", 3)); // full word: coffee → hot beverage
+    try std.testing.expect(inTop("tea", "🍵", 3)); // tea (exact 3-letter, bubble tea #1 ok)
+    try std.testing.expect(inTop("win", "🍷", 5)); // wine is #3 behind window/wing
+    try std.testing.expect(inTop("juice", "🧃", 5)); // full word: juice (jui → juggling)
+    try std.testing.expect(inTop("beer", "🍺", 3)); // beer
+}
+
+test "prefix: tools" {
+    try std.testing.expect(inTop("ham", "🔨", 5)); // hammer
+    try std.testing.expect(inTop("wre", "🔧", 5)); // wrench
+    try std.testing.expect(inTop("scr", "🪛", 10)); // screwdriver
+    try std.testing.expect(inTop("axe", "🪓", 5)); // axe
+    try std.testing.expect(inTop("gea", "⚙️", 10)); // gear
+}
+
+// ── Animals ──────────────────────────────────────────────────────────────────
+
+test "animals: common mammals" {
+    try std.testing.expect(inTop("cat", "🐱", 3));
+    try std.testing.expect(inTop("dog", "🐶", 3));
+    try std.testing.expect(inTop("horse", "🐴", 5));
+    try std.testing.expect(inTop("cow", "🐮", 3));
+    try std.testing.expect(inTop("pig", "🐷", 3));
+    try std.testing.expect(inTop("sheep", "🐑", 3));
+    try std.testing.expect(inTop("goat", "🐐", 3));
+    try std.testing.expect(inTop("rabbit", "🐰", 3));
+    try std.testing.expect(inTop("hamster", "🐹", 3));
+    try std.testing.expect(inTop("mouse", "🐭", 5));
+    try std.testing.expect(inTop("rat", "🐀", 5));
+    try std.testing.expect(inTop("fox", "🦊", 3));
+    try std.testing.expect(inTop("bear", "🐻", 3));
+    try std.testing.expect(inTop("panda", "🐼", 3));
+    try std.testing.expect(inTop("koala", "🐨", 3));
+    try std.testing.expect(inTop("tiger", "🐯", 3));
+    try std.testing.expect(inTop("lion", "🦁", 3));
+    try std.testing.expect(inTop("elephant", "🐘", 3));
+    try std.testing.expect(inTop("rhino", "🦏", 5));
+    try std.testing.expect(inTop("hippo", "🦛", 5));
+    try std.testing.expect(inTop("giraffe", "🦒", 3));
+    try std.testing.expect(inTop("zebra", "🦓", 3));
+    try std.testing.expect(inTop("camel", "🐪", 3));
+    try std.testing.expect(inTop("deer", "🦌", 3));
+    try std.testing.expect(inTop("kangaroo", "🦘", 3));
+    try std.testing.expect(inTop("monkey", "🐒", 3));
+    try std.testing.expect(inTop("gorilla", "🦍", 3));
+    try std.testing.expect(inTop("wolf", "🐺", 3));
+    try std.testing.expect(inTop("bat", "🦇", 5));
+    try std.testing.expect(inTop("hedgehog", "🦔", 3));
+    try std.testing.expect(inTop("otter", "🦦", 3));
+    try std.testing.expect(inTop("skunk", "🦨", 3));
+    try std.testing.expect(inTop("raccoon", "🦝", 3));
+    try std.testing.expect(inTop("sloth", "🦥", 3));
+    try std.testing.expect(inTop("bison", "🦬", 3));
+    try std.testing.expect(inTop("mammoth", "🦣", 3));
+    try std.testing.expect(inTop("seal", "🦭", 5));
+}
+
+test "animals: birds" {
+    try std.testing.expect(inTop("bird", "🐦", 3));
+    try std.testing.expect(inTop("eagle", "🦅", 3));
+    try std.testing.expect(inTop("owl", "🦉", 3));
+    try std.testing.expect(inTop("duck", "🦆", 3));
+    try std.testing.expect(inTop("penguin", "🐧", 3));
+    try std.testing.expect(inTop("chicken", "🐔", 3));
+    try std.testing.expect(inTop("rooster", "🐓", 3));
+    try std.testing.expect(inTop("turkey", "🦃", 3));
+    try std.testing.expect(inTop("peacock", "🦚", 3));
+    try std.testing.expect(inTop("flamingo", "🦩", 3));
+    try std.testing.expect(inTop("parrot", "🦜", 3));
+    try std.testing.expect(inTop("swan", "🦢", 3));
+    try std.testing.expect(inTop("dove", "🕊️", 3));
+    try std.testing.expect(inTop("hatching", "🐣", 3));
+    try std.testing.expect(inTop("chick", "🐥", 10)); // baby chick #1, front-facing #8
+}
+
+test "animals: reptiles and amphibians" {
+    try std.testing.expect(inTop("snake", "🐍", 3));
+    try std.testing.expect(inTop("lizard", "🦎", 3));
+    try std.testing.expect(inTop("dragon", "🐲", 5));
+    try std.testing.expect(inTop("turtle", "🐢", 3));
+    try std.testing.expect(inTop("crocodile", "🐊", 3));
+    try std.testing.expect(inTop("frog", "🐸", 3));
+    try std.testing.expect(inTop("dino", "🦕", 10)); // T-Rex wins "dino", sauropod at #6
+    try std.testing.expect(inTop("dinosaur", "🦕", 5));
+    try std.testing.expect(inTop("rex", "🦖", 3));
+}
+
+test "animals: sea creatures" {
+    try std.testing.expect(inTop("fish", "🐟", 3));
+    try std.testing.expect(inTop("shark", "🦈", 3));
+    try std.testing.expect(inTop("whale", "🐳", 3));
+    try std.testing.expect(inTop("dolphin", "🐬", 3));
+    try std.testing.expect(inTop("octopus", "🐙", 3));
+    try std.testing.expect(inTop("crab", "🦀", 3));
+    try std.testing.expect(inTop("lobster", "🦞", 3));
+    try std.testing.expect(inTop("shrimp", "🦐", 5));
+    try std.testing.expect(inTop("squid", "🦑", 3));
+    try std.testing.expect(inTop("jellyfish", "🪼", 3));
+    try std.testing.expect(inTop("coral", "🪸", 3));
+    try std.testing.expect(inTop("blowfish", "🐡", 3));
+    try std.testing.expect(inTop("tropical fish", "🐠", 3));
+    try std.testing.expect(inTop("seal", "🦭", 3));
+}
+
+test "animals: insects (each one)" {
+    try std.testing.expect(inTop("butterfly", "🦋", 3));
+    try std.testing.expect(inTop("caterpillar", "🐛", 10)); // synonym-injected
+    try std.testing.expect(inTop("lady beetle", "🐞", 3));
+    try std.testing.expect(inTop("ladybug", "🐞", 3));
+    try std.testing.expect(inTop("ant", "🐜", 3));
+    try std.testing.expect(inTop("bee", "🐝", 3));
+    try std.testing.expect(inTop("honeybee", "🐝", 3));
+    try std.testing.expect(inTop("beetle", "🪲", 5));
+    try std.testing.expect(inTop("cricket", "🦗", 3));
+    try std.testing.expect(inTop("cockroach", "🪳", 3));
+    try std.testing.expect(inTop("spider", "🕷️", 3));
+    try std.testing.expect(inTop("scorpion", "🦂", 3));
+    try std.testing.expect(inTop("mosquito", "🦟", 3));
+    try std.testing.expect(inTop("fly", "🪰", 5));
+    try std.testing.expect(inTop("worm", "🪱", 3));
+    try std.testing.expect(inTop("microbe", "🦠", 3));
+}
+
+// ── Flowers ──────────────────────────────────────────────────────────────────
+
+test "flowers: each common flower" {
+    try std.testing.expect(inTop("rose", "🌹", 3));
+    try std.testing.expect(inTop("tulip", "🌷", 3));
+    try std.testing.expect(inTop("sunflower", "🌻", 3));
+    try std.testing.expect(inTop("cherry blossom", "🌸", 3));
+    try std.testing.expect(inTop("blossom", "🌸", 5));
+    try std.testing.expect(inTop("hibiscus", "🌺", 3));
+    try std.testing.expect(inTop("bouquet", "💐", 3));
+    try std.testing.expect(inTop("wilted", "🥀", 3));
+    try std.testing.expect(inTop("lotus", "🪷", 3));
+    try std.testing.expect(inTop("daisy", "🌼", 10)); // synonym-injected (blossom)
+}
+
+// ── Trees ─────────────────────────────────────────────────────────────────────
+
+test "trees: each common tree" {
+    try std.testing.expect(inTop("tree", "🌲", 5));
+    try std.testing.expect(inTop("evergreen", "🌲", 3));
+    try std.testing.expect(inTop("deciduous", "🌳", 3));
+    try std.testing.expect(inTop("palm", "🌴", 3));
+    try std.testing.expect(inTop("cactus", "🌵", 3));
+    try std.testing.expect(inTop("christmas tree", "🎄", 3));
+    try std.testing.expect(inTop("xmas", "🎄", 5)); // synonym-injected
+    try std.testing.expect(inTop("bamboo", "🎍", 3));
+    try std.testing.expect(inTop("pine", "🎍", 5)); // pine decoration wins; 🌲 is #2
+    try std.testing.expect(inTop("oak", "🌳", 10)); // synonym-injected
+    try std.testing.expect(inTop("maple", "🍁", 5));
+    try std.testing.expect(inTop("fallen leaf", "🍂", 5));
+    try std.testing.expect(inTop("seedling", "🌱", 3));
+    try std.testing.expect(inTop("potted", "🪴", 3));
+    try std.testing.expect(inTop("wood", "🪵", 5));
+}
+
+// ── Vehicles ─────────────────────────────────────────────────────────────────
+
+test "vehicles: road" {
+    try std.testing.expect(inTop("car", "🚗", 3));
+    try std.testing.expect(inTop("taxi", "🚕", 3));
+    try std.testing.expect(inTop("bus", "🚌", 3));
+    try std.testing.expect(inTop("truck", "🚚", 3));
+    try std.testing.expect(inTop("lorry", "🚛", 3));
+    try std.testing.expect(inTop("ambulance", "🚑", 3));
+    try std.testing.expect(inTop("fire engine", "🚒", 3)); // named "fire engine" not "fire truck"
+    try std.testing.expect(inTop("police car", "🚓", 3));
+    try std.testing.expect(inTop("minibus", "🚐", 3));
+    try std.testing.expect(inTop("tractor", "🚜", 3));
+    try std.testing.expect(inTop("bike", "🚲", 5));
+    try std.testing.expect(inTop("bicycle", "🚲", 3));
+    try std.testing.expect(inTop("motorbike", "🏍️", 3));
+    try std.testing.expect(inTop("motorcycle", "🏍️", 3));
+    try std.testing.expect(inTop("scooter", "🛵", 3));
+    try std.testing.expect(inTop("racing", "🏎️", 5));
+    try std.testing.expect(inTop("suv", "🚙", 5));
+}
+
+test "vehicles: rail" {
+    try std.testing.expect(inTop("train", "🚆", 3)); // 🚆 is "train"; 🚂 is "locomotive"
+    try std.testing.expect(inTop("locomotive", "🚂", 3));
+    try std.testing.expect(inTop("railway", "🚃", 3)); // railway car / track
+    try std.testing.expect(inTop("metro", "🚇", 3));
+    try std.testing.expect(inTop("subway", "🚇", 5)); // synonym-injected
+    try std.testing.expect(inTop("tram", "🚋", 3));
+    try std.testing.expect(inTop("monorail", "🚝", 3));
+    try std.testing.expect(inTop("bullet train", "🚅", 3));
+    try std.testing.expect(inTop("high speed", "🚄", 3)); // high-speed train beats bullet train
+}
+
+test "vehicles: air" {
+    try std.testing.expect(inTop("plane", "✈️", 3));
+    try std.testing.expect(inTop("airplane", "✈️", 3));
+    try std.testing.expect(inTop("helicopter", "🚁", 3));
+    try std.testing.expect(inTop("rocket", "🚀", 3));
+    try std.testing.expect(inTop("satellite", "🛰️", 3));
+    try std.testing.expect(inTop("flying saucer", "🛸", 3)); // named "flying saucer" not "ufo"
+    try std.testing.expect(inTop("ufo", "🛸", 5)); // synonym-injected
+    try std.testing.expect(inTop("parachute", "🪂", 3));
+    try std.testing.expect(inTop("balloon", "🎈", 3));
+    try std.testing.expect(inTop("small airplane", "🛩️", 3));
+    try std.testing.expect(inTop("seat", "💺", 3));
+}
+
+test "vehicles: water" {
+    try std.testing.expect(inTop("ship", "🚢", 3));
+    try std.testing.expect(inTop("boat", "⛵", 5));
+    try std.testing.expect(inTop("sailboat", "⛵", 3));
+    try std.testing.expect(inTop("canoe", "🛶", 3));
+    try std.testing.expect(inTop("speedboat", "🚤", 3));
+    try std.testing.expect(inTop("ferry", "⛴️", 3));
+    try std.testing.expect(inTop("anchor", "⚓", 3));
+}
+
+// ── Weather ───────────────────────────────────────────────────────────────────
+
+test "weather: each common condition" {
+    try std.testing.expect(inTop("sun", "☀️", 5));
+    try std.testing.expect(inTop("sunny", "☀️", 5));
+    try std.testing.expect(inTop("cloud", "☁️", 3));
+    try std.testing.expect(inTop("cloudy", "☁️", 5));
+    try std.testing.expect(inTop("rain", "🌧️", 3));
+    try std.testing.expect(inTop("rainy", "🌧️", 5));
+    try std.testing.expect(inTop("snow", "❄️", 5));
+    try std.testing.expect(inTop("snowy", "🌨️", 5));
+    try std.testing.expect(inTop("snowflake", "❄️", 3));
+    try std.testing.expect(inTop("storm", "⛈️", 5));
+    try std.testing.expect(inTop("lightning", "⚡", 3));
+    try std.testing.expect(inTop("thunder", "⚡", 3)); // thunder → high voltage / lightning
+    try std.testing.expect(inTop("tornado", "🌪️", 3));
+    try std.testing.expect(inTop("fog", "🌫️", 3));
+    try std.testing.expect(inTop("foggy", "🌁", 3)); // 🌁 is literally named "foggy"
+    try std.testing.expect(inTop("wind", "🌬️", 5)); // wind face is #4 behind wind chime
+    try std.testing.expect(inTop("windy", "🌬️", 5));
+    try std.testing.expect(inTop("rainbow", "🌈", 3));
+    try std.testing.expect(inTop("umbrella", "☂️", 5));
+    try std.testing.expect(inTop("thermometer", "🌡️", 3));
+    try std.testing.expect(inTop("humidity", "💧", 10)); // synonym-injected
+    try std.testing.expect(inTop("hail", "🌨️", 10)); // synonym-injected
+    try std.testing.expect(inTop("blizzard", "🌨️", 10)); // synonym-injected
+    try std.testing.expect(inTop("partly sunny", "⛅", 3)); // ⛅ is "partly sunny sun behind cloud"
+    try std.testing.expect(inTop("drizzle", "🌦️", 5)); // synonym-injected
+}
+
+// ── Day phases ────────────────────────────────────────────────────────────────
+
+test "day phases" {
+    try std.testing.expect(inTop("sunrise", "🌅", 3));
+    try std.testing.expect(inTop("sunset", "🌆", 3)); // 🌆 has "city sunset" first, beats 🌇
+    try std.testing.expect(inTop("morning", "🌅", 10)); // synonym-injected
+    try std.testing.expect(inTop("dawn", "🌄", 10)); // synonym-injected
+    try std.testing.expect(inTop("dusk", "🌆", 3));
+    try std.testing.expect(inTop("noon", "🕛", 10));
+    try std.testing.expect(inTop("midnight", "🌃", 10)); // synonym-injected → night with stars
+    try std.testing.expect(inTop("night", "🌃", 3)); // night with stars is #1
+    try std.testing.expect(inTop("moon", "🌙", 15)); // many moon emojis compete; crescent is ~7th
+    try std.testing.expect(inTop("full moon", "🌕", 3));
+    try std.testing.expect(inTop("new moon", "🌑", 3));
+    try std.testing.expect(inTop("crescent", "🌙", 3));
+    try std.testing.expect(inTop("star", "⭐", 3));
+    try std.testing.expect(inTop("stars", "⭐", 3)); // plural → star
+    try std.testing.expect(inTop("sparkles", "✨", 3)); // ✨ is "sparkles", not "stars"
+    try std.testing.expect(inTop("milky way", "🌌", 3));
+    try std.testing.expect(inTop("galaxy", "🌌", 10)); // synonym-injected
+    try std.testing.expect(inTop("night with stars", "🌃", 3));
+    try std.testing.expect(inTop("cityscape", "🏙️", 3));
+}
+
+// ── Temperature feelings ──────────────────────────────────────────────────────
+
+test "temperature feelings: hot and cold" {
+    // hot
+    try std.testing.expect(inTop("hot", "🥵", 3));
+    try std.testing.expect(inTop("hot face", "🥵", 3));
+    try std.testing.expect(inTop("sweating", "😓", 5));
+    try std.testing.expect(inTop("sweat", "😓", 5));
+    try std.testing.expect(inTop("fire", "🔥", 3));
+    try std.testing.expect(inTop("burning", "🔥", 5));
+    try std.testing.expect(inTop("melting", "🫠", 3));
+    try std.testing.expect(inTop("sun", "☀️", 5));
+    // cold
+    try std.testing.expect(inTop("cold", "🥶", 3));
+    try std.testing.expect(inTop("cold face", "🥶", 3));
+    try std.testing.expect(inTop("freezing", "🥶", 3));
+    try std.testing.expect(inTop("frozen", "🥶", 5)); // synonym-injected
+    try std.testing.expect(inTop("snowflake", "❄️", 3));
+    try std.testing.expect(inTop("ice", "🧊", 3));
+    try std.testing.expect(inTop("snowman", "⛄", 3));
+    try std.testing.expect(inTop("blizzard", "🌨️", 10)); // synonym-injected
+    // warm / cool / chilly
+    try std.testing.expect(inTop("warm", "🌡️", 10)); // synonym-injected
+    try std.testing.expect(inTop("sunglasses", "😎", 3)); // 😎 has "sunglasses" first
+    try std.testing.expect(inTop("chilly", "🥶", 5)); // synonym-injected → cold face
+}
+
+// ── Food, drinks, feelings (Phase 3) ─────────────────────────────────────────
+
+test "ranking: food — fruit, spicy, chips, baked" {
+    try std.testing.expect(inTop("apples", "🍎", 3)); // red apple: "apple" at char 4 in search
+    try std.testing.expect(inTop("apples", "🍏", 10)); // green apple also in top 10
+    try std.testing.expect(inTop("green apple", "🍏", 3)); // multi-word: both terms match
+    try std.testing.expect(inTop("chili", "🌶️", 5)); // synonym-injected → hot pepper
+    try std.testing.expect(inTop("spicy", "🌶️", 5)); // direct in binary: "hot pepper spicy food"
+    try std.testing.expect(inTop("chips", "🍟", 5)); // synonym-injected → fries (single word)
+    try std.testing.expect(inTop("french fries", "🍟", 3)); // multi-word direct
+    try std.testing.expect(inTop("watermelon", "🍉", 3)); // direct name
+    try std.testing.expect(inTop("bake", "🍞", 10)); // synonym-injected → bread
+    try std.testing.expect(inTop("breakfast", "🍳", 5)); // "fried egg cooking breakfast food"
+}
+
+test "ranking: drinks — social, caffeine, boba, ice" {
+    try std.testing.expect(inTop("boba", "🧋", 3)); // synonym-injected → bubble tea
+    try std.testing.expect(inTop("cheers", "🥂", 5)); // 🥂 has "cheers" directly in search
+    try std.testing.expect(inTop("celebrate", "🍻", 10)); // synonym-injected → clinking beer mugs
+    try std.testing.expect(inTop("caffeine", "☕", 10)); // synonym-injected → coffee hot beverage
+    try std.testing.expect(inTop("ice", "🧊", 3)); // 🧊 is "ice cube"; "ice" is first word
+    try std.testing.expect(inTop("cold", "🧊", 15)); // synonym-injected → ice cube
+}
+
+test "ranking: feelings — happy, sad, surprised, tired" {
+    try std.testing.expect(inTop("happy", "😀", 5)); // "grinning face smile happy emojig"
+    try std.testing.expect(inTop("sad", "😢", 5)); // "cry crying face sad tear"
+    try std.testing.expect(inTop("nauseated", "🤢", 3)); // 🤢 is "nauseated face" — first word
+    try std.testing.expect(inTop("sick", "🤒", 5)); // 🤒: "sick" is first 's' in "face with thermometer sick"
+    try std.testing.expect(inTop("shocked", "😨", 5)); // "fearful face scared shocked oops"
+    try std.testing.expect(inTop("tired", "😫", 3)); // "tired face upset whine" — first word
+    try std.testing.expect(inTop("sleepy", "😪", 3)); // "sleepy face tired" — first word
+    try std.testing.expect(inTop("dead", "💀", 3)); // "skull dead danger poison"
+    try std.testing.expect(inTop("wow", "🤯", 10)); // synonym-injected → exploding head
+    try std.testing.expect(inTop("silent", "🤐", 5)); // synonym-injected → zipper mouth
+    try std.testing.expect(inTop("hype", "🤩", 10)); // synonym-injected → star struck
+}
+
 test "benchmark: search throughput" {
     const duration_ms: u64 = blk: {
         const env = std.c.getenv("EMOJIG_BENCH") orelse break :blk 10;
