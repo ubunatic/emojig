@@ -185,6 +185,22 @@ fn resolveRequiredColorValue(val: std.json.Value, colors_spec: *const ColorsSpec
     return default_val;
 }
 
+pub const CsdSpec = struct {
+    /// Show title text in bold face.
+    title_bold: ?bool = null,
+    /// Title text color when the title bar background is dark (lum < threshold).
+    title_fg_on_dark: ?[]const u8 = null,
+    /// Title text color when the title bar background is light (lum >= threshold).
+    title_fg_on_light: ?[]const u8 = null,
+    /// Luminance threshold (0–255) separating "dark" from "light" title bars.
+    title_luminance_threshold: ?u32 = null,
+    /// Pixel height of the CSD title bar when gsettings auto-detection fails.
+    size_fallback: ?u32 = null,
+    /// Multiplier (in hundredths) applied to pt×text-scale when auto-sizing the
+    /// title bar: size = pt × scale × (size_pt_factor / 100).  Default 25 = 2.5×.
+    size_pt_factor: ?u32 = null,
+};
+
 pub const Theme = struct {
     icons: struct {
         dark: []const u8,
@@ -196,6 +212,7 @@ pub const Theme = struct {
         dark: PaletteSpec,
         light: PaletteSpec,
     },
+    csd: CsdSpec = .{},
 };
 
 pub const Keys = struct {

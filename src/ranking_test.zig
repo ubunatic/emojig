@@ -1122,6 +1122,163 @@ test "ranking: feelings — happy, sad, surprised, tired" {
     try std.testing.expect(inTop("hype", "🤩", 10)); // synonym-injected → star struck
 }
 
+// ── Group search coverage (issue 39) ─────────────────────────────────────────
+
+test "culinary: bbq and grilling" {
+    try std.testing.expect(inTop("bbq", "🍖", 5)); // synonym → meat on bone
+    try std.testing.expect(inTop("grill", "🍖", 5)); // synonym → meat on bone
+    try std.testing.expect(inTop("barbecue", "🍖", 5)); // synonym → meat on bone
+    try std.testing.expect(inTop("burger", "🍔", 3)); // alias: burger
+    try std.testing.expect(inTop("hot dog", "🌭", 3)); // direct name
+}
+
+test "culinary: fastfood" {
+    try std.testing.expect(inTop("pizza", "🍕", 3)); // direct name
+    try std.testing.expect(inTop("taco", "🌮", 3)); // direct name
+    try std.testing.expect(inTop("burger", "🍔", 3)); // alias: burger
+    try std.testing.expect(inTop("popcorn", "🍿", 3)); // direct name
+    try std.testing.expect(inTop("fries", "🍟", 3)); // direct name: french fries
+}
+
+test "culinary: seafood" {
+    try std.testing.expect(inTop("seafood", "🦀", 10)); // synonym → crab
+    try std.testing.expect(inTop("crab", "🦀", 3)); // direct name
+    try std.testing.expect(inTop("lobster", "🦞", 3)); // direct name
+    try std.testing.expect(inTop("shrimp", "🦐", 3)); // direct name
+    try std.testing.expect(inTop("sushi", "🍣", 3)); // direct name
+}
+
+test "culinary: dessert and sweets" {
+    try std.testing.expect(inTop("dessert", "🍰", 5)); // tag: dessert
+    try std.testing.expect(inTop("cake", "🎂", 3)); // alias: cake (birthday cake)
+    try std.testing.expect(inTop("cookie", "🍪", 3)); // direct name
+    try std.testing.expect(inTop("candy", "🍬", 3)); // direct name
+    try std.testing.expect(inTop("sweet", "🍬", 5)); // tag: sweet
+    try std.testing.expect(inTop("ice cream", "🍨", 3)); // direct name
+    try std.testing.expect(inTop("doughnut", "🍩", 3)); // alias: doughnut
+}
+
+test "culinary: healthy and vegan" {
+    try std.testing.expect(inTop("vegan", "🥗", 5)); // synonym → green salad
+    try std.testing.expect(inTop("healthy", "🥗", 5)); // synonym → green salad
+    try std.testing.expect(inTop("salad", "🥗", 3)); // direct: green salad
+    try std.testing.expect(inTop("avocado", "🥑", 3)); // direct name
+    try std.testing.expect(inTop("broccoli", "🥦", 3)); // direct name
+}
+
+test "culinary: cinema snacks" {
+    try std.testing.expect(inTop("cinema", "🍿", 5)); // synonym → popcorn
+    try std.testing.expect(inTop("popcorn", "🍿", 3)); // direct name
+    try std.testing.expect(inTop("snack", "🥨", 5)); // synonym → pretzel
+    try std.testing.expect(inTop("picnic", "🥪", 5)); // synonym → sandwich
+}
+
+test "drinks: beer and bar" {
+    try std.testing.expect(inTop("beer", "🍺", 3)); // alias: beer
+    try std.testing.expect(inTop("wine", "🍷", 3)); // direct: wine glass
+    try std.testing.expect(inTop("cocktail", "🍸", 3)); // direct: cocktail glass
+    try std.testing.expect(inTop("champagne", "🍾", 5)); // direct: bottle with popping cork
+    try std.testing.expect(inTop("whisky", "🥃", 5)); // tag: whisky (tumbler glass)
+}
+
+test "drinks: hangover" {
+    try std.testing.expect(inTop("hangover", "🤢", 5)); // synonym → nauseated face
+    try std.testing.expect(inTop("barf", "🤢", 5)); // tag: barf
+    try std.testing.expect(inTop("barf", "🤮", 5)); // tag: barf (face vomiting)
+}
+
+test "drinks: summer and tropical" {
+    try std.testing.expect(inTop("summer", "🍹", 5)); // tag: summer
+    try std.testing.expect(inTop("tropical", "🍹", 3)); // direct: tropical drink
+    try std.testing.expect(inTop("beach", "🏖️", 3)); // direct: beach with umbrella
+    try std.testing.expect(inTop("vacation", "🍹", 5)); // tag: vacation
+}
+
+test "drinks: dairy and tea" {
+    try std.testing.expect(inTop("dairy", "🥛", 5)); // synonym → glass of milk
+    try std.testing.expect(inTop("milk", "🥛", 3)); // direct: glass of milk
+    try std.testing.expect(inTop("tea", "🍵", 3)); // alias: tea (teacup without handle)
+    try std.testing.expect(inTop("teapot", "🫖", 3)); // direct name
+    try std.testing.expect(inTop("water", "💧", 5)); // tag: water (droplet)
+}
+
+test "feelings: angry and rage" {
+    try std.testing.expect(inTop("angry", "😠", 3)); // direct: angry face
+    try std.testing.expect(inTop("mad", "😠", 5)); // synonym → angry
+    try std.testing.expect(inTop("rage", "😡", 3)); // alias: rage (enraged face)
+    try std.testing.expect(inTop("annoyed", "😠", 5)); // synonym → unamused face; also direct tag on 😠
+}
+
+test "feelings: scared and fearful" {
+    try std.testing.expect(inTop("scared", "😨", 5)); // tag: scared (fearful face)
+    try std.testing.expect(inTop("fearful", "😨", 3)); // alias: fearful
+    try std.testing.expect(inTop("horror", "😱", 5)); // tag: horror (face screaming in fear)
+    try std.testing.expect(inTop("scream", "😱", 3)); // alias: scream
+}
+
+test "feelings: nervous and bored" {
+    try std.testing.expect(inTop("nervous", "😰", 5)); // tag: nervous
+    try std.testing.expect(inTop("anxious", "😰", 3)); // direct: anxious face with sweat
+    try std.testing.expect(inTop("stressed", "😰", 5)); // synonym → cold sweat (alias of anxious face)
+    try std.testing.expect(inTop("bored", "😒", 5)); // synonym → unamused face
+}
+
+test "feelings: disgusted and embarrassed" {
+    try std.testing.expect(inTop("disgusted", "🤢", 5)); // tag: disgusted
+    try std.testing.expect(inTop("nauseated", "🤢", 3)); // direct: nauseated face
+    try std.testing.expect(inTop("embarrassed", "😳", 5)); // synonym → flushed face
+    try std.testing.expect(inTop("flushed", "😳", 3)); // alias: flushed
+}
+
+test "feelings: evil and mischievous" {
+    try std.testing.expect(inTop("evil", "🦹", 3)); // "supervillain" contains "evil" compactly
+    try std.testing.expect(inTop("devil", "👿", 3)); // tag: devil (angry face with horns)
+    try std.testing.expect(inTop("devil", "😈", 5)); // tag: devil (smiling face with horns)
+    try std.testing.expect(inTop("mischievous", "😈", 10)); // synonym → smiling face with horns
+}
+
+test "feelings: love and romance" {
+    try std.testing.expect(inTop("love", "❤️", 3)); // ❤️ ranks first for "love"
+    try std.testing.expect(inTop("romantic", "🥰", 5)); // synonym → smiling face with hearts
+    try std.testing.expect(inTop("kiss", "💋", 3)); // alias: kiss (kiss mark)
+    try std.testing.expect(inTop("flirt", "😘", 5)); // tag: flirt (face blowing a kiss)
+    try std.testing.expect(inTop("wink", "😉", 3)); // alias: wink (winking face)
+}
+
+test "feelings: laugh and lol" {
+    try std.testing.expect(inTop("laugh", "🤣", 5)); // tag: laughing (rolling on floor laughing)
+    try std.testing.expect(inTop("rofl", "🤣", 3)); // alias: rofl
+    try std.testing.expect(inTop("laughing", "🤣", 3)); // tag: laughing (prefix match)
+}
+
+test "feelings: smart and nerd" {
+    try std.testing.expect(inTop("nerd", "🤓", 3)); // direct: nerd face
+    try std.testing.expect(inTop("geek", "🤓", 3)); // tag: geek
+    try std.testing.expect(inTop("smart", "🤓", 5)); // synonym → nerd face
+    try std.testing.expect(inTop("glasses", "👓", 3)); // alias: glasses (eyeglasses)
+}
+
+test "feelings: money and rich" {
+    try std.testing.expect(inTop("rich", "🤑", 3)); // tag: rich
+    try std.testing.expect(inTop("money", "💰", 3)); // alias: money (money bag)
+    try std.testing.expect(inTop("wealth", "🤑", 5)); // synonym → money-mouth face
+    try std.testing.expect(inTop("dollar", "💵", 3)); // direct: dollar banknote
+}
+
+test "feelings: shh and quiet" {
+    try std.testing.expect(inTop("shh", "🤫", 5)); // synonym → shushing face
+    try std.testing.expect(inTop("quiet", "🤫", 5)); // tag: quiet
+    try std.testing.expect(inTop("silence", "🤫", 5)); // tag: silence
+}
+
+test "feelings: crazy and goofy" {
+    try std.testing.expect(inTop("goofy", "🤪", 3)); // tag: goofy (zany face)
+    try std.testing.expect(inTop("wacky", "🤪", 3)); // tag: wacky
+    try std.testing.expect(inTop("crazy", "🤪", 5)); // synonym → zany face
+    try std.testing.expect(inTop("wild", "🤪", 5)); // synonym → zany face
+    try std.testing.expect(inTop("zany", "🤪", 3)); // direct: zany face
+}
+
 test "benchmark: search throughput" {
     const duration_ms: u64 = blk: {
         const env = std.c.getenv("EMOJIG_BENCH") orelse break :blk 10;

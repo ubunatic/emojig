@@ -34,6 +34,13 @@ icons:
     light: "\U0001F31E"
     system: "\U0001F506"
     menu: ≡
+csd:
+    title_bold: false
+    title_fg_on_dark: '#e0e0e0'
+    title_fg_on_light: '#1e1e1e'
+    title_luminance_threshold: 140
+    size_fallback: 26
+    size_pt_factor: 25
 themes:
     dark:
         app_bg: null

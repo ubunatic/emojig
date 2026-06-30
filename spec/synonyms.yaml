@@ -49,6 +49,8 @@ synonyms:
         - plane
     angry:
         - mad
+    annoyed:
+        - unamused face
     app:
         - application
     application:
@@ -65,6 +67,10 @@ synonyms:
         - bag
     bag:
         - backpack
+    barbecue:
+        - meat on bone
+    bbq:
+        - meat on bone
     beverage:
         - drink
     bicycle:
@@ -73,6 +79,8 @@ synonyms:
         - large
     bike:
         - bicycle
+    bored:
+        - unamused face
     cap:
         - hat
     car:
@@ -105,6 +113,10 @@ synonyms:
         - hot pepper
     chips:
         - fries
+    cinema:
+        - popcorn
+    crazy:
+        - zany face
     cold:
         - chilly
         - ice cube
@@ -138,6 +150,8 @@ synonyms:
         - beverage
     earth:
         - globe
+    embarrassed:
+        - flushed face
     easy:
         - simple
     elderly:
@@ -152,6 +166,8 @@ synonyms:
         - speedy
     film:
         - movie
+    flirt:
+        - face blowing a kiss
     fire:
         - flame
     flame:
@@ -168,14 +184,20 @@ synonyms:
         - present
     globe:
         - earth
+    grill:
+        - meat on bone
     guy:
         - man
     haha:
         - laugh
+    hangover:
+        - nauseated face
     happy:
         - smile
     hat:
         - cap
+    healthy:
+        - green salad
     heart:
         - love
     home:
@@ -212,6 +234,8 @@ synonyms:
         - letter
     man:
         - guy
+    mischievous:
+        - smiling face with horns
     meal:
         - food
     medication:
@@ -232,6 +256,8 @@ synonyms:
         - elderly
     pants:
         - trousers
+    picnic:
+        - sandwich
     pc:
         - computer
     phone:
@@ -261,6 +287,8 @@ synonyms:
         - correct
     rock:
         - stone
+    romantic:
+        - smiling face with hearts
     run:
         - jog
     sad:
@@ -270,6 +298,10 @@ synonyms:
         - frightened
     sea:
         - ocean
+    seafood:
+        - crab
+    shh:
+        - shushing face
     shoe:
         - sneaker
     shout:
@@ -286,8 +318,12 @@ synonyms:
         - slow
     small:
         - tiny
+    smart:
+        - nerd face
     smile:
         - happy
+    snack:
+        - pretzel
     sneaker:
         - shoe
     sobbing:
@@ -310,6 +346,8 @@ synonyms:
         - quick
     stone:
         - rock
+    stressed:
+        - cold sweat
     strong:
         - powerful
     student:
@@ -335,6 +373,8 @@ synonyms:
         - car
     tv:
         - television
+    wealth:
+        - money mouth face
     wealthy:
         - rich
     weather:
@@ -360,6 +400,8 @@ synonyms:
         - bug animal
     chilly:
         - cold face freezing
+    dairy:
+        - milk glass
     daisy:
         - blossom flower
     dawn:
@@ -393,6 +435,10 @@ synonyms:
         - flying saucer
     warm:
         - thermometer temp
+    vegan:
+        - green salad
+    wild:
+        - zany face
     winner:
         - champion
     woman:

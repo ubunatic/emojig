@@ -53,6 +53,9 @@
     "angry": [
       "mad"
     ],
+    "annoyed": [
+      "unamused face"
+    ],
     "app": [
       "application"
     ],
@@ -75,6 +78,12 @@
     "bag": [
       "backpack"
     ],
+    "barbecue": [
+      "meat on bone"
+    ],
+    "bbq": [
+      "meat on bone"
+    ],
     "beverage": [
       "drink"
     ],
@@ -86,6 +95,9 @@
     ],
     "bike": [
       "bicycle"
+    ],
+    "bored": [
+      "unamused face"
     ],
     "cap": [
       "hat"
@@ -133,6 +145,12 @@
     ],
     "chips": [
       "fries"
+    ],
+    "cinema": [
+      "popcorn"
+    ],
+    "crazy": [
+      "zany face"
     ],
     "cold": [
       "chilly",
@@ -183,6 +201,9 @@
     "earth": [
       "globe"
     ],
+    "embarrassed": [
+      "flushed face"
+    ],
     "easy": [
       "simple"
     ],
@@ -202,6 +223,9 @@
     ],
     "film": [
       "movie"
+    ],
+    "flirt": [
+      "face blowing a kiss"
     ],
     "fire": [
       "flame"
@@ -227,17 +251,26 @@
     "globe": [
       "earth"
     ],
+    "grill": [
+      "meat on bone"
+    ],
     "guy": [
       "man"
     ],
     "haha": [
       "laugh"
     ],
+    "hangover": [
+      "nauseated face"
+    ],
     "happy": [
       "smile"
     ],
     "hat": [
       "cap"
+    ],
+    "healthy": [
+      "green salad"
     ],
     "heart": [
       "love"
@@ -293,6 +326,9 @@
     "man": [
       "guy"
     ],
+    "mischievous": [
+      "smiling face with horns"
+    ],
     "meal": [
       "food"
     ],
@@ -322,6 +358,9 @@
     ],
     "pants": [
       "trousers"
+    ],
+    "picnic": [
+      "sandwich"
     ],
     "pc": [
       "computer"
@@ -366,6 +405,9 @@
     "rock": [
       "stone"
     ],
+    "romantic": [
+      "smiling face with hearts"
+    ],
     "run": [
       "jog"
     ],
@@ -378,6 +420,12 @@
     ],
     "sea": [
       "ocean"
+    ],
+    "seafood": [
+      "crab"
+    ],
+    "shh": [
+      "shushing face"
     ],
     "shoe": [
       "sneaker"
@@ -403,8 +451,14 @@
     "small": [
       "tiny"
     ],
+    "smart": [
+      "nerd face"
+    ],
     "smile": [
       "happy"
+    ],
+    "snack": [
+      "pretzel"
     ],
     "sneaker": [
       "shoe"
@@ -437,6 +491,9 @@
     ],
     "stone": [
       "rock"
+    ],
+    "stressed": [
+      "cold sweat"
     ],
     "strong": [
       "powerful"
@@ -475,6 +532,9 @@
     "tv": [
       "television"
     ],
+    "wealth": [
+      "money mouth face"
+    ],
     "wealthy": [
       "rich"
     ],
@@ -504,6 +564,9 @@
     ],
     "chilly": [
       "cold face freezing"
+    ],
+    "dairy": [
+      "milk glass"
     ],
     "daisy": [
       "blossom flower"
@@ -553,6 +616,12 @@
     ],
     "warm": [
       "thermometer temp"
+    ],
+    "vegan": [
+      "green salad"
+    ],
+    "wild": [
+      "zany face"
     ],
     "winner": [
       "champion"
