@@ -30,6 +30,7 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 ## 💻 Developer & Language Conventions
 
 * [**Agentic Workflows**](AgenticWorkflows.md): Coding guidelines, prompt limits, automated workflows, and workspace conventions for coding agents.
+* [**Zig API Pitfalls**](Zig.md): Non-obvious Zig 0.16 API shapes for pipes, subprocess spawning, file descriptors, and common type-resolution errors. Read before writing any fd/process code.
 * [**Bash Style Guide**](Bash.md): Code conventions and formatting rules for POSIX/Bash scripts.
 * [**Build Speed**](BuildSpeed.md): Compilation caching and incremental compiler performance adjustments.
 * [**Go Scripts**](GoScripts.md) & [**Go Language**](Go.md): Standalone script style, standard library constraints, and Go environment conventions.

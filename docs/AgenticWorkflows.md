@@ -60,49 +60,12 @@ When writing test scripts that simulate terminal interaction using a PTY, writin
 
 ## 2b. Zig 0.16 Subprocess & Pipe APIs
 
-Spawning a child process that captures stdout requires threading three APIs that have changed names or shapes from earlier Zig versions.
+See **[`docs/Zig.md`](Zig.md)** for the full reference. Key pitfalls:
 
-### `pipe2` — use `std.os.linux.pipe2`, not `std.posix.pipe2`
-
-`std.posix` does not expose `pipe2` in Zig 0.16. The Linux-specific syscall wrapper lives at `std.os.linux.pipe2`:
-
-```zig
-var fds: [2]std.posix.fd_t = undefined;
-const flags = std.os.linux.O{ .NONBLOCK = true, .CLOEXEC = true };
-const rc = std.os.linux.pipe2(&fds, flags);
-switch (std.posix.errno(rc)) {
-    .SUCCESS => {},
-    else => return error.SystemResources,
-}
-```
-
-(Pattern from `src/tui.zig:setupSelfPipe`.)
-
-### `std.process.SpawnOptions.StdIo.file` — needs `flags` field
-
-To redirect a child's stdout to an existing fd, use `.file`:
-
-```zig
-.stdout = .{ .file = .{ .handle = fd, .flags = .{ .nonblocking = false } } },
-```
-
-`StdIo.file` is `std.Io.File` (from `std/Io/File.zig`), which has two required fields: `handle: std.posix.fd_t` and `flags: Flags{ nonblocking: bool }`. Omitting `flags` gives a compile error `missing struct field: flags`.
-
-### `close` / `read` — use `std.posix.system.*`
-
-`std.posix.close` and `std.posix.read` do not exist in Zig 0.16. Use the `system` sub-namespace:
-
-```zig
-_ = std.posix.system.close(fd);
-// read returns usize (raw syscall result); check with errno:
-const n: isize = @bitCast(std.posix.system.read(fd, buf.ptr, buf.len));
-```
-
-Or use the higher-level `std.posix.read(fd, buf)` which returns `!usize` (throws on error).
-
-### `@constCast` for `std.mem.trim` return
-
-`std.mem.trim(u8, ...)` returns `[]const u8` even when the input is `[]u8`. If the caller needs a mutable slice, use `@constCast(trimmed)`. This is safe because the underlying buffer is mutable — the `const` is only the trim function's signature.
+* Use `std.os.linux.pipe2` — `std.posix.pipe2` does not exist.
+* `StdIo.file` requires `{ .handle, .flags: { .nonblocking } }` — omitting `flags` is a compile error.
+* Use `std.posix.system.close(fd)` — `std.posix.close` does not exist.
+* `std.mem.trim` returns `[]const u8`; use `@constCast` if you need `[]u8`.
 
 ---
 

@@ -1,5 +1,7 @@
 # Emojig: Agent Conventions & Architecture Guidelines
 
+> **Note:** `CLAUDE.md` is always a symlink to `AGENTS.md`. All content lives here in `AGENTS.md` — never edit `CLAUDE.md` directly.
+
 This document details the architectural decisions, coding standards, and safety requirements established for the **Emojig** project. Any agent resuming work on this repository must adhere strictly to these conventions.
 
 ## Quickstart
@@ -10,6 +12,7 @@ This document details the architectural decisions, coding standards, and safety 
 * Make sure --tui close behavour is safe!
 * **Before touching search, emoji data, or ranking:** read [`docs/SearchEngine.md`](docs/SearchEngine.md) — documents non-obvious pitfalls (word-order trap, `isBoxArt` codepoint range, synonym-vs-tag tradeoffs, greedy-matcher behaviour) that are easy to re-derive incorrectly from scratch.
 * **Before touching theme/palette fields:** read [`docs/SpecDrivenConfig.md §13`](docs/SpecDrivenConfig.md) — documents the null-color "punch-through" contract, cap vs. sep fallback distinction, and field tables. Changing fallback chains without reading it can reintroduce the near-black separator bug.
+* **Before writing any Zig subprocess, pipe, fd, or process-spawn code:** read [`docs/Zig.md`](docs/Zig.md) — documents non-obvious Zig 0.16 API shapes (`pipe2`, `StdIo.file`, `posix.system.close`, `mem.trim` constness, etc.) that cause hard-to-diagnose compile errors.
 
 ## Assumptions for Agentic Work
 * Assume all tools you need are installed (ffmpeg, go, zig, terminal emulators).
