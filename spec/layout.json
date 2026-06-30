@@ -18,6 +18,14 @@
     "exit_preview_tui": false,
     "exit_preview_gui": false
   },
+  "components": {
+    "scrollpane": {
+      "overflow": "hidden"
+    },
+    "dropdown": {
+      "overflow": "hidden"
+    }
+  },
   "rows_order": [
     "top_padding",
     "search_bar",

@@ -195,6 +195,17 @@ test "ranking: nature — plants, trees, flowers, weather, landscapes" {
     try std.testing.expect(inTop("volcano", "🌋", 3));
 }
 
+test "ranking: prefix auto-detect exclusion" {
+    // "fl" should not auto-detect the flowers category: we should see non-flower emojis like flute (🪈) or fly (🪰) or flamingo (🦩)
+    try std.testing.expect(inTop("fl", "🪈", 24) or inTop("fl", "🪰", 24) or inTop("fl", "🦩", 24));
+
+    // "ins" should not auto-detect the insects category: we should see non-insect emojis like chains (⛓️) or rhinoceros (🦏)
+    try std.testing.expect(inTop("ins", "⛓️", 24) or inTop("ins", "🦏", 24));
+
+    // "wea" should not auto-detect the weather category: we should see non-weather emojis like downcast face with sweat (😓) or sweat droplets (💦)
+    try std.testing.expect(inTop("wea", "😓", 24) or inTop("wea", "💦", 24));
+}
+
 test "ranking: food and drink" {
     try std.testing.expect(inTop("pizza", "🍕", 3));
     try std.testing.expect(inTop("coffee", "☕", 3));
@@ -686,6 +697,53 @@ test "block element discoverability: sparkline and progress bar chars" {
     std.debug.print("  b: gauge     → ▏#{d}  ▌#{d}\n", .{ ga1, ga2 });
     try std.testing.expect(ga1 > 0 and ga1 <= 10);
     try std.testing.expect(ga2 > 0 and ga2 <= 10);
+}
+
+test "ranking: weather emojis" {
+    // Weather query should yield clouds, rain, snow, lightning, thermometer, sun, rainbow, etc.
+    try std.testing.expect(inTop("weather", "☁️", 24));
+    try std.testing.expect(inTop("weather", "🌧️", 24));
+    try std.testing.expect(inTop("weather", "⛈️", 24));
+    try std.testing.expect(inTop("weather", "🌨️", 24));
+    try std.testing.expect(inTop("weather", "🌤️", 24));
+    try std.testing.expect(inTop("weather", "🌥️", 24));
+    try std.testing.expect(inTop("weather", "🌦️", 24));
+    try std.testing.expect(inTop("weather", "🌡️", 24));
+    try std.testing.expect(inTop("weather", "☀️", 24));
+    try std.testing.expect(inTop("weather", "🌈", 24));
+}
+
+test "ranking: bugs query" {
+    // Query "bugs" should yield fly, butterfly, bee, cockroach, ant, spider, lady beetle, caterpillar, etc.
+    var top_matches: [512]Match = undefined;
+    var top_count: usize = 0;
+    _ = search("bugs", &top_matches, &top_count, 512);
+    std.debug.print("\nTop bugs query matches (count={d}):\n", .{top_count});
+    for (top_matches[0..@min(top_count, 50)], 0..) |m, i| {
+        const entry = EmojiDb.getEntry(m.index);
+        std.debug.print("  #{d}: {s} ({s}) score={d} search={s}\n", .{ i + 1, entry.emoji, entry.name, m.score, entry.search });
+    }
+
+    try std.testing.expect(inTop("bugs", "🐛", 24));
+    try std.testing.expect(inTop("bugs", "🐞", 24));
+    try std.testing.expect(inTop("bugs", "🪰", 24));
+    try std.testing.expect(inTop("bugs", "🦋", 24));
+    try std.testing.expect(inTop("bugs", "🐝", 24));
+    try std.testing.expect(inTop("bugs", "🪳", 24));
+    try std.testing.expect(inTop("bugs", "🐜", 24));
+    try std.testing.expect(inTop("bugs", "🕷️", 24));
+    try std.testing.expect(inTop("bugs", "🕷︎", 24));
+
+    // Same for singular "bug"
+    try std.testing.expect(inTop("bug", "🐛", 24));
+    try std.testing.expect(inTop("bug", "🐞", 24));
+    try std.testing.expect(inTop("bug", "🪰", 24));
+    try std.testing.expect(inTop("bug", "🦋", 24));
+    try std.testing.expect(inTop("bug", "🐝", 24));
+    try std.testing.expect(inTop("bug", "🪳", 24));
+    try std.testing.expect(inTop("bug", "🐜", 24));
+    try std.testing.expect(inTop("bug", "🕷️", 24));
+    try std.testing.expect(inTop("bug", "🕷︎", 24));
 }
 
 test "benchmark: search throughput" {

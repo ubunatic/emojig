@@ -285,6 +285,11 @@ func main() {
 	fmt.Println("PASS: Multi-selection mode test passed.")
 
 	fmt.Println()
+	fmt.Println("=== Test 7: Visual quality and layout correctness test ===")
+	runVisualQualityTest(binaryPath)
+	fmt.Println("PASS: Visual quality and layout correctness test passed.")
+
+	fmt.Println()
 	fmt.Println("All TUI tests passed.")
 }
 
@@ -882,6 +887,240 @@ func runQuitCommandTest(binaryPath string) {
 		}
 		fmt.Println("PASS: quit command /quit exited cleanly.")
 	}
+}
+
+func runVisualQualityTest(binaryPath string) {
+	master, slaveName := spawnPTY()
+	defer master.Close()
+
+	slave, err := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		fmt.Printf("Error opening slave PTY %s: %v\n", slaveName, err)
+		os.Exit(1)
+	}
+	defer slave.Close()
+
+	// 7a: Settings layout bounds
+	{
+		fmt.Println("Subtest 7a: Verifying Settings screen layout...")
+		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
+		defer master.Close()
+
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Open settings screen
+		master.Write([]byte("/s\n"))
+		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		tsSettings := NewTerminalState(80, 24)
+		tsSettings.Parse(rawBytes)
+
+		if err := tsSettings.ValidateLayout(33); err != nil {
+			tsSettings.PrintScreen()
+			fmt.Printf("FAIL: Settings screen layout validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println("PASS: Settings screen layout bounds are correct.")
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+
+	// 7b: About layout bounds and background consistency
+	{
+		fmt.Println("Subtest 7b: Verifying About screen layout and backgrounds...")
+		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
+		defer master.Close()
+
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Open About screen
+		master.Write([]byte("/a\n"))
+		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		tsAbout := NewTerminalState(80, 24)
+		tsAbout.Parse(rawBytes)
+
+		if err := tsAbout.ValidateLayout(33); err != nil {
+			tsAbout.PrintScreen()
+			fmt.Printf("FAIL: About screen layout validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println("PASS: About screen layout bounds are correct.")
+
+		for y := 3; y <= 8; y++ {
+			leftBg := tsAbout.Grid[y][1].BgColor
+			if leftBg == "48;5;235" {
+				rightBg := tsAbout.Grid[y][32].BgColor
+				if rightBg != leftBg {
+					tsAbout.PrintScreen()
+					fmt.Printf("FAIL: About screen row %d has inconsistent bg: left %q, right %q\n", y, leftBg, rightBg)
+					cmd.Process.Kill()
+					os.Exit(1)
+				}
+			}
+		}
+		fmt.Println("PASS: About screen background is consistent.")
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+
+	// 7c: Help layout bounds
+	{
+		fmt.Println("Subtest 7c: Verifying Help screen layout...")
+		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
+		defer master.Close()
+
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Open Help screen
+		master.Write([]byte("/h\n"))
+		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		tsHelp := NewTerminalState(80, 24)
+		tsHelp.Parse(rawBytes)
+
+		if err := tsHelp.ValidateLayout(33); err != nil {
+			tsHelp.PrintScreen()
+			fmt.Printf("FAIL: Help screen layout validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println("PASS: Help screen layout bounds are correct.")
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+
+	// 7d: Settings dropdown menu layout bounds
+	{
+		fmt.Println("Subtest 7d: Verifying dropdown menu layout...")
+		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
+		defer master.Close()
+
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Open settings screen
+		master.Write([]byte("/s\n"))
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Navigate down to "shell key binding" row (index 1 in settings list)
+		master.Write([]byte("\x1b[B"))
+		time.Sleep(200 * time.Millisecond)
+
+		// Open dropdown
+		master.Write([]byte("\n"))
+		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		tsDropdown := NewTerminalState(80, 24)
+		tsDropdown.Parse(rawBytes)
+
+		if err := tsDropdown.ValidateLayout(33); err != nil {
+			tsDropdown.PrintScreen()
+			fmt.Printf("FAIL: Dropdown menu layout validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println("PASS: Dropdown menu layout bounds are correct (no characters overflow).")
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+
+	fmt.Println("PASS: Visual quality and layout correctness test passed.")
+}
+
+func collectScreenBytes(chunksChan chan []byte, timeout time.Duration) []byte {
+	var rawBytes []byte
+	// 1. Wait for the first chunk with a timeout
+	select {
+	case chunk, ok := <-chunksChan:
+		if !ok {
+			return nil
+		}
+		rawBytes = append(rawBytes, chunk...)
+	case <-time.After(timeout):
+		return nil
+	}
+
+	// 2. Drain all other available chunks
+	for {
+		select {
+		case chunk, ok := <-chunksChan:
+			if !ok {
+				return rawBytes
+			}
+			rawBytes = append(rawBytes, chunk...)
+		default:
+			return rawBytes
+		}
+	}
+}
+
+func drainTransitionBytes(chunksChan chan []byte) {
+	for {
+		select {
+		case _, ok := <-chunksChan:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
+}
+
+func spawnEmojigTUI(binaryPath string, cols, rows int) (*os.File, *exec.Cmd, chan []byte) {
+	master, slaveName := spawnPTY()
+	slave, err := os.OpenFile(slaveName, os.O_RDWR, 0)
+	if err != nil {
+		fmt.Printf("Error opening slave PTY: %v\n", err)
+		os.Exit(1)
+	}
+
+	type winsize struct{ Row, Col, Xpixel, Ypixel uint16 }
+	ws := winsize{Row: 24, Col: 80}
+	_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, slave.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws)))
+
+	cmd := exec.Command(binaryPath, "--tui")
+	cmd.Stdin = slave
+	cmd.Stdout = slave
+	cmd.Stderr = slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:  true,
+		Setctty: true,
+		Ctty:    0,
+	}
+	cmd.Env = append(os.Environ(),
+		"EMOJIG_THEME=dark",
+		"EMOJIG_EXIT_PREVIEW=0",
+		fmt.Sprintf("EMOJIG_COLS=%d", cols),
+		fmt.Sprintf("EMOJIG_ROWS=%d", rows),
+		"EMOJIG_COMPACT=0",
+	)
+
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error starting command: %v\n", err)
+		os.Exit(1)
+	}
+	slave.Close()
+
+	chunksChan := make(chan []byte, 100)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				b := make([]byte, n)
+				copy(b, buf[:n])
+				chunksChan <- b
+				if strings.Contains(string(b), "\x1b[6n") {
+					master.Write([]byte("\x1b[24;80R"))
+				}
+			}
+			if err != nil {
+				close(chunksChan)
+				return
+			}
+		}
+	}()
+
+	return master, cmd, chunksChan
 }
 
 

@@ -106,6 +106,201 @@
       ]
     },
     {
+      "name": "plants",
+      "short": "plant",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "plant",
+        "tree",
+        "trees",
+        "leaf",
+        "leaves",
+        "grass",
+        "seed",
+        "cactus",
+        "wood"
+      ]
+    },
+    {
+      "name": "flowers",
+      "short": "flower",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "flower",
+        "flowers",
+        "blossom",
+        "rose",
+        "tulip",
+        "sunflower",
+        "cherry",
+        "petal"
+      ]
+    },
+    {
+      "name": "insects",
+      "short": "insect",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "insect",
+        "insects",
+        "bug",
+        "bugs",
+        "fly",
+        "spider",
+        "butterfly",
+        "bee",
+        "ant"
+      ]
+    },
+    {
+      "name": "birds",
+      "short": "bird",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "bird",
+        "birds",
+        "duck",
+        "owl",
+        "eagle",
+        "chicken"
+      ]
+    },
+    {
+      "name": "fish",
+      "short": "fish",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "fish",
+        "fishes",
+        "shark",
+        "marine",
+        "crab",
+        "lobster",
+        "shrimp",
+        "octopus",
+        "blowfish",
+        "jellyfish",
+        "seahorse"
+      ]
+    },
+    {
+      "name": "drinks",
+      "short": "drink",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "drink",
+        "drinks",
+        "beverage",
+        "beverages",
+        "coffee",
+        "tea",
+        "wine",
+        "beer",
+        "juice"
+      ]
+    },
+    {
+      "name": "tools",
+      "short": "tool",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "tool",
+        "tools",
+        "hammer",
+        "wrench",
+        "screwdriver",
+        "gear",
+        "axe"
+      ]
+    },
+    {
+      "name": "clothes",
+      "short": "clothing",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "clothing",
+        "clothes",
+        "wear",
+        "shirt",
+        "pants",
+        "dress",
+        "shoe",
+        "shoes",
+        "hat"
+      ]
+    },
+    {
+      "name": "buildings",
+      "short": "building",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "building",
+        "buildings",
+        "house",
+        "home",
+        "office",
+        "castle",
+        "school",
+        "tower"
+      ]
+    },
+    {
+      "name": "instruments",
+      "short": "instrument",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "instrument",
+        "instruments",
+        "music",
+        "musical",
+        "guitar",
+        "piano",
+        "violin",
+        "drum"
+      ]
+    },
+    {
+      "name": "sports",
+      "short": "sport",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "sport",
+        "sports",
+        "ball",
+        "soccer",
+        "football",
+        "tennis",
+        "game"
+      ]
+    },
+    {
+      "name": "weather",
+      "short": "weather",
+      "icon": "",
+      "switcher": false,
+      "synonyms": [
+        "weather",
+        "sun",
+        "cloud",
+        "clouds",
+        "rain",
+        "snow",
+        "wind",
+        "storm"
+      ]
+    },
+    {
       "name": "objects",
       "short": "object",
       "icon": "💡",

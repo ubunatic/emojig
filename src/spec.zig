@@ -58,6 +58,15 @@ pub const Animation = struct {
     exit_preview_gui: bool = true,
 };
 
+pub const ComponentStyle = struct {
+    overflow: []const u8 = "hidden",
+};
+
+pub const Components = struct {
+    scrollpane: ComponentStyle = .{},
+    dropdown: ComponentStyle = .{},
+};
+
 pub const Layout = struct {
     tui: Dims,
     gui: Dims,
@@ -65,6 +74,7 @@ pub const Layout = struct {
     max_query_len: usize,
     animation: Animation = .{},
     top_padding: bool = true,
+    components: Components = .{},
 };
 
 pub const PaletteSpec = struct {

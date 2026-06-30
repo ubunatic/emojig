@@ -177,6 +177,110 @@ pub fn ansiDisplayWidth(text: []const u8) usize {
     return width;
 }
 
+pub fn truncateAnsi(buf: []u8, text: []const u8, max_width: usize) []const u8 {
+    var width: usize = 0;
+    var i: usize = 0;
+    var out: usize = 0;
+    while (i < text.len and out < buf.len) {
+        const b = text[i];
+        if (b == 0x1b) {
+            if (out < buf.len) {
+                buf[out] = b;
+                out += 1;
+            }
+            i += 1;
+            if (i < text.len) {
+                const next = text[i];
+                if (next == '[') { // CSI
+                    if (out < buf.len) {
+                        buf[out] = next;
+                        out += 1;
+                    }
+                    i += 1;
+                    while (i < text.len) : (i += 1) {
+                        const c = text[i];
+                        if (out < buf.len) {
+                            buf[out] = c;
+                            out += 1;
+                        }
+                        if (c >= 0x40 and c <= 0x7e) {
+                            i += 1;
+                            break;
+                        }
+                    }
+                } else if (next == ']') { // OSC
+                    if (out < buf.len) {
+                        buf[out] = next;
+                        out += 1;
+                    }
+                    i += 1;
+                    while (i < text.len) {
+                        const c = text[i];
+                        if (out < buf.len) {
+                            buf[out] = c;
+                            out += 1;
+                        }
+                        if (c == 0x07) {
+                            i += 1;
+                            break;
+                        }
+                        if (c == 0x1b and i + 1 < text.len and text[i + 1] == '\\') {
+                            if (out < buf.len) {
+                                buf[out] = '\\';
+                                out += 1;
+                            }
+                            i += 2;
+                            break;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    if (out < buf.len) {
+                        buf[out] = next;
+                        out += 1;
+                    }
+                    i += 1;
+                }
+            }
+        } else {
+            const len = std.unicode.utf8ByteSequenceLength(b) catch 1;
+            if (i + len <= text.len) {
+                const cp_bytes = text[i .. i + len];
+                const cp = std.unicode.utf8Decode(cp_bytes) catch '?';
+                var w: usize = 0;
+                if (cp == 0xFE0F) {
+                    // Variation Selector-16: 0 width
+                } else if (cp >= 0x2E80) {
+                    w = 2;
+                } else if (cp >= 0x2000) {
+                    w = if (g_wide_ambiguous) @as(usize, 2) else @as(usize, 1);
+                } else if (cp >= 0x20) {
+                    w = 1;
+                }
+                if (width + w > max_width) {
+                    if (out + 4 <= buf.len) {
+                        @memcpy(buf[out .. out + 4], "\x1b[0m");
+                        out += 4;
+                    }
+                    break;
+                }
+                const copy_len = @min(len, buf.len - out);
+                @memcpy(buf[out .. out + copy_len], cp_bytes[0..copy_len]);
+                out += copy_len;
+                width += w;
+                i += len;
+            } else {
+                if (out < buf.len) {
+                    buf[out] = b;
+                    out += 1;
+                }
+                i += 1;
+            }
+        }
+    }
+    return buf[0..out];
+}
+
 /// Render a status-bar template from spec/strings.json, substituting the live
 /// match count for a "{count}" placeholder. Templates without the placeholder
 /// (the help hints) are returned unchanged, avoiding a copy.
@@ -459,4 +563,31 @@ test "scrollbarCell smooth sub-character positioning" {
     const tg = scrollbarThumb(.expand, 4, 16);
     const pos_max = smoothScrollPos(12, 12, tg.travel); // scroll_top == max_scroll
     try std.testing.expectEqual(tg.travel * 8, pos_max); // thumb top at last row*8, no overflow
+}
+
+pub fn renderPaneLine(
+    buf: []u8,
+    text: []const u8,
+    content_width: usize,
+    app_bg: []const u8,
+    view_bg: []const u8,
+    grid_fg_only: []const u8,
+    overflow_hidden: bool,
+) ![]const u8 {
+    var local_text = text;
+    var trunc_buf: [1024]u8 = undefined;
+    if (overflow_hidden) {
+        local_text = truncateAnsi(&trunc_buf, text, content_width);
+    }
+    const vis_w = ansiDisplayWidth(local_text);
+    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+    const spaces = " " ** 512;
+    return std.fmt.bufPrint(buf, "{s} {s}{s}{s}{s}{s}", .{
+        app_bg,
+        view_bg,
+        grid_fg_only,
+        local_text,
+        view_bg,
+        spaces[0..@min(pad_len, spaces.len)],
+    });
 }

@@ -322,6 +322,23 @@ synonyms:
         - television
     wealthy:
         - rich
+    weather:
+        - cloud cloudy weather travel
+        - rainy cloud with rain weather travel
+        - snowy cloud with snow weather travel
+        - sunny sun weather travel
+        - sunny sun behind small cloud
+        - sunny sun behind large cloud
+        - stormy cloud with lightning
+        - stormy cloud with lightning and rain
+        - fog foggy weather travel
+        - temp
+        - zap lightning high voltage
+        - rainbow sky colorful spectrum
+        - partly sunny sun behind cloud
+        - rainy sun behind rain cloud
+        - thermometer temp weather travel
+        - snowflake winter cold weather
     winner:
         - champion
     woman:

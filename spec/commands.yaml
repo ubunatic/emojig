@@ -13,12 +13,6 @@ commands:
     - name: settings
       short: s
       action: open_settings
-    - name: menu
-      short: mn
-      action: open_settings
-    - name: hamburger
-      short: hb
-      action: open_settings
     - name: categories
       short: c
       action: open_categories

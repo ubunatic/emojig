@@ -38,6 +38,8 @@ const wordRight = tui_draw.wordRight;
 const ringBell = tui_draw.ringBell;
 const navSelect = tui_draw.navSelect;
 const ansiDisplayWidth = tui_draw.ansiDisplayWidth;
+const truncateAnsi = tui_draw.truncateAnsi;
+const renderPaneLine = tui_draw.renderPaneLine;
 const formatStatus = tui_draw.formatStatus;
 const expandTemplate = tui_draw.expandTemplate;
 const adjustScrollTop = tui_draw.adjustScrollTop;
@@ -1714,9 +1716,7 @@ pub fn main(init: std.process.Init) !void {
                                     text = line;
                                 }
                             }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -1732,6 +1732,10 @@ pub fn main(init: std.process.Init) !void {
                             const offset = if (warning_rows >= focus_lines.len + 3) @as(usize, 2) else 0;
                             if (h_idx >= offset and h_idx - offset < focus_lines.len) {
                                 text = focus_lines[h_idx - offset];
+                            }
+                            var trunc_buf: [1024]u8 = undefined;
+                            if (std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden")) {
+                                text = truncateAnsi(&trunc_buf, text, content_width);
                             }
                             const vis_w = ansiDisplayWidth(text);
                             const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -1759,9 +1763,7 @@ pub fn main(init: std.process.Init) !void {
                             if (h_idx >= offset and h_idx - offset < help_lines.len) {
                                 text = help_lines[h_idx - offset];
                             }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             try rw.endRow();
                         }
@@ -1786,9 +1788,7 @@ pub fn main(init: std.process.Init) !void {
                                 const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
                                 if (h_idx >= offset and h_idx - offset < help_lines.len) text = help_lines[h_idx - offset];
                             }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
@@ -1843,19 +1843,17 @@ pub fn main(init: std.process.Init) !void {
                                 const li = about_scroll_top + h_idx;
                                 if (li < about_lines.len) {
                                     const after_vars = expandVars(&var_expand_buf, about_lines[li], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, palette.view_bg);
                                 }
                             } else {
                                 const center_threshold: usize = about_lines.len + 2;
                                 const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
                                 if (h_idx >= offset and h_idx - offset < about_lines.len) {
                                     const after_vars = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, "");
+                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, palette.view_bg);
                                 }
                             }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
@@ -1919,9 +1917,7 @@ pub fn main(init: std.process.Init) !void {
                                 const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
                                 if (h_idx >= offset and h_idx - offset < status_lines.len) text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
                             }
-                            const vis_w = ansiDisplayWidth(text);
-                            const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                            const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
@@ -1984,7 +1980,7 @@ pub fn main(init: std.process.Init) !void {
                             if (!custom_rendered) {
                                 const vis_w = ansiDisplayWidth(text);
                                 const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg_only, text, palette.view_bg, spaces[0..@min(pad_len, spaces.len)] });
                                 try writeAll(stdout_fd, line);
                             }
                             try rw.endRow();
@@ -2032,7 +2028,7 @@ pub fn main(init: std.process.Init) !void {
                             if (!custom_rendered) {
                                 const vis_w = ansiDisplayWidth(text);
                                 const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg, text, spaces[0..@min(pad_len, spaces.len)] });
+                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg_only, text, palette.view_bg, spaces[0..@min(pad_len, spaces.len)] });
                                 try writeAll(stdout_fd, line);
                             }
                             try rw.endRow();

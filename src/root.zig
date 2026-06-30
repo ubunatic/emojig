@@ -90,22 +90,24 @@ pub const CategoryMatch = struct {
     is_synonym: bool,
 };
 
-fn findCategorySpecMatch(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategoryMatch {
+fn findCategorySpecMatch(cats_spec: ?*const CategoriesSpec, term: []const u8, allow_prefix: bool) ?CategoryMatch {
     const cats = cats_spec orelse return null;
     if (term.len == 0) return null;
     for (cats.categories) |cat| {
         if (std.mem.eql(u8, cat.name, term) or std.mem.eql(u8, cat.short, term)) {
-            return CategoryMatch{ .spec = cat, .is_synonym = false };
+            return CategoryMatch{ .spec = cat, .is_synonym = !cat.switcher };
         }
     }
-    for (cats.categories) |cat| {
-        if (std.mem.startsWith(u8, cat.name, term) or std.mem.startsWith(u8, cat.short, term)) {
-            return CategoryMatch{ .spec = cat, .is_synonym = false };
+    if (allow_prefix) {
+        for (cats.categories) |cat| {
+            if (std.mem.startsWith(u8, cat.name, term) or std.mem.startsWith(u8, cat.short, term)) {
+                return CategoryMatch{ .spec = cat, .is_synonym = !cat.switcher };
+            }
         }
     }
     for (cats.categories) |cat| {
         for (cat.synonyms) |syn| {
-            if (std.mem.startsWith(u8, syn, term)) {
+            if (std.mem.eql(u8, syn, term)) {
                 return CategoryMatch{ .spec = cat, .is_synonym = true };
             }
         }
@@ -114,7 +116,7 @@ fn findCategorySpecMatch(cats_spec: ?*const CategoriesSpec, term: []const u8) ?C
 }
 
 fn findCategorySpec(cats_spec: ?*const CategoriesSpec, term: []const u8) ?CategorySpec {
-    if (findCategorySpecMatch(cats_spec, term)) |m| {
+    if (findCategorySpecMatch(cats_spec, term, true)) |m| {
         return m.spec;
     }
     return null;
@@ -237,7 +239,7 @@ pub fn searchOptions(
         if (filter_category == null) {
             const sp = std.mem.indexOfScalar(u8, actual_query, ' ');
             const first_word = if (sp) |s| actual_query[0..s] else actual_query;
-            if (findCategorySpecMatch(categories_spec, first_word)) |m| {
+            if (findCategorySpecMatch(categories_spec, first_word, false)) |m| {
                 filter_category = first_word;
                 if (!m.is_synonym) {
                     actual_query = if (sp) |s| actual_query[s + 1 ..] else "";

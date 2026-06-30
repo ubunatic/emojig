@@ -70,8 +70,8 @@ art:
         - ""
         - "\U0001F600 $link"
         - ""
-        - ' Emojig $version — lightning-fast,'
-        - ' zero-allocation emoji picker in Zig.'
+        - ' Emojig $version — fast & clean'
+        - ' zero-alloc emoji picker in Zig.'
       footer:
         - ""
         - " Made with \U0001F499+\U0001F916 in Dresden, DE"
