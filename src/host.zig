@@ -159,17 +159,22 @@ pub fn resolveTitleBgHex(choice: []const u8, app_hex: []const u8, is_dark: bool,
 }
 
 /// Choose a legible title-bar text color based on the background luminance.
-/// Returns a bare 6-hex-digit string suitable for `colors.foreground`.
-/// Foot has no `csd.foreground` option — it renders the title text using the
-/// terminal foreground color, so we override that color when launching decorated.
-pub fn csdTitleFgHex(title_hex: []const u8) []const u8 {
-    if (title_hex.len < 6) return "d0d0d0";
-    const r = std.fmt.parseInt(u32, title_hex[0..2], 16) catch return "d0d0d0";
-    const g = std.fmt.parseInt(u32, title_hex[2..4], 16) catch return "d0d0d0";
-    const b = std.fmt.parseInt(u32, title_hex[4..6], 16) catch return "d0d0d0";
+/// Returns a bare 6-hex-digit string for use as `colors.background` (foot
+/// renders the CSD title text using that color — no csd.foreground option exists).
+/// `fg_on_dark`/`fg_on_light` are bare hex strings (no '#'); `threshold` is 0–255.
+pub fn csdTitleFgHex(
+    title_hex: []const u8,
+    fg_on_dark: []const u8,
+    fg_on_light: []const u8,
+    threshold: u32,
+) []const u8 {
+    if (title_hex.len < 6) return fg_on_dark;
+    const r = std.fmt.parseInt(u32, title_hex[0..2], 16) catch return fg_on_dark;
+    const g = std.fmt.parseInt(u32, title_hex[2..4], 16) catch return fg_on_dark;
+    const b = std.fmt.parseInt(u32, title_hex[4..6], 16) catch return fg_on_dark;
     // Perceptual luminance (ITU-R BT.709 coefficients × 10000)
     const lum = (r * 2126 + g * 7152 + b * 722) / 10000;
-    return if (lum < 140) "e0e0e0" else "1e1e1e";
+    return if (lum < threshold) fg_on_dark else fg_on_light;
 }
 
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
@@ -200,6 +205,7 @@ pub fn buildGuiArgv(
     font_arg: []const u8,
     csd_font_arg: []const u8,
     csd_color_arg: []const u8,
+    csd_title_font_arg: []const u8,
     tail: []const []const u8,
 ) []const []const u8 {
     var n: usize = 0;
@@ -241,8 +247,10 @@ pub fn buildGuiArgv(
                 out[n] = "--override=csd.size=26";
                 n += 1;
                 // Bold title font; :size is ignored by foot for CSD (auto-scales to csd.size).
-                out[n] = "--override=csd.font=monospace:bold";
-                n += 1;
+                if (csd_title_font_arg.len > 0) {
+                    out[n] = csd_title_font_arg;
+                    n += 1;
+                }
                 if (csd_font_arg.len > 0) {
                     out[n] = csd_font_arg;
                     n += 1;
@@ -470,7 +478,7 @@ fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u
 /// Query GNOME's UI font size and text scaling factor from gsettings, then
 /// return a comfortable CSD title bar height in pixels (ratio 2.5×).
 /// Falls back to `fallback` if gsettings is unavailable or unparseable.
-fn detectCsdSize(io: anytype, fallback: usize) usize {
+fn detectCsdSize(io: anytype, fallback: usize, pt_factor: usize) usize {
     var font_buf: [64]u8 = undefined;
     const font_str = gsettingsGet(io, "org.gnome.desktop.interface", "font-name", &font_buf);
     if (font_str.len == 0) return fallback;
@@ -497,8 +505,8 @@ fn detectCsdSize(io: anytype, fallback: usize) usize {
         scale10 = int_part * 10 + frac_digit;
     }
 
-    // csd.size = pt × scale × 2.5, all integer: pt × scale10 × 25 / 100
-    return pt * scale10 * 25 / 100;
+    // csd.size = pt × scale × (pt_factor/100), e.g. factor=25 → 2.5×
+    return pt * scale10 * pt_factor / 100;
 }
 
 pub fn spawnGuiWindow(
@@ -568,9 +576,15 @@ pub fn spawnGuiWindow(
     // any title-bar preset.  The TUI is unaffected: emojig paints every cell
     // with explicit ANSI escape codes so colors.background is never visible
     // inside the terminal content area.
+    const csd = spec.theme.csd;
     var bg_buf: [64]u8 = undefined;
+    var csd_fg_dark_exp: [8]u8 = undefined;
+    var csd_fg_light_exp: [8]u8 = undefined;
+    const csd_fg_dark = expandHex(csd.title_fg_on_dark orelse "#e0e0e0", &csd_fg_dark_exp);
+    const csd_fg_light = expandHex(csd.title_fg_on_light orelse "#1e1e1e", &csd_fg_light_exp);
+    const csd_threshold: u32 = if (csd.title_luminance_threshold) |v| v else 140;
     const bg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
-        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{csdTitleFgHex(title_hex_early)})
+        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{csdTitleFgHex(title_hex_early, csd_fg_dark, csd_fg_light, csd_threshold)})
     else if (foot_bg.len > 0)
         try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg})
     else
@@ -614,10 +628,19 @@ pub fn spawnGuiWindow(
     var font_buf: [64]u8 = undefined;
     const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={d}", .{font_size});
 
-    const effective_csd_size = if (title_size > 0) title_size else detectCsdSize(io, 26);
+    const csd_fallback: usize = if (csd.size_fallback) |v| v else 26;
+    const csd_pt_factor: usize = if (csd.size_pt_factor) |v| v else 25;
+    const effective_csd_size = if (title_size > 0) title_size else detectCsdSize(io, csd_fallback, csd_pt_factor);
     var csd_size_buf: [64]u8 = undefined;
     const csd_font_arg = if (!borderless)
         try std.fmt.bufPrint(&csd_size_buf, "--override=csd.size={d}", .{effective_csd_size})
+    else
+        "";
+
+    const title_bold = csd.title_bold orelse true;
+    var csd_title_font_buf: [64]u8 = undefined;
+    const csd_title_font_arg = if (!borderless)
+        try std.fmt.bufPrint(&csd_title_font_buf, "--override=csd.font=monospace{s}", .{if (title_bold) ":bold" else ""})
     else
         "";
 
@@ -676,7 +699,7 @@ pub fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, csd_color_arg, &tail);
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, csd_color_arg, csd_title_font_arg, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -714,19 +737,20 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
 test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", "--override=csd.color=ff3c3c3c", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", "--override=csd.color=ff3c3c3c", "--override=csd.font=monospace:bold", &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
     try std.testing.expect(argvContains(argv, "--override=csd.size=40"));
+    try std.testing.expect(argvContains(argv, "--override=csd.font=monospace:bold"));
 }
 
 test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
     var on_out: [MAX_ARGV][]const u8 = undefined;
     var off_out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", "", &tail);
+    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", "", "", &tail);
     try std.testing.expect(argvContains(on, "hide_window_decorations=titlebar-only"));
-    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", "", &tail);
+    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", "", "", &tail);
     try std.testing.expect(!argvContains(off, "hide_window_decorations=titlebar-only"));
     try std.testing.expectEqualStrings("kitty", off[0]);
     try std.testing.expectEqualStrings("-e", off[3]);
@@ -735,7 +759,7 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", "", "", &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -748,7 +772,7 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
 test "buildGuiArgv: ptyxis uses -- separator" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("ptyxis", argv[0]);
     try std.testing.expectEqualStrings("--", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -763,7 +787,7 @@ test "whichOnPath finds and rejects" {
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
