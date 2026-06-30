@@ -441,7 +441,8 @@ fn settingHelp(idx: usize) []const u8 {
         8 => "Compact grid\n\non/off — 3-column cells\ninstead of 4-columns.\nApplies on next launch.",
         9 => "App background\n\ndark/light preset for\nthe foot terminal bg.\nApplies on next launch.",
         10 => "Title bar color\n\nCSD title bar preset.\n(--decorated mode only)\nApplies on next launch.",
-        11 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
+        11 => "Decorated window\n\nShow title bar when\nlaunching --gui.\nApplies on next launch.",
+        12 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
         else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
     };
 }
@@ -1137,6 +1138,7 @@ pub fn main(init: std.process.Init) !void {
         tui_draw.g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
         var app_bg_choice: []const u8 = cfg.app_bg orelse settingDefault("app_bg");
         var title_bg_choice: []const u8 = cfg.title_bg orelse settingDefault("title_bg");
+        var gui_decorated: bool = cfg.decorated orelse false;
         var colors_changed: bool = false;
 
         var keybind_editing: bool = false;
@@ -2004,7 +2006,7 @@ pub fn main(init: std.process.Init) !void {
                                     const app_bg_disp = std.fmt.bufPrint(&app_bg_disp_buf, "{s} #{s}", .{ app_bg_choice, resolved_app_hex }) catch app_bg_choice;
                                     var title_bg_disp_buf: [24]u8 = undefined;
                                     const title_bg_disp = std.fmt.bufPrint(&title_bg_disp_buf, "{s} #{s}", .{ title_bg_choice, resolved_title_hex }) catch title_bg_choice;
-                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
+                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, gui_decorated, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -3574,6 +3576,10 @@ pub fn main(init: std.process.Init) !void {
                                                 mru.clear();
                                                 popup_title = "✔ done";
                                                 popup_msg = "Recent history cleared.";
+                                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
+                                                gui_decorated = !gui_decorated;
+                                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
+                                                colors_changed = true;
                                             } else {
                                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                                 const shell_s = detectShell(init.environ_map);
@@ -3931,6 +3937,10 @@ pub fn main(init: std.process.Init) !void {
                                 mru.clear();
                                 popup_title = "✔ done";
                                 popup_msg = "Recent history cleared.";
+                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
+                                gui_decorated = !gui_decorated;
+                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
+                                colors_changed = true;
                             } else {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
@@ -4000,6 +4010,10 @@ pub fn main(init: std.process.Init) !void {
                                             colors_changed = true;
                                     }
                                 }
+                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
+                                gui_decorated = !gui_decorated;
+                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
+                                colors_changed = true;
                             } else if (opt_idx != 1 and !std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);

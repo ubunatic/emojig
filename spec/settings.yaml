@@ -74,6 +74,10 @@ options:
         - accent
         - dark
       default: raised
+    - id: decorated
+      type: boolean
+      label: decorated window
+      default: "false"
     - id: clear_mru
       type: action
       label: recent (MRU) history

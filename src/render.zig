@@ -25,6 +25,7 @@ pub fn renderSettingRow(
     grid_cols: usize,
     grid_rows: usize,
     grid_compact: bool,
+    gui_decorated: bool,
     hover_left: bool,
     hover_right: bool,
     app_bg_val: []const u8,
@@ -50,6 +51,8 @@ pub fn renderSettingRow(
             show_cats
         else if (std.mem.eql(u8, opt.id, "compact"))
             grid_compact
+        else if (std.mem.eql(u8, opt.id, "decorated"))
+            gui_decorated
         else
             false;
         val_str = try std.fmt.bufPrint(&val_buf, "[{s}]", .{if (val) "✔" else " "});

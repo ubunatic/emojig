@@ -30,6 +30,7 @@ pub const Config = struct {
     compact: ?bool = null,
     app_bg: ?[]const u8 = null,
     title_bg: ?[]const u8 = null,
+    decorated: ?bool = null,
 };
 
 pub fn configPath(buf: []u8) ?[:0]const u8 {
@@ -107,6 +108,8 @@ pub fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.app_bg = arena.dupe(u8, val) catch null;
             } else if (std.mem.eql(u8, key, "title_bg")) {
                 cfg.title_bg = arena.dupe(u8, val) catch null;
+            } else if (std.mem.eql(u8, key, "decorated")) {
+                cfg.decorated = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
             }
         }
     }
