@@ -563,8 +563,18 @@ pub fn spawnGuiWindow(
     else
         "";
 
+    // Compute title_hex early so we can use it to derive the CSD title text color.
+    // In decorated (non-borderless) mode we override colors.foreground with a
+    // luminance-computed contrast color so the title text is legible regardless of
+    // the title-bar preset.  Foot uses colors.foreground for CSD title text; there
+    // is no separate csd.foreground option.
+    var title_hex_buf_early: [6]u8 = undefined;
+    const title_hex_early = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf_early);
+
     var fg_buf: [64]u8 = undefined;
-    const fg_arg = if (foot_fg.len > 0)
+    const fg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
+        try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{csdTitleFgHex(title_hex_early)})
+    else if (foot_fg.len > 0)
         try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg})
     else
         "";
@@ -608,22 +618,11 @@ pub fn spawnGuiWindow(
     else
         "";
 
-    var title_hex_buf: [6]u8 = undefined;
-    const title_hex = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf);
     var csd_color_buf: [48]u8 = undefined;
-    const csd_color_arg = if (!borderless and title_hex.len == 6)
-        try std.fmt.bufPrint(&csd_color_buf, "--override=csd.color=ff{s}", .{title_hex})
+    const csd_color_arg = if (!borderless and title_hex_early.len == 6)
+        try std.fmt.bufPrint(&csd_color_buf, "--override=csd.color=ff{s}", .{title_hex_early})
     else
         "";
-
-    // Foot renders the CSD title text using colors.foreground.  Override it
-    // with a luminance-computed contrast color so the title is legible on any
-    // title-bar background preset (foot has no csd.foreground option).
-    if (!borderless and title_hex.len == 6) {
-        const title_fg = csdTitleFgHex(title_hex);
-        fg_buf = undefined;
-        _ = try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{title_fg});
-    }
 
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});
