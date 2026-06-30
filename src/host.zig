@@ -158,6 +158,20 @@ pub fn resolveTitleBgHex(choice: []const u8, app_hex: []const u8, is_dark: bool,
     return lightenHex(app_hex, delta, buf);
 }
 
+/// Choose a legible title-bar text color based on the background luminance.
+/// Returns a bare 6-hex-digit string suitable for `colors.foreground`.
+/// Foot has no `csd.foreground` option — it renders the title text using the
+/// terminal foreground color, so we override that color when launching decorated.
+pub fn csdTitleFgHex(title_hex: []const u8) []const u8 {
+    if (title_hex.len < 6) return "d0d0d0";
+    const r = std.fmt.parseInt(u32, title_hex[0..2], 16) catch return "d0d0d0";
+    const g = std.fmt.parseInt(u32, title_hex[2..4], 16) catch return "d0d0d0";
+    const b = std.fmt.parseInt(u32, title_hex[4..6], 16) catch return "d0d0d0";
+    // Perceptual luminance (ITU-R BT.709 coefficients × 10000)
+    const lum = (r * 2126 + g * 7152 + b * 722) / 10000;
+    return if (lum < 140) "e0e0e0" else "1e1e1e";
+}
+
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
 /// plus a 15-token tail (25 total); 32 gives safe headroom.
 pub const MAX_ARGV = 32;
@@ -601,6 +615,15 @@ pub fn spawnGuiWindow(
         try std.fmt.bufPrint(&csd_color_buf, "--override=csd.color=ff{s}", .{title_hex})
     else
         "";
+
+    // Foot renders the CSD title text using colors.foreground.  Override it
+    // with a luminance-computed contrast color so the title is legible on any
+    // title-bar background preset (foot has no csd.foreground option).
+    if (!borderless and title_hex.len == 6) {
+        const title_fg = csdTitleFgHex(title_hex);
+        fg_buf = undefined;
+        _ = try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{title_fg});
+    }
 
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});
