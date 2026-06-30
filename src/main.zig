@@ -363,6 +363,8 @@ fn saveChoice(
     choice: []const u8,
     shell_key_binding: *[]const u8,
     ambiguous_chars: *[]const u8,
+    app_bg_choice: *[]const u8,
+    title_bg_choice: *[]const u8,
 ) void {
     saveKeyToConfig(init.io, opt_id, choice);
     if (std.mem.eql(u8, opt_id, "shell_key_binding")) {
@@ -370,6 +372,10 @@ fn saveChoice(
     } else if (std.mem.eql(u8, opt_id, "ambiguous_chars")) {
         ambiguous_chars.* = choice;
         tui_draw.g_wide_ambiguous = !std.mem.eql(u8, choice, "narrow");
+    } else if (std.mem.eql(u8, opt_id, "app_bg")) {
+        app_bg_choice.* = choice;
+    } else if (std.mem.eql(u8, opt_id, "title_bg")) {
+        title_bg_choice.* = choice;
     }
 }
 
@@ -433,7 +439,9 @@ fn settingHelp(idx: usize) []const u8 {
         6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
         7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
         8 => "Compact grid\n\non/off — 3-column cells\ninstead of 4-columns.\nApplies on next launch.",
-        9 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
+        9 => "App background\n\ndark/light preset for\nthe foot terminal bg.\nApplies on next launch.",
+        10 => "Title bar color\n\nCSD title bar preset.\n(--decorated mode only)\nApplies on next launch.",
+        11 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
         else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
     };
 }
@@ -734,6 +742,8 @@ pub fn main(init: std.process.Init) !void {
             final_show_switcher_pref orelse true,
             gui_font_size,
             opt_title_size,
+            cfg.app_bg orelse settingDefault("app_bg"),
+            cfg.title_bg orelse settingDefault("title_bg"),
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
@@ -1125,6 +1135,9 @@ pub fn main(init: std.process.Init) !void {
         var show_all_categories = cfg.show_all_categories orelse settingDefaultBool("show_all_categories");
         var ambiguous_chars = cfg.ambiguous_chars orelse settingDefault("ambiguous_chars");
         tui_draw.g_wide_ambiguous = !std.mem.eql(u8, ambiguous_chars, "narrow");
+        var app_bg_choice: []const u8 = cfg.app_bg orelse settingDefault("app_bg");
+        var title_bg_choice: []const u8 = cfg.title_bg orelse settingDefault("title_bg");
+        var colors_changed: bool = false;
 
         var keybind_editing: bool = false;
         var active_dropdown_opt_idx: ?usize = null;
@@ -1983,7 +1996,15 @@ pub fn main(init: std.process.Init) !void {
                                 const opt_idx = settings_scroll_top + slot_idx;
                                 if (opt_idx < settings_count) {
                                     const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, palette);
+                                    const is_dark_theme = theme != .light;
+                                    const resolved_app_hex = host.resolveAppBgHex(app_bg_choice, is_dark_theme);
+                                    var title_hex_disp_buf: [6]u8 = undefined;
+                                    const resolved_title_hex = host.resolveTitleBgHex(title_bg_choice, resolved_app_hex, is_dark_theme, &title_hex_disp_buf);
+                                    var app_bg_disp_buf: [24]u8 = undefined;
+                                    const app_bg_disp = std.fmt.bufPrint(&app_bg_disp_buf, "{s} #{s}", .{ app_bg_choice, resolved_app_hex }) catch app_bg_choice;
+                                    var title_bg_disp_buf: [24]u8 = undefined;
+                                    const title_bg_disp = std.fmt.bufPrint(&title_bg_disp_buf, "{s} #{s}", .{ title_bg_choice, resolved_title_hex }) catch title_bg_choice;
+                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
@@ -2970,7 +2991,7 @@ pub fn main(init: std.process.Init) !void {
                                 else
                                     std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039} \u{203a}/0-9 ?:help · Esc:back", .{ lbl, val }) catch st.settings.navigate;
                             } else if (current_screen == .settings) {
-                                break :blk if (griddim_changed)
+                                break :blk if (griddim_changed or colors_changed)
                                     " ↕:nav ←→:change ?:help · next launch"
                                 else
                                     st.settings.navigate;
@@ -3518,6 +3539,10 @@ pub fn main(init: std.process.Init) !void {
                                                     shell_key_binding
                                                 else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
                                                     ambiguous_chars
+                                                else if (std.mem.eql(u8, opt.id, "app_bg"))
+                                                    app_bg_choice
+                                                else if (std.mem.eql(u8, opt.id, "title_bg"))
+                                                    title_bg_choice
                                                 else
                                                     "";
                                                 var found_idx: usize = 0;
@@ -3545,7 +3570,7 @@ pub fn main(init: std.process.Init) !void {
                                                 if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
                                                     griddim_changed = true;
                                                 }
-                                            } else if (opt_idx == 9) {
+                                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                                 mru.clear();
                                                 popup_title = "✔ done";
                                                 popup_msg = "Recent history cleared.";
@@ -3653,7 +3678,7 @@ pub fn main(init: std.process.Init) !void {
                                     @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
                                     shell_key_binding = keybind_input_buf[0..keybind_input_len];
                                 } else {
-                                    saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                    saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
                                     active_dropdown_opt_idx = null;
                                     popup_msg = null;
                                 }
@@ -3793,7 +3818,7 @@ pub fn main(init: std.process.Init) !void {
                                 @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
                                 shell_key_binding = keybind_input_buf[0..keybind_input_len];
                             } else {
-                                saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
                                 active_dropdown_opt_idx = null;
                                 popup_msg = null;
                             }
@@ -3867,6 +3892,10 @@ pub fn main(init: std.process.Init) !void {
                                     shell_key_binding
                                 else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
                                     ambiguous_chars
+                                else if (std.mem.eql(u8, opt.id, "app_bg"))
+                                    app_bg_choice
+                                else if (std.mem.eql(u8, opt.id, "title_bg"))
+                                    title_bg_choice
                                 else
                                     "";
                                 var found_idx: usize = 0;
@@ -3898,7 +3927,7 @@ pub fn main(init: std.process.Init) !void {
                                 saveUsizeToConfig(init.io, "rows", grid_rows);
                                 griddim_changed = true;
                                 griddim_typing = false;
-                            } else if (opt_idx == 9) {
+                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                 mru.clear();
                                 popup_title = "✔ done";
                                 popup_msg = "Recent history cleared.";
@@ -3936,6 +3965,10 @@ pub fn main(init: std.process.Init) !void {
                                         shell_key_binding
                                     else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
                                         ambiguous_chars
+                                    else if (std.mem.eql(u8, opt.id, "app_bg"))
+                                        app_bg_choice
+                                    else if (std.mem.eql(u8, opt.id, "title_bg"))
+                                        title_bg_choice
                                     else
                                         "";
                                     var found_idx: usize = 0;
@@ -3962,10 +3995,12 @@ pub fn main(init: std.process.Init) !void {
                                         @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
                                         shell_key_binding = keybind_input_buf[0..keybind_input_len];
                                     } else {
-                                        saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars);
+                                        saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
+                                        if (std.mem.eql(u8, opt.id, "app_bg") or std.mem.eql(u8, opt.id, "title_bg"))
+                                            colors_changed = true;
                                     }
                                 }
-                            } else if (opt_idx != 1 and opt_idx != 9) {
+                            } else if (opt_idx != 1 and !std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                 const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                 const shell_s = detectShell(init.environ_map);
                                 toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);

@@ -77,6 +77,30 @@
       "default": "false"
     },
     {
+      "id": "app_bg",
+      "type": "choice",
+      "label": "app background",
+      "choices": [
+        "default",
+        "deep",
+        "navy",
+        "slate"
+      ],
+      "default": "default"
+    },
+    {
+      "id": "title_bg",
+      "type": "choice",
+      "label": "title bar color",
+      "choices": [
+        "raised",
+        "same",
+        "accent",
+        "dark"
+      ],
+      "default": "raised"
+    },
+    {
       "id": "clear_mru",
       "type": "action",
       "label": "recent (MRU) history",

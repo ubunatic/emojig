@@ -101,6 +101,63 @@ pub fn hostKindFromName(name: []const u8) HostKind {
     return .generic;
 }
 
+const ColorPair = struct { name: []const u8, dark: []const u8, light: []const u8 };
+
+const app_bg_table = [_]ColorPair{
+    .{ .name = "default", .dark = "2c2c2c", .light = "d0d0df" },
+    .{ .name = "deep", .dark = "1c1c1c", .light = "c8c8dc" },
+    .{ .name = "navy", .dark = "1e2030", .light = "d8ddf0" },
+    .{ .name = "slate", .dark = "252535", .light = "dcdce8" },
+};
+
+const title_bg_table = [_]ColorPair{
+    .{ .name = "accent", .dark = "243060", .light = "c8d0f8" },
+    .{ .name = "dark", .dark = "141414", .light = "e8e8f8" },
+};
+
+fn lightenHex(hex6: []const u8, delta: i32, out: *[6]u8) []const u8 {
+    if (hex6.len < 6) return hex6;
+    const r = std.fmt.parseInt(u8, hex6[0..2], 16) catch return hex6;
+    const g = std.fmt.parseInt(u8, hex6[2..4], 16) catch return hex6;
+    const b = std.fmt.parseInt(u8, hex6[4..6], 16) catch return hex6;
+    const cl = struct {
+        fn f(v: i32) u8 {
+            return @intCast(@max(0, @min(255, v)));
+        }
+    }.f;
+    return std.fmt.bufPrint(out, "{x:0>2}{x:0>2}{x:0>2}", .{
+        cl(@as(i32, r) + delta),
+        cl(@as(i32, g) + delta),
+        cl(@as(i32, b) + delta),
+    }) catch hex6;
+}
+
+/// Returns a bare 6-hex-digit string (no leading #) for the foot terminal background.
+pub fn resolveAppBgHex(choice: []const u8, is_dark: bool) []const u8 {
+    for (app_bg_table) |p| {
+        if (std.mem.eql(u8, p.name, choice))
+            return if (is_dark) p.dark else p.light;
+    }
+    return if (is_dark) "2c2c2c" else "d0d0df";
+}
+
+/// Returns a bare 6-hex-digit string for the CSD title bar color.
+/// `app_hex` must be the result of resolveAppBgHex; `buf` is scratch for derived values.
+pub fn resolveTitleBgHex(choice: []const u8, app_hex: []const u8, is_dark: bool, buf: *[6]u8) []const u8 {
+    if (std.mem.eql(u8, choice, "same")) return app_hex;
+    if (std.mem.eql(u8, choice, "raised")) {
+        const delta: i32 = if (is_dark) 18 else -18;
+        return lightenHex(app_hex, delta, buf);
+    }
+    for (title_bg_table) |p| {
+        if (std.mem.eql(u8, p.name, choice))
+            return if (is_dark) p.dark else p.light;
+    }
+    // Fallback: raised
+    const delta: i32 = if (is_dark) 18 else -18;
+    return lightenHex(app_hex, delta, buf);
+}
+
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
 /// plus a 15-token tail (25 total); 32 gives safe headroom.
 pub const MAX_ARGV = 32;
@@ -128,6 +185,7 @@ pub fn buildGuiArgv(
     border_color_arg: []const u8,
     font_arg: []const u8,
     csd_font_arg: []const u8,
+    csd_color_arg: []const u8,
     tail: []const []const u8,
 ) []const []const u8 {
     var n: usize = 0;
@@ -173,6 +231,10 @@ pub fn buildGuiArgv(
                 n += 1;
                 if (csd_font_arg.len > 0) {
                     out[n] = csd_font_arg;
+                    n += 1;
+                }
+                if (csd_color_arg.len > 0) {
+                    out[n] = csd_color_arg;
                     n += 1;
                 }
             }
@@ -441,6 +503,8 @@ pub fn spawnGuiWindow(
     show_switcher: bool,
     font_size: usize,
     title_size: usize,
+    app_bg_choice: []const u8,
+    title_bg_choice: []const u8,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -454,11 +518,12 @@ pub fn spawnGuiWindow(
     // Foot requires full 6-digit RGB (rrggbb) or 8-digit ARGB — 3-char shorthand
     // like "#ccc" must be expanded to "#cccccc" before stripping.
     const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
-    const foot_bg_raw = gui_pal.terminal_bg2 orelse gui_pal.terminal_bg;
+    const is_dark = theme != .light;
+    const app_hex = resolveAppBgHex(app_bg_choice, is_dark);
     var foot_bg_exp: [8]u8 = undefined;
+    const foot_bg = if (app_hex.len > 0) app_hex else expandHex(gui_pal.terminal_bg2 orelse "", &foot_bg_exp);
     var foot_fg_exp: [8]u8 = undefined;
     var foot_bd_exp: [8]u8 = undefined;
-    const foot_bg = expandHex(foot_bg_raw orelse "", &foot_bg_exp);
     const foot_fg = expandHex(gui_pal.terminal_fg orelse "", &foot_fg_exp);
     const foot_border = expandHex(gui_pal.terminal_border orelse "", &foot_bd_exp);
 
@@ -529,6 +594,14 @@ pub fn spawnGuiWindow(
     else
         "";
 
+    var title_hex_buf: [6]u8 = undefined;
+    const title_hex = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf);
+    var csd_color_buf: [48]u8 = undefined;
+    const csd_color_arg = if (!borderless and title_hex.len == 6)
+        try std.fmt.bufPrint(&csd_color_buf, "--override=csd.color=ff{s}", .{title_hex})
+    else
+        "";
+
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});
 
@@ -578,7 +651,7 @@ pub fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, &tail);
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, csd_color_arg, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -602,7 +675,7 @@ fn argvContains(argv: []const []const u8, needle: []const u8) bool {
 test "buildGuiArgv: foot borderless adds csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", "", "", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", "", "", "", &tail);
     try std.testing.expectEqualStrings("foot", argv[0]);
     try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
     try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
@@ -616,7 +689,7 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
 test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", "--override=csd.color=ff3c3c3c", &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
     try std.testing.expect(argvContains(argv, "--override=csd.size=40"));
@@ -626,9 +699,9 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
     var on_out: [MAX_ARGV][]const u8 = undefined;
     var off_out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", &tail);
+    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", "", &tail);
     try std.testing.expect(argvContains(on, "hide_window_decorations=titlebar-only"));
-    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", &tail);
+    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", "", &tail);
     try std.testing.expect(!argvContains(off, "hide_window_decorations=titlebar-only"));
     try std.testing.expectEqualStrings("kitty", off[0]);
     try std.testing.expectEqualStrings("-e", off[3]);
@@ -637,7 +710,7 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", "", &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -650,7 +723,7 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
 test "buildGuiArgv: ptyxis uses -- separator" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("ptyxis", argv[0]);
     try std.testing.expectEqualStrings("--", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -665,7 +738,7 @@ test "whichOnPath finds and rejects" {
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);

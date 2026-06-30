@@ -27,6 +27,8 @@ pub fn renderSettingRow(
     grid_compact: bool,
     hover_left: bool,
     hover_right: bool,
+    app_bg_val: []const u8,
+    title_bg_val: []const u8,
     palette: term_lib.Palette,
 ) ![]const u8 {
     const sel_prefix = if (is_sel) "> " else "  ";
@@ -60,6 +62,10 @@ pub fn renderSettingRow(
             @tagName(theme)
         else if (std.mem.eql(u8, opt.id, "scrollbar_style"))
             @tagName(scrollbar)
+        else if (std.mem.eql(u8, opt.id, "app_bg"))
+            app_bg_val
+        else if (std.mem.eql(u8, opt.id, "title_bg"))
+            title_bg_val
         else
             "";
         val_str = if (std.mem.eql(u8, opt.id, "shell_key_binding") and key_bind_editing)

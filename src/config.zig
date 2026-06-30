@@ -28,6 +28,8 @@ pub const Config = struct {
     scrollbar_style: ?ScrollbarStyle = null,
     font_size: ?usize = null,
     compact: ?bool = null,
+    app_bg: ?[]const u8 = null,
+    title_bg: ?[]const u8 = null,
 };
 
 pub fn configPath(buf: []u8) ?[:0]const u8 {
@@ -101,6 +103,10 @@ pub fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.font_size = std.fmt.parseInt(usize, val, 10) catch null;
             } else if (std.mem.eql(u8, key, "compact")) {
                 cfg.compact = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
+            } else if (std.mem.eql(u8, key, "app_bg")) {
+                cfg.app_bg = arena.dupe(u8, val) catch null;
+            } else if (std.mem.eql(u8, key, "title_bg")) {
+                cfg.title_bg = arena.dupe(u8, val) catch null;
             }
         }
     }
