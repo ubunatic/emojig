@@ -127,6 +127,7 @@ pub fn buildGuiArgv(
     fg_arg: []const u8,
     border_color_arg: []const u8,
     font_arg: []const u8,
+    csd_font_arg: []const u8,
     tail: []const []const u8,
 ) []const []const u8 {
     var n: usize = 0;
@@ -167,6 +168,10 @@ pub fn buildGuiArgv(
                 n += 1;
                 out[n] = "--override=csd.size=26";
                 n += 1;
+                if (csd_font_arg.len > 0) {
+                    out[n] = csd_font_arg;
+                    n += 1;
+                }
             }
             if (bg_arg.len > 0) {
                 out[n] = bg_arg;
@@ -351,6 +356,72 @@ fn expandHex(raw: []const u8, buf: *[8]u8) []const u8 {
     return "";
 }
 
+/// Run `gsettings get SCHEMA KEY` and return the output (stripped) in `buf`.
+/// Returns a slice into `buf`, or empty on failure.
+fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u8 {
+    var pipe_fds: [2]std.posix.fd_t = undefined;
+    const pipe_rc = std.os.linux.pipe2(&pipe_fds, .{});
+    if (std.posix.errno(pipe_rc) != .SUCCESS) return buf[0..0];
+
+    const argv = [_][]const u8{ "gsettings", "get", schema, key };
+    var child = std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .ignore,
+        .stdout = .{ .file = .{ .handle = pipe_fds[1], .flags = .{ .nonblocking = false } } },
+        .stderr = .ignore,
+    }) catch {
+        _ = std.posix.system.close(pipe_fds[1]);
+        _ = std.posix.system.close(pipe_fds[0]);
+        return buf[0..0];
+    };
+    _ = std.posix.system.close(pipe_fds[1]);
+
+    var total: usize = 0;
+    while (total < buf.len) {
+        const n = std.posix.read(pipe_fds[0], buf[total..]) catch break;
+        if (n == 0) break;
+        total += n;
+    }
+    _ = std.posix.system.close(pipe_fds[0]);
+    _ = child.wait(io) catch {};
+    const trimmed = std.mem.trim(u8, buf[0..total], " \t\n\r'\"");
+    return @constCast(trimmed);
+}
+
+/// Query GNOME's UI font size and text scaling factor from gsettings, then
+/// return a comfortable CSD title bar height in pixels (ratio 2.5×).
+/// Falls back to `fallback` if gsettings is unavailable or unparseable.
+fn detectCsdSize(io: anytype, fallback: usize) usize {
+    var font_buf: [64]u8 = undefined;
+    const font_str = gsettingsGet(io, "org.gnome.desktop.interface", "font-name", &font_buf);
+    if (font_str.len == 0) return fallback;
+
+    // font-name is like: 'Ubuntu Sans 11' — last word is the pt size.
+    const last_space = std.mem.lastIndexOfScalar(u8, font_str, ' ') orelse return fallback;
+    const pt = std.fmt.parseInt(usize, font_str[last_space + 1 ..], 10) catch return fallback;
+    if (pt == 0) return fallback;
+
+    // text-scaling-factor is like: 1.1 — parse integer + first decimal digit.
+    // Represent as fixed-point tenths: "1.0999..." → 11, "1.25" → 12.
+    var scale_buf: [32]u8 = undefined;
+    const scale_str = gsettingsGet(io, "org.gnome.desktop.interface", "text-scaling-factor", &scale_buf);
+    var scale10: usize = 10; // default 1.0 × 10
+    if (scale_str.len > 0) {
+        const dot = std.mem.indexOfScalar(u8, scale_str, '.');
+        const int_part = std.fmt.parseInt(usize, if (dot) |d| scale_str[0..d] else scale_str, 10) catch 1;
+        // Round to nearest tenth: read first two decimal digits.
+        const frac_digit: usize = if (dot) |d| blk: {
+            const d1: usize = if (d + 1 < scale_str.len) (scale_str[d + 1] - '0') else 0;
+            const d2: usize = if (d + 2 < scale_str.len) (scale_str[d + 2] - '0') else 0;
+            break :blk if (d2 >= 5) d1 + 1 else d1;
+        } else 0;
+        scale10 = int_part * 10 + frac_digit;
+    }
+
+    // csd.size = pt × scale × 2.5, all integer: pt × scale10 × 25 / 100
+    return pt * scale10 * 25 / 100;
+}
+
 pub fn spawnGuiWindow(
     init: std.process.Init,
     exe_path: []const u8,
@@ -366,6 +437,7 @@ pub fn spawnGuiWindow(
     spec: *const spec_mod.Spec,
     show_switcher: bool,
     font_size: usize,
+    title_size: usize,
 ) !void {
     const io = init.io;
     const theme_str: []const u8 = switch (theme) {
@@ -447,6 +519,13 @@ pub fn spawnGuiWindow(
     var font_buf: [64]u8 = undefined;
     const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={d}", .{font_size});
 
+    const effective_csd_size = if (title_size > 0) title_size else detectCsdSize(io, 26);
+    var csd_size_buf: [64]u8 = undefined;
+    const csd_font_arg = if (!borderless)
+        try std.fmt.bufPrint(&csd_size_buf, "--override=csd.size={d}", .{effective_csd_size})
+    else
+        "";
+
     var env_cols: [64]u8 = undefined;
     const env_cols_arg = try std.fmt.bufPrint(&env_cols, "EMOJIG_COLS={d}", .{cols_val});
 
@@ -496,7 +575,7 @@ pub fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, &tail);
+    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -520,7 +599,7 @@ fn argvContains(argv: []const []const u8, needle: []const u8) bool {
 test "buildGuiArgv: foot borderless adds csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", "", "", &tail);
     try std.testing.expectEqualStrings("foot", argv[0]);
     try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
     try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
@@ -534,19 +613,19 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
 test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", &tail);
+    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
-    try std.testing.expect(argvContains(argv, "--override=csd.size=26"));
+    try std.testing.expect(argvContains(argv, "--override=csd.size=40"));
 }
 
 test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
     var on_out: [MAX_ARGV][]const u8 = undefined;
     var off_out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", &tail);
+    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", &tail);
     try std.testing.expect(argvContains(on, "hide_window_decorations=titlebar-only"));
-    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", &tail);
+    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", &tail);
     try std.testing.expect(!argvContains(off, "hide_window_decorations=titlebar-only"));
     try std.testing.expectEqualStrings("kitty", off[0]);
     try std.testing.expectEqualStrings("-e", off[3]);
@@ -555,7 +634,7 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -568,7 +647,7 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
 test "buildGuiArgv: ptyxis uses -- separator" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("ptyxis", argv[0]);
     try std.testing.expectEqualStrings("--", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -583,7 +662,7 @@ test "whichOnPath finds and rejects" {
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);

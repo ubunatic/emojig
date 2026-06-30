@@ -31,6 +31,7 @@ pub const ParsedArgs = struct {
     completion_shell: ?[]const u8 = null,
     key: ?[]const u8 = null,
     borderless: bool = true,
+    title_size: usize = 0,
     lang: ?[]const u8 = null,
     show_switcher: ?bool = null,
 };
@@ -54,6 +55,7 @@ pub const Runtime = struct {
     opt_completion_shell: ?[]const u8,
     opt_key: ?[]const u8,
     opt_borderless: bool,
+    opt_title_size: usize,
     opt_lang: ?[]const u8,
     opt_show_switcher: ?bool,
     lang: ?[]const u8,
@@ -179,6 +181,14 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
             } else {
                 fail(std.posix.STDERR_FILENO, "Error: --height requires an argument.\n");
             }
+        } else if (std.mem.eql(u8, arg, "--title-size")) {
+            if (args_it.next()) |v| {
+                parsed.title_size = std.fmt.parseInt(usize, v, 10) catch fail(std.posix.STDERR_FILENO, "Error: invalid title-size. Must be an integer.\n");
+            } else {
+                fail(std.posix.STDERR_FILENO, "Error: --title-size requires an argument.\n");
+            }
+        } else if (std.mem.startsWith(u8, arg, "--title-size=")) {
+            parsed.title_size = std.fmt.parseInt(usize, arg["--title-size=".len..], 10) catch fail(std.posix.STDERR_FILENO, "Error: invalid title-size. Must be an integer.\n");
         } else if (std.mem.eql(u8, arg, "--border")) {
             if (args_it.next()) |v| {
                 if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) {
@@ -224,6 +234,7 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
                 "  --decorated                  Spawn the GUI terminal with its title bar/window decorations\n" ++
                 "  --window-decorations         Alias for --decorated\n" ++
+                "  --title-size N               Title bar height in pixels (default: auto from system font)\n" ++
                 "  --alt-screen                 Use alternate screen buffer (full-screen TUI mode)\n" ++
                 "  --show-switcher[=true|false] Show horizontal category switcher bar (implied by --gui)\n" ++
                 "  --simple                     Simple fzf/sk-like list picker (use with --height)\n" ++
@@ -466,6 +477,7 @@ pub fn resolveRuntime(init: std.process.Init, arena: std.mem.Allocator, spec: *c
         .opt_completion_shell = parsed.completion_shell,
         .opt_key = parsed.key,
         .opt_borderless = parsed.borderless,
+        .opt_title_size = parsed.title_size,
         .opt_lang = parsed.lang,
         .opt_show_switcher = parsed.show_switcher,
         .lang = lang,

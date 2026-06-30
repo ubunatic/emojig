@@ -555,6 +555,7 @@ pub fn main(init: std.process.Init) !void {
 
     const opt_wait = runtime.opt_wait;
     var opt_borderless = runtime.opt_borderless;
+    var opt_title_size = runtime.opt_title_size;
 
     const cfg = runtime.cfg;
     const env_scrollbar = runtime.env_scrollbar;
@@ -617,16 +618,22 @@ pub fn main(init: std.process.Init) !void {
                             const n = std.posix.system.read(fd, &read_buf, read_buf.len);
                             if (n > 0) {
                                 const read_str = read_buf[0..@intCast(n)];
-                                // Format: "TIMESTAMP:BORDERLESS" (BORDERLESS = 0 or 1)
-                                const colon = std.mem.indexOfScalar(u8, read_str, ':');
-                                const ts_str = if (colon) |c| read_str[0..c] else read_str;
+                                // Format: "TIMESTAMP:BORDERLESS:TITLE_SIZE"
+                                const colon1 = std.mem.indexOfScalar(u8, read_str, ':');
+                                const ts_str = if (colon1) |c| read_str[0..c] else read_str;
                                 if (std.fmt.parseInt(i64, ts_str, 10)) |read_ts| {
                                     if (current_ts - read_ts >= 0 and current_ts - read_ts < 5) {
                                         already_relaunched = true;
-                                        // Restore borderless flag written by the original launch.
-                                        if (colon) |c| {
-                                            const bl_str = read_str[c + 1 ..];
+                                        if (colon1) |c1| {
+                                            const rest = read_str[c1 + 1 ..];
+                                            const colon2 = std.mem.indexOfScalar(u8, rest, ':');
+                                            const bl_str = if (colon2) |c2| rest[0..c2] else rest;
                                             opt_borderless = !std.mem.eql(u8, bl_str, "0");
+                                            if (colon2) |c2| {
+                                                if (std.fmt.parseInt(usize, rest[c2 + 1 ..], 10)) |ts_val| {
+                                                    opt_title_size = ts_val;
+                                                } else |_| {}
+                                            }
                                         }
                                     }
                                 } else |_| {}
@@ -639,10 +646,10 @@ pub fn main(init: std.process.Init) !void {
                             const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
                             if (std.posix.openat(std.posix.AT.FDCWD, lock_path, wf, 0o600)) |fd| {
                                 defer _ = std.posix.system.close(fd);
-                                // Format: "TIMESTAMP:BORDERLESS" so the relaunched process can
-                                // restore the flag (gtk-launch uses the desktop file, not CLI args).
+                                // Format: "TIMESTAMP:BORDERLESS:TITLE_SIZE" so the relaunched
+                                // process can restore flags (gtk-launch uses the desktop file).
                                 var val_buf: [32]u8 = undefined;
-                                const val_str = std.fmt.bufPrint(&val_buf, "{d}:{d}", .{ current_ts, @intFromBool(opt_borderless) }) catch "";
+                                const val_str = std.fmt.bufPrint(&val_buf, "{d}:{d}:{d}", .{ current_ts, @intFromBool(opt_borderless), opt_title_size }) catch "";
                                 if (val_str.len > 0) {
                                     _ = std.posix.system.write(fd, val_str.ptr, val_str.len);
                                 }
@@ -726,6 +733,7 @@ pub fn main(init: std.process.Init) !void {
             &g_spec,
             final_show_switcher_pref orelse true,
             gui_font_size,
+            opt_title_size,
         ) catch |err| {
             try writeAll(std.posix.STDERR_FILENO, "Error: failed to launch terminal window. Set EMOJIG_TERMINAL or install a supported terminal (foot, kitty, alacritty, ...) (");
             try writeAll(std.posix.STDERR_FILENO, @errorName(err));
