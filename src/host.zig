@@ -136,6 +136,8 @@ pub fn buildGuiArgv(
             n += 1;
             out[n] = "--app-id=emojig-picker";
             n += 1;
+            out[n] = "--override=title=\xf0\x9f\x98\x80 Emojig";
+            n += 1;
             out[n] = size_arg;
             n += 1;
             out[n] = font_arg;
@@ -146,14 +148,11 @@ pub fn buildGuiArgv(
             n += 1;
             out[n] = "--override=pad=0x4";
             n += 1;
-            out[n] = "--override=csd.preferred=none";
-            n += 1;
             if (borderless) {
-                // Disable client-side decorations (no title bar),
-                // but request CSD with a 1px border so drop shadows are drawn.
-                out[n] = "--override=csd.size=0";
-                n += 1;
+                // CSD with zero-height title bar + 1px border for drop shadow.
                 out[n] = "--override=csd.preferred=client";
+                n += 1;
+                out[n] = "--override=csd.size=0";
                 n += 1;
                 out[n] = "--override=csd.border-width=1";
                 n += 1;
@@ -161,6 +160,13 @@ pub fn buildGuiArgv(
                     out[n] = border_color_arg;
                     n += 1;
                 }
+            } else {
+                // Explicit CSD title bar. Must set csd.size to override any foot.ini
+                // that has csd.size=0 (our own borderless config sets it that way).
+                out[n] = "--override=csd.preferred=client";
+                n += 1;
+                out[n] = "--override=csd.size=26";
+                n += 1;
             }
             if (bg_arg.len > 0) {
                 out[n] = bg_arg;
@@ -525,12 +531,13 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
     try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
 }
 
-test "buildGuiArgv: foot non-borderless omits csd overrides" {
+test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     var out: [MAX_ARGV][]const u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
     const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
-    try std.testing.expect(!argvContains(argv, "--override=csd.preferred=client"));
+    try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
+    try std.testing.expect(argvContains(argv, "--override=csd.size=26"));
 }
 
 test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {

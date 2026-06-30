@@ -554,7 +554,7 @@ pub fn main(init: std.process.Init) !void {
     const runtime = cli.resolveRuntime(init, spec_arena.allocator(), &g_spec, parsed, lang);
 
     const opt_wait = runtime.opt_wait;
-    const opt_borderless = runtime.opt_borderless;
+    var opt_borderless = runtime.opt_borderless;
 
     const cfg = runtime.cfg;
     const env_scrollbar = runtime.env_scrollbar;
@@ -617,9 +617,17 @@ pub fn main(init: std.process.Init) !void {
                             const n = std.posix.system.read(fd, &read_buf, read_buf.len);
                             if (n > 0) {
                                 const read_str = read_buf[0..@intCast(n)];
-                                if (std.fmt.parseInt(i64, read_str, 10)) |read_ts| {
+                                // Format: "TIMESTAMP:BORDERLESS" (BORDERLESS = 0 or 1)
+                                const colon = std.mem.indexOfScalar(u8, read_str, ':');
+                                const ts_str = if (colon) |c| read_str[0..c] else read_str;
+                                if (std.fmt.parseInt(i64, ts_str, 10)) |read_ts| {
                                     if (current_ts - read_ts >= 0 and current_ts - read_ts < 5) {
                                         already_relaunched = true;
+                                        // Restore borderless flag written by the original launch.
+                                        if (colon) |c| {
+                                            const bl_str = read_str[c + 1 ..];
+                                            opt_borderless = !std.mem.eql(u8, bl_str, "0");
+                                        }
                                     }
                                 } else |_| {}
                             }
@@ -631,8 +639,10 @@ pub fn main(init: std.process.Init) !void {
                             const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
                             if (std.posix.openat(std.posix.AT.FDCWD, lock_path, wf, 0o600)) |fd| {
                                 defer _ = std.posix.system.close(fd);
+                                // Format: "TIMESTAMP:BORDERLESS" so the relaunched process can
+                                // restore the flag (gtk-launch uses the desktop file, not CLI args).
                                 var val_buf: [32]u8 = undefined;
-                                const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{current_ts}) catch "";
+                                const val_str = std.fmt.bufPrint(&val_buf, "{d}:{d}", .{ current_ts, @intFromBool(opt_borderless) }) catch "";
                                 if (val_str.len > 0) {
                                     _ = std.posix.system.write(fd, val_str.ptr, val_str.len);
                                 }
