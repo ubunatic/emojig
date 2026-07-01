@@ -11,6 +11,27 @@ pub const Theme = term.Theme;
 
 pub const ScrollbarStyle = enum { expand, bar };
 
+/// Controls how the picker reacts when the real terminal is shorter than the
+/// grid it was launched to draw (e.g. a GUI host that doesn't honor the
+/// requested `--window-size-chars` height):
+///   `off`    — no height check at all (pre-2026-07 behavior; only width is
+///              guarded). Cursor repositioning may land on the wrong row if
+///              the terminal is actually too short.
+///   `strict` — fall back to the existing "too small" minimal UI (the same
+///              one already used for insufficient width) when the terminal
+///              is too short.
+///   `fit`    — shrink the displayed grid to whatever row count actually
+///              fits (clamped to defaults.MIN_ROWS), only falling back to
+///              `strict` behavior if even the minimum doesn't fit.
+pub const HeightGuard = enum { off, strict, fit };
+
+pub fn parseHeightGuard(v: []const u8) ?HeightGuard {
+    if (std.mem.eql(u8, v, "off")) return .off;
+    if (std.mem.eql(u8, v, "strict")) return .strict;
+    if (std.mem.eql(u8, v, "fit")) return .fit;
+    return null;
+}
+
 pub const Config = struct {
     theme: ?Theme = null,
     width: ?usize = null,
@@ -26,6 +47,7 @@ pub const Config = struct {
     disabled_categories: ?[]const u8 = null,
     update_cmd: ?[]const u8 = null,
     scrollbar_style: ?ScrollbarStyle = null,
+    height_guard: ?HeightGuard = null,
     font_size: ?usize = null,
     compact: ?bool = null,
     app_bg: ?[]const u8 = null,
@@ -110,6 +132,8 @@ pub fn loadConfig(arena: std.mem.Allocator, io: std.Io) Config {
                 cfg.title_bg = arena.dupe(u8, val) catch null;
             } else if (std.mem.eql(u8, key, "decorated")) {
                 cfg.decorated = std.mem.eql(u8, val, "1") or std.mem.eql(u8, val, "true");
+            } else if (std.mem.eql(u8, key, "height_guard")) {
+                cfg.height_guard = parseHeightGuard(val);
             }
         }
     }

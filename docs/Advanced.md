@@ -135,7 +135,9 @@ launcher, prefer `emojig --gui` — don't install one just to pick emoji.
 
 ### Theme modes
 
-Dark, light, and system (auto-detected via OSC 11) themes are available.
+Dark, light, and system themes are available. In TUI mode, `system` follows the
+current terminal background via OSC 11. In GUI mode, the launcher checks GNOME
+`color-scheme`, then the GTK theme name, before spawning the terminal window.
 <kbd>Tab</kbd> toggles in the TUI and saves your choice to
 `~/.config/emojig/config`.
 
@@ -187,6 +189,35 @@ for the full field reference.
 
 Set `EMOJIG_BORDER=1` or `--border` to draw colored border rows above and below
 the content. No box-drawing characters — just background-colored blank lines.
+
+### Height guard (terminal shorter than expected)
+
+Controls what happens when the real terminal turns out **shorter** than the
+grid it was launched to draw — e.g. a GUI host/compositor that doesn't honor
+the requested `--window-size-chars` height (see
+[`docs/HeadlessRecording.md`](HeadlessRecording.md) for the recording-pipeline
+case that surfaced this). Configurable via:
+
+- `--height-guard=off|strict|fit` CLI flag
+- `EMOJIG_HEIGHT_GUARD=off|strict|fit` env var
+- `height_guard=` in the config file
+
+Precedence: CLI flag > env var > config file > default (`fit`).
+
+- `fit` (default) — shrinks the displayed grid to whatever row count actually
+  fits (never below the minimum grid height), so a too-short terminal still
+  shows a working, smaller picker instead of a broken one.
+- `strict` — falls back to the same minimal "too small" UI already used when
+  the terminal is too *narrow* (`is_too_small`), instead of trying to shrink.
+- `off` — no height check at all (pre-2026-07 behavior; only width is
+  guarded). Only useful if you've independently verified the terminal is
+  always exactly the right size and want to skip the check.
+
+Alt-screen sessions (`--gui`, or any `EMOJIG_RESIZE_MODE=altscreen` launch)
+also address the cursor with absolute row/column escapes rather than relative
+"move up N rows" math, removing the specific desync mechanism that a
+too-short terminal used to trigger (a misplaced cursor rather than a visible
+error).
 
 ---
 

@@ -241,8 +241,8 @@ pub fn queryCursorRow(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: 
     return term.queryCursorRow(stdin_fd, stdout_fd, raw);
 }
 
-pub fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
-    return term.detectSystemTheme(stdin_fd, stdout_fd, raw);
+pub fn detectSystemTheme(io: anytype, stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
+    return term.detectSystemTheme(io, stdin_fd, stdout_fd, raw);
 }
 
 test "color names from spec/colors.json resolve to palette indices" {

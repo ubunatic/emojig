@@ -1,0 +1,265 @@
+{
+  "$schema": "./debug.schema.json",
+  "description": "Spec-driven debug pane fields. Each field id is resolved by the TUI at render time.",
+  "title": "🐞 emojig debug",
+  "groups": [
+    {
+      "id": "theme",
+      "title": "theme status",
+      "fields": [
+        {
+          "id": "theme_setting",
+          "label": "settings theme"
+        },
+        {
+          "id": "theme_effective",
+          "label": "effective theme"
+        },
+        {
+          "id": "theme_reason",
+          "label": "effective theme reason"
+        },
+        {
+          "id": "gui_effective_theme",
+          "label": "GUI passed effective theme"
+        },
+        {
+          "id": "term_detected_theme",
+          "label": "detected terminal theme"
+        },
+        {
+          "id": "term_detected_rgb",
+          "label": "detected terminal color"
+        },
+        {
+          "id": "term_detected_luma",
+          "label": "detected terminal luma"
+        },
+        {
+          "id": "terminal_bg",
+          "label": "decided OSC background"
+        },
+        {
+          "id": "terminal_fg",
+          "label": "decided OSC foreground"
+        },
+        {
+          "id": "app_bg_choice",
+          "label": "app background setting"
+        },
+        {
+          "id": "app_bg_hex",
+          "label": "app background hex"
+        },
+        {
+          "id": "title_bg_choice",
+          "label": "title background setting"
+        },
+        {
+          "id": "title_bg_hex",
+          "label": "title background hex"
+        }
+      ]
+    },
+    {
+      "id": "performance",
+      "title": "performance and search",
+      "fields": [
+        {
+          "id": "search_last_us",
+          "label": "query time last"
+        },
+        {
+          "id": "search_p50_us",
+          "label": "query time p50"
+        },
+        {
+          "id": "search_p90_us",
+          "label": "query time p90"
+        },
+        {
+          "id": "search_max_us",
+          "label": "query time max"
+        },
+        {
+          "id": "search_samples",
+          "label": "query samples"
+        },
+        {
+          "id": "total_matches",
+          "label": "total matches"
+        },
+        {
+          "id": "visible_matches",
+          "label": "fetched matches"
+        },
+        {
+          "id": "fetch_limit",
+          "label": "fetch limit"
+        }
+      ]
+    },
+    {
+      "id": "database",
+      "title": "database and specs",
+      "fields": [
+        {
+          "id": "emoji_count",
+          "label": "emojis"
+        },
+        {
+          "id": "synonym_pairs",
+          "label": "synonym pairs"
+        },
+        {
+          "id": "stem_exclusions",
+          "label": "stem exclusions"
+        },
+        {
+          "id": "category_count",
+          "label": "categories"
+        },
+        {
+          "id": "switcher_category_count",
+          "label": "switcher categories"
+        },
+        {
+          "id": "category_synonyms",
+          "label": "category synonyms"
+        },
+        {
+          "id": "disabled_categories",
+          "label": "disabled categories"
+        },
+        {
+          "id": "command_count",
+          "label": "commands"
+        },
+        {
+          "id": "setting_count",
+          "label": "settings"
+        },
+        {
+          "id": "color_count",
+          "label": "named colors"
+        }
+      ]
+    },
+    {
+      "id": "terminal",
+      "title": "terminal and layout",
+      "fields": [
+        {
+          "id": "term_size",
+          "label": "detected terminal size"
+        },
+        {
+          "id": "emojig_size",
+          "label": "emojig frame size"
+        },
+        {
+          "id": "content_width",
+          "label": "content width"
+        },
+        {
+          "id": "grid_size",
+          "label": "grid size"
+        },
+        {
+          "id": "visible_rows",
+          "label": "visible grid rows"
+        },
+        {
+          "id": "cell_width",
+          "label": "cell width"
+        },
+        {
+          "id": "total_cells",
+          "label": "viewport cells"
+        },
+        {
+          "id": "top_padding",
+          "label": "top padding"
+        },
+        {
+          "id": "border",
+          "label": "TUI border"
+        },
+        {
+          "id": "resize_mode",
+          "label": "resize mode"
+        },
+        {
+          "id": "alt_screen",
+          "label": "alt screen"
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "title": "runtime state",
+      "fields": [
+        {
+          "id": "screen",
+          "label": "current screen"
+        },
+        {
+          "id": "focus",
+          "label": "focus"
+        },
+        {
+          "id": "gui_spawned",
+          "label": "GUI spawned"
+        },
+        {
+          "id": "simple_mode",
+          "label": "simple mode"
+        },
+        {
+          "id": "safe_mode",
+          "label": "safe mode"
+        },
+        {
+          "id": "compact_mode",
+          "label": "compact mode"
+        },
+        {
+          "id": "show_switcher",
+          "label": "category switcher"
+        },
+        {
+          "id": "scrollbar_style",
+          "label": "scrollbar style"
+        },
+        {
+          "id": "query",
+          "label": "query"
+        },
+        {
+          "id": "query_len",
+          "label": "query length"
+        },
+        {
+          "id": "query_cursor",
+          "label": "query cursor"
+        },
+        {
+          "id": "selected_idx",
+          "label": "selected index"
+        },
+        {
+          "id": "grid_scroll_top",
+          "label": "grid scroll top"
+        },
+        {
+          "id": "multi_select",
+          "label": "multi-select"
+        },
+        {
+          "id": "mru_count",
+          "label": "MRU entries"
+        }
+      ]
+    }
+  ]
+}

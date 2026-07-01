@@ -140,6 +140,48 @@ state in this environment (font metrics + padding). Force a larger floating size
 for_window [app_id="emojig-picker"] floating enable, resize set 560 320, move position center
 ```
 
+### A too-small `emojig-picker` window can misplace the cursor without ever showing "Too small"
+
+A related but sneakier failure: the wayreel-based `spec/reels/gui.json` scenario
+(the `apps.emojig` sub-app inside a two-window `gedit` + `emojig-picker` reel)
+showed a **persistently misplaced hardware cursor** — sitting one row above the
+search bar the whole time, not just a blink glitch — even though the picker
+never showed its own "Too small" banner.
+
+Root cause: until 2026-07-01, wayreel's `AppConfig` for secondary `apps{}`
+entries had **no `app_width`/`app_height` override at all** — every sub-app
+window was forced to a hardcoded `450x340` regardless of what character grid
+(`--window-size-chars`) the launched terminal actually requested. If that fixed
+pixel size doesn't fit the grid the app assumes it has (cols/rows/font_size),
+the terminal ends up with fewer real rows than emojig's cursor-reposition math
+expects, and the cursor lands on the wrong row for the entire session — with no
+visible "Too small" warning, since that check only looks at *width*.
+
+Fixed upstream in wayreel (`reelang/types.go`, `scenario.go`, `play.go`): `apps{}`
+entries now accept their own `"app_width"`/`"app_height"`, same as the
+top-level app. `spec/reels/gui.json`'s `apps.emojig` block sets
+`"app_width": 420, "app_height": 400` to comfortably fit its 9×8 grid at
+`EMOJIG_GUI_FONT_SIZE=14` — verified cursor-correct across multiple
+recordings. See `../wayreel/issues/01-gui-window-scaling.md` for the full
+diagnosis (this is the same underlying limitation that issue already flagged
+for the top-level app; secondary `apps{}` windows just had no override
+mechanism yet).
+
+**Follow-up (2026-07-01):** giving wayreel an explicit per-app size only works
+around the symptom — under this sandbox's nested-sway/x11-backend, even
+*omitting* a forced size (so the compositor should honor the client's own
+`--window-size-chars` request) still produced an undersized window in
+practice. That pushed the real fix to emojig itself: see
+[`docs/Advanced.md` §Height guard](Advanced.md#height-guard-terminal-shorter-than-expected)
+for `--height-guard=off|strict|fit` (default `fit`), which shrinks the grid to
+whatever the terminal actually has instead of assuming the requested size was
+honored, plus absolute-addressed cursor positioning in alt-screen mode. This
+is the more durable fix — it protects against *any* GUI host/compositor that
+under-sizes the window, not just this recording sandbox. The wayreel
+`app_width`/`app_height` override above is still useful to avoid the *cosmetic*
+extra-column padding (see `issues/41-width-fit-and-cosmetic-recorder-gap.md`
+for that separate, lower-priority follow-up).
+
 ### Wayland runtime plumbing
 
 sway needs `XDG_RUNTIME_DIR` (a `0700` dir). It creates the socket at

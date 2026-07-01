@@ -24,6 +24,7 @@ const strings_json = @embedFile("spec_strings");
 const commands_json = @embedFile("spec_commands");
 const settings_json = @embedFile("spec_settings");
 const categories_json = @embedFile("spec_categories");
+const debug_json = @embedFile("spec_debug");
 const strings_es = @embedFile("spec_strings_es");
 const strings_pt = @embedFile("spec_strings_pt");
 const strings_fr = @embedFile("spec_strings_fr");
@@ -243,6 +244,23 @@ pub const SettingOption = struct {
 pub const SettingsSpec = struct {
     title: []const u8,
     options: []const SettingOption,
+};
+
+pub const DebugField = struct {
+    id: []const u8,
+    label: []const u8,
+    description: ?[]const u8 = null,
+};
+
+pub const DebugGroup = struct {
+    id: []const u8,
+    title: []const u8,
+    fields: []const DebugField,
+};
+
+pub const DebugSpec = struct {
+    title: []const u8,
+    groups: []const DebugGroup,
 };
 
 pub const InputFile = struct {
@@ -497,6 +515,7 @@ pub const Spec = struct {
     commands: Commands,
     settings: SettingsSpec,
     categories: CategoriesSpec,
+    debug: DebugSpec,
     styles: StylesSpec,
     colors: ColorsSpec,
     // term.Palette escape strings built at load from the color indices above.
@@ -589,6 +608,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     const commands = try std.json.parseFromSliceLeaky(Commands, arena, commands_json, parse_opts);
     const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
     const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
+    const debug = try std.json.parseFromSliceLeaky(DebugSpec, arena, debug_json, parse_opts);
     const styles = try std.json.parseFromSliceLeaky(StylesSpec, arena, styles_json, parse_opts);
     const colors = try std.json.parseFromSliceLeaky(ColorsSpec, arena, colors_json, parse_opts);
 
@@ -601,6 +621,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .commands = commands,
         .settings = settings,
         .categories = categories,
+        .debug = debug,
         .styles = styles,
         .colors = colors,
         .dark_palette = try buildPalette(arena, theme.themes.dark, &colors, false),
@@ -617,14 +638,22 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     const dim_suffix = if (dim) ";2" else "";
     const dim_suffix_bold = if (dim) ";2" else ";1";
 
+    // Resolve the theme's terminal window background (terminal_bg2 hex →
+    // closest 256-color index). This is the explicit canvas fallback whenever
+    // app_bg is null, so an effective dark TUI still paints dark cells inside a
+    // light terminal and vice versa.
+    const term_bg_val: std.json.Value = if (p.terminal_bg2) |hex| .{ .string = hex } else .null;
+    const term_bg_idx = try resolveColorValue(term_bg_val, colors_spec);
+
     const g_bg_idx = try resolveColorValue(p.grid_bg, colors_spec);
     const g_bg = if (g_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
         "";
 
-    // Resolve overall canvas app background color
-    const app_bg_idx = try resolveColorValue(p.app_bg, colors_spec);
+    // Resolve overall canvas app background color. Null falls back to the
+    // effective theme's terminal_bg2, not to the live terminal default.
+    const app_bg_idx = try resolveColorValue(p.app_bg, colors_spec) orelse term_bg_idx;
     const app_bg = if (app_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -655,18 +684,13 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         "";
 
-    // Resolve the terminal window background (terminal_bg2 hex → closest 256-color
-    // index). Used as the separator fg so │ blends into the terminal background.
-    const term_bg_val: std.json.Value = if (p.terminal_bg2) |hex| .{ .string = hex } else .null;
-    const term_bg_idx = try resolveColorValue(term_bg_val, colors_spec);
-
     const s_bg_idx = try resolveColorValue(p.search_bg, colors_spec);
     const s_bg = if (s_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
         "";
 
-    const st_bg_idx = try resolveColorValue(p.status_bg, colors_spec);
+    const st_bg_idx = try resolveColorValue(p.status_bg, colors_spec) orelse app_bg_idx;
     const st_bg = if (st_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -679,7 +703,7 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         "";
 
-    const i_bg_idx = try resolveColorValue(p.info_bg, colors_spec);
+    const i_bg_idx = try resolveColorValue(p.info_bg, colors_spec) orelse app_bg_idx;
     const i_bg = if (i_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -692,7 +716,7 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     else
         try std.fmt.allocPrint(arena, "\x1b[38;5;{d}{s}m", .{ sel_fg_idx, dim_suffix });
 
-    const b_bg_idx = try resolveColorValue(p.border_bg, colors_spec);
+    const b_bg_idx = try resolveColorValue(p.border_bg, colors_spec) orelse app_bg_idx;
     const b_bg = if (b_bg_idx) |bg_val|
         try std.fmt.allocPrint(arena, "\x1b[48;5;{d}m", .{bg_val})
     else
@@ -708,9 +732,8 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
     const warning_fg_idx = try resolveRequiredColorValue(p.warning_fg, colors_spec, 9);
     const success_fg_idx = try resolveRequiredColorValue(p.success_fg, colors_spec, 10);
 
-    // cap_fallback: fg for caps (▌/▐) — must match terminal bg so the half-block
-    // creates a smooth blend from canvas into the search bar.  Uses terminal_bg2
-    // (closest 256-color to the actual window background) or grid bg as proxy.
+    // cap_fallback: fg for caps (▌/▐) — must match the explicit app canvas so
+    // the half-block creates a smooth blend from canvas into the search bar.
     const cap_fallback_idx = app_bg_idx orelse term_bg_idx;
 
     // search_sep_fg: explicit override for ALL separator segments.  Stays null

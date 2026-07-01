@@ -475,17 +475,20 @@ hovered slot highlights the whole bracket group in `palette.selection_bg`.
 
 ## 13. Container/Controls Palette Fields
 
-All layout cell colors are semantic theme variables in `spec/theme.json`, resolved in `buildPalette` (`src/spec.zig`). The key fallback rule: **`null` = use `cap_fallback_idx`** (= `app_bg` if set, else the nearest xterm-256 index to `terminal_bg2`). This is the "punch-through" semantics — a null color lets the canvas background show through the search bar.
+All layout cell colors are semantic theme variables in `spec/theme.json`, resolved in `buildPalette` (`src/spec.zig`). The key fallback rule: **`null` = use `cap_fallback_idx`** (= `app_bg` if set, else the nearest xterm-256 index to the effective theme's `terminal_bg2`). This is the "punch-through" semantics — a null color lets the explicit canvas background show through the search bar without exposing the host terminal's actual background.
 
 ### Layout background fields
 
 | Field | Fallback | Effect |
 |-------|----------|--------|
-| `app_bg` | terminal bg | Canvas: margins, blank rows, borders |
+| `app_bg` | effective theme `terminal_bg2` | Canvas: margins, blank rows, borders |
 | `app_topline_bg` | `border_bg` → `app_bg` | First row (top padding / top border) |
 | `emoji_pane_bg` | `app_bg` | Emoji grid viewport |
 | `scrollbar_rail_bg` | `app_bg` | Scrollbar track column |
 | `view_bg` | `app_bg` | Help / about / settings / categories panes |
+| `info_bg` | `app_bg` | Description/info row |
+| `status_bg` | `app_bg` | Status bar row |
+| `border_bg` | `app_bg` | Optional border rows |
 | `hline_fg` | `240` | Foreground of horizontal separator lines (`─`) |
 
 ### Search bar cap fields
@@ -499,7 +502,7 @@ Caps (`▌` left, `▐` right) are the half-block characters at the edges of the
 | `search_right_cap_fg` | `cap_fallback_idx` | Right cap foreground — set to app bg to blend into canvas |
 | `search_right_cap_bg` | `search_bg` | Right cap background |
 
-`cap_fallback_idx` = `app_bg` index if configured, else closest xterm-256 to `terminal_bg2`. This makes null fg "show through" to the canvas — correct for the half-block blend illusion.
+`cap_fallback_idx` = `app_bg` index if configured, else closest xterm-256 to the effective theme's `terminal_bg2`. This makes null fg "show through" to the canvas — correct for the half-block blend illusion — while still painting a concrete dark/light background when the terminal itself has the opposite theme.
 
 ### Search bar separator fields
 

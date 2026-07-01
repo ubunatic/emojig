@@ -26,12 +26,14 @@
   "apps": {
     "emojig": {
       "args": ["--gui", "--theme", "light"],
-      "app_id": "emojig-picker",   
+      "app_id": "emojig-picker",
+      "app_width": 460,
+      "app_height": 400,
       "env": [
         "EMOJIG_TERMINAL=foot",
-        "EMOJIG_GUI_FONT_SIZE=14",
-        "EMOJIG_COLS=9",
-        "EMOJIG_ROWS=8"
+        "EMOJIG_GUI_FONT_SIZE=13",
+        "EMOJIG_COLS=12",
+        "EMOJIG_ROWS=10"
       ],
       "script": [
         { "type": "compu", "desc": "search query", "speed": 0.4 },

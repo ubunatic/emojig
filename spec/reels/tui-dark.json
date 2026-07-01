@@ -20,13 +20,13 @@
     { "text": " " }
   ],
   "shell_init": ["source $(pwd)/src/shell/emojig.sh"],
-  "env": ["EMOJIG_THEME=light"],
+  "env": ["EMOJIG_THEME=dark"],
   "pause": "1s",
   "script": [
     { "type": "echo Hello TUI ", "desc": "echo start", "pause": 0 },
     { "type": "<C-o>", "desc": "open emojig", "show_keys": true },
     { "type": "car", "desc": "search for 'car'", "speed": 0.4 },
-    { "type": "<bs><bs><bs>", "desc": "delete search", "speed": 0.4, "pause": 0 },
+    { "type": "<bs><bs><bs>", "desc": "delete search", "speed": 0.4, "pause": "300ms" },
     { "type": "cat", "desc": "search for cat", "speed": 0.4 },
     { "type": "<cr>", "desc": "select cat", "show_keys": true },
     { "type": "<cr>", "desc": "confirm echo" }

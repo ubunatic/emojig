@@ -21,7 +21,7 @@ A zig-based, low-memory, instant-popup, daemon-free GUI + TUI emoji picker for L
 | 🌐 **GUI + TUI in one binary** | Auto-detects terminal vs. desktop and picks the right mode |
 | 🔍 **Instant fuzzy search** | Multi-term, plural / stem fallbacks (`cars`→`car`, `racing`→`race`) |
 | 📦 **2,249 emojis embedded** | Compile-time `@embedFile` — no data files, no network |
-| 🌓 **Dark / light / system themes** | OSC 11 auto-detection; <kbd>Tab</kbd> to toggle |
+| 🌓 **Dark / light / system themes** | TUI terminal / GUI desktop auto-detection; <kbd>Tab</kbd> to toggle |
 | 🖱️ **Full mouse + keyboard nav** | Hover, click, scroll wheel, 2D arrow-key grid |
 | 🛡️ **Crash-safe terminal restore** | Custom panic handler + signal traps restore raw mode |
 

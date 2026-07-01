@@ -34,6 +34,7 @@ pub const ParsedArgs = struct {
     title_size: usize = 0,
     lang: ?[]const u8 = null,
     show_switcher: ?bool = null,
+    height_guard: ?config.HeightGuard = null,
 };
 
 pub const Runtime = struct {
@@ -78,6 +79,7 @@ pub const Runtime = struct {
     is_linux_vt: bool,
     run_gui: bool,
     resize_mode: resize.Mode,
+    final_height_guard: config.HeightGuard,
 };
 
 fn writeAll(fd: std.posix.fd_t, bytes: []const u8) void {
@@ -169,6 +171,16 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
             } else {
                 fail(std.posix.STDERR_FILENO, "Error: --theme requires an argument ('dark', 'light', or 'system').\n");
             }
+        } else if (std.mem.eql(u8, arg, "--height-guard")) {
+            if (args_it.next()) |v| {
+                parsed.height_guard = config.parseHeightGuard(v) orelse
+                    fail(std.posix.STDERR_FILENO, "Error: invalid height-guard. Supported values are 'off', 'strict', or 'fit'.\n");
+            } else {
+                fail(std.posix.STDERR_FILENO, "Error: --height-guard requires an argument ('off', 'strict', or 'fit').\n");
+            }
+        } else if (std.mem.startsWith(u8, arg, "--height-guard=")) {
+            parsed.height_guard = config.parseHeightGuard(arg["--height-guard=".len..]) orelse
+                fail(std.posix.STDERR_FILENO, "Error: invalid height-guard. Supported values are 'off', 'strict', or 'fit'.\n");
         } else if (std.mem.eql(u8, arg, "--width")) {
             if (args_it.next()) |v| {
                 parsed.width = std.fmt.parseInt(usize, v, 10) catch fail(std.posix.STDERR_FILENO, "Error: invalid width. Must be an integer.\n");
@@ -226,6 +238,9 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 "  --width [number]             Set the width of the picker\n" ++
                 "  --height [number]            Set the height of the picker\n" ++
                 "  --border [1|0|true|false]    Enable or disable the border\n" ++
+                "  --height-guard [off|strict|fit]  How to react when the real terminal is\n" ++
+                "                               shorter than the grid it was launched to draw\n" ++
+                "                               (default: fit)\n" ++
                 "  --lang, -l [code]            Set UI language (de, es, fr, it, pt, pl, ru, uk, nl, tr)\n" ++
                 "  --safe                       Safe mode: strip U+FE0F variation selector from screen rendering too\n" ++
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
@@ -317,6 +332,15 @@ pub fn resolveRuntime(init: std.process.Init, arena: std.mem.Allocator, spec: *c
         }
         break :blk null;
     };
+
+    const env_height_guard: ?config.HeightGuard = blk: {
+        if (init.environ_map.get("EMOJIG_HEIGHT_GUARD")) |env_val| {
+            if (config.parseHeightGuard(env_val)) |h| break :blk h;
+        }
+        break :blk null;
+    };
+    // Precedence: CLI flag > env var > persisted config > default (fit).
+    const final_height_guard: config.HeightGuard = parsed.height_guard orelse env_height_guard orelse cfg.height_guard orelse .fit;
 
     const env_width: ?usize = blk: {
         if (init.environ_map.get("EMOJIG_WIDTH")) |env_val| {
@@ -500,5 +524,6 @@ pub fn resolveRuntime(init: std.process.Init, arena: std.mem.Allocator, spec: *c
         .is_linux_vt = is_linux_vt,
         .run_gui = run_gui,
         .resize_mode = resize_mode,
+        .final_height_guard = final_height_guard,
     };
 }

@@ -216,8 +216,83 @@ pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l\x1b[?1004l";
 pub const RESTORE = MOUSE_OFF ++ "\x1b[0q\x1b[?25h\x1b[?7h\x1b]111\x1b\\\x1b]110\x1b\\";
 pub const RESTORE_ALT = MOUSE_OFF ++ "\x1b[?1049l" ++ "\x1b[0q\x1b[?25h\x1b[?7h\x1b]111\x1b\\\x1b]110\x1b\\";
 
+pub const DetectedTermColor = struct {
+    r: u16,
+    g: u16,
+    b: u16,
+    luma: u32,
+    theme: Theme,
+};
+
+pub var last_system_theme_color: ?DetectedTermColor = null;
+
+/// Run `gsettings get SCHEMA KEY` and return the output stripped of shell-ish
+/// quoting. Returns a slice into `buf`, or empty on failure.
+fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u8 {
+    var pipe_fds: [2]std.posix.fd_t = undefined;
+    const pipe_rc = std.os.linux.pipe2(&pipe_fds, .{});
+    if (std.posix.errno(pipe_rc) != .SUCCESS) return buf[0..0];
+
+    const argv = [_][]const u8{ "gsettings", "get", schema, key };
+    var child = std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .ignore,
+        .stdout = .{ .file = .{ .handle = pipe_fds[1], .flags = .{ .nonblocking = false } } },
+        .stderr = .ignore,
+    }) catch {
+        _ = std.posix.system.close(pipe_fds[1]);
+        _ = std.posix.system.close(pipe_fds[0]);
+        return buf[0..0];
+    };
+    _ = std.posix.system.close(pipe_fds[1]);
+
+    var total: usize = 0;
+    while (total < buf.len) {
+        const n = std.posix.read(pipe_fds[0], buf[total..]) catch break;
+        if (n == 0) break;
+        total += n;
+    }
+    _ = std.posix.system.close(pipe_fds[0]);
+    _ = child.wait(io) catch {};
+    const trimmed = std.mem.trim(u8, buf[0..total], " \t\n\r'\"");
+    return @constCast(trimmed);
+}
+
+fn containsDarkAscii(s: []const u8) bool {
+    if (s.len < "dark".len) return false;
+    var i: usize = 0;
+    while (i + "dark".len <= s.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(s[i .. i + "dark".len], "dark")) return true;
+    }
+    return false;
+}
+
+/// Detect the desktop light/dark preference via GNOME gsettings.
+///
+/// Order matters:
+/// 1. `color-scheme=prefer-dark` means dark.
+/// 2. `color-scheme=default|prefer-light` falls through to GTK theme name.
+/// 3. A GTK theme containing "dark" means dark; otherwise light.
+/// Returns null when gsettings is unavailable/unreadable so callers can use a
+/// context-specific fallback.
+pub fn detectDesktopTheme(io: anytype) ?Theme {
+    var color_buf: [64]u8 = undefined;
+    const color_scheme = gsettingsGet(io, "org.gnome.desktop.interface", "color-scheme", &color_buf);
+    if (std.mem.eql(u8, color_scheme, "prefer-dark")) return .dark;
+
+    var gtk_buf: [128]u8 = undefined;
+    const gtk_theme = gsettingsGet(io, "org.gnome.desktop.interface", "gtk-theme", &gtk_buf);
+    if (gtk_theme.len == 0) {
+        return if (color_scheme.len > 0) .light else null;
+    }
+    return if (containsDarkAscii(gtk_theme)) .dark else .light;
+}
+
 /// Query the terminal background colour via OSC 11, detect dark/light.
-pub fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
+pub fn detectSystemTheme(io: anytype, stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, raw: std.posix.termios) Theme {
+    _ = io;
+    last_system_theme_color = null;
+
     // Reset terminal colors to default first to ensure we query the native system theme,
     // not any custom theme background/foreground we previously applied.
     writeAll(stdout_fd, "\x1b]111\x1b\\\x1b]110\x1b\\\x1b]11;?\x1b\\") catch return .dark;
@@ -248,7 +323,9 @@ pub fn detectSystemTheme(stdin_fd: std.posix.fd_t, stdout_fd: std.posix.fd_t, ra
             r;
 
         const luma = (@as(u32, r) * 299 + @as(u32, g) * 587 + @as(u32, b) * 114) / 1000;
-        return if (luma > 32767) .light else .dark;
+        const detected_theme = if (luma > 32767) Theme.light else Theme.dark;
+        last_system_theme_color = .{ .r = r, .g = g, .b = b, .luma = luma, .theme = detected_theme };
+        return detected_theme;
     }
     return .dark;
 }

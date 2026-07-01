@@ -31,6 +31,8 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**26**](26-install-and-update-integrity-gap.md) | [`install.sh` and self-update still skip artifact verification](26-install-and-update-integrity-gap.md) | **P1** | The release plan promises verification, but the installer still downloads and extracts without `SHA256SUMS`/`minisign`, and curl-update inherits the same gap. |
 | [**27**](27-persistence-buffer-edges.md) | [Config and MRU persistence still have silent 4 KB edge behavior](27-persistence-buffer-edges.md) | **P2** | The config loader still hard-bails on a full 4 KB read, and MRU still uses the same fixed-size single-read pattern without a full-buffer guard. |
 | [**38**](38-more-common-search-tests.md) | [Tests for common searches](38-more-common-search-tests.md) | **P2** | Phase 1+2 done: 55 ranking tests + 23 synonyms added; Phase 3 open (food/drinks/feelings: ~20 more tests need synonyms/tags). |
+| [**40**](40-wayland-focused-window-placement.md) | [Wayland focused-window placement for GUI picker](40-wayland-focused-window-placement.md) | **P2** | Opt-in `--placement=focus` to open the picker near the focused window via compositor-specific control APIs (sway/Hyprland first). |
+| [**41**](41-width-fit-and-cosmetic-recorder-gap.md) | [Width side of height_guard resilience is still missing](41-width-fit-and-cosmetic-recorder-gap.md) | **P3** | `height_guard=fit` shrinks the grid when the terminal is too *short*; no equivalent exists for a terminal that's too *wide* — cosmetic-only gap seen in `gui.json` recordings. |
 
 ---
 

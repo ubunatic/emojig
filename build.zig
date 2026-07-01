@@ -119,6 +119,7 @@ pub fn build(b: *std.Build) void {
     mod.addAnonymousImport("spec_commands", .{ .root_source_file = b.path("spec/commands.json") });
     mod.addAnonymousImport("spec_settings", .{ .root_source_file = b.path("spec/settings.json") });
     mod.addAnonymousImport("spec_categories", .{ .root_source_file = b.path("spec/categories.json") });
+    mod.addAnonymousImport("spec_debug", .{ .root_source_file = b.path("spec/debug.json") });
     mod.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
     mod.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
     mod.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });
@@ -141,6 +142,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("spec_commands", .{ .root_source_file = b.path("spec/commands.json") });
     exe.root_module.addAnonymousImport("spec_settings", .{ .root_source_file = b.path("spec/settings.json") });
     exe.root_module.addAnonymousImport("spec_categories", .{ .root_source_file = b.path("spec/categories.json") });
+    exe.root_module.addAnonymousImport("spec_debug", .{ .root_source_file = b.path("spec/debug.json") });
     exe.root_module.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
     exe.root_module.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
     exe.root_module.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });

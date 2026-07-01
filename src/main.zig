@@ -90,8 +90,34 @@ const ScreenState = enum {
     help,
     about,
     status,
+    debug,
     settings,
     categories,
+};
+
+const SearchStats = struct {
+    samples: [64]u32 = [_]u32{0} ** 64,
+    count: usize = 0,
+    next: usize = 0,
+    last_us: u32 = 0,
+    max_us: u32 = 0,
+
+    fn record(self: *@This(), elapsed_us: u32) void {
+        self.last_us = elapsed_us;
+        if (elapsed_us > self.max_us) self.max_us = elapsed_us;
+        self.samples[self.next] = elapsed_us;
+        self.next = (self.next + 1) % self.samples.len;
+        if (self.count < self.samples.len) self.count += 1;
+    }
+
+    fn percentile(self: *const @This(), pct: usize) u32 {
+        if (self.count == 0) return 0;
+        var tmp: [64]u32 = undefined;
+        @memcpy(tmp[0..self.count], self.samples[0..self.count]);
+        std.mem.sort(u32, tmp[0..self.count], {}, std.sort.asc(u32));
+        const idx = @min((pct * (self.count - 1) + 50) / 100, self.count - 1);
+        return tmp[idx];
+    }
 };
 
 extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
@@ -161,10 +187,46 @@ inline fn themeIcon(t: Theme) []const u8 {
     return g_spec.iconFor(t);
 }
 
+inline fn themeName(t: Theme) []const u8 {
+    return switch (t) {
+        .dark => "dark",
+        .light => "light",
+        .system => "system",
+    };
+}
+
+inline fn screenName(s: ScreenState) []const u8 {
+    return switch (s) {
+        .search => "search",
+        .help => "help",
+        .about => "about",
+        .status => "status",
+        .debug => "debug",
+        .settings => "settings",
+        .categories => "categories",
+    };
+}
+
+inline fn boolText(v: bool) []const u8 {
+    return if (v) "true" else "false";
+}
+
+fn parseConcreteTheme(v: []const u8) ?Theme {
+    if (std.mem.eql(u8, v, "light")) return .light;
+    if (std.mem.eql(u8, v, "dark")) return .dark;
+    return null;
+}
+
 inline fn getMonotonicMs() i64 {
     var ts = std.mem.zeroes(std.posix.system.timespec);
     _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
     return ts.sec * 1000 + @divTrunc(ts.nsec, 1000000);
+}
+
+inline fn getMonotonicUs() u64 {
+    var ts = std.mem.zeroes(std.posix.system.timespec);
+    _ = std.posix.system.clock_gettime(.MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.sec)) * 1_000_000 + @as(u64, @intCast(@divTrunc(ts.nsec, 1000)));
 }
 
 inline fn readStdin(fd: std.posix.fd_t, buf: []u8) !usize {
@@ -426,6 +488,170 @@ fn switcherCatIcon(idx: usize) []const u8 {
     return "";
 }
 
+fn categorySynonymCount() usize {
+    var count: usize = 0;
+    for (g_spec.categories.categories) |cat| {
+        count += cat.synonyms.len;
+    }
+    return count;
+}
+
+fn disabledCategoryCount(disabled_cats: [32]bool) usize {
+    var count: usize = 0;
+    for (g_spec.categories.categories, 0..) |_, idx| {
+        if (idx < disabled_cats.len and disabled_cats[idx]) count += 1;
+    }
+    return count;
+}
+
+fn debugLineCount() usize {
+    var count: usize = 1; // title
+    for (g_spec.debug.groups) |group| {
+        count += 2 + group.fields.len; // blank + group title + fields
+    }
+    return count;
+}
+
+const DebugCtx = struct {
+    theme: Theme,
+    system_theme: Theme,
+    gui_effective_theme: ?Theme,
+    current_screen: ScreenState,
+    has_focus: bool,
+    gui_spawned: bool,
+    final_simple: bool,
+    final_safe: bool,
+    final_compact: bool,
+    show_switcher: bool,
+    show_border: bool,
+    scrollbar_style: ScrollbarStyle,
+    resize_mode: resize.Mode,
+    final_alt_screen: bool,
+    query: []const u8,
+    query_cursor: usize,
+    selected_idx: ?usize,
+    grid_scroll_top: usize,
+    total_matches: usize,
+    top_count: usize,
+    fetch_limit: usize,
+    content_width: usize,
+    current_w: usize,
+    current_h: usize,
+    final_h: usize,
+    cols: usize,
+    rows: usize,
+    visible_rows: usize,
+    total_cells: usize,
+    search_stats: *const SearchStats,
+    disabled_cats: [32]bool,
+    app_bg_choice: []const u8,
+    title_bg_choice: []const u8,
+    multi_select_active: bool,
+    multi_selected_count: usize,
+};
+
+fn debugValue(buf: []u8, id: []const u8, ctx: DebugCtx) []const u8 {
+    if (std.mem.eql(u8, id, "theme_setting")) return themeName(ctx.theme);
+    if (std.mem.eql(u8, id, "theme_effective") or std.mem.eql(u8, id, "effective_theme")) return themeName(if (ctx.theme == .system) ctx.system_theme else ctx.theme);
+    if (std.mem.eql(u8, id, "theme_reason")) {
+        if (ctx.theme != .system) return "concrete setting";
+        if (ctx.gui_effective_theme != null) return "GUI parent resolved desktop theme";
+        if (term_lib.last_system_theme_color != null) return "TUI OSC 11 terminal background";
+        return "TUI OSC 11 unavailable; fallback dark";
+    }
+    if (std.mem.eql(u8, id, "gui_effective_theme")) return if (ctx.gui_effective_theme) |t| themeName(t) else "none";
+    if (std.mem.eql(u8, id, "term_detected_theme")) return if (term_lib.last_system_theme_color) |c| themeName(c.theme) else "none";
+    if (std.mem.eql(u8, id, "term_detected_rgb")) {
+        if (term_lib.last_system_theme_color) |c| return std.fmt.bufPrint(buf, "rgb:{x:0>4}/{x:0>4}/{x:0>4}", .{ c.r, c.g, c.b }) catch "?";
+        return "none";
+    }
+    if (std.mem.eql(u8, id, "term_detected_luma")) {
+        if (term_lib.last_system_theme_color) |c| return std.fmt.bufPrint(buf, "{d}/65535", .{c.luma}) catch "?";
+        return "none";
+    }
+    if (std.mem.eql(u8, id, "terminal_bg")) {
+        const tc = g_spec.terminalColors(ctx.theme, ctx.system_theme);
+        return tc.bg orelse "none";
+    }
+    if (std.mem.eql(u8, id, "terminal_fg")) {
+        const tc = g_spec.terminalColors(ctx.theme, ctx.system_theme);
+        return tc.fg orelse "none";
+    }
+    if (std.mem.eql(u8, id, "app_bg_choice")) return ctx.app_bg_choice;
+    if (std.mem.eql(u8, id, "app_bg_hex")) return host.resolveAppBgHex(ctx.app_bg_choice, (if (ctx.theme == .system) ctx.system_theme else ctx.theme) != .light);
+    if (std.mem.eql(u8, id, "title_bg_choice")) return ctx.title_bg_choice;
+    if (std.mem.eql(u8, id, "title_bg_hex")) {
+        const is_dark = (if (ctx.theme == .system) ctx.system_theme else ctx.theme) != .light;
+        const app_hex = host.resolveAppBgHex(ctx.app_bg_choice, is_dark);
+        var title_buf: [6]u8 = undefined;
+        return std.fmt.bufPrint(buf, "#{s}", .{host.resolveTitleBgHex(ctx.title_bg_choice, app_hex, is_dark, &title_buf)}) catch "?";
+    }
+    if (std.mem.eql(u8, id, "search_last_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.last_us}) catch "?";
+    if (std.mem.eql(u8, id, "search_p50_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.percentile(50)}) catch "?";
+    if (std.mem.eql(u8, id, "search_p90_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.percentile(90)}) catch "?";
+    if (std.mem.eql(u8, id, "search_max_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.max_us}) catch "?";
+    if (std.mem.eql(u8, id, "search_samples")) return std.fmt.bufPrint(buf, "{d}/64", .{ctx.search_stats.count}) catch "?";
+    if (std.mem.eql(u8, id, "total_matches")) return std.fmt.bufPrint(buf, "{d}", .{ctx.total_matches}) catch "?";
+    if (std.mem.eql(u8, id, "visible_matches")) return std.fmt.bufPrint(buf, "{d}", .{ctx.top_count}) catch "?";
+    if (std.mem.eql(u8, id, "fetch_limit")) return std.fmt.bufPrint(buf, "{d}", .{ctx.fetch_limit}) catch "?";
+    if (std.mem.eql(u8, id, "emoji_count")) return std.fmt.bufPrint(buf, "{d}", .{emojig.EmojiDb.count}) catch "?";
+    if (std.mem.eql(u8, id, "synonym_pairs")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.synonym_count}) catch "?";
+    if (std.mem.eql(u8, id, "stem_exclusions")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.stem_excl_count}) catch "?";
+    if (std.mem.eql(u8, id, "category_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.categories.categories.len}) catch "?";
+    if (std.mem.eql(u8, id, "switcher_category_count")) return std.fmt.bufPrint(buf, "{d}", .{switcherCatCount()}) catch "?";
+    if (std.mem.eql(u8, id, "category_synonyms")) return std.fmt.bufPrint(buf, "{d}", .{categorySynonymCount()}) catch "?";
+    if (std.mem.eql(u8, id, "disabled_categories")) return std.fmt.bufPrint(buf, "{d}", .{disabledCategoryCount(ctx.disabled_cats)}) catch "?";
+    if (std.mem.eql(u8, id, "command_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.commands.commands.len}) catch "?";
+    if (std.mem.eql(u8, id, "setting_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.settings.options.len}) catch "?";
+    if (std.mem.eql(u8, id, "color_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.colors.colors.len}) catch "?";
+    if (std.mem.eql(u8, id, "term_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.current_w, ctx.current_h }) catch "?";
+    if (std.mem.eql(u8, id, "emojig_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.content_width + 1, ctx.final_h }) catch "?";
+    if (std.mem.eql(u8, id, "content_width")) return std.fmt.bufPrint(buf, "{d}", .{ctx.content_width}) catch "?";
+    if (std.mem.eql(u8, id, "grid_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.cols, ctx.rows }) catch "?";
+    if (std.mem.eql(u8, id, "visible_rows")) return std.fmt.bufPrint(buf, "{d}", .{ctx.visible_rows}) catch "?";
+    if (std.mem.eql(u8, id, "cell_width")) return std.fmt.bufPrint(buf, "{d}", .{if (ctx.final_compact) @as(usize, 3) else 4}) catch "?";
+    if (std.mem.eql(u8, id, "total_cells")) return std.fmt.bufPrint(buf, "{d}", .{ctx.total_cells}) catch "?";
+    if (std.mem.eql(u8, id, "top_padding")) return boolText(g_spec.layout.top_padding);
+    if (std.mem.eql(u8, id, "border")) return boolText(ctx.show_border);
+    if (std.mem.eql(u8, id, "resize_mode")) return @tagName(ctx.resize_mode);
+    if (std.mem.eql(u8, id, "alt_screen")) return boolText(ctx.final_alt_screen);
+    if (std.mem.eql(u8, id, "screen")) return screenName(ctx.current_screen);
+    if (std.mem.eql(u8, id, "focus")) return if (ctx.has_focus) "focused" else "unfocused";
+    if (std.mem.eql(u8, id, "gui_spawned")) return boolText(ctx.gui_spawned);
+    if (std.mem.eql(u8, id, "simple_mode")) return boolText(ctx.final_simple);
+    if (std.mem.eql(u8, id, "safe_mode")) return boolText(ctx.final_safe);
+    if (std.mem.eql(u8, id, "compact_mode")) return boolText(ctx.final_compact);
+    if (std.mem.eql(u8, id, "show_switcher")) return boolText(ctx.show_switcher);
+    if (std.mem.eql(u8, id, "scrollbar_style")) return @tagName(ctx.scrollbar_style);
+    if (std.mem.eql(u8, id, "query")) return if (ctx.query.len > 0) ctx.query else "(empty)";
+    if (std.mem.eql(u8, id, "query_len")) return std.fmt.bufPrint(buf, "{d}", .{ctx.query.len}) catch "?";
+    if (std.mem.eql(u8, id, "query_cursor")) return std.fmt.bufPrint(buf, "{d}", .{ctx.query_cursor}) catch "?";
+    if (std.mem.eql(u8, id, "selected_idx")) return if (ctx.selected_idx) |s| std.fmt.bufPrint(buf, "{d}", .{s}) catch "?" else "none";
+    if (std.mem.eql(u8, id, "grid_scroll_top")) return std.fmt.bufPrint(buf, "{d}", .{ctx.grid_scroll_top}) catch "?";
+    if (std.mem.eql(u8, id, "multi_select")) return std.fmt.bufPrint(buf, "{s} ({d} selected)", .{ boolText(ctx.multi_select_active), ctx.multi_selected_count }) catch "?";
+    if (std.mem.eql(u8, id, "mru_count")) return std.fmt.bufPrint(buf, "{d}", .{mru.getCount()}) catch "?";
+    return "(unknown)";
+}
+
+fn debugLine(buf: []u8, idx: usize, ctx: DebugCtx) []const u8 {
+    if (idx == 0) return g_spec.debug.title;
+    var rem = idx - 1;
+    for (g_spec.debug.groups) |group| {
+        if (rem == 0) return std.fmt.bufPrint(buf, "{s}", .{group.title}) catch group.title;
+        rem -= 1;
+        if (rem < group.fields.len) {
+            const field = group.fields[rem];
+            var val_buf: [160]u8 = undefined;
+            const value = debugValue(&val_buf, field.id, ctx);
+            return std.fmt.bufPrint(buf, "  {s}: {s}", .{ field.label, value }) catch field.label;
+        }
+        rem -= group.fields.len;
+        if (rem == 0) return "";
+        rem -= 1;
+    }
+    return "";
+}
+
 /// Short, context-sensitive help for the selected settings row, shown as a
 /// modal when the user presses `?`/`h`/`F1`. Lines stay narrow to fit the popup.
 fn settingHelp(idx: usize) []const u8 {
@@ -434,7 +660,7 @@ fn settingHelp(idx: usize) []const u8 {
         1 => "Shell key binding\n\nChoose a keybinding.\nOverride by selecting 5\nor edit shell_key_binding\nin ~/.config/emojig/config",
         2 => "Show all categories\n\non/off — list every\ncategory filter, or only\nmatching/used ones.",
         3 => "Ambiguous chars\n\nwide | narrow\nColumn width of chars\nlike \u{2192} \u{2248} \u{2605}.",
-        4 => "Theme\n\ndark | light | system\nsystem follows the\nterminal background.",
+        4 => "Theme\n\ndark | light | system\nTUI follows terminal;\nGUI follows GNOME.",
         5 => "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell.",
         6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
         7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
@@ -494,6 +720,22 @@ fn searchDedup(
     g_search_initialized = true;
     g_search_cached_gen = g_search_switcher_gen;
     return g_search_total;
+}
+
+fn searchDedupMeasured(
+    stats: *SearchStats,
+    query: []const u8,
+    top_matches: []emojig.Match,
+    top_count: *usize,
+    limit: usize,
+    categories: *const spec_mod.CategoriesSpec,
+    disabled_cats: [32]bool,
+) usize {
+    const start_us = getMonotonicUs();
+    const result = searchDedup(query, top_matches, top_count, limit, categories, disabled_cats);
+    const elapsed = getMonotonicUs() - start_us;
+    stats.record(@intCast(@min(elapsed, std.math.maxInt(u32))));
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -580,6 +822,7 @@ pub fn main(init: std.process.Init) !void {
     const final_debug = runtime.final_debug;
     const final_alt_screen = runtime.final_alt_screen;
     const final_simple = runtime.final_simple;
+    const final_height_guard = runtime.final_height_guard;
     const has_gui_session = runtime.has_gui_session;
     const resize_mode = runtime.resize_mode;
     const run_gui = runtime.run_gui;
@@ -797,6 +1040,12 @@ pub fn main(init: std.process.Init) !void {
         }
         break :blk false;
     };
+    const gui_effective_theme: ?Theme = blk: {
+        if (init.environ_map.get("EMOJIG_EFFECTIVE_THEME")) |v| {
+            break :blk parseConcreteTheme(v);
+        }
+        break :blk null;
+    };
     // Record this picker's PID for the `--gui` single-instance toggle.
     if (gui_spawned) writePickerPidFile();
 
@@ -868,6 +1117,13 @@ pub fn main(init: std.process.Init) !void {
         raw.cc[@intFromEnum(system.V.TIME)] = 0;
         try std.posix.tcsetattr(stdin_fd, .NOW, raw);
 
+        // Hide the terminal's hardware cursor immediately on entering raw mode,
+        // before the (up to 200ms) focus-report read below or any further
+        // startup work. Otherwise a slow-starting host (e.g. software-rendered
+        // GUI terminals) briefly shows foot's own blinking cursor at row 1,
+        // under the CSD title bar, before the first real frame is drawn.
+        try writeAll(stdout_fd, "\x1b[?25l");
+
         // Check for startup focus if spawned inside a GUI terminal window.
         if (gui_spawned) {
             // Enable focus reporting
@@ -906,7 +1162,13 @@ pub fn main(init: std.process.Init) !void {
         }
 
         const cols: usize = base_cols;
-        const rows: usize = base_rows;
+        // rows is the live grid row count. It starts at the configured/launch
+        // value (rows_configured) but `height_guard = .fit` may shrink it at
+        // runtime if the real terminal turns out shorter than expected (e.g. a
+        // GUI host that doesn't honor the requested window height) — never
+        // below defaults.MIN_ROWS, and never above rows_configured.
+        const rows_configured: usize = base_rows;
+        var rows: usize = rows_configured;
         // In simple mode: list_rows of results + 1 count row + 1 prompt row.
         // Derive list_rows from height_override if given, else use the grid row count as default.
         const list_rows: usize = if (final_simple) blk: {
@@ -914,6 +1176,11 @@ pub fn main(init: std.process.Init) !void {
             break :blk g_spec.layout.tui.rows;
         } else rows;
         const switcher_extra: usize = if (show_switcher) 1 else 0;
+        // Fixed rows outside the grid itself (search bar, spacers, description,
+        // status, border, debug) — independent of the live `rows` value, used
+        // by the height_guard to compute how many grid rows actually fit.
+        const non_grid_rows: usize = g_spec.layout.layout_overhead + switcher_extra +
+            (if (show_border) @as(usize, 2) else 0) + (if (final_debug and !final_simple) @as(usize, 2) else 0);
         const content_rows: usize = if (final_simple) list_rows + 2 else rows + g_spec.layout.layout_overhead + switcher_extra;
         var final_h = if (final_simple) content_rows else if (show_border) content_rows + 2 else content_rows;
         if (final_debug and !final_simple) final_h += 2;
@@ -966,7 +1233,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         var system_theme: Theme = if (theme == .system)
-            detectSystemTheme(stdin_fd, stdout_fd, raw)
+            gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw)
         else
             theme;
 
@@ -1115,6 +1382,7 @@ pub fn main(init: std.process.Init) !void {
         var anim_timer: i64 = 0;
         var anim_done: bool = true;
         var status_scroll_top: usize = 0;
+        var debug_scroll_top: usize = 0;
         var multi_select_active: bool = false;
         var multi_selected_emojis = std.ArrayList([]const u8).empty;
         defer multi_selected_emojis.deinit(spec_arena.allocator());
@@ -1175,7 +1443,8 @@ pub fn main(init: std.process.Init) !void {
         // visible_rows: when the switcher bar is shown it takes one row from the
         // grid so the total window height stays constant. visible_rows < rows only
         // when show_switcher is active and rows > 1 (i.e. there is space for both).
-        const visible_rows: usize = if (show_switcher and rows > 1) rows - 1 else rows;
+        // Recomputed alongside `rows` below whenever height_guard=fit adjusts it.
+        var visible_rows: usize = if (show_switcher and rows > 1) rows - 1 else rows;
 
         // In simple mode we cap at MAX_CELLS list items; grid mode uses cols*rows.
         // total_cells is the *viewport* size (visible cells). The search fetches
@@ -1239,7 +1508,8 @@ pub fn main(init: std.process.Init) !void {
             break :blk default_ms * ns_per_ms;
         };
 
-        var total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+        var search_stats = SearchStats{};
+        var total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
         selected_idx = if (top_count > 0) 0 else null;
 
         var read_buf: [512]u8 = undefined;
@@ -1397,6 +1667,22 @@ pub fn main(init: std.process.Init) !void {
                 const current_w = if (size_rc == 0 and ws_size.col > 0) ws_size.col else content_width + 1;
                 const current_h = if (size_rc == 0 and ws_size.row > 0) ws_size.row else 10;
                 is_too_small = (current_w < content_width + 1);
+
+                // Height guard: react when the real terminal is shorter than the
+                // grid it was launched to draw (e.g. a GUI host that doesn't honor
+                // the requested window height — see docs/HeadlessRecording.md).
+                if (final_height_guard != .off and size_rc == 0 and ws_size.row > 0) {
+                    const available_for_grid: usize = if (current_h > non_grid_rows) current_h - non_grid_rows else 0;
+                    if (available_for_grid < rows_configured and
+                        (final_height_guard == .strict or available_for_grid < defaults.MIN_ROWS))
+                    {
+                        is_too_small = true;
+                    }
+                    if (final_height_guard == .fit) {
+                        rows = if (available_for_grid < defaults.MIN_ROWS) rows_configured else @min(available_for_grid, rows_configured);
+                        visible_rows = if (show_switcher and rows > 1) rows - 1 else rows;
+                    }
+                }
                 const max_w = if (is_too_small) (if (current_w > 3) current_w - 3 else 0) else content_width;
 
                 const prefix_cols = 3;
@@ -1500,8 +1786,8 @@ pub fn main(init: std.process.Init) !void {
                 }
 
                 const render_start_ms = getMonotonicMs();
-                var line_buf: [1024]u8 = undefined;
-                var var_expand_buf: [256]u8 = undefined;
+                var line_buf: [8192]u8 = undefined;
+                var var_expand_buf: [2048]u8 = undefined;
                 var tmpl_expand_buf: [512]u8 = undefined;
 
                 var printed_rows: usize = 0;
@@ -1631,7 +1917,6 @@ pub fn main(init: std.process.Init) !void {
                     if (g_spec.layout.top_padding) {
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         try writeAll(stdout_fd, palette.app_topline_bg);
-                        try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                         try rw.endRow();
                     }
@@ -1824,7 +2109,7 @@ pub fn main(init: std.process.Init) !void {
                             const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
-                                var sb_buf: [64]u8 = undefined;
+                                var sb_buf: [256]u8 = undefined;
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_h, thumb_h, h_idx);
                                     if (cell.invert) {
@@ -1977,6 +2262,91 @@ pub fn main(init: std.process.Init) !void {
                                 try rw.endRow();
                             }
                         }
+                    } else if (current_screen == .debug and !is_too_small) {
+                        const viewport_h = rows + 3;
+                        const lines_len = debugLineCount();
+                        const needs_scroll = lines_len > viewport_h;
+                        const max_scroll_d: usize = if (needs_scroll) lines_len - viewport_h else 0;
+                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, lines_len).thumb_h else 0;
+                        const travel_d = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+                        const thumb_start = if (needs_scroll and max_scroll_d > 0) debug_scroll_top * travel_d / max_scroll_d else 0;
+                        const pos_eighths_d = if (needs_scroll and max_scroll_d > 0) smoothScrollPos(debug_scroll_top, max_scroll_d, travel_d) else 0;
+                        const debug_ctx = DebugCtx{
+                            .theme = theme,
+                            .system_theme = system_theme,
+                            .gui_effective_theme = gui_effective_theme,
+                            .current_screen = current_screen,
+                            .has_focus = has_focus,
+                            .gui_spawned = gui_spawned,
+                            .final_simple = final_simple,
+                            .final_safe = final_safe,
+                            .final_compact = final_compact,
+                            .show_switcher = show_switcher,
+                            .show_border = show_border,
+                            .scrollbar_style = scrollbar_style,
+                            .resize_mode = resize_mode,
+                            .final_alt_screen = final_alt_screen,
+                            .query = query_buf[0..query_len],
+                            .query_cursor = query_cursor,
+                            .selected_idx = selected_idx,
+                            .grid_scroll_top = grid_scroll_top,
+                            .total_matches = total_matches,
+                            .top_count = top_count,
+                            .fetch_limit = fetch_limit,
+                            .content_width = content_width,
+                            .current_w = current_w,
+                            .current_h = current_h,
+                            .final_h = final_h,
+                            .cols = cols,
+                            .rows = rows,
+                            .visible_rows = visible_rows,
+                            .total_cells = total_cells,
+                            .search_stats = &search_stats,
+                            .disabled_cats = disabled_cats,
+                            .app_bg_choice = app_bg_choice,
+                            .title_bg_choice = title_bg_choice,
+                            .multi_select_active = multi_select_active,
+                            .multi_selected_count = multi_selected_emojis.items.len,
+                        };
+                        var h_idx: usize = 0;
+                        while (h_idx < viewport_h) : (h_idx += 1) {
+                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            var text: []const u8 = "";
+                            if (needs_scroll) {
+                                const li = debug_scroll_top + h_idx;
+                                if (li < lines_len) text = debugLine(&var_expand_buf, li, debug_ctx);
+                            } else {
+                                const center_threshold: usize = lines_len + 2;
+                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
+                                if (h_idx >= offset and h_idx - offset < lines_len) text = debugLine(&var_expand_buf, h_idx - offset, debug_ctx);
+                            }
+                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
+                            try writeAll(stdout_fd, line);
+                            if (needs_scroll and content_width >= 2) {
+                                var sb_buf: [64]u8 = undefined;
+                                const sb_seq = if (scrollbar_style == .expand) blk: {
+                                    const cell = scrollbarCell(pos_eighths_d, thumb_h, h_idx);
+                                    if (cell.invert) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                    } else if (cell.char[0] != ' ') {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                } else blk: {
+                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
+                                    if (on_thumb) {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                    } else {
+                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                    }
+                                };
+                                try writeAll(stdout_fd, sb_seq);
+                                try rw.endRowFull();
+                            } else {
+                                try rw.endRow();
+                            }
+                        }
                     } else if (current_screen == .settings and !is_too_small) {
                         const settings_rows = rows + 4;
                         var h_idx: usize = 0;
@@ -2078,7 +2448,7 @@ pub fn main(init: std.process.Init) !void {
                         // Separator hline between search bar and grid.
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         try writeAll(stdout_fd, palette.hline);
-                        try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
+                        try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
                         // Grid rows.
@@ -2169,7 +2539,7 @@ pub fn main(init: std.process.Init) !void {
                             } else if (exit_preview) {
                                 // Preview frame: show only the selected cell as plain " emoji ",
                                 // all other cells blank ("    ").
-                                var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
+                                var cell_buffers: [defaults.MAX_COLS][128]u8 = undefined;
                                 var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
                                 var c: usize = 0;
                                 while (c < cols) : (c += 1) {
@@ -2253,9 +2623,9 @@ pub fn main(init: std.process.Init) !void {
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             } else {
-                                var cell_buffers: [defaults.MAX_COLS][64]u8 = undefined;
+                                var cell_buffers: [defaults.MAX_COLS][128]u8 = undefined;
                                 var cell_strings: [defaults.MAX_COLS][]const u8 = undefined;
-                                var body_temp_bufs: [defaults.MAX_COLS][16]u8 = undefined;
+                                var body_temp_bufs: [defaults.MAX_COLS][64]u8 = undefined;
 
                                 var c: usize = 0;
                                 while (c < cols) : (c += 1) {
@@ -2495,7 +2865,7 @@ pub fn main(init: std.process.Init) !void {
                             // Separator hline between grid and switcher.
                             try writeAll(stdout_fd, "\x1b[2K\r");
                             try writeAll(stdout_fd, palette.hline);
-                            try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
+                            try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                             try rw.endRowFull();
 
                             // Switcher row — prefix-theft layout.
@@ -2737,7 +3107,7 @@ pub fn main(init: std.process.Init) !void {
                         // Separator hline between grid/switcher and description.
                         try writeAll(stdout_fd, "\x1b[2K\r");
                         try writeAll(stdout_fd, palette.hline);
-                        try writeAll(stdout_fd, hlines[0..@min(current_w * hline_unit_len, hlines.len)]);
+                        try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
                         // Description row.
@@ -2978,6 +3348,9 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .status) {
                                 const vph = rows + 3;
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
+                            } else if (current_screen == .debug) {
+                                const vph = rows + 3;
+                                break :blk if (debugLineCount() > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .settings and keybind_editing) {
                                 break :blk st.settings.keybind;
                             } else if (current_screen == .settings and selected_idx != null and
@@ -3110,6 +3483,24 @@ pub fn main(init: std.process.Init) !void {
                     const cursor_seq: []const u8 = if (exit_preview or should_copy_and_exit) blk: {
                         // Exit or preview: hide cursor and leave it at the bottom
                         break :blk "\x1b[?25l";
+                    } else if (final_alt_screen and !final_simple) blk: {
+                        // Alt-screen mode always homes the cursor to an absolute
+                        // row 1 before drawing each frame (see the .altscreen
+                        // branch above), so the search-bar row is a fixed,
+                        // known absolute row — address it directly instead of a
+                        // relative "move up N rows" computed from a row count
+                        // that can desync from reality if the real terminal
+                        // turns out shorter than expected (e.g. a GUI host that
+                        // doesn't honor the requested window height).
+                        const target_row: usize = @intCast(@max(search_row_idx, 1));
+                        if (current_screen != .search) {
+                            // Non-search screen: park at the search bar, cursor hidden.
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};{d}H\x1b[?25l", .{ target_row, 5 + cursor_col_off });
+                        } else if (is_too_small) {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};1H\x1b[?25l", .{target_row});
+                        } else {
+                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};{d}H\x1b[?12h\x1b[?25h", .{ target_row, 5 + cursor_col_off });
+                        }
                     } else if (current_screen != .search) blk: {
                         // Non-search screen: park at the search bar (row 2 + row_off) but hide cursor
                         if (cursor_up > 0) {
@@ -3368,12 +3759,12 @@ pub fn main(init: std.process.Init) !void {
                                     @min(cat_scroll_top + step, max_top)
                                 else if (cat_scroll_top > step) cat_scroll_top - step else 0;
                             } else {
-                                // help / about* / status popups.
+                                // help / about / status / debug popups.
                                 const viewport_h = rows + 3;
                                 const is_about = current_screen == .about;
-                                const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else &status_scroll_top;
+                                const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else if (current_screen == .debug) &debug_scroll_top else &status_scroll_top;
                                 const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else g_spec.strings.status_lines.len;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else if (current_screen == .debug) debugLineCount() else g_spec.strings.status_lines.len;
                                 const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                                 sp.* = if (wheel_down)
                                     @min(sp.* + step, max_scroll)
@@ -3498,7 +3889,7 @@ pub fn main(init: std.process.Init) !void {
                                     };
                                     saveThemeToConfig(init.io, theme);
                                     if (theme == .system)
-                                        system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                        system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                     applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                                 } else if (click_row == search_row and local_col >= cw_click - 2) {
                                     // Menu (hamburger) icon — toggle settings.
@@ -3527,7 +3918,7 @@ pub fn main(init: std.process.Init) !void {
                                     g_search_switcher_gen +%= 1;
                                     selected_idx = null;
                                     grid_scroll_top = 0;
-                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 } else {
                                     const list_first_row: i32 = grid_first_row + 1;
                                     if (current_screen == .settings and click_row >= list_first_row) {
@@ -3564,7 +3955,7 @@ pub fn main(init: std.process.Init) !void {
                                                 theme = cycleTheme(theme, true);
                                                 saveThemeToConfig(init.io, theme);
                                                 if (theme == .system)
-                                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                                    system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                                             } else if (opt_idx == 6 or opt_idx == 7) {
                                                 griddim_typing = false;
@@ -3760,12 +4151,12 @@ pub fn main(init: std.process.Init) !void {
                             // resets the scroll; Enter still picks the first hit.
                             if (!multi_select_active) selected_idx = null;
                             grid_scroll_top = 0;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             term_lib.appendLog("search q=\"{s}\" results={d}", .{ query_buf[0..query_len], total_matches });
                         }
                     }
                 } else if (has_focus and (current_screen == .help or current_screen == .about or
-                    current_screen == .status))
+                    current_screen == .status or current_screen == .debug))
                 {
                     // Doc screens are pager-like: a lone 'q' closes (less/man
                     // convention); any other printable jumps back to search and
@@ -3775,7 +4166,7 @@ pub fn main(init: std.process.Init) !void {
                         query_len = 0;
                         query_cursor = 0;
                         selected_idx = null;
-                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                        total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     } else {
                         current_screen = .search;
                         query_len = 0;
@@ -3789,7 +4180,7 @@ pub fn main(init: std.process.Init) !void {
                             }
                         }
                         grid_scroll_top = 0;
-                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                        total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     }
                 }
             }
@@ -3839,7 +4230,7 @@ pub fn main(init: std.process.Init) !void {
                         current_screen = .search;
                         query_len = 0;
                         selected_idx = null;
-                        total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                        total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                     } else if (multi_select_active and std.mem.eql(u8, name, "esc")) {
                         multi_select_active = false;
                         multi_selected_emojis.clearRetainingCapacity();
@@ -3921,7 +4312,7 @@ pub fn main(init: std.process.Init) !void {
                                 theme = cycleTheme(theme, true);
                                 saveThemeToConfig(init.io, theme);
                                 if (theme == .system)
-                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                    system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             } else if (opt_idx == 6) {
                                 grid_cols = cycleGridDim(grid_cols, grid_dim_step, defaults.MIN_COLS, defaults.MAX_COLS);
@@ -3966,7 +4357,7 @@ pub fn main(init: std.process.Init) !void {
                                 theme = cycleTheme(theme, increase);
                                 saveThemeToConfig(init.io, theme);
                                 if (theme == .system)
-                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                    system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             } else if (opt_idx < settings_count and std.mem.eql(u8, g_spec.settings.options[opt_idx].type, "choice")) {
                                 const opt = g_spec.settings.options[opt_idx];
@@ -4045,7 +4436,7 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .categories) {
                         if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
@@ -4064,9 +4455,9 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
-                    } else if (current_screen == .about or current_screen == .help or current_screen == .status) {
+                    } else if (current_screen == .about or current_screen == .help or current_screen == .status or current_screen == .debug) {
                         if (current_screen == .about and std.mem.eql(u8, name, "space")) {
                             anim_frame = 0;
                             anim_done = false;
@@ -4076,12 +4467,12 @@ pub fn main(init: std.process.Init) !void {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else {
                             const viewport_h = rows + 3;
-                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else &status_scroll_top;
+                            const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else if (current_screen == .debug) &debug_scroll_top else &status_scroll_top;
                             const about_lines_len2: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else g_spec.strings.status_lines.len;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else if (current_screen == .debug) debugLineCount() else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                             if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                                 if (sp.* > 0) sp.* -= 1;
@@ -4108,7 +4499,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter")) {
                             // Find the selected command
                             var opt_cmd: ?spec_mod.CommandSpec = null;
@@ -4150,6 +4541,10 @@ pub fn main(init: std.process.Init) !void {
                                     current_screen = .status;
                                     status_scroll_top = 0;
                                     selected_idx = null;
+                                } else if (std.mem.eql(u8, cmd.action, "open_debug")) {
+                                    current_screen = .debug;
+                                    debug_scroll_top = 0;
+                                    selected_idx = null;
                                 } else if (std.mem.eql(u8, cmd.action, "open_settings")) {
                                     current_screen = .settings;
                                     selected_idx = 0;
@@ -4162,7 +4557,7 @@ pub fn main(init: std.process.Init) !void {
                                     multi_select_active = true;
                                     query_len = 0;
                                     selected_idx = null;
-                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 } else if (std.mem.eql(u8, cmd.action, "run_update")) {
                                     const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
                                     popup_title = "📦 emojig update";
@@ -4170,7 +4565,7 @@ pub fn main(init: std.process.Init) !void {
                                     query_len = 0;
                                     current_screen = .search;
                                     selected_idx = null;
-                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 } else if (std.mem.eql(u8, cmd.action, "quit_app")) {
                                     break;
                                 }
@@ -4179,13 +4574,13 @@ pub fn main(init: std.process.Init) !void {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, name, "del")) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else if (is_cat_autocomplete) {
@@ -4196,7 +4591,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, name, "esc")) {
                             query_len = 0;
                             selected_idx = null;
-                            total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                            total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space")) {
                             var opt_cat: ?spec_mod.CategorySpec = null;
                             if (selected_idx != null and selected_idx.? < cat_match_count) {
@@ -4208,19 +4603,19 @@ pub fn main(init: std.process.Init) !void {
                                 query_len = if (std.fmt.bufPrint(&query_buf, "c:{s} ", .{cat.short})) |res| res.len else |_| 0;
                                 query_cursor = query_len;
                                 selected_idx = null;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "delete")) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, name, "del")) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         }
                     } else {
@@ -4287,20 +4682,20 @@ pub fn main(init: std.process.Init) !void {
                                 if (!removed and query_cursor > 0) {
                                     deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                     grid_scroll_top = 0;
-                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
                             } else if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = null;
                                 grid_scroll_top = 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, name, "del")) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = null;
                                 grid_scroll_top = 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "cycle_theme") or std.mem.eql(u8, name, "ctrl-t")) {
                             if (show_switcher and std.mem.eql(u8, action, "cycle_theme")) {
@@ -4315,7 +4710,7 @@ pub fn main(init: std.process.Init) !void {
                                     g_search_switcher_gen +%= 1;
                                     selected_idx = null;
                                     grid_scroll_top = 0;
-                                    total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                    total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                                 }
                             } else {
                                 theme = switch (theme) {
@@ -4325,7 +4720,7 @@ pub fn main(init: std.process.Init) !void {
                                 };
                                 saveThemeToConfig(init.io, theme);
                                 if (theme == .system) {
-                                    system_theme = detectSystemTheme(stdin_fd, stdout_fd, raw);
+                                    system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 }
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             }
@@ -4341,7 +4736,7 @@ pub fn main(init: std.process.Init) !void {
                                 g_search_switcher_gen +%= 1;
                                 selected_idx = null;
                                 grid_scroll_top = 0;
-                                total_matches = searchDedup(query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
+                                total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
                         } else if (std.mem.eql(u8, action, "scroll_pageup") or std.mem.eql(u8, action, "scroll_pagedown")) {
                             if (top_count > 0) {

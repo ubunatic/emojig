@@ -906,11 +906,11 @@ func runVisualQualityTest(binaryPath string) {
 		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
 		defer master.Close()
 
-		collectScreenBytes(chunksChan, 500*time.Millisecond)
+		initialBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
 
 		// Open settings screen
 		master.Write([]byte("/s\n"))
-		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		rawBytes := append(initialBytes, collectScreenBytes(chunksChan, 500*time.Millisecond)...)
 		tsSettings := NewTerminalState(80, 24)
 		tsSettings.Parse(rawBytes)
 
@@ -931,11 +931,11 @@ func runVisualQualityTest(binaryPath string) {
 		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
 		defer master.Close()
 
-		collectScreenBytes(chunksChan, 500*time.Millisecond)
+		initialBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
 
 		// Open About screen
 		master.Write([]byte("/a\n"))
-		rawBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+		rawBytes := append(initialBytes, collectScreenBytes(chunksChan, 500*time.Millisecond)...)
 		tsAbout := NewTerminalState(80, 24)
 		tsAbout.Parse(rawBytes)
 
@@ -1018,6 +1018,33 @@ func runVisualQualityTest(binaryPath string) {
 			os.Exit(1)
 		}
 		fmt.Println("PASS: Dropdown menu layout bounds are correct (no characters overflow).")
+		cmd.Process.Kill()
+		cmd.Wait()
+	}
+
+	// 7e: Search screen painted row widths
+	{
+		fmt.Println("Subtest 7e: Verifying rendered TUI row widths...")
+		master, cmd, chunksChan := spawnEmojigTUI(binaryPath, 8, 10)
+		defer master.Close()
+
+		initialBytes := collectScreenBytes(chunksChan, 500*time.Millisecond)
+
+		// Narrow the result set so no scrollbar gutter is painted. All rendered
+		// TUI rows should then have exactly the content width; separator rows
+		// must not extend to the host terminal width.
+		master.Write([]byte("zzzzzz"))
+		rawBytes := append(initialBytes, collectScreenBytes(chunksChan, 500*time.Millisecond)...)
+		tsSearch := NewTerminalState(80, 24)
+		tsSearch.Parse(rawBytes)
+
+		if err := tsSearch.ValidatePaintedRowWidths(34); err != nil {
+			tsSearch.PrintScreen()
+			fmt.Printf("FAIL: Search screen painted row width validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		fmt.Println("PASS: Search screen painted row widths are equal.")
 		cmd.Process.Kill()
 		cmd.Wait()
 	}
@@ -1122,5 +1149,3 @@ func spawnEmojigTUI(binaryPath string, cols, rows int) (*os.File, *exec.Cmd, cha
 
 	return master, cmd, chunksChan
 }
-
-

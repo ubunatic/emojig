@@ -84,6 +84,7 @@ gen-spec: ⚙️  # compile YAML spec sources to generated JSON artifacts
 	go run ./scripts/convert_spec/ spec/commands.yaml spec/commands.json
 	go run ./scripts/convert_spec/ spec/settings.yaml spec/settings.json
 	go run ./scripts/convert_spec/ spec/categories.yaml spec/categories.json
+	go run ./scripts/convert_spec/ spec/debug.yaml spec/debug.json
 	go run ./scripts/convert_spec/ spec/styles.yaml spec/styles.json
 	go run ./scripts/convert_spec/ spec/art.yaml spec/art.json
 	go run ./scripts/convert_spec/ spec/boxart.yaml spec/boxart.json

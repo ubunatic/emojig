@@ -38,6 +38,11 @@
       "action": "open_status"
     },
     {
+      "name": "debug",
+      "short": "d",
+      "action": "open_debug"
+    },
+    {
       "name": "quit",
       "short": "q",
       "action": "quit_app"

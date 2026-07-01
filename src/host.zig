@@ -101,6 +101,14 @@ pub fn hostKindFromName(name: []const u8) HostKind {
     return .generic;
 }
 
+fn concreteThemeString(theme: Theme) []const u8 {
+    return switch (theme) {
+        .dark => "dark",
+        .light => "light",
+        .system => unreachable,
+    };
+}
+
 const ColorPair = struct { name: []const u8, dark: []const u8, light: []const u8 };
 
 const app_bg_table = [_]ColorPair{
@@ -178,7 +186,7 @@ pub fn csdTitleFgHex(
 }
 
 /// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
-/// plus a 15-token tail (25 total); 32 gives safe headroom.
+/// plus a 17-token tail (27 total); 32 gives safe headroom.
 pub const MAX_ARGV = 32;
 
 /// Assemble the full launch argv into `out[0..N]` and return the live slice.
@@ -529,18 +537,21 @@ pub fn spawnGuiWindow(
     title_bg_choice: []const u8,
 ) !void {
     const io = init.io;
+
+    // GUI window colors come from spec/theme.json (foot wants bare hex, so we
+    // strip the leading '#'). Resolve `system` from GNOME before spawning so
+    // the host window starts with the same effective palette as the child TUI.
+    // Foot requires full 6-digit RGB (rrggbb) or 8-digit ARGB — 3-char shorthand
+    // like "#ccc" must be expanded to "#cccccc" before stripping.
+    const effective_theme = if (theme == .system) (term_lib.detectDesktopTheme(io) orelse .dark) else theme;
     const theme_str: []const u8 = switch (theme) {
         .dark => "dark",
         .light => "light",
         .system => "system",
     };
-
-    // GUI window colors come from spec/theme.json (foot wants bare hex, so we
-    // strip the leading '#'). `system` falls back to the dark palette here.
-    // Foot requires full 6-digit RGB (rrggbb) or 8-digit ARGB — 3-char shorthand
-    // like "#ccc" must be expanded to "#cccccc" before stripping.
-    const gui_pal = if (theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
-    const is_dark = theme != .light;
+    const effective_theme_str = concreteThemeString(effective_theme);
+    const gui_pal = if (effective_theme == .light) spec.theme.themes.light else spec.theme.themes.dark;
+    const is_dark = effective_theme != .light;
     const app_hex = resolveAppBgHex(app_bg_choice, is_dark);
     var foot_bg_exp: [8]u8 = undefined;
     const foot_bg = if (app_hex.len > 0) app_hex else expandHex(gui_pal.terminal_bg2 orelse "", &foot_bg_exp);
@@ -611,6 +622,9 @@ pub fn spawnGuiWindow(
     var env_theme: [64]u8 = undefined;
     const env_theme_arg = try std.fmt.bufPrint(&env_theme, "EMOJIG_THEME={s}", .{theme_str});
 
+    var env_effective_theme: [64]u8 = undefined;
+    const env_effective_theme_arg = try std.fmt.bufPrint(&env_effective_theme, "EMOJIG_EFFECTIVE_THEME={s}", .{effective_theme_str});
+
     var env_border: [64]u8 = undefined;
     const env_border_arg = try std.fmt.bufPrint(&env_border, "EMOJIG_BORDER={s}", .{if (border) "1" else "0"});
 
@@ -677,6 +691,7 @@ pub fn spawnGuiWindow(
         env_w_arg,
         env_h_arg,
         env_theme_arg,
+        env_effective_theme_arg,
         env_border_arg,
         env_safe_arg,
         env_debug_arg,
@@ -718,6 +733,11 @@ fn argvContains(argv: []const []const u8, needle: []const u8) bool {
         if (std.mem.eql(u8, a, needle)) return true;
     }
     return false;
+}
+
+test "GUI child theme env uses concrete theme names" {
+    try std.testing.expectEqualStrings("dark", concreteThemeString(.dark));
+    try std.testing.expectEqualStrings("light", concreteThemeString(.light));
 }
 
 test "buildGuiArgv: foot borderless adds csd overrides" {

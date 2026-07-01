@@ -416,6 +416,30 @@ func (ts *TerminalState) ValidateLayout(contentWidth int) error {
 	return nil
 }
 
+func (ts *TerminalState) paintedRowWidth(y int) int {
+	if y < 0 || y >= ts.Height {
+		return 0
+	}
+	width := 0
+	for x := 0; x < ts.Width; x++ {
+		c := ts.Grid[y][x]
+		if (c.Char != ' ' && c.Char != 0) || c.FgColor != "" || c.BgColor != "" || c.Bold || c.Underline || c.Reverse {
+			width = x + 1
+		}
+	}
+	return width
+}
+
+func (ts *TerminalState) ValidatePaintedRowWidths(expectedWidth int) error {
+	for y := 0; y < ts.Height; y++ {
+		width := ts.paintedRowWidth(y)
+		if width != 0 && width != expectedWidth {
+			return fmt.Errorf("painted row width mismatch: row %d has width %d, expected %d", y, width, expectedWidth)
+		}
+	}
+	return nil
+}
+
 func (ts *TerminalState) PrintScreen() {
 	for y := 0; y < ts.Height; y++ {
 		var line strings.Builder
@@ -429,4 +453,3 @@ func (ts *TerminalState) PrintScreen() {
 		fmt.Printf("Row %02d: |%s|\n", y, line.String())
 	}
 }
-

@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "groups": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "enum": [
+                    "alt_screen",
+                    "app_bg_choice",
+                    "app_bg_hex",
+                    "border",
+                    "category_count",
+                    "category_synonyms",
+                    "cell_width",
+                    "color_count",
+                    "command_count",
+                    "compact_mode",
+                    "content_width",
+                    "disabled_categories",
+                    "effective_theme",
+                    "emoji_count",
+                    "emojig_size",
+                    "fetch_limit",
+                    "focus",
+                    "grid_scroll_top",
+                    "grid_size",
+                    "gui_effective_theme",
+                    "gui_spawned",
+                    "mru_count",
+                    "multi_select",
+                    "query",
+                    "query_cursor",
+                    "query_len",
+                    "resize_mode",
+                    "safe_mode",
+                    "screen",
+                    "scrollbar_style",
+                    "search_last_us",
+                    "search_max_us",
+                    "search_p50_us",
+                    "search_p90_us",
+                    "search_samples",
+                    "selected_idx",
+                    "setting_count",
+                    "show_switcher",
+                    "simple_mode",
+                    "stem_exclusions",
+                    "switcher_category_count",
+                    "synonym_pairs",
+                    "term_detected_luma",
+                    "term_detected_rgb",
+                    "term_detected_theme",
+                    "term_size",
+                    "terminal_bg",
+                    "terminal_fg",
+                    "theme_effective",
+                    "theme_reason",
+                    "theme_setting",
+                    "title_bg_choice",
+                    "title_bg_hex",
+                    "top_padding",
+                    "total_cells",
+                    "total_matches",
+                    "visible_matches",
+                    "visible_rows"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "title",
+    "groups"
+  ],
+  "type": "object"
+}
