@@ -1910,12 +1910,17 @@ pub fn main(init: std.process.Init) !void {
                         try rw.endRow();
                     }
 
-                    // Blank top padding row.
+                    // Blank top padding row. Paint max_w + 1 cells so the
+                    // topline covers the scrollbar/right-cap column like every
+                    // other row (a max_w-wide paint leaves a one-cell notch,
+                    // issue 48). Full-width rows must end with endRowFull —
+                    // endRow's \x1b[K fired from the pending-wrap position
+                    // would erase the last column in exact-width windows.
                     if (g_spec.layout.top_padding) {
                         try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, palette.app_topline_bg);
-                        try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
-                        try rw.endRow();
+                        try writeAll(stdout_fd, spaces[0..@min(max_w + 1, spaces.len)]);
+                        try rw.endRowFull();
                     }
 
                     // Search bar row.
@@ -2283,7 +2288,14 @@ pub fn main(init: std.process.Init) !void {
                                     const app_bg_disp = std.fmt.bufPrint(&app_bg_disp_buf, "{s} #{s}", .{ app_bg_choice, resolved_app_hex }) catch app_bg_choice;
                                     var title_bg_disp_buf: [24]u8 = undefined;
                                     const title_bg_disp = std.fmt.bufPrint(&title_bg_disp_buf, "{s} #{s}", .{ title_bg_choice, resolved_title_hex }) catch title_bg_choice;
-                                    const row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, gui_decorated, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
+                                    var row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, gui_decorated, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
+                                    // Long value+label combos (e.g. "[default #2c2c2c]  app background")
+                                    // can exceed the row budget on narrow grids; clip to
+                                    // gutter + content so the row never wraps (issue 48).
+                                    var setting_trunc_buf: [1024]u8 = undefined;
+                                    if (std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden")) {
+                                        row = truncateAnsi(&setting_trunc_buf, row, content_width + 1);
+                                    }
                                     try writeAll(stdout_fd, row);
                                     const vis_w = ansiDisplayWidth(row);
                                     const pad_len = if (content_width > vis_w) content_width - vis_w else 0;

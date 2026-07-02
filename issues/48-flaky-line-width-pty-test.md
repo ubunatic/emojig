@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: open
+status: done
 ---
 
 # Flaky PTY test: TestTUIRenderedLineWidthsAreEqual fails ~50% on main
@@ -73,3 +73,39 @@ the search screen, i.e. the menu-open keystroke landed before the app was
 ready), while passing 4/4 in isolation (`-run TestTUISettingsHelpModalFromSpec`,
 measured 2026-07-02). Any fix that replaces fixed sleep/collect windows
 with a render-complete sentinel should be applied to both tests.
+
+## Resolution (2026-07-02)
+
+The root cause was in the harness, not (only) the app:
+`collectScreenBytes` waited for the *first* PTY chunk, then drained only
+what was instantly available (`default:` in the select) — a mid-render
+pause under load cut the frame anywhere, producing truncated rows,
+missed screen transitions, and keystrokes sent before the app finished
+painting. The fix makes collection quiescence-based: after the first
+chunk it keeps reading until the stream has been idle for 100 ms
+(3 s hard cap so an animating screen can't stall a test). This fixed
+both flakes at once and applies to all 19 call sites.
+
+Making frames deterministic exposed two real app bugs the racy
+collection had been masking, both fixed:
+
+- **Top padding row painted 1 cell short** (`main.zig`): it painted
+  `max_w` (= `content_width`) background cells while every other row
+  paints `content_width + 1` (gutter/caps + scrollbar column) — the
+  actual source of the "row 0 has width 33, expected 34" message. Now
+  paints `max_w + 1` and ends with `endRowFull` (full-width rows must
+  skip `\x1b[K`, which fired from the pending-wrap position erases the
+  last column in exact-width windows).
+- **Settings rows could overflow the content area** (`main.zig`): long
+  value+label combos ("[default #2c2c2c]  app background" = 36 cols)
+  exceeded the 33-col budget on narrow grids; now clipped via
+  `truncateAnsi` to gutter + content width, gated on the same
+  `dropdown.overflow: hidden` spec knob as the other truncation sites.
+
+Also: `ValidatePaintedRowWidths` now reports *all* mismatching rows in
+one error, and the dead `drainTransitionBytes` helper was removed.
+
+Verified: `go test ./scripts/test_tui/` 8/8 green back-to-back (was
+~4/8 failing on main); the standalone `go run ./scripts/test_tui`
+suite now passes end-to-end (it failed on main even before subtest 7d);
+`zig build test` and `zig fmt --check src/` clean.

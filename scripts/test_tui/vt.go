@@ -431,11 +431,15 @@ func (ts *TerminalState) paintedRowWidth(y int) int {
 }
 
 func (ts *TerminalState) ValidatePaintedRowWidths(expectedWidth int) error {
+	var bad []string
 	for y := 0; y < ts.Height; y++ {
 		width := ts.paintedRowWidth(y)
 		if width != 0 && width != expectedWidth {
-			return fmt.Errorf("painted row width mismatch: row %d has width %d, expected %d", y, width, expectedWidth)
+			bad = append(bad, fmt.Sprintf("row %d has width %d", y, width))
 		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("painted row width mismatch (expected %d): %s", expectedWidth, strings.Join(bad, ", "))
 	}
 	return nil
 }

@@ -1052,9 +1052,17 @@ func runVisualQualityTest(binaryPath string) {
 	fmt.Println("PASS: Visual quality and layout correctness test passed.")
 }
 
+// collectScreenBytes gathers one rendered frame: it waits up to timeout for
+// the first output chunk, then keeps collecting until the PTY stream has been
+// idle for collectQuiesce, i.e. the app finished painting. A non-blocking
+// drain here caused issue 48: a mid-render pause under load cut the frame
+// anywhere, producing truncated rows and missed screen transitions.
+// collectMaxDuration bounds the total collection time so a screen that emits
+// continuously (e.g. an animation) cannot stall a test.
 func collectScreenBytes(chunksChan chan []byte, timeout time.Duration) []byte {
+	const collectQuiesce = 100 * time.Millisecond
+	const collectMaxDuration = 3 * time.Second
 	var rawBytes []byte
-	// 1. Wait for the first chunk with a timeout
 	select {
 	case chunk, ok := <-chunksChan:
 		if !ok {
@@ -1065,7 +1073,7 @@ func collectScreenBytes(chunksChan chan []byte, timeout time.Duration) []byte {
 		return nil
 	}
 
-	// 2. Drain all other available chunks
+	deadline := time.After(collectMaxDuration)
 	for {
 		select {
 		case chunk, ok := <-chunksChan:
@@ -1073,21 +1081,10 @@ func collectScreenBytes(chunksChan chan []byte, timeout time.Duration) []byte {
 				return rawBytes
 			}
 			rawBytes = append(rawBytes, chunk...)
-		default:
+		case <-time.After(collectQuiesce):
 			return rawBytes
-		}
-	}
-}
-
-func drainTransitionBytes(chunksChan chan []byte) {
-	for {
-		select {
-		case _, ok := <-chunksChan:
-			if !ok {
-				return
-			}
-		default:
-			return
+		case <-deadline:
+			return rawBytes
 		}
 	}
 }
