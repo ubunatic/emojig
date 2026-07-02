@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -29,11 +31,59 @@ func readSpecJSON(t *testing.T, rel string, v any) {
 	}
 }
 
+// readZigSource returns the contents of a file under src/, for lints that
+// cross-check spec values against the Zig source of truth instead of
+// hand-mirroring magic numbers here (issue 46).
+func readZigSource(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join("..", "..", "src", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+// zigIntConst extracts `pub const NAME: usize = N;` from Zig source text.
+func zigIntConst(t *testing.T, src, file, name string) int {
+	t.Helper()
+	re := regexp.MustCompile(`pub const ` + name + `[^=\n]*=\s*(\d+)\s*;`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s: could not find `pub const %s = <int>;` (lint needs updating?)", file, name)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("%s: bad integer for %s: %v", file, name, err)
+	}
+	return n
+}
+
+// zigStructFields extracts the field names of `pub const NAME = struct {...}`.
+func zigStructFields(t *testing.T, src, file, name string) []string {
+	t.Helper()
+	re := regexp.MustCompile(`pub const ` + name + ` = struct \{([^}]*)\}`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s: could not find `pub const %s = struct {...}` (lint needs updating?)", file, name)
+	}
+	fieldRe := regexp.MustCompile(`(?m)^\s*([a-z_][a-z0-9_]*)\s*:`)
+	var fields []string
+	for _, f := range fieldRe.FindAllStringSubmatch(m[1], -1) {
+		fields = append(fields, f[1])
+	}
+	if len(fields) == 0 {
+		t.Fatalf("%s: no fields parsed from struct %s", file, name)
+	}
+	return fields
+}
+
 func TestSpecSettingsOptionsHaveHelp(t *testing.T) {
 	var settings struct {
-		Title        string `json:"title"`
-		HelpFallback string `json:"help_fallback"`
-		Options      []struct {
+		Title          string `json:"title"`
+		MaxHelpLineLen int    `json:"max_help_line_len"`
+		HelpFallback   string `json:"help_fallback"`
+		Options        []struct {
 			ID      string `json:"id"`
 			Type    string `json:"type"`
 			Label   string `json:"label"`
@@ -46,6 +96,20 @@ func TestSpecSettingsOptionsHaveHelp(t *testing.T) {
 	if settings.HelpFallback == "" {
 		t.Error("settings.yaml: help_fallback must be set (shown when a row has no help)")
 	}
+	if settings.MaxHelpLineLen <= 0 {
+		t.Fatal("settings.yaml: max_help_line_len must be set (per-line help modal budget)")
+	}
+	// Help lines longer than the budget are silently truncated in the modal
+	// (issue 46 §5.5): enforce the spec's own bound on every line.
+	checkHelpLines := func(id, help string) {
+		for _, line := range strings.Split(help, "\n") {
+			if n := len([]rune(line)); n > settings.MaxHelpLineLen {
+				t.Errorf("settings.yaml %s: help line %q is %d chars, exceeds max_help_line_len=%d (truncated in the modal)",
+					id, line, n, settings.MaxHelpLineLen)
+			}
+		}
+	}
+	checkHelpLines("help_fallback", settings.HelpFallback)
 	if len(settings.Options) == 0 {
 		t.Fatal("settings.yaml: no options defined")
 	}
@@ -61,6 +125,7 @@ func TestSpecSettingsOptionsHaveHelp(t *testing.T) {
 		if opt.Help == "" {
 			t.Errorf("settings.yaml option %q: missing help text (shown by ?/h/F1)", opt.ID)
 		}
+		checkHelpLines(opt.ID, opt.Help)
 	}
 }
 
@@ -101,12 +166,18 @@ func TestSpecSearchWeights(t *testing.T) {
 	}
 }
 
-// hostArgPlaceholders must mirror src/host.zig ArgValues — a template entry
-// naming an unknown placeholder is silently dropped at runtime, so catch
-// typos here.
-var hostArgPlaceholders = map[string]bool{
-	"title": true, "size": true, "font": true, "bg": true, "fg": true,
-	"border_color": true, "csd_size": true, "csd_color": true, "csd_title_font": true,
+// hostArgPlaceholders returns the valid template placeholders parsed
+// straight from src/host.zig's ArgValues struct — a template entry naming
+// an unknown placeholder is silently dropped at runtime, so catch typos
+// here without hand-mirroring the field list (issue 46 §4).
+func hostArgPlaceholders(t *testing.T) map[string]bool {
+	t.Helper()
+	src := readZigSource(t, "host.zig")
+	valid := map[string]bool{}
+	for _, f := range zigStructFields(t, src, "src/host.zig", "ArgValues") {
+		valid[f] = true
+	}
+	return valid
 }
 
 func TestSpecHostTerminals(t *testing.T) {
@@ -130,6 +201,7 @@ func TestSpecHostTerminals(t *testing.T) {
 		t.Errorf("host.yaml: foot must stay first in detection (cell-precise sizing), got %q", host.Detection[0])
 	}
 	byName := map[string]bool{}
+	placeholders := hostArgPlaceholders(t)
 	placeholderRe := regexp.MustCompile(`\{([a-z_]+)\}`)
 	for _, term := range host.Terminals {
 		if term.Name == "" {
@@ -139,7 +211,7 @@ func TestSpecHostTerminals(t *testing.T) {
 		for _, list := range [][]string{term.Args, term.BorderlessArgs, term.DecoratedArgs, term.PostArgs} {
 			for _, arg := range list {
 				for _, m := range placeholderRe.FindAllStringSubmatch(arg, -1) {
-					if !hostArgPlaceholders[m[1]] {
+					if !placeholders[m[1]] {
 						t.Errorf("host.yaml terminal %q: unknown placeholder {%s} in %q (entry would be dropped at runtime)", term.Name, m[1], arg)
 					}
 				}
@@ -187,8 +259,51 @@ func TestSpecLayoutInteraction(t *testing.T) {
 			t.Errorf("layout.yaml %s: must be positive, got %d", name, v)
 		}
 	}
-	if layout.MruSize > 64 {
-		t.Errorf("layout.yaml mru_size: %d exceeds the compile-time bound 64 (src/mru.zig MAX_MRU)", layout.MruSize)
+	// Cross-check against the real compile-time bound instead of a
+	// hand-mirrored 64 (issue 46 §4a).
+	maxMru := zigIntConst(t, readZigSource(t, "mru.zig"), "src/mru.zig", "MAX_MRU")
+	if layout.MruSize > maxMru {
+		t.Errorf("layout.yaml mru_size: %d exceeds the compile-time bound %d (src/mru.zig MAX_MRU)", layout.MruSize, maxMru)
+	}
+}
+
+// TestSpecLayoutGridBoundsMatchDefaults asserts that the spec's default grid
+// dimensions fit inside the compile-time clamp bounds in src/defaults.zig
+// (issue 46 §5.4) — the bounds size stack buffers, so a spec default outside
+// them would be silently clamped (min) or overflow assertions (max).
+func TestSpecLayoutGridBoundsMatchDefaults(t *testing.T) {
+	var layout struct {
+		TUI struct {
+			Cols int `json:"cols"`
+			Rows int `json:"rows"`
+		} `json:"tui"`
+		GUI struct {
+			Cols int `json:"cols"`
+			Rows int `json:"rows"`
+		} `json:"gui"`
+	}
+	readSpecJSON(t, "layout.json", &layout)
+
+	src := readZigSource(t, "defaults.zig")
+	minCols := zigIntConst(t, src, "src/defaults.zig", "MIN_COLS")
+	maxCols := zigIntConst(t, src, "src/defaults.zig", "MAX_COLS")
+	minRows := zigIntConst(t, src, "src/defaults.zig", "MIN_ROWS")
+	maxRows := zigIntConst(t, src, "src/defaults.zig", "MAX_ROWS")
+
+	if minCols >= maxCols || minRows >= maxRows {
+		t.Fatalf("src/defaults.zig: inconsistent clamp bounds cols [%d,%d] rows [%d,%d]", minCols, maxCols, minRows, maxRows)
+	}
+	grids := map[string][2]int{
+		"tui": {layout.TUI.Cols, layout.TUI.Rows},
+		"gui": {layout.GUI.Cols, layout.GUI.Rows},
+	}
+	for name, g := range grids {
+		if g[0] < minCols || g[0] > maxCols {
+			t.Errorf("layout.yaml %s.cols=%d outside src/defaults.zig clamp [%d,%d]", name, g[0], minCols, maxCols)
+		}
+		if g[1] < minRows || g[1] > maxRows {
+			t.Errorf("layout.yaml %s.rows=%d outside src/defaults.zig clamp [%d,%d]", name, g[1], minRows, maxRows)
+		}
 	}
 }
 

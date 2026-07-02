@@ -80,14 +80,20 @@ watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input s
 # YAML spec sources in spec/ compiled to JSON artifacts in spec/.gen/.
 # spec/ holds only the documented YAML sources (plus schemas in spec/.schema/);
 # the generated JSON is tracked so plain `zig build` works without Go.
+# Non-Zig-app spec tiers live in subdirectories: spec/web/ (website/JS demo
+# only) and spec/reels/ (wayreel recorder only) — never loaded by src/spec.zig.
 SPEC_YAMLS = layout theme keys commands settings categories debug styles \
-             art boxart braille synonyms jsdemo crt-theme search host
+             art boxart braille synonyms search host
+SPEC_WEB   = jsdemo crt-theme
 SPEC_LANGS = de es fr it nl pl pt ru tr uk
 SPEC_REELS = gui tui-dark tui-light
 
 gen-spec: ⚙️  # compile YAML spec sources in spec/ to generated JSON in spec/.gen/
 	@for f in $(SPEC_YAMLS); \
 	 do go run ./scripts/convert_spec/ "spec/$$f.yaml" "spec/.gen/$$f.json" || exit 1; \
+	 done
+	@for f in $(SPEC_WEB); \
+	 do go run ./scripts/convert_spec/ "spec/web/$$f.yaml" "spec/.gen/$$f.json" || exit 1; \
 	 done
 	@go run ./scripts/convert_spec/ spec/strings/en.yaml spec/.gen/strings.json
 	@for l in $(SPEC_LANGS); \
@@ -132,8 +138,8 @@ gui-watch: ⚙️  # tail /tmp/emojig.log live while using the gui picker
 gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ctrl+.)
 	python3 explore_gtk_emoji.py
 
-jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.yaml
-	@printf '// generated from spec/jsdemo.yaml — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/.gen/jsdemo.json)" > website/jsdemo.js
+jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/web/jsdemo.yaml
+	@printf '// generated from spec/web/jsdemo.yaml — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/.gen/jsdemo.json)" > website/jsdemo.js
 	go run ./scripts/gen_web_spec/
 
 browse: ⚙️ jsdemo  # open the website homepage in the default web browser

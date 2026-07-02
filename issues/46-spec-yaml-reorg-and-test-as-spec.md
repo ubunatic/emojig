@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: open
+status: in-progress
 ---
 
 # spec/: reorganize a few files, and move "what to test" from prose to data
@@ -151,3 +151,39 @@ compile/init/test time, not prose docs." Five concrete, scoped proposals:
 This issue is proposal-only; none of the merges/splits/lint additions
 were applied in this review pass (all are medium-sized, cross-cutting
 changes to a generator + multiple consumers, not "very small fixes").
+
+## Resolution (2026-07-02) — non-invasive parts applied
+
+Done in this pass:
+
+- **§1 file moves**: `spec/crt-theme.yaml` and `spec/jsdemo.yaml` moved to
+  **`spec/web/`**. Makefile gained a `SPEC_WEB` list (generated from
+  `spec/web/*.yaml` into the same `spec/.gen/*.json` names, so downstream
+  consumers — `make jsdemo`, `gen_web_spec` — needed no path changes beyond
+  the `website/jsdemo.js` header comment). AGENTS.md Quickstart now
+  documents `spec/web/` and `spec/reels/` as non-Zig-app spec tiers.
+- **§4 hand-mirrored magic numbers eliminated** in
+  `scripts/test_tui/spec_lint_test.go`: the `mru_size` bound is now parsed
+  from `src/mru.zig`'s `MAX_MRU`, and `hostArgPlaceholders` is now parsed
+  from `src/host.zig`'s `ArgValues` struct fields (new `readZigSource` /
+  `zigIntConst` / `zigStructFields` helpers) — drift in either Zig source
+  now fails the lint instead of silently desyncing.
+- **§5.4 grid-clamp cross-link**: new `TestSpecLayoutGridBoundsMatchDefaults`
+  asserts `layout.yaml` `tui`/`gui` cols/rows sit inside the
+  `MIN_COLS/MAX_COLS/MIN_ROWS/MAX_ROWS` clamp parsed from
+  `src/defaults.zig`.
+- **§5.5 help-line length lint**: `spec/settings.yaml` gained
+  `max_help_line_len: 32` (documented: content-width budget of the default
+  8-col grid), and `TestSpecSettingsOptionsHaveHelp` now asserts every line
+  of every option's `help` (and `help_fallback`) against it — silent modal
+  truncation is now guarded.
+
+Still open (invasive, left for follow-ups):
+
+- §2 merges (`keys.yaml`→`input.yaml`, `styles.yaml`→strings tier) — touch
+  the generator, `@embedFile` wiring in build.zig, and two Zig spec structs.
+- §3 `categories.yaml` split (switcher-layout knobs → `layout.yaml`).
+- §5.1 ranking regression list in `spec/search.yaml` (triple-engine parity).
+- §5.2 theme punch-through contract as data (Zig-side `buildPalette` test).
+- §5.3 host argv golden tests against the real argv assembly.
+- §4's theme/input lint coverage gap (beyond the two magic-number fixes).

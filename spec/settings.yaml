@@ -9,6 +9,11 @@ description: >-
   rendered in option order; the Zig app resolves help by row index into this
   same options list, so order here is the single source of truth.
 title: ⚙️ emojig settings
+# Per-line budget for `help` (and help_fallback) text, in display characters.
+# The help modal truncates lines to the grid content width (cols*4+1, minus
+# 1 pane-padding column); 32 is the budget of the default 8-column grid.
+# Asserted by scripts/test_tui/spec_lint_test.go — keep help lines short.
+max_help_line_len: 32
 help_fallback: |-
   Settings
 

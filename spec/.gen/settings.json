@@ -1,6 +1,7 @@
 {
   "description": "Interactive settings configuration options for the picker. Each option's `help` text is shown in the context-sensitive help modal (opened with ?/h/F1 on the selected settings row). Keep help lines short — the modal is rendered inside the picker window and long lines are truncated. Rows are rendered in option order; the Zig app resolves help by row index into this same options list, so order here is the single source of truth.",
   "title": "⚙️ emojig settings",
+  "max_help_line_len": 32,
   "help_fallback": "Settings\n\n↑↓ select  ←→ change\n? help   Esc back",
   "options": [
     {

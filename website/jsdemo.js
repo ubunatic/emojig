@@ -1,4 +1,4 @@
-// generated from spec/jsdemo.yaml — do not edit by hand
+// generated from spec/web/jsdemo.yaml — do not edit by hand
 const jsdemoSpec = {
   "description": "JS browser demo simulator config — filesystem layout, env overrides, and shell seed.",
   "user": "you",
