@@ -654,6 +654,129 @@ fn debugLine(buf: []u8, idx: usize, ctx: DebugCtx) []const u8 {
     return "";
 }
 
+// --- pane line sources (issue 44 item 1) ---------------------------------
+// One source type per doc/list pane; tui_draw.renderScrollPane and
+// tui_draw.renderListPane drive the shared row loop, these only turn a line
+// or item index into content.
+
+/// Plain string lines (help screen).
+const LinesPane = struct {
+    lines: []const []const u8,
+    pub fn count(self: *const @This()) usize {
+        return self.lines.len;
+    }
+    pub fn line(self: *const @This(), li: usize) []const u8 {
+        return self.lines[li];
+    }
+};
+
+/// Lines with `{var}` substitution (status screen).
+const VarLinesPane = struct {
+    lines: []const []const u8,
+    vars: []const VarSubst,
+    buf: []u8,
+    pub fn count(self: *const @This()) usize {
+        return self.lines.len;
+    }
+    pub fn line(self: *const @This(), li: usize) []const u8 {
+        return expandVars(self.buf, self.lines[li], self.vars);
+    }
+};
+
+/// Lines with `{var}` substitution plus `$style{...}` templating (about screen).
+const TemplateLinesPane = struct {
+    lines: []const []const u8,
+    vars: []const VarSubst,
+    var_buf: []u8,
+    tmpl_buf: []u8,
+    view_bg: []const u8,
+    pub fn count(self: *const @This()) usize {
+        return self.lines.len;
+    }
+    pub fn line(self: *const @This(), li: usize) []const u8 {
+        const after_vars = expandVars(self.var_buf, self.lines[li], self.vars);
+        return expandTemplate(self.tmpl_buf, after_vars, &g_spec.styles, 0, self.view_bg);
+    }
+};
+
+/// Live app-state lines from spec/debug.yaml (debug screen).
+const DebugLinesPane = struct {
+    ctx: DebugCtx,
+    buf: []u8,
+    pub fn count(self: *const @This()) usize {
+        _ = self;
+        return debugLineCount();
+    }
+    pub fn line(self: *const @This(), li: usize) []const u8 {
+        return debugLine(self.buf, li, self.ctx);
+    }
+};
+
+/// Item rows for the settings list pane (rendered via render.renderSettingRow).
+const SettingsListPane = struct {
+    count: usize,
+    content_width: usize,
+    selected_idx: ?usize,
+    shell_integration: bool,
+    shell_key_binding: []const u8,
+    keybind_editing: bool,
+    show_all_categories: bool,
+    ambiguous_chars: []const u8,
+    theme: Theme,
+    scrollbar_style: ScrollbarStyle,
+    grid_cols: usize,
+    grid_rows: usize,
+    grid_compact: bool,
+    gui_decorated: bool,
+    hover_left: bool,
+    hover_right: bool,
+    app_bg_choice: []const u8,
+    title_bg_choice: []const u8,
+    palette: term_lib.Palette,
+    overflow_hidden: bool,
+    trunc_buf: [1024]u8 = undefined,
+
+    pub fn item(self: *@This(), opt_idx: usize, buf: []u8) !?[]const u8 {
+        if (opt_idx >= self.count) return null;
+        const is_sel = (self.selected_idx != null and self.selected_idx.? == opt_idx);
+        const is_dark_theme = self.theme != .light;
+        const resolved_app_hex = host.resolveAppBgHex(self.app_bg_choice, is_dark_theme);
+        var title_hex_buf: [6]u8 = undefined;
+        const resolved_title_hex = host.resolveTitleBgHex(self.title_bg_choice, resolved_app_hex, is_dark_theme, &title_hex_buf);
+        var app_bg_disp_buf: [24]u8 = undefined;
+        const app_bg_disp = std.fmt.bufPrint(&app_bg_disp_buf, "{s} #{s}", .{ self.app_bg_choice, resolved_app_hex }) catch self.app_bg_choice;
+        var title_bg_disp_buf: [24]u8 = undefined;
+        const title_bg_disp = std.fmt.bufPrint(&title_bg_disp_buf, "{s} #{s}", .{ self.title_bg_choice, resolved_title_hex }) catch self.title_bg_choice;
+        var row = try render.renderSettingRow(buf, &g_spec, opt_idx, is_sel, self.shell_integration, self.shell_key_binding, self.keybind_editing, self.show_all_categories, self.ambiguous_chars, self.theme, self.scrollbar_style, self.grid_cols, self.grid_rows, self.grid_compact, self.gui_decorated, self.hover_left, self.hover_right, app_bg_disp, title_bg_disp, self.palette);
+        // Long value+label combos (e.g. "[default #2c2c2c]  app background")
+        // can exceed the row budget on narrow grids; clip to gutter + content
+        // so the row never wraps (issue 48).
+        if (self.overflow_hidden) {
+            row = truncateAnsi(&self.trunc_buf, row, self.content_width + 1);
+        }
+        return row;
+    }
+};
+
+/// Item rows for the categories list pane (enable/disable checkboxes).
+const CategoriesListPane = struct {
+    selected_idx: ?usize,
+    disabled_cats: [32]bool,
+    palette: term_lib.Palette,
+
+    pub fn item(self: *const @This(), cat_idx: usize, buf: []u8) !?[]const u8 {
+        const cats = g_spec.categories.categories;
+        if (cat_idx >= cats.len) return null;
+        const is_sel = (self.selected_idx != null and self.selected_idx.? == cat_idx);
+        const cat = cats[cat_idx];
+        const is_enabled = !self.disabled_cats[cat_idx];
+        const bg = if (is_sel) self.palette.selection_bg else self.palette.view_bg;
+        const sel_prefix = if (is_sel) "> " else "  ";
+        const cb = if (is_enabled) "✔" else " ";
+        return try std.fmt.bufPrint(buf, "{s} {s}{s}[{s}] {s}\x1b[0m", .{ self.palette.app_bg, bg, sel_prefix, cb, cat.name });
+    }
+};
+
 /// Short, context-sensitive help for the selected settings row, shown as a
 /// modal when the user presses `?`/`h`/`F1`. The texts live in
 /// spec/settings.yaml (`help` per option, `help_fallback` for the rest); rows
@@ -1788,29 +1911,6 @@ pub fn main(init: std.process.Init) !void {
                 var tmpl_expand_buf: [512]u8 = undefined;
 
                 var printed_rows: usize = 0;
-                const RowWriter = struct {
-                    fd: std.posix.fd_t,
-                    total: usize,
-                    count: *usize,
-
-                    fn endRow(self: @This()) !void {
-                        try term_lib.writeAll(self.fd, "\x1b[0m\x1b[K");
-                        self.count.* += 1;
-                        if (self.count.* < self.total) {
-                            try term_lib.writeAll(self.fd, term_lib.CURSOR_DOWN_CR);
-                        }
-                    }
-                    // Use for rows that already fill the full terminal width —
-                    // skips \x1b[K so the last character is not erased by EL
-                    // firing from the pending-wrap cursor position.
-                    fn endRowFull(self: @This()) !void {
-                        try term_lib.writeAll(self.fd, "\x1b[0m");
-                        self.count.* += 1;
-                        if (self.count.* < self.total) {
-                            try term_lib.writeAll(self.fd, term_lib.CURSOR_DOWN_CR);
-                        }
-                    }
-                };
                 if (active_dropdown_opt_idx) |opt_idx| {
                     const opt = g_spec.settings.options[opt_idx];
                     popup_title = opt.label;
@@ -1842,7 +1942,19 @@ pub fn main(init: std.process.Init) !void {
                     }
                     popup_msg = if (pos > 0) popup_buf[0 .. pos - 1] else "";
                 }
-                const rw = RowWriter{ .fd = stdout_fd, .total = current_total_rows, .count = &printed_rows };
+                const rw = tui_draw.RowWriter{ .fd = stdout_fd, .total = current_total_rows, .count = &printed_rows };
+                const pane_env = tui_draw.PaneEnv{
+                    .fd = stdout_fd,
+                    .rw = rw,
+                    .style = scrollbar_style,
+                    .content_width = content_width,
+                    .app_bg = palette.app_bg,
+                    .view_bg = palette.view_bg,
+                    .fg = palette.grid_fg_only,
+                    .rail_bg = palette.scrollbar_rail_bg,
+                    .scrollbar_char = g_spec.strings.scrollbar_char,
+                    .overflow_hidden = std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"),
+                };
 
                 if (rctx.is_hidden) {
                     try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
@@ -2088,33 +2200,8 @@ pub fn main(init: std.process.Init) !void {
                             try rw.endRow();
                         }
                     } else if (current_screen == .help and !is_too_small) {
-                        const help_lines = g_spec.strings.help_lines_more;
-                        const viewport_h = rows + 3;
-                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, help_lines.len, help_scroll_top);
-                        const needs_scroll = ps.needs_scroll;
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = help_scroll_top + h_idx;
-                                if (li < help_lines.len) text = help_lines[li];
-                            } else {
-                                const center_threshold: usize = help_lines.len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < help_lines.len) text = help_lines[h_idx - offset];
-                            }
-                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                var sb_buf: [256]u8 = undefined;
-                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
-                                try writeAll(stdout_fd, sb_seq);
-                                try rw.endRowFull();
-                            } else {
-                                try rw.endRow();
-                            }
-                        }
+                        const src = LinesPane{ .lines = g_spec.strings.help_lines_more };
+                        try tui_draw.renderScrollPane(pane_env, &line_buf, rows + 3, help_scroll_top, &src);
                     } else if (current_screen == .about and !is_too_small) {
                         const spec_vars = [_]VarSubst{
                             .{ .key = "version", .val = build_options.version },
@@ -2123,38 +2210,14 @@ pub fn main(init: std.process.Init) !void {
                         const about_frames = g_spec.strings.about_frames;
                         const cur_frame: usize = if (about_frames.len > 0) @min(anim_frame, about_frames.len - 1) else 0;
                         const about_lines = if (about_frames.len > 0) about_frames[cur_frame] else &[_][]const u8{};
-                        const viewport_h = rows + 3;
-                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, about_lines.len, about_scroll_top);
-                        const needs_scroll = ps.needs_scroll;
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = about_scroll_top + h_idx;
-                                if (li < about_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, about_lines[li], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, palette.view_bg);
-                                }
-                            } else {
-                                const center_threshold: usize = about_lines.len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < about_lines.len) {
-                                    const after_vars = expandVars(&var_expand_buf, about_lines[h_idx - offset], &spec_vars);
-                                    text = expandTemplate(&tmpl_expand_buf, after_vars, &g_spec.styles, 0, palette.view_bg);
-                                }
-                            }
-                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                var sb_buf: [64]u8 = undefined;
-                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
-                                try writeAll(stdout_fd, sb_seq);
-                                try rw.endRowFull();
-                            } else {
-                                try rw.endRow();
-                            }
-                        }
+                        const src = TemplateLinesPane{
+                            .lines = about_lines,
+                            .vars = &spec_vars,
+                            .var_buf = &var_expand_buf,
+                            .tmpl_buf = &tmpl_expand_buf,
+                            .view_bg = palette.view_bg,
+                        };
+                        try tui_draw.renderScrollPane(pane_env, &line_buf, rows + 3, about_scroll_top, &src);
                     } else if (current_screen == .status and !is_too_small) {
                         const spec_vars = [_]VarSubst{
                             .{ .key = "shell_integration", .val = if (shell_integration) "true" else "false" },
@@ -2167,38 +2230,9 @@ pub fn main(init: std.process.Init) !void {
                             .{ .key = "shell", .val = detectShell(init.environ_map) },
                             .{ .key = "theme", .val = themeName(theme) },
                         };
-                        const status_lines = g_spec.strings.status_lines;
-                        const viewport_h = rows + 3;
-                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, status_lines.len, status_scroll_top);
-                        const needs_scroll = ps.needs_scroll;
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = status_scroll_top + h_idx;
-                                if (li < status_lines.len) text = expandVars(&var_expand_buf, status_lines[li], &spec_vars);
-                            } else {
-                                const center_threshold: usize = status_lines.len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < status_lines.len) text = expandVars(&var_expand_buf, status_lines[h_idx - offset], &spec_vars);
-                            }
-                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                var sb_buf: [64]u8 = undefined;
-                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
-                                try writeAll(stdout_fd, sb_seq);
-                                try rw.endRowFull();
-                            } else {
-                                try rw.endRow();
-                            }
-                        }
+                        const src = VarLinesPane{ .lines = g_spec.strings.status_lines, .vars = &spec_vars, .buf = &var_expand_buf };
+                        try tui_draw.renderScrollPane(pane_env, &line_buf, rows + 3, status_scroll_top, &src);
                     } else if (current_screen == .debug and !is_too_small) {
-                        const viewport_h = rows + 3;
-                        const lines_len = debugLineCount();
-                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, lines_len, debug_scroll_top);
-                        const needs_scroll = ps.needs_scroll;
                         const debug_ctx = DebugCtx{
                             .theme = theme,
                             .system_theme = system_theme,
@@ -2236,133 +2270,39 @@ pub fn main(init: std.process.Init) !void {
                             .multi_select_active = multi_select_active,
                             .multi_selected_count = multi_selected_emojis.items.len,
                         };
-                        var h_idx: usize = 0;
-                        while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            if (needs_scroll) {
-                                const li = debug_scroll_top + h_idx;
-                                if (li < lines_len) text = debugLine(&var_expand_buf, li, debug_ctx);
-                            } else {
-                                const center_threshold: usize = lines_len + 2;
-                                const offset = if (viewport_h >= center_threshold) @as(usize, 1) else 0;
-                                if (h_idx >= offset and h_idx - offset < lines_len) text = debugLine(&var_expand_buf, h_idx - offset, debug_ctx);
-                            }
-                            const line = try renderPaneLine(&line_buf, text, content_width, palette.app_bg, palette.view_bg, palette.grid_fg_only, std.mem.eql(u8, g_spec.layout.components.scrollpane.overflow, "hidden"));
-                            try writeAll(stdout_fd, line);
-                            if (needs_scroll and content_width >= 2) {
-                                var sb_buf: [64]u8 = undefined;
-                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
-                                try writeAll(stdout_fd, sb_seq);
-                                try rw.endRowFull();
-                            } else {
-                                try rw.endRow();
-                            }
-                        }
+                        const src = DebugLinesPane{ .ctx = debug_ctx, .buf = &var_expand_buf };
+                        try tui_draw.renderScrollPane(pane_env, &line_buf, rows + 3, debug_scroll_top, &src);
                     } else if (current_screen == .settings and !is_too_small) {
-                        const settings_rows = rows + 4;
-                        var h_idx: usize = 0;
-                        while (h_idx < settings_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            var custom_rendered = false;
-
-                            if (h_idx == 0) {
-                                // Empty line on top
-                                custom_rendered = true;
-                            } else if (h_idx == 1) {
-                                text = "⚙️ emojig settings";
-                            } else if (h_idx == 2) {
-                                // Empty separator row
-                                custom_rendered = true;
-                            } else if (h_idx >= 3 and h_idx - 3 < rows) {
-                                const slot_idx = h_idx - 3;
-                                const opt_idx = settings_scroll_top + slot_idx;
-                                if (opt_idx < settings_count) {
-                                    const is_sel = (selected_idx != null and selected_idx.? == opt_idx);
-                                    const is_dark_theme = theme != .light;
-                                    const resolved_app_hex = host.resolveAppBgHex(app_bg_choice, is_dark_theme);
-                                    var title_hex_disp_buf: [6]u8 = undefined;
-                                    const resolved_title_hex = host.resolveTitleBgHex(title_bg_choice, resolved_app_hex, is_dark_theme, &title_hex_disp_buf);
-                                    var app_bg_disp_buf: [24]u8 = undefined;
-                                    const app_bg_disp = std.fmt.bufPrint(&app_bg_disp_buf, "{s} #{s}", .{ app_bg_choice, resolved_app_hex }) catch app_bg_choice;
-                                    var title_bg_disp_buf: [24]u8 = undefined;
-                                    const title_bg_disp = std.fmt.bufPrint(&title_bg_disp_buf, "{s} #{s}", .{ title_bg_choice, resolved_title_hex }) catch title_bg_choice;
-                                    var row = try render.renderSettingRow(&line_buf, &g_spec, opt_idx, is_sel, shell_integration, shell_key_binding, keybind_editing, show_all_categories, ambiguous_chars, theme, scrollbar_style, grid_cols, grid_rows, grid_compact, gui_decorated, griddim_hover_left, griddim_hover_right, app_bg_disp, title_bg_disp, palette);
-                                    // Long value+label combos (e.g. "[default #2c2c2c]  app background")
-                                    // can exceed the row budget on narrow grids; clip to
-                                    // gutter + content so the row never wraps (issue 48).
-                                    var setting_trunc_buf: [1024]u8 = undefined;
-                                    if (std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden")) {
-                                        row = truncateAnsi(&setting_trunc_buf, row, content_width + 1);
-                                    }
-                                    try writeAll(stdout_fd, row);
-                                    const vis_w = ansiDisplayWidth(row);
-                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    if (pad_len > 0) {
-                                        try writeAll(stdout_fd, palette.view_bg);
-                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
-                                    }
-                                    custom_rendered = true;
-                                }
-                            }
-
-                            if (!custom_rendered) {
-                                const vis_w = ansiDisplayWidth(text);
-                                const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg_only, text, palette.view_bg, spaces[0..@min(pad_len, spaces.len)] });
-                                try writeAll(stdout_fd, line);
-                            }
-                            try rw.endRow();
-                        }
+                        var src = SettingsListPane{
+                            .count = settings_count,
+                            .content_width = content_width,
+                            .selected_idx = selected_idx,
+                            .shell_integration = shell_integration,
+                            .shell_key_binding = shell_key_binding,
+                            .keybind_editing = keybind_editing,
+                            .show_all_categories = show_all_categories,
+                            .ambiguous_chars = ambiguous_chars,
+                            .theme = theme,
+                            .scrollbar_style = scrollbar_style,
+                            .grid_cols = grid_cols,
+                            .grid_rows = grid_rows,
+                            .grid_compact = grid_compact,
+                            .gui_decorated = gui_decorated,
+                            .hover_left = griddim_hover_left,
+                            .hover_right = griddim_hover_right,
+                            .app_bg_choice = app_bg_choice,
+                            .title_bg_choice = title_bg_choice,
+                            .palette = palette,
+                            .overflow_hidden = std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden"),
+                        };
+                        try tui_draw.renderListPane(pane_env, &line_buf, "⚙️ emojig settings", rows, settings_scroll_top, &src);
                     } else if (current_screen == .categories and !is_too_small) {
-                        const cats_rows = rows + 4;
-                        var h_idx: usize = 0;
-                        while (h_idx < cats_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            var text: []const u8 = "";
-                            var custom_rendered = false;
-
-                            if (h_idx == 0) {
-                                // Empty line on top
-                                custom_rendered = true;
-                            } else if (h_idx == 1) {
-                                text = "📁 emojig categories";
-                            } else if (h_idx == 2) {
-                                // Empty separator row
-                                custom_rendered = true;
-                            } else if (h_idx >= 3 and h_idx - 3 < rows) {
-                                const slot_idx = h_idx - 3;
-                                const cat_idx = cat_scroll_top + slot_idx;
-                                if (cat_idx < g_spec.categories.categories.len) {
-                                    const is_sel = (selected_idx != null and selected_idx.? == cat_idx);
-                                    const cat = g_spec.categories.categories[cat_idx];
-                                    const is_enabled = !disabled_cats[cat_idx];
-
-                                    const bg = if (is_sel) palette.selection_bg else palette.view_bg;
-                                    const sel_prefix = if (is_sel) "> " else "  ";
-                                    const cb = if (is_enabled) "✔" else " ";
-
-                                    const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}[{s}] {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cb, cat.name });
-                                    try writeAll(stdout_fd, row);
-                                    const vis_w = ansiDisplayWidth(row);
-                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                    if (pad_len > 0) {
-                                        try writeAll(stdout_fd, palette.view_bg);
-                                        try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
-                                    }
-                                    custom_rendered = true;
-                                }
-                            }
-
-                            if (!custom_rendered) {
-                                const vis_w = ansiDisplayWidth(text);
-                                const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
-                                const line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{s}{s}{s}", .{ palette.app_bg, palette.view_bg, palette.grid_fg_only, text, palette.view_bg, spaces[0..@min(pad_len, spaces.len)] });
-                                try writeAll(stdout_fd, line);
-                            }
-                            try rw.endRow();
-                        }
+                        const src = CategoriesListPane{
+                            .selected_idx = selected_idx,
+                            .disabled_cats = disabled_cats,
+                            .palette = palette,
+                        };
+                        try tui_draw.renderListPane(pane_env, &line_buf, "📁 emojig categories", rows, cat_scroll_top, &src);
                     } else {
                         // Separator hline between search bar and grid.
                         try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
@@ -2403,8 +2343,10 @@ pub fn main(init: std.process.Init) !void {
                                     const sel_prefix = if (is_sel) "> " else "  ";
                                     const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}{c}{s} - {s}\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cmd_prefix, cmd.name, cmd.action });
                                     try writeAll(stdout_fd, row);
+                                    // Pad to the full row width (gutter + content + scrollbar
+                                    // column), same as every other screen (issues 44/48).
                                     const vis_w = ansiDisplayWidth(row);
-                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                                    const pad_len = if (content_width + 1 > vis_w) content_width + 1 - vis_w else 0;
                                     if (pad_len > 0) {
                                         try writeAll(stdout_fd, palette.view_bg);
                                         try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);
@@ -2438,8 +2380,9 @@ pub fn main(init: std.process.Init) !void {
                                     }
                                     const row = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}c:{s} ({s})\x1b[0m", .{ palette.app_bg, bg, sel_prefix, cat.name, syn_buf[0..syn_len] });
                                     try writeAll(stdout_fd, row);
+                                    // Pad to the full row width, same as every other screen.
                                     const vis_w = ansiDisplayWidth(row);
-                                    const pad_len = if (content_width > vis_w) content_width - vis_w else 0;
+                                    const pad_len = if (content_width + 1 > vis_w) content_width + 1 - vis_w else 0;
                                     if (pad_len > 0) {
                                         try writeAll(stdout_fd, palette.view_bg);
                                         try writeAll(stdout_fd, spaces[0..@min(pad_len, spaces.len)]);

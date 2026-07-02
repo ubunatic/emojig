@@ -94,7 +94,36 @@ Replaced the two hand-duplicated `theme_str` switches (`main.zig` former
 helper. Verified with `zig build test -Doptimize=ReleaseSafe -Dllvm=false`
 (exit 0, same pass/fail state as before the change).
 
-## Progress (2026-07-02, partial)
+## Progress (2026-07-02 late, item 1 done)
+
+Item 1 (pane render dispatch) is extracted: `tui_draw.zig` gained
+`RowWriter` (hoisted from `main()` — the item-7 half that render code
+needs), `PaneEnv`, `renderScrollPane` (help/about/status/debug), and
+`renderListPane` (settings/categories, incl. the shared `padRowTail`),
+all with pipe-based byte tests. `main.zig` keeps only thin per-pane line
+sources (`LinesPane`/`VarLinesPane`/`TemplateLinesPane`/`DebugLinesPane`/
+`SettingsListPane`/`CategoriesListPane`) that turn a line/item index into
+content. Behavior changes folded in deliberately:
+
+- **Settings/categories/cmd-/cat-autocomplete item rows now pad to the
+  full `content_width + 1`** like every other screen (the issue-48
+  off-by-one); `TestTUISettingsRowWidthsAreEqual` and a
+  `ValidatePaintedRowWidths` call in visual subtest 7a now guard it.
+- **Full-width pane rows end with `endRowFull`** (no `\x1b[K`), applying
+  the issue-48 pending-wrap rule to the doc panes; leading
+  `CLEAR_LINE_CR` still clears each row.
+- **Visual subtest 7d now actually opens the dropdown** and asserts its
+  content ("leaves C-e free"): the old script batched `/s\n`, whose
+  Enter landed before the first autocomplete render computed
+  `cmd_matches` and was a no-op — the subtest had been validating a
+  plain settings screen (and toggling shell integration) all along.
+
+Observed once during verification: the issue-47 benchmark regression
+guard (2 ms/query) can flake when both test binaries run their benchmark
+concurrently under `zig build test` (measured ~0.45 ms alone; a parallel
+run pushed one binary over). If it recurs, raise the bound or serialize.
+
+## Earlier progress (2026-07-02, partial)
 
 The 6× copy-pasted scrollbar cluster from item 1 is extracted to
 `src/tui_draw.zig`: `paneScroll()` computes the shared viewport/thumb

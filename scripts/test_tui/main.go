@@ -920,6 +920,14 @@ func runVisualQualityTest(binaryPath string) {
 			cmd.Process.Kill()
 			os.Exit(1)
 		}
+		// Settings rows must paint the same full row width as every other
+		// screen (issue 44/48: they used to stop one column short).
+		if err := tsSettings.ValidatePaintedRowWidths(34); err != nil {
+			tsSettings.PrintScreen()
+			fmt.Printf("FAIL: Settings screen painted row width validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
 		fmt.Println("PASS: Settings screen layout bounds are correct.")
 		cmd.Process.Kill()
 		cmd.Wait()
@@ -997,13 +1005,18 @@ func runVisualQualityTest(binaryPath string) {
 
 		collectScreenBytes(chunksChan, 500*time.Millisecond)
 
-		// Open settings screen
-		master.Write([]byte("/s\n"))
+		// Open the settings screen. Each keystroke needs a render cycle
+		// before the next lands: a batched "/s\n" arrives before the first
+		// autocomplete render computed cmd_matches, so the Enter is a no-op
+		// (issue 48 family) and the dropdown never opened.
+		master.Write([]byte("/s"))
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
+		master.Write([]byte("\n"))
 		collectScreenBytes(chunksChan, 500*time.Millisecond)
 
 		// Navigate down to "shell key binding" row (index 1 in settings list)
 		master.Write([]byte("\x1b[B"))
-		time.Sleep(200 * time.Millisecond)
+		collectScreenBytes(chunksChan, 500*time.Millisecond)
 
 		// Open dropdown
 		master.Write([]byte("\n"))
@@ -1014,6 +1027,22 @@ func runVisualQualityTest(binaryPath string) {
 		if err := tsDropdown.ValidateLayout(33); err != nil {
 			tsDropdown.PrintScreen()
 			fmt.Printf("FAIL: Dropdown menu layout validation failed: %v\n", err)
+			cmd.Process.Kill()
+			os.Exit(1)
+		}
+		// The layout check alone passes on a plain settings screen too — make
+		// sure the dropdown actually opened (issue 48 follow-up): the
+		// shell_key_binding dropdown lists choice caveats like "leaves C-e free".
+		dropdownOpen := false
+		for y := 0; y < tsDropdown.Height; y++ {
+			if strings.Contains(tsDropdown.GetRowText(y), "leaves C-e free") {
+				dropdownOpen = true
+				break
+			}
+		}
+		if !dropdownOpen {
+			tsDropdown.PrintScreen()
+			fmt.Println("FAIL: shell_key_binding dropdown did not open (caveat text not found).")
 			cmd.Process.Kill()
 			os.Exit(1)
 		}

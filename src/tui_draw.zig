@@ -673,6 +673,140 @@ test "scrollbarSeq: exact bytes for expand and bar styles" {
     try std.testing.expectEqualStrings("\x1b[34GR ", rail);
 }
 
+/// Emits row terminators for the TUI render loop. Every painted row ends with
+/// `endRow` (reset + `\x1b[K`) *unless* it painted the full terminal width
+/// (`content_width + 1` cells) — then it must use `endRowFull`, because
+/// `\x1b[K` fired from the pending-wrap cursor position erases the last
+/// column in exact-width GUI windows (issue 48).
+pub const RowWriter = struct {
+    fd: std.posix.fd_t,
+    total: usize,
+    count: *usize,
+
+    pub fn endRow(self: @This()) !void {
+        try term.writeAll(self.fd, "\x1b[0m\x1b[K");
+        self.count.* += 1;
+        if (self.count.* < self.total) {
+            try term.writeAll(self.fd, term.CURSOR_DOWN_CR);
+        }
+    }
+    pub fn endRowFull(self: @This()) !void {
+        try term.writeAll(self.fd, "\x1b[0m");
+        self.count.* += 1;
+        if (self.count.* < self.total) {
+            try term.writeAll(self.fd, term.CURSOR_DOWN_CR);
+        }
+    }
+};
+
+/// Shared visual environment for the doc/list pane renderers below: output
+/// fd, row terminator, scrollbar style, and the palette slices every pane row
+/// needs. One instance per render pass.
+pub const PaneEnv = struct {
+    fd: std.posix.fd_t,
+    rw: RowWriter,
+    style: ScrollbarStyle,
+    content_width: usize,
+    app_bg: []const u8,
+    view_bg: []const u8,
+    fg: []const u8,
+    rail_bg: []const u8,
+    scrollbar_char: []const u8,
+    overflow_hidden: bool,
+};
+
+/// Render one scrollable doc pane (help/about/status/debug — issue 44 item 1).
+/// `source` provides `count() usize` and `line(li: usize) []const u8`. When the
+/// content overflows the viewport the pane scrolls from `scroll_top` and a
+/// scrollbar is drawn in the last column; otherwise lines are vertically
+/// centered (one leading blank row when there is spare room).
+pub fn renderScrollPane(
+    env: PaneEnv,
+    line_buf: []u8,
+    viewport_h: usize,
+    scroll_top: usize,
+    source: anytype,
+) !void {
+    const total = source.count();
+    const ps = paneScroll(env.style, viewport_h, total, scroll_top);
+    var h_idx: usize = 0;
+    while (h_idx < viewport_h) : (h_idx += 1) {
+        try term.writeAll(env.fd, term.CLEAR_LINE_CR);
+        var text: []const u8 = "";
+        if (ps.needs_scroll) {
+            const li = scroll_top + h_idx;
+            if (li < total) text = source.line(li);
+        } else {
+            const center_threshold: usize = total + 2;
+            const offset: usize = if (viewport_h >= center_threshold) 1 else 0;
+            if (h_idx >= offset and h_idx - offset < total) text = source.line(h_idx - offset);
+        }
+        const line = try renderPaneLine(line_buf, text, env.content_width, env.app_bg, env.view_bg, env.fg, env.overflow_hidden);
+        try term.writeAll(env.fd, line);
+        if (ps.needs_scroll and env.content_width >= 2) {
+            var sb_buf: [256]u8 = undefined;
+            const sb_seq = try scrollbarSeq(&sb_buf, env.style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, env.content_width + 1, env.rail_bg, env.fg, env.scrollbar_char);
+            try term.writeAll(env.fd, sb_seq);
+        }
+        // Pane lines paint the full row width (gutter + content), so skip
+        // the trailing \x1b[K (see RowWriter).
+        try env.rw.endRowFull();
+    }
+}
+
+/// Pad a rendered list row to the full painted row width (`content_width + 1`:
+/// gutter + content + scrollbar column), so list panes paint the same width as
+/// every other screen (issues 44/48 — settings rows used to stop one short).
+fn padRowTail(env: PaneEnv, row: []const u8) !void {
+    const vis_w = ansiDisplayWidth(row);
+    const full_w = env.content_width + 1;
+    const pad_len = if (full_w > vis_w) full_w - vis_w else 0;
+    if (pad_len > 0) {
+        const spaces = " " ** 512;
+        try term.writeAll(env.fd, env.view_bg);
+        try term.writeAll(env.fd, spaces[0..@min(pad_len, spaces.len)]);
+    }
+}
+
+/// Render a header+list pane (settings/categories — issue 44 item 1): an
+/// unpainted spacer row, a title row, another spacer, then `slots` item rows
+/// fed by `source.item(item_idx, buf)` (null ⇒ blank painted row), plus one
+/// trailing blank row. `item` returns a fully colored row starting with the
+/// app-bg gutter; padding to the full row width happens here.
+pub fn renderListPane(
+    env: PaneEnv,
+    line_buf: []u8,
+    title: []const u8,
+    slots: usize,
+    scroll_top: usize,
+    source: anytype,
+) !void {
+    const pane_rows = slots + 4;
+    var h_idx: usize = 0;
+    while (h_idx < pane_rows) : (h_idx += 1) {
+        try term.writeAll(env.fd, term.CLEAR_LINE_CR);
+        if (h_idx == 0 or h_idx == 2) {
+            // Unpainted spacer rows (terminal-default background), matching
+            // the historical settings/categories header layout.
+            try env.rw.endRow();
+            continue;
+        }
+        if (h_idx >= 3 and h_idx - 3 < slots) {
+            const item_idx = scroll_top + (h_idx - 3);
+            if (try source.item(item_idx, line_buf)) |row| {
+                try term.writeAll(env.fd, row);
+                try padRowTail(env, row);
+                try env.rw.endRowFull();
+                continue;
+            }
+        }
+        const text: []const u8 = if (h_idx == 1) title else "";
+        const line = try renderPaneLine(line_buf, text, env.content_width, env.app_bg, env.view_bg, env.fg, env.overflow_hidden);
+        try term.writeAll(env.fd, line);
+        try env.rw.endRowFull();
+    }
+}
+
 pub fn renderPaneLine(
     buf: []u8,
     text: []const u8,
@@ -698,4 +832,128 @@ pub fn renderPaneLine(
         view_bg,
         spaces[0..@min(pad_len, spaces.len)],
     });
+}
+
+// --- pane renderer tests -------------------------------------------------
+
+const TestLines = struct {
+    lines: []const []const u8,
+    pub fn count(self: *const @This()) usize {
+        return self.lines.len;
+    }
+    pub fn line(self: *const @This(), li: usize) []const u8 {
+        return self.lines[li];
+    }
+};
+
+const TestItems = struct {
+    items: []const []const u8,
+    pub fn item(self: *const @This(), idx: usize, buf: []u8) !?[]const u8 {
+        if (idx >= self.items.len) return null;
+        return try std.fmt.bufPrint(buf, "A B{s}", .{self.items[idx]});
+    }
+};
+
+fn testPaneEnv(fd: std.posix.fd_t, count: *usize) PaneEnv {
+    return .{
+        .fd = fd,
+        .rw = .{ .fd = fd, .total = 1000, .count = count },
+        .style = .expand,
+        .content_width = 10,
+        .app_bg = "A",
+        .view_bg = "V",
+        .fg = "F",
+        .rail_bg = "R",
+        .scrollbar_char = "▐",
+        .overflow_hidden = true,
+    };
+}
+
+// std.posix does not expose pipe2 in Zig 0.16 — use the Linux syscall
+// wrapper (docs/Zig.md §1).
+fn testPipe() ![2]std.posix.fd_t {
+    var fds: [2]std.posix.fd_t = undefined;
+    const rc = std.os.linux.pipe2(&fds, .{});
+    if (std.posix.errno(rc) != .SUCCESS) return error.PipeFailed;
+    return fds;
+}
+
+fn readPipe(fd: std.posix.fd_t, buf: []u8) ![]const u8 {
+    var n: usize = 0;
+    while (true) {
+        const got = try std.posix.read(fd, buf[n..]);
+        if (got == 0) break;
+        n += got;
+    }
+    return buf[0..n];
+}
+
+test "renderScrollPane: fitting content is centered, rows are full-width" {
+    const fds = try testPipe();
+    defer _ = std.posix.system.close(fds[0]);
+    var printed: usize = 0;
+    const env = testPaneEnv(fds[1], &printed);
+    const lines = [_][]const u8{ "one", "two" };
+    const src = TestLines{ .lines = &lines };
+    var line_buf: [4096]u8 = undefined;
+    try renderScrollPane(env, &line_buf, 4, 0, &src);
+    _ = std.posix.system.close(fds[1]);
+    var out_buf: [8192]u8 = undefined;
+    const out = try readPipe(fds[0], &out_buf);
+
+    try std.testing.expectEqual(@as(usize, 4), printed);
+    // Centered: viewport 4 >= 2+2 lines ⇒ one leading blank row.
+    // Row layout: gutter "A V" + fg + text + view_bg + pad to width 10.
+    try std.testing.expect(std.mem.indexOf(u8, out, "A VFoneV") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "A VFtwoV") != null);
+    // Content fits: no scrollbar column jump.
+    try std.testing.expect(std.mem.indexOf(u8, out, "\x1b[11G") == null);
+    // Full-width rows end without \x1b[K (issue 48 pending-wrap rule).
+    try std.testing.expect(std.mem.indexOf(u8, out, "\x1b[K") == null);
+}
+
+test "renderScrollPane: overflowing content scrolls and draws a scrollbar" {
+    const fds = try testPipe();
+    defer _ = std.posix.system.close(fds[0]);
+    var printed: usize = 0;
+    const env = testPaneEnv(fds[1], &printed);
+    const lines = [_][]const u8{ "l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7" };
+    const src = TestLines{ .lines = &lines };
+    var line_buf: [4096]u8 = undefined;
+    try renderScrollPane(env, &line_buf, 2, 3, &src);
+    _ = std.posix.system.close(fds[1]);
+    var out_buf: [8192]u8 = undefined;
+    const out = try readPipe(fds[0], &out_buf);
+
+    try std.testing.expectEqual(@as(usize, 2), printed);
+    // Scrolled viewport shows lines 3 and 4, not the start of the list.
+    try std.testing.expect(std.mem.indexOf(u8, out, "l3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "l4") != null);
+    try std.testing.expect(std.mem.indexOf(u8, out, "l0") == null);
+    // Scrollbar drawn in the column after the content (content_width + 1).
+    try std.testing.expect(std.mem.indexOf(u8, out, "\x1b[11G") != null);
+}
+
+test "renderListPane: header layout, item padding to full width, blank slots" {
+    const fds = try testPipe();
+    defer _ = std.posix.system.close(fds[0]);
+    var printed: usize = 0;
+    const env = testPaneEnv(fds[1], &printed);
+    const items = [_][]const u8{"x"};
+    const src = TestItems{ .items = &items };
+    var line_buf: [4096]u8 = undefined;
+    try renderListPane(env, &line_buf, "title", 2, 0, &src);
+    _ = std.posix.system.close(fds[1]);
+    var out_buf: [8192]u8 = undefined;
+    const out = try readPipe(fds[0], &out_buf);
+
+    // slots + 4 rows total: spacer, title, spacer, 2 slots, trailing blank.
+    try std.testing.expectEqual(@as(usize, 6), printed);
+    try std.testing.expect(std.mem.indexOf(u8, out, "title") != null);
+    // Item row "A Bx" (visible width 4) padded to content_width + 1 = 11:
+    // view_bg + 7 pad spaces, then the full-width row reset (no \x1b[K).
+    try std.testing.expect(std.mem.indexOf(u8, out, "A BxV       \x1b[0m") != null);
+    // Second slot is empty ⇒ blank painted line, not a missing row.
+    const spacer_count = std.mem.count(u8, out, term.CLEAR_LINE_CR);
+    try std.testing.expectEqual(@as(usize, 6), spacer_count);
 }
