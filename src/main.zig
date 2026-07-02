@@ -2133,14 +2133,9 @@ pub fn main(init: std.process.Init) !void {
                             }
                         }
                     } else if (current_screen == .about and !is_too_small) {
-                        const theme_str: []const u8 = switch (theme) {
-                            .dark => "dark",
-                            .light => "light",
-                            .system => "system",
-                        };
                         const spec_vars = [_]VarSubst{
                             .{ .key = "version", .val = build_options.version },
-                            .{ .key = "theme", .val = theme_str },
+                            .{ .key = "theme", .val = themeName(theme) },
                         };
                         const about_frames = g_spec.strings.about_frames;
                         const cur_frame: usize = if (about_frames.len > 0) @min(anim_frame, about_frames.len - 1) else 0;
@@ -2198,11 +2193,6 @@ pub fn main(init: std.process.Init) !void {
                             }
                         }
                     } else if (current_screen == .status and !is_too_small) {
-                        const theme_str: []const u8 = switch (theme) {
-                            .dark => "dark",
-                            .light => "light",
-                            .system => "system",
-                        };
                         const spec_vars = [_]VarSubst{
                             .{ .key = "shell_integration", .val = if (shell_integration) "true" else "false" },
                             .{ .key = "shell_key_binding", .val = shell_key_binding },
@@ -2212,7 +2202,7 @@ pub fn main(init: std.process.Init) !void {
                             .{ .key = "version", .val = build_options.version },
                             .{ .key = "emojis", .val = emojis_count_str },
                             .{ .key = "shell", .val = detectShell(init.environ_map) },
-                            .{ .key = "theme", .val = theme_str },
+                            .{ .key = "theme", .val = themeName(theme) },
                         };
                         const status_lines = g_spec.strings.status_lines;
                         const viewport_h = rows + 3;

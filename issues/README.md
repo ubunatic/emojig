@@ -9,6 +9,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | Report | Title | Summary |
 |---|---|---|
 | [**24**](24-ux-and-resilience-review-2026-06.md) | [UX & Resilience Review — 2026-06-21](24-ux-and-resilience-review-2026-06.md) | Consolidated repo review covering current UX/resilience risks, validated new issues, and stale backlog entries. |
+| [**43**](43-arch-spec-review-2026-07.md) | [Architecture, spec/, and readability review — 2026-07-02](43-arch-spec-review-2026-07.md) | Reviewed `main.zig` growth, spec/ organization, ANSI escape usage, and the search/render hot path; filed issues 44-47. |
 
 ---
 
@@ -34,6 +35,10 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**40**](40-wayland-focused-window-placement.md) | [Wayland focused-window placement for GUI picker](40-wayland-focused-window-placement.md) | **P2** | Opt-in `--placement=focus` to open the picker near the focused window via compositor-specific control APIs (sway/Hyprland first). |
 | [**41**](41-width-fit-and-cosmetic-recorder-gap.md) | [Width side of height_guard resilience is still missing](41-width-fit-and-cosmetic-recorder-gap.md) | **P3** | `height_guard=fit` shrinks the grid when the terminal is too *short*; no equivalent exists for a terminal that's too *wide* — cosmetic-only gap seen in `gui.json` recordings. |
 | [**42**](42-report-command-open-issue-url.md) | [`:report` command — file a bug/problem via prefilled Codeberg issue URL](42-report-command-open-issue-url.md) | **P3** | New `:report`/`:r` command opens a title/body screen and launches the browser at a prefilled `codeberg.org/.../issues/new?title=&body=` URL; needs a new browser-opener helper and URL encoder, neither of which exist yet. |
+| [**44**](44-main-zig-decomposition.md) | [`main.zig` decomposition: it regrew into one 4098-line function](44-main-zig-decomposition.md) | **P2** | `pub fn main()` is 4098 of 4834 lines with zero helpers extracted since issue 37; proposes 8 concrete extractions (panes, debug pane, settings, switcher, mouse, key dispatch) plus a 6x-duplicated scrollbar block. |
+| [**45**](45-ansi-escape-consolidation.md) | [ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences](45-ansi-escape-consolidation.md) | **P2** | 145 raw `\x1b[` literals in `main.zig` bypass existing `term.zig`/`color.zig` helpers for cursor move, line clear, and mode toggles; proposes shared helpers, needs byte-level tests first. |
+| [**46**](46-spec-yaml-reorg-and-test-as-spec.md) | [spec/: reorganize a few files, and move "what to test" from prose to data](46-spec-yaml-reorg-and-test-as-spec.md) | **P2** | 27 spec files/4171 lines; proposes moving non-Zig-app specs out, merging `keys.yaml`/`styles.yaml`, splitting `categories.yaml`'s UI knobs from its data, and 5 prose→spec-as-code test conversions. |
+| [**47**](47-search-hot-path-synonym-scan.md) | [Search hot path: unconditional synonym scan costs ~4-5ms per keystroke](47-search-hot-path-synonym-scan.md) | **P1** | `matchTerm` linearly scans the full synonym table per term per DB entry with no early exit; project's own benchmark shows non-empty queries cost 4-5.5ms vs. ~33µs for empty query, a ~150x jump on every keystroke. |
 
 ---
 
