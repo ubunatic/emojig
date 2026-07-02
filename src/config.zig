@@ -279,7 +279,7 @@ test "grid dimension editing helpers" {
     try std.testing.expectEqual(@as(usize, 5), stepGridDim(6, false, 5, 16));
     try std.testing.expectEqual(@as(usize, 16), stepGridDim(16, true, 5, 16)); // clamp high
     try std.testing.expectEqual(@as(usize, 5), stepGridDim(5, false, 5, 16)); // clamp to min
-    try std.testing.expectEqual(@as(usize, 3), stepGridDim(3, false, 5, 16)); // sub-min snaps up
+    try std.testing.expectEqual(@as(usize, 5), stepGridDim(3, false, 5, 16)); // sub-min snaps up
 
     // cycleGridDim adds the coarse step and wraps back to min past the max.
     try std.testing.expectEqual(@as(usize, 8), cycleGridDim(6, 2, 5, 16));

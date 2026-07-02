@@ -2085,12 +2085,8 @@ pub fn main(init: std.process.Init) !void {
                     } else if (current_screen == .help and !is_too_small) {
                         const help_lines = g_spec.strings.help_lines_more;
                         const viewport_h = rows + 3;
-                        const needs_scroll = help_lines.len > viewport_h;
-                        const max_scroll_h: usize = if (needs_scroll) help_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, help_lines.len).thumb_h else 0;
-                        const travel_h = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_h > 0) help_scroll_top * travel_h / max_scroll_h else 0;
-                        const pos_eighths_h = if (needs_scroll and max_scroll_h > 0) smoothScrollPos(help_scroll_top, max_scroll_h, travel_h) else 0;
+                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, help_lines.len, help_scroll_top);
+                        const needs_scroll = ps.needs_scroll;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
@@ -2107,23 +2103,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [256]u8 = undefined;
-                                const sb_seq = if (scrollbar_style == .expand) blk: {
-                                    const cell = scrollbarCell(pos_eighths_h, thumb_h, h_idx);
-                                    if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                } else blk: {
-                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                    if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                };
+                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2139,12 +2119,8 @@ pub fn main(init: std.process.Init) !void {
                         const cur_frame: usize = if (about_frames.len > 0) @min(anim_frame, about_frames.len - 1) else 0;
                         const about_lines = if (about_frames.len > 0) about_frames[cur_frame] else &[_][]const u8{};
                         const viewport_h = rows + 3;
-                        const needs_scroll = about_lines.len > viewport_h;
-                        const max_scroll_a: usize = if (needs_scroll) about_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, about_lines.len).thumb_h else 0;
-                        const travel_a = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_a > 0) about_scroll_top * travel_a / max_scroll_a else 0;
-                        const pos_eighths_a = if (needs_scroll and max_scroll_a > 0) smoothScrollPos(about_scroll_top, max_scroll_a, travel_a) else 0;
+                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, about_lines.len, about_scroll_top);
+                        const needs_scroll = ps.needs_scroll;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
@@ -2167,23 +2143,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
-                                const sb_seq = if (scrollbar_style == .expand) blk: {
-                                    const cell = scrollbarCell(pos_eighths_a, thumb_h, h_idx);
-                                    if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                } else blk: {
-                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                    if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                };
+                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2204,12 +2164,8 @@ pub fn main(init: std.process.Init) !void {
                         };
                         const status_lines = g_spec.strings.status_lines;
                         const viewport_h = rows + 3;
-                        const needs_scroll = status_lines.len > viewport_h;
-                        const max_scroll_s: usize = if (needs_scroll) status_lines.len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, status_lines.len).thumb_h else 0;
-                        const travel_s = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_s > 0) status_scroll_top * travel_s / max_scroll_s else 0;
-                        const pos_eighths_s = if (needs_scroll and max_scroll_s > 0) smoothScrollPos(status_scroll_top, max_scroll_s, travel_s) else 0;
+                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, status_lines.len, status_scroll_top);
+                        const needs_scroll = ps.needs_scroll;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
                             try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
@@ -2226,23 +2182,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
-                                const sb_seq = if (scrollbar_style == .expand) blk: {
-                                    const cell = scrollbarCell(pos_eighths_s, thumb_h, h_idx);
-                                    if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                } else blk: {
-                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                    if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                };
+                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2252,12 +2192,8 @@ pub fn main(init: std.process.Init) !void {
                     } else if (current_screen == .debug and !is_too_small) {
                         const viewport_h = rows + 3;
                         const lines_len = debugLineCount();
-                        const needs_scroll = lines_len > viewport_h;
-                        const max_scroll_d: usize = if (needs_scroll) lines_len - viewport_h else 0;
-                        const thumb_h = if (needs_scroll) scrollbarThumb(scrollbar_style, viewport_h, lines_len).thumb_h else 0;
-                        const travel_d = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
-                        const thumb_start = if (needs_scroll and max_scroll_d > 0) debug_scroll_top * travel_d / max_scroll_d else 0;
-                        const pos_eighths_d = if (needs_scroll and max_scroll_d > 0) smoothScrollPos(debug_scroll_top, max_scroll_d, travel_d) else 0;
+                        const ps = tui_draw.paneScroll(scrollbar_style, viewport_h, lines_len, debug_scroll_top);
+                        const needs_scroll = ps.needs_scroll;
                         const debug_ctx = DebugCtx{
                             .theme = theme,
                             .system_theme = system_theme,
@@ -2311,23 +2247,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, line);
                             if (needs_scroll and content_width >= 2) {
                                 var sb_buf: [64]u8 = undefined;
-                                const sb_seq = if (scrollbar_style == .expand) blk: {
-                                    const cell = scrollbarCell(pos_eighths_d, thumb_h, h_idx);
-                                    if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                } else blk: {
-                                    const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
-                                    if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                    } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                    }
-                                };
+                                const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, ps.pos_eighths, ps.thumb_h, ps.thumb_start, h_idx, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                 try writeAll(stdout_fd, sb_seq);
                                 try rw.endRowFull();
                             } else {
@@ -2585,23 +2505,7 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
                                     var sb_buf: [64]u8 = undefined;
-                                    const sb_seq = if (scrollbar_style == .expand) blk: {
-                                        const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
-                                        if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                        } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                        } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                        }
-                                    } else blk: {
-                                        const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                        if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                        } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                        }
-                                    };
+                                    const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, grid_pos_eighths, grid_tg.thumb_h, grid_thumb_start, r, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             } else {
@@ -2814,23 +2718,7 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, line_buf[0..gl_pos]);
                                 if (grid_needs_scroll and content_width >= 2) {
                                     var sb_buf: [64]u8 = undefined;
-                                    const sb_seq = if (scrollbar_style == .expand) blk: {
-                                        const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
-                                        if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                        } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
-                                        } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                        }
-                                    } else blk: {
-                                        const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
-                                        if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
-                                        } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
-                                        }
-                                    };
+                                    const sb_seq = try tui_draw.scrollbarSeq(&sb_buf, scrollbar_style, grid_pos_eighths, grid_tg.thumb_h, grid_thumb_start, r, content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char);
                                     try writeAll(stdout_fd, sb_seq);
                                 }
                             }
@@ -4825,4 +4713,5 @@ pub fn main(init: std.process.Init) !void {
 // root.zig (a file may only belong to one module).
 test {
     _ = @import("term.zig");
+    _ = @import("tui_draw.zig");
 }

@@ -5,6 +5,7 @@ const std = @import("std");
 const config = @import("config.zig");
 const spec_mod = @import("spec.zig");
 const color = @import("color.zig");
+const term = @import("term.zig");
 
 pub const ScrollbarStyle = config.ScrollbarStyle;
 
@@ -47,6 +48,70 @@ pub fn scrollbarCell(pos_eighths: usize, thumb_h: usize, row: usize) SbCell {
     if (fill_start == 0) return .{ .char = lower_blocks[8 - fill_end], .invert = true };
     // bottom cap: thumb fills bottom (8-fill_start)/8 — normal fg=thumb color
     return .{ .char = lower_blocks[8 - fill_start], .invert = false };
+}
+
+/// Scroll geometry for a doc-pane viewport (help/about/status/debug), shared
+/// by all pane renderers and previously copy-pasted per pane in main.zig
+/// (issue 44 item 1). All fields are zero when the content fits.
+pub const PaneScroll = struct {
+    needs_scroll: bool,
+    max_scroll: usize,
+    thumb_h: usize,
+    travel: usize,
+    thumb_start: usize,
+    pos_eighths: usize,
+};
+
+/// Compute the scrollbar geometry for a pane of `total` lines shown in a
+/// `viewport_h`-line viewport scrolled to `scroll_top`.
+pub fn paneScroll(style: ScrollbarStyle, viewport_h: usize, total: usize, scroll_top: usize) PaneScroll {
+    const needs_scroll = total > viewport_h;
+    const max_scroll: usize = if (needs_scroll) total - viewport_h else 0;
+    const thumb_h: usize = if (needs_scroll) scrollbarThumb(style, viewport_h, total).thumb_h else 0;
+    const travel: usize = if (viewport_h > thumb_h) viewport_h - thumb_h else 0;
+    const thumb_start: usize = if (needs_scroll and max_scroll > 0) scroll_top * travel / max_scroll else 0;
+    const pos_eighths: usize = if (needs_scroll and max_scroll > 0) smoothScrollPos(scroll_top, max_scroll, travel) else 0;
+    return .{
+        .needs_scroll = needs_scroll,
+        .max_scroll = max_scroll,
+        .thumb_h = thumb_h,
+        .travel = travel,
+        .thumb_start = thumb_start,
+        .pos_eighths = pos_eighths,
+    };
+}
+
+/// Build the escape sequence for one scrollbar cell: jump to `col`, paint the
+/// rail background, and draw the thumb cell for `row` (smooth block chars for
+/// `.expand`, `thumb_char` for `.bar`). One implementation for all six
+/// scrollbars (grid + help/about/status/debug panes).
+pub fn scrollbarSeq(
+    buf: []u8,
+    style: ScrollbarStyle,
+    pos_eighths: usize,
+    thumb_h: usize,
+    thumb_start: usize,
+    row: usize,
+    col: usize,
+    rail_bg: []const u8,
+    fg: []const u8,
+    thumb_char: []const u8,
+) ![]const u8 {
+    if (style == .expand) {
+        const cell = scrollbarCell(pos_eighths, thumb_h, row);
+        if (cell.invert) {
+            return std.fmt.bufPrint(buf, term.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term.REVERSE ++ "{s}" ++ term.REVERSE_OFF, .{ col, rail_bg, fg, cell.char });
+        } else if (cell.char[0] != ' ') {
+            return std.fmt.bufPrint(buf, term.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ col, rail_bg, fg, cell.char });
+        } else {
+            return std.fmt.bufPrint(buf, term.FMT_MOVE_TO_COL ++ "{s} ", .{ col, rail_bg });
+        }
+    }
+    const on_thumb = row >= thumb_start and row < thumb_start + thumb_h;
+    if (on_thumb) {
+        return std.fmt.bufPrint(buf, term.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ col, rail_bg, fg, thumb_char });
+    }
+    return std.fmt.bufPrint(buf, term.FMT_MOVE_TO_COL ++ "{s} ", .{ col, rail_bg });
 }
 
 /// Delete the byte immediately before the text cursor and shift the tail left
@@ -563,6 +628,49 @@ test "scrollbarCell smooth sub-character positioning" {
     const tg = scrollbarThumb(.expand, 4, 16);
     const pos_max = smoothScrollPos(12, 12, tg.travel); // scroll_top == max_scroll
     try std.testing.expectEqual(tg.travel * 8, pos_max); // thumb top at last row*8, no overflow
+}
+
+test "paneScroll geometry: fits vs overflows" {
+    // Content fits the viewport: everything zero / no scroll.
+    const fits = paneScroll(.expand, 10, 8, 0);
+    try std.testing.expect(!fits.needs_scroll);
+    try std.testing.expectEqual(@as(usize, 0), fits.max_scroll);
+    try std.testing.expectEqual(@as(usize, 0), fits.thumb_h);
+    try std.testing.expectEqual(@as(usize, 0), fits.thumb_start);
+    try std.testing.expectEqual(@as(usize, 0), fits.pos_eighths);
+
+    // 16 lines in a 4-line viewport, scrolled to the end.
+    const ps = paneScroll(.expand, 4, 16, 12);
+    try std.testing.expect(ps.needs_scroll);
+    try std.testing.expectEqual(@as(usize, 12), ps.max_scroll);
+    try std.testing.expectEqual(@as(usize, 1), ps.thumb_h); // 4*4/16
+    try std.testing.expectEqual(@as(usize, 3), ps.travel);
+    try std.testing.expectEqual(@as(usize, 3), ps.thumb_start); // bottom
+    try std.testing.expectEqual(@as(usize, 24), ps.pos_eighths); // travel*8
+
+    // Halfway scroll puts the thumb mid-track.
+    const mid = paneScroll(.bar, 4, 16, 6);
+    try std.testing.expectEqual(@as(usize, 1), mid.thumb_h); // .bar is 1 cell
+    try std.testing.expectEqual(@as(usize, 1), mid.thumb_start); // 6*3/12
+}
+
+test "scrollbarSeq: exact bytes for expand and bar styles" {
+    var buf: [128]u8 = undefined;
+    // .bar on-thumb row: col jump + rail bg + fg + thumb char.
+    const on = try scrollbarSeq(&buf, .bar, 0, 1, 2, 2, 34, "R", "F", "T");
+    try std.testing.expectEqualStrings("\x1b[34GRFT", on);
+    // .bar off-thumb row: col jump + rail bg + blank cell.
+    const off = try scrollbarSeq(&buf, .bar, 0, 1, 2, 0, 34, "R", "F", "T");
+    try std.testing.expectEqualStrings("\x1b[34GR ", off);
+    // .expand full-cell thumb row.
+    const full = try scrollbarSeq(&buf, .expand, 0, 1, 0, 0, 34, "R", "F", "T");
+    try std.testing.expectEqualStrings("\x1b[34GRF█", full);
+    // .expand top-cap row uses reverse video around the block char.
+    const cap = try scrollbarSeq(&buf, .expand, 4, 1, 0, 1, 34, "R", "F", "T");
+    try std.testing.expectEqualStrings("\x1b[34GRF\x1b[7m▄\x1b[27m", cap);
+    // .expand rail row.
+    const rail = try scrollbarSeq(&buf, .expand, 0, 1, 0, 3, 34, "R", "F", "T");
+    try std.testing.expectEqualStrings("\x1b[34GR ", rail);
 }
 
 pub fn renderPaneLine(

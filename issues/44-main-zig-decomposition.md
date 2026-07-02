@@ -94,6 +94,22 @@ Replaced the two hand-duplicated `theme_str` switches (`main.zig` former
 helper. Verified with `zig build test -Doptimize=ReleaseSafe -Dllvm=false`
 (exit 0, same pass/fail state as before the change).
 
+## Progress (2026-07-02, partial)
+
+The 6× copy-pasted scrollbar cluster from item 1 is extracted to
+`src/tui_draw.zig`: `paneScroll()` computes the shared viewport/thumb
+geometry (`needs_scroll`/`max_scroll`/`thumb_h`/`travel`/`thumb_start`/
+`pos_eighths`) and `scrollbarSeq()` builds the per-row scrollbar escape
+sequence for both `.expand` and `.bar` styles. All six call sites in
+`main.zig` (help/about/status/debug panes + the two grid arms) now use
+them, closing the "no standalone function and no test" gap noted under
+Testability — both helpers have byte-exact unit tests, wired into the exe
+test module via `test { _ = @import("tui_draw.zig"); }` in `main.zig`
+(which also revived a dormant `config.zig` test whose `stepGridDim`
+sub-min expectation had drifted from the implementation and is now
+corrected). `main.zig` drops ~130 lines. The full pane-render extraction
+(one parameterized `renderPane`) and items 2–6 remain open.
+
 ## Suggested order for a follow-up agent
 
 Do decomposition **one file at a time**, in the priority order above,
