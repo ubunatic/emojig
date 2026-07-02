@@ -118,10 +118,26 @@ content. Behavior changes folded in deliberately:
   `cmd_matches` and was a no-op — the subtest had been validating a
   plain settings screen (and toggling shell integration) all along.
 
-Observed once during verification: the issue-47 benchmark regression
-guard (2 ms/query) can flake when both test binaries run their benchmark
-concurrently under `zig build test` (measured ~0.45 ms alone; a parallel
-run pushed one binary over). If it recurs, raise the bound or serialize.
+Observed during verification: the issue-47 benchmark regression guard
+(2 ms/query) flaked twice when both test binaries ran their benchmarks
+concurrently under `zig build test` (measured ~0.45 ms alone; parallel
+runs pushed one binary over 2 ms). **Fixed** in the item-2 pass: the
+bound now also scales with the measured empty-query baseline
+(`max(2ms, 50 × ns_empty)`) — uniform load inflates both sides, a
+return of the linear synonym scan only inflates the left side.
+
+## Progress (2026-07-03, item 2 done)
+
+Item 2 (debug pane model) extracted to **`src/debug_pane.zig`**:
+`SearchStats`, `DebugCtx`, `lineCount`, `value`, `line`, and the
+`DebugLinesPane` source moved there with direct unit tests (line walk,
+value formatting, percentile math). Decoupling from main: `DebugCtx`
+gained a `spec: *const spec_mod.Spec` field (no `g_spec` global access)
+and stores a pre-resolved `screen_name` string instead of main's
+`ScreenState` enum. `themeName` moved to `term.zig` (next to `Theme`);
+`categorySynonymCount`/`disabledCategoryCount` moved along (spec-param
+form); `switcherCatCount` lives in debug_pane temporarily and should
+move to `switcher.zig` when item 4 creates it.
 
 ## Earlier progress (2026-07-02, partial)
 

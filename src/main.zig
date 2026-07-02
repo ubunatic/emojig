@@ -21,6 +21,7 @@ const integration = @import("integration.zig");
 const pid_lock = @import("pid_lock.zig");
 const color = @import("color.zig");
 const tui_draw = @import("tui_draw.zig");
+const debug_pane = @import("debug_pane.zig");
 const clipboard = @import("clipboard.zig");
 const copyToClipboard = clipboard.copyToClipboard;
 
@@ -95,30 +96,9 @@ const ScreenState = enum {
     categories,
 };
 
-const SearchStats = struct {
-    samples: [64]u32 = [_]u32{0} ** 64,
-    count: usize = 0,
-    next: usize = 0,
-    last_us: u32 = 0,
-    max_us: u32 = 0,
-
-    fn record(self: *@This(), elapsed_us: u32) void {
-        self.last_us = elapsed_us;
-        if (elapsed_us > self.max_us) self.max_us = elapsed_us;
-        self.samples[self.next] = elapsed_us;
-        self.next = (self.next + 1) % self.samples.len;
-        if (self.count < self.samples.len) self.count += 1;
-    }
-
-    fn percentile(self: *const @This(), pct: usize) u32 {
-        if (self.count == 0) return 0;
-        var tmp: [64]u32 = undefined;
-        @memcpy(tmp[0..self.count], self.samples[0..self.count]);
-        std.mem.sort(u32, tmp[0..self.count], {}, std.sort.asc(u32));
-        const idx = @min((pct * (self.count - 1) + 50) / 100, self.count - 1);
-        return tmp[idx];
-    }
-};
+const SearchStats = debug_pane.SearchStats;
+const DebugCtx = debug_pane.DebugCtx;
+const DebugLinesPane = debug_pane.DebugLinesPane;
 
 extern fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 extern fn getuid() c_uint;
@@ -187,13 +167,7 @@ inline fn themeIcon(t: Theme) []const u8 {
     return g_spec.iconFor(t);
 }
 
-inline fn themeName(t: Theme) []const u8 {
-    return switch (t) {
-        .dark => "dark",
-        .light => "light",
-        .system => "system",
-    };
-}
+const themeName = term_lib.themeName;
 
 inline fn screenName(s: ScreenState) []const u8 {
     return switch (s) {
@@ -205,10 +179,6 @@ inline fn screenName(s: ScreenState) []const u8 {
         .settings => "settings",
         .categories => "categories",
     };
-}
-
-inline fn boolText(v: bool) []const u8 {
-    return if (v) "true" else "false";
 }
 
 fn parseConcreteTheme(v: []const u8) ?Theme {
@@ -458,12 +428,9 @@ fn cycleTheme(t: Theme, forward: bool) Theme {
 }
 
 /// Number of categories with switcher:true in the spec.
+/// (Lives in debug_pane.zig for now; move to switcher.zig with issue 44 item 4.)
 fn switcherCatCount() usize {
-    var count: usize = 0;
-    for (g_spec.categories.categories) |cat| {
-        if (cat.switcher) count += 1;
-    }
-    return count;
+    return debug_pane.switcherCatCount(&g_spec);
 }
 
 /// Return the name of the i-th switcher category (0-based). Null when out of range.
@@ -486,170 +453,6 @@ fn switcherCatIcon(idx: usize) []const u8 {
             if (count == idx) return cat.icon;
             count += 1;
         }
-    }
-    return "";
-}
-
-fn categorySynonymCount() usize {
-    var count: usize = 0;
-    for (g_spec.categories.categories) |cat| {
-        count += cat.synonyms.len;
-    }
-    return count;
-}
-
-fn disabledCategoryCount(disabled_cats: [32]bool) usize {
-    var count: usize = 0;
-    for (g_spec.categories.categories, 0..) |_, idx| {
-        if (idx < disabled_cats.len and disabled_cats[idx]) count += 1;
-    }
-    return count;
-}
-
-fn debugLineCount() usize {
-    var count: usize = 1; // title
-    for (g_spec.debug.groups) |group| {
-        count += 2 + group.fields.len; // blank + group title + fields
-    }
-    return count;
-}
-
-const DebugCtx = struct {
-    theme: Theme,
-    system_theme: Theme,
-    gui_effective_theme: ?Theme,
-    current_screen: ScreenState,
-    has_focus: bool,
-    gui_spawned: bool,
-    final_simple: bool,
-    final_safe: bool,
-    final_compact: bool,
-    show_switcher: bool,
-    show_border: bool,
-    scrollbar_style: ScrollbarStyle,
-    resize_mode: resize.Mode,
-    final_alt_screen: bool,
-    query: []const u8,
-    query_cursor: usize,
-    selected_idx: ?usize,
-    grid_scroll_top: usize,
-    total_matches: usize,
-    top_count: usize,
-    fetch_limit: usize,
-    content_width: usize,
-    current_w: usize,
-    current_h: usize,
-    final_h: usize,
-    cols: usize,
-    rows: usize,
-    visible_rows: usize,
-    total_cells: usize,
-    search_stats: *const SearchStats,
-    disabled_cats: [32]bool,
-    app_bg_choice: []const u8,
-    title_bg_choice: []const u8,
-    multi_select_active: bool,
-    multi_selected_count: usize,
-};
-
-fn debugValue(buf: []u8, id: []const u8, ctx: DebugCtx) []const u8 {
-    if (std.mem.eql(u8, id, "theme_setting")) return themeName(ctx.theme);
-    if (std.mem.eql(u8, id, "theme_effective") or std.mem.eql(u8, id, "effective_theme")) return themeName(if (ctx.theme == .system) ctx.system_theme else ctx.theme);
-    if (std.mem.eql(u8, id, "theme_reason")) {
-        if (ctx.theme != .system) return "concrete setting";
-        if (ctx.gui_effective_theme != null) return "GUI parent resolved desktop theme";
-        if (term_lib.last_system_theme_color != null) return "TUI OSC 11 terminal background";
-        return "TUI OSC 11 unavailable; fallback dark";
-    }
-    if (std.mem.eql(u8, id, "gui_effective_theme")) return if (ctx.gui_effective_theme) |t| themeName(t) else "none";
-    if (std.mem.eql(u8, id, "term_detected_theme")) return if (term_lib.last_system_theme_color) |c| themeName(c.theme) else "none";
-    if (std.mem.eql(u8, id, "term_detected_rgb")) {
-        if (term_lib.last_system_theme_color) |c| return std.fmt.bufPrint(buf, "rgb:{x:0>4}/{x:0>4}/{x:0>4}", .{ c.r, c.g, c.b }) catch "?";
-        return "none";
-    }
-    if (std.mem.eql(u8, id, "term_detected_luma")) {
-        if (term_lib.last_system_theme_color) |c| return std.fmt.bufPrint(buf, "{d}/65535", .{c.luma}) catch "?";
-        return "none";
-    }
-    if (std.mem.eql(u8, id, "terminal_bg")) {
-        const tc = g_spec.terminalColors(ctx.theme, ctx.system_theme);
-        return tc.bg orelse "none";
-    }
-    if (std.mem.eql(u8, id, "terminal_fg")) {
-        const tc = g_spec.terminalColors(ctx.theme, ctx.system_theme);
-        return tc.fg orelse "none";
-    }
-    if (std.mem.eql(u8, id, "app_bg_choice")) return ctx.app_bg_choice;
-    if (std.mem.eql(u8, id, "app_bg_hex")) return host.resolveAppBgHex(ctx.app_bg_choice, (if (ctx.theme == .system) ctx.system_theme else ctx.theme) != .light);
-    if (std.mem.eql(u8, id, "title_bg_choice")) return ctx.title_bg_choice;
-    if (std.mem.eql(u8, id, "title_bg_hex")) {
-        const is_dark = (if (ctx.theme == .system) ctx.system_theme else ctx.theme) != .light;
-        const app_hex = host.resolveAppBgHex(ctx.app_bg_choice, is_dark);
-        var title_buf: [6]u8 = undefined;
-        return std.fmt.bufPrint(buf, "#{s}", .{host.resolveTitleBgHex(ctx.title_bg_choice, app_hex, is_dark, &title_buf)}) catch "?";
-    }
-    if (std.mem.eql(u8, id, "search_last_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.last_us}) catch "?";
-    if (std.mem.eql(u8, id, "search_p50_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.percentile(50)}) catch "?";
-    if (std.mem.eql(u8, id, "search_p90_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.percentile(90)}) catch "?";
-    if (std.mem.eql(u8, id, "search_max_us")) return std.fmt.bufPrint(buf, "{d} us", .{ctx.search_stats.max_us}) catch "?";
-    if (std.mem.eql(u8, id, "search_samples")) return std.fmt.bufPrint(buf, "{d}/64", .{ctx.search_stats.count}) catch "?";
-    if (std.mem.eql(u8, id, "total_matches")) return std.fmt.bufPrint(buf, "{d}", .{ctx.total_matches}) catch "?";
-    if (std.mem.eql(u8, id, "visible_matches")) return std.fmt.bufPrint(buf, "{d}", .{ctx.top_count}) catch "?";
-    if (std.mem.eql(u8, id, "fetch_limit")) return std.fmt.bufPrint(buf, "{d}", .{ctx.fetch_limit}) catch "?";
-    if (std.mem.eql(u8, id, "emoji_count")) return std.fmt.bufPrint(buf, "{d}", .{emojig.EmojiDb.count}) catch "?";
-    if (std.mem.eql(u8, id, "synonym_pairs")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.synonym_count}) catch "?";
-    if (std.mem.eql(u8, id, "stem_exclusions")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.stem_excl_count}) catch "?";
-    if (std.mem.eql(u8, id, "category_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.categories.categories.len}) catch "?";
-    if (std.mem.eql(u8, id, "switcher_category_count")) return std.fmt.bufPrint(buf, "{d}", .{switcherCatCount()}) catch "?";
-    if (std.mem.eql(u8, id, "category_synonyms")) return std.fmt.bufPrint(buf, "{d}", .{categorySynonymCount()}) catch "?";
-    if (std.mem.eql(u8, id, "disabled_categories")) return std.fmt.bufPrint(buf, "{d}", .{disabledCategoryCount(ctx.disabled_cats)}) catch "?";
-    if (std.mem.eql(u8, id, "command_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.commands.commands.len}) catch "?";
-    if (std.mem.eql(u8, id, "setting_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.settings.options.len}) catch "?";
-    if (std.mem.eql(u8, id, "color_count")) return std.fmt.bufPrint(buf, "{d}", .{g_spec.colors.colors.len}) catch "?";
-    if (std.mem.eql(u8, id, "term_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.current_w, ctx.current_h }) catch "?";
-    if (std.mem.eql(u8, id, "emojig_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.content_width + 1, ctx.final_h }) catch "?";
-    if (std.mem.eql(u8, id, "content_width")) return std.fmt.bufPrint(buf, "{d}", .{ctx.content_width}) catch "?";
-    if (std.mem.eql(u8, id, "grid_size")) return std.fmt.bufPrint(buf, "{d}x{d}", .{ ctx.cols, ctx.rows }) catch "?";
-    if (std.mem.eql(u8, id, "visible_rows")) return std.fmt.bufPrint(buf, "{d}", .{ctx.visible_rows}) catch "?";
-    if (std.mem.eql(u8, id, "cell_width")) return std.fmt.bufPrint(buf, "{d}", .{if (ctx.final_compact) @as(usize, 3) else 4}) catch "?";
-    if (std.mem.eql(u8, id, "total_cells")) return std.fmt.bufPrint(buf, "{d}", .{ctx.total_cells}) catch "?";
-    if (std.mem.eql(u8, id, "top_padding")) return boolText(g_spec.layout.top_padding);
-    if (std.mem.eql(u8, id, "border")) return boolText(ctx.show_border);
-    if (std.mem.eql(u8, id, "resize_mode")) return @tagName(ctx.resize_mode);
-    if (std.mem.eql(u8, id, "alt_screen")) return boolText(ctx.final_alt_screen);
-    if (std.mem.eql(u8, id, "screen")) return screenName(ctx.current_screen);
-    if (std.mem.eql(u8, id, "focus")) return if (ctx.has_focus) "focused" else "unfocused";
-    if (std.mem.eql(u8, id, "gui_spawned")) return boolText(ctx.gui_spawned);
-    if (std.mem.eql(u8, id, "simple_mode")) return boolText(ctx.final_simple);
-    if (std.mem.eql(u8, id, "safe_mode")) return boolText(ctx.final_safe);
-    if (std.mem.eql(u8, id, "compact_mode")) return boolText(ctx.final_compact);
-    if (std.mem.eql(u8, id, "show_switcher")) return boolText(ctx.show_switcher);
-    if (std.mem.eql(u8, id, "scrollbar_style")) return @tagName(ctx.scrollbar_style);
-    if (std.mem.eql(u8, id, "query")) return if (ctx.query.len > 0) ctx.query else "(empty)";
-    if (std.mem.eql(u8, id, "query_len")) return std.fmt.bufPrint(buf, "{d}", .{ctx.query.len}) catch "?";
-    if (std.mem.eql(u8, id, "query_cursor")) return std.fmt.bufPrint(buf, "{d}", .{ctx.query_cursor}) catch "?";
-    if (std.mem.eql(u8, id, "selected_idx")) return if (ctx.selected_idx) |s| std.fmt.bufPrint(buf, "{d}", .{s}) catch "?" else "none";
-    if (std.mem.eql(u8, id, "grid_scroll_top")) return std.fmt.bufPrint(buf, "{d}", .{ctx.grid_scroll_top}) catch "?";
-    if (std.mem.eql(u8, id, "multi_select")) return std.fmt.bufPrint(buf, "{s} ({d} selected)", .{ boolText(ctx.multi_select_active), ctx.multi_selected_count }) catch "?";
-    if (std.mem.eql(u8, id, "mru_count")) return std.fmt.bufPrint(buf, "{d}", .{mru.getCount()}) catch "?";
-    return "(unknown)";
-}
-
-fn debugLine(buf: []u8, idx: usize, ctx: DebugCtx) []const u8 {
-    if (idx == 0) return g_spec.debug.title;
-    var rem = idx - 1;
-    for (g_spec.debug.groups) |group| {
-        if (rem == 0) return std.fmt.bufPrint(buf, "{s}", .{group.title}) catch group.title;
-        rem -= 1;
-        if (rem < group.fields.len) {
-            const field = group.fields[rem];
-            var val_buf: [160]u8 = undefined;
-            const value = debugValue(&val_buf, field.id, ctx);
-            return std.fmt.bufPrint(buf, "  {s}: {s}", .{ field.label, value }) catch field.label;
-        }
-        rem -= group.fields.len;
-        if (rem == 0) return "";
-        rem -= 1;
     }
     return "";
 }
@@ -696,19 +499,6 @@ const TemplateLinesPane = struct {
     pub fn line(self: *const @This(), li: usize) []const u8 {
         const after_vars = expandVars(self.var_buf, self.lines[li], self.vars);
         return expandTemplate(self.tmpl_buf, after_vars, &g_spec.styles, 0, self.view_bg);
-    }
-};
-
-/// Live app-state lines from spec/debug.yaml (debug screen).
-const DebugLinesPane = struct {
-    ctx: DebugCtx,
-    buf: []u8,
-    pub fn count(self: *const @This()) usize {
-        _ = self;
-        return debugLineCount();
-    }
-    pub fn line(self: *const @This(), li: usize) []const u8 {
-        return debugLine(self.buf, li, self.ctx);
     }
 };
 
@@ -2234,10 +2024,11 @@ pub fn main(init: std.process.Init) !void {
                         try tui_draw.renderScrollPane(pane_env, &line_buf, rows + 3, status_scroll_top, &src);
                     } else if (current_screen == .debug and !is_too_small) {
                         const debug_ctx = DebugCtx{
+                            .spec = &g_spec,
                             .theme = theme,
                             .system_theme = system_theme,
                             .gui_effective_theme = gui_effective_theme,
-                            .current_screen = current_screen,
+                            .screen_name = screenName(current_screen),
                             .has_focus = has_focus,
                             .gui_spawned = gui_spawned,
                             .final_simple = final_simple,
@@ -3175,7 +2966,7 @@ pub fn main(init: std.process.Init) !void {
                                 break :blk if (g_spec.strings.status_lines.len > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .debug) {
                                 const vph = rows + 3;
-                                break :blk if (debugLineCount() > vph) st.view.scrollable else st.view.default;
+                                break :blk if (debug_pane.lineCount(&g_spec) > vph) st.view.scrollable else st.view.default;
                             } else if (current_screen == .settings and keybind_editing) {
                                 break :blk st.settings.keybind;
                             } else if (current_screen == .settings and selected_idx != null and
@@ -3589,7 +3380,7 @@ pub fn main(init: std.process.Init) !void {
                                 const is_about = current_screen == .about;
                                 const sp = if (current_screen == .help) &help_scroll_top else if (is_about) &about_scroll_top else if (current_screen == .debug) &debug_scroll_top else &status_scroll_top;
                                 const about_lines_len: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else if (current_screen == .debug) debugLineCount() else g_spec.strings.status_lines.len;
+                                const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len else if (current_screen == .debug) debug_pane.lineCount(&g_spec) else g_spec.strings.status_lines.len;
                                 const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                                 sp.* = if (wheel_down)
                                     @min(sp.* + step, max_scroll)
@@ -4296,7 +4087,7 @@ pub fn main(init: std.process.Init) !void {
                             const viewport_h = rows + 3;
                             const sp = if (current_screen == .help) &help_scroll_top else if (current_screen == .about) &about_scroll_top else if (current_screen == .debug) &debug_scroll_top else &status_scroll_top;
                             const about_lines_len2: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
-                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else if (current_screen == .debug) debugLineCount() else g_spec.strings.status_lines.len;
+                            const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else if (current_screen == .debug) debug_pane.lineCount(&g_spec) else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
                             if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
                                 if (sp.* > 0) sp.* -= 1;
@@ -4669,4 +4460,5 @@ pub fn main(init: std.process.Init) !void {
 test {
     _ = @import("term.zig");
     _ = @import("tui_draw.zig");
+    _ = @import("debug_pane.zig");
 }

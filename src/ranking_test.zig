@@ -1289,7 +1289,7 @@ test "benchmark: search throughput" {
     const build_label = if (is_release) "release" else "debug";
     std.debug.print("\nsearch benchmarks ({s}, {d} ms/query, {d} emojis):\n", .{ build_label, duration_ms, EmojiDb.count });
 
-    _ = runBench("", duration_ms);
+    const ns_empty = runBench("", duration_ms);
     const ns_a = runBench("a", duration_ms);
     const ns_fire = runBench("fire", duration_ms);
     const ns_multi = runBench("red heart", duration_ms);
@@ -1297,12 +1297,15 @@ test "benchmark: search throughput" {
     _ = runBench("xyzxyz", duration_ms);
 
     // Regression guard (issue 47): non-empty queries must stay well below the
-    // ~4-5ms/keystroke cost of the old unconditional synonym-table scan. The
-    // sorted-index lookup keeps these around 0.1-0.3ms; 2ms leaves generous
-    // headroom for slow/loaded CI machines while still catching a return of
-    // the linear scan.
+    // ~4-5ms/keystroke (~130x the empty-query fast path) cost of the old
+    // unconditional synonym-table scan; the sorted-index lookup keeps them
+    // around 0.1-0.3ms (~13x). The absolute 2ms bound alone flaked when both
+    // test binaries ran their benchmarks concurrently under `zig build test`
+    // (uniform load inflates all timings), so the bound also scales with the
+    // measured empty-query baseline: contention grows both sides, a return of
+    // the linear scan only grows the left side.
     if (is_release) {
-        const max_ns: u64 = 2_000_000;
+        const max_ns: u64 = @max(2_000_000, 50 * ns_empty);
         try std.testing.expect(ns_a < max_ns);
         try std.testing.expect(ns_fire < max_ns);
         try std.testing.expect(ns_multi < max_ns);

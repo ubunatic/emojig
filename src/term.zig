@@ -9,6 +9,14 @@ const std = @import("std");
 
 pub const Theme = enum { dark, light, system };
 
+pub fn themeName(t: Theme) []const u8 {
+    return switch (t) {
+        .dark => "dark",
+        .light => "light",
+        .system => "system",
+    };
+}
+
 pub const Palette = struct {
     grid_bg: []const u8, // background sequence for grid rows
     grid_fg: []const u8, // grid_bg + fg — resets bg; only use inside grid rows
