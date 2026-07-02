@@ -102,5 +102,10 @@ four issues above.
 - **44: open (partial)** — the 6× scrollbar geometry/render cluster is
   deduped into `tui_draw.zig` (`paneScroll`/`scrollbarSeq`, unit-tested);
   the pane-render extraction and items 2–6 remain.
-- **48 (new)**: pre-existing PTY test flakes documented while verifying
-  the branch.
+- **48: done** — the flakes were a harness bug (non-blocking PTY frame
+  drain); fixed with quiescence-based collection, which unmasked and
+  fixed two real render bugs (short top-padding row, settings-row
+  overflow). PTY suite now stable 8/8; the standalone
+  `go run ./scripts/test_tui` suite passes end-to-end again.
+  Remaining observations (dropdown subtest coverage gap, settings-row
+  width off-by-one) are recorded in issues 48/44.

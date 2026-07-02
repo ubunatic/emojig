@@ -109,3 +109,22 @@ Verified: `go test ./scripts/test_tui/` 8/8 green back-to-back (was
 ~4/8 failing on main); the standalone `go run ./scripts/test_tui`
 suite now passes end-to-end (it failed on main even before subtest 7d);
 `zig build test` and `zig fmt --check src/` clean.
+
+## Open observations for follow-up (not fixed here)
+
+- **Subtest 7d may not exercise the dropdown**: while it was failing,
+  the captured frame showed the plain *settings screen*, not an open
+  dropdown — yet the subtest is named "dropdown menu layout". The
+  navigation script (`/s\n`, one `\x1b[B]`, `\n`) targets
+  `shell_key_binding` at settings index 1, which is still correct per
+  `spec/settings.yaml`, but nobody asserts the dropdown actually opened
+  (`ValidateLayout` only checks overflow). Add a content assertion
+  (e.g. the "leaves C-e free" caveat text) before trusting it as
+  dropdown coverage.
+- **Settings rows paint 33 cells, other screens 34**: settings rows pad
+  to `content_width` while their rendered row already includes the
+  1-col gutter (`main.zig` ~2300), leaving the scrollbar column
+  unpainted. Not user-visible today (settings doesn't paint a rail
+  unless scrolling) and not validated (`ValidatePaintedRowWidths` runs
+  only on the search screen). See issue 44's "state" section — unify
+  during the pane extraction.

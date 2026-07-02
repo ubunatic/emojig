@@ -118,6 +118,46 @@ run `zig build test` + `go run ./scripts/test_tui`, then move to the next.
 Item 1 (pane render dispatch) is the best first PR — biggest line-count
 win, least behavioral risk (pure refactor, no logic change).
 
+## What the next agent needs to know (state as of 2026-07-02 evening)
+
+- **Where to put extracted render code**: `src/tui_draw.zig` is the
+  established home for pure render helpers (`paneScroll`, `scrollbarSeq`,
+  `truncateAnsi`, `ansiDisplayWidth`, `renderPaneLine`,
+  `scrollbarThumb`/`scrollbarCell`, `smoothScrollPos`). `src/render.zig`
+  holds settings-row rendering. Prefer extending these over inventing the
+  `src/panes.zig` from item 1 unless the extraction is big enough to
+  warrant its own file.
+- **Test wiring**: a file's tests only run if it is reachable from a test
+  root. `main.zig` ends with `test { _ = @import("term.zig");
+  _ = @import("tui_draw.zig"); }` — add any newly extracted file there
+  (a file may only belong to one Zig module, hence the exe-module test
+  block). Beware: wiring a previously-unwired file can revive dormant
+  tests whose expectations drifted (happened with `config.zig`'s
+  `stepGridDim` test — the code was right, the dead test was wrong).
+- **RowWriter contract** (critical when moving row-emission code): every
+  row starts with `term_lib.CLEAR_LINE_CR` and ends with `rw.endRow()`
+  (resets + `\x1b[K`) *unless* the row paints the full width
+  (`content_width + 1` cells) — then it must use `rw.endRowFull()`,
+  because `\x1b[K` fired from the pending-wrap cursor position erases the
+  last column in exact-width GUI windows. Violating this caused the
+  issue-48 padding-row bug.
+- **Row width invariant**: search-screen rows paint exactly
+  `content_width + 1` display cells (1-col gutter or left cap + content +
+  scrollbar/right-cap column). `ValidatePaintedRowWidths` in
+  `scripts/test_tui/vt.go` enforces this for the search screen. Known
+  unvalidated off-by-one: settings rows pad only to `content_width`
+  *including* their gutter (`main.zig` ~2300, `pad_len = content_width -
+  vis_w` where `vis_w` counts the gutter), so they paint 33 cells where
+  other screens paint 34. Decide during extraction whether to unify (and
+  then extend the validator to non-search screens).
+- **Verification is now trustworthy** (issue 48 fixed): `go test
+  ./scripts/test_tui/` is stable (8/8 back-to-back) and the standalone
+  `go run ./scripts/test_tui` visual suite passes end-to-end — run both
+  plus `zig build test -Doptimize=ReleaseSafe -Dllvm=false` and
+  `zig fmt --check src/` after each extraction. PTY frame collection is
+  quiescence-based (`collectScreenBytes`: 100 ms idle, 3 s cap), so new
+  PTY tests should not add `time.Sleep` sync hacks.
+
 See also [issue 45](45-ansi-escape-consolidation.md) (raw ANSI escapes in
 this same code, found during the same review) and
 [issue 46](46-spec-yaml-reorg-and-test-as-spec.md) (spec/ organization).
