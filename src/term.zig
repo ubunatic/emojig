@@ -203,6 +203,100 @@ pub fn logMemoryUsage() void {
     _ = std.posix.system.write(log_fd, log_line.ptr, log_line.len);
 }
 
+// ---------------------------------------------------------------------------
+// ANSI escape sequences (issue 45): one named constant / helper per concern.
+// Renderers must not build these shapes inline — route new cursor, clear, or
+// mode sequences through this block so they stay byte-tested below.
+// ---------------------------------------------------------------------------
+
+// Cursor visibility & blink (DECTCEM ?25, att610 blink ?12).
+pub const CURSOR_HIDE = "\x1b[?25l";
+pub const CURSOR_SHOW = "\x1b[?25h";
+pub const CURSOR_BLINK = "\x1b[?12h";
+pub const CURSOR_SHOW_BLINK = CURSOR_BLINK ++ CURSOR_SHOW;
+pub const CURSOR_HOME = "\x1b[1;1H";
+
+// Terminal mode toggles.
+pub const ALT_SCREEN_ON = "\x1b[?1049h"; // the matching off lives in RESTORE_ALT
+pub const WRAP_OFF = "\x1b[?7l"; // DECAWM off; RESTORE re-enables it with ?7h
+pub const FOCUS_ON = "\x1b[?1004h"; // focus-report events; MOUSE_OFF disables
+
+// Line clearing / row stepping.
+pub const CLEAR_LINE = "\x1b[2K"; // clear whole line, cursor stays
+pub const CLEAR_LINE_CR = CLEAR_LINE ++ "\r";
+pub const CR_CLEAR_LINE = "\r" ++ CLEAR_LINE;
+pub const CLEAR_BELOW = "\x1b[J";
+pub const CLEAR_SCREEN = "\x1b[2J";
+pub const CURSOR_DOWN_CR = "\x1b[B\r";
+
+// SGR attribute toggles (color/palette SGR building lives in color.zig).
+pub const BOLD = "\x1b[1m";
+pub const BOLD_OFF = "\x1b[22m";
+pub const REVERSE = "\x1b[7m";
+pub const REVERSE_OFF = "\x1b[27m";
+
+// Comptime format-string fragments for sequences with numeric parameters.
+// Use them either via the helpers below or concatenated into larger comptime
+// format strings (e.g. FMT_MOVE_TO_COL ++ "{s}").
+pub const FMT_MOVE_TO_ROW = "\x1b[{d};1H"; // absolute row, column 1
+pub const FMT_MOVE_TO = "\x1b[{d};{d}H"; // absolute row;col
+pub const FMT_MOVE_TO_COL = "\x1b[{d}G"; // absolute column, same row
+pub const FMT_CURSOR_UP = "\x1b[{d}A"; // relative up
+pub const FMT_SCROLL_UP = "\x1b[{d}S"; // scroll viewport up
+
+/// "\x1b[{row};1H" — jump to an absolute row, column 1. Returns a slice into
+/// `buf`; empty on overflow (cannot happen for buf.len >= 16).
+pub fn moveToRow(buf: []u8, row: anytype) []const u8 {
+    return std.fmt.bufPrint(buf, FMT_MOVE_TO_ROW, .{row}) catch "";
+}
+
+/// "\x1b[{row};{col}H" — jump to an absolute row and column.
+pub fn moveTo(buf: []u8, row: anytype, col: anytype) []const u8 {
+    return std.fmt.bufPrint(buf, FMT_MOVE_TO, .{ row, col }) catch "";
+}
+
+/// "\x1b[{col}G" — jump to an absolute column on the current row.
+pub fn moveToCol(buf: []u8, col: anytype) []const u8 {
+    return std.fmt.bufPrint(buf, FMT_MOVE_TO_COL, .{col}) catch "";
+}
+
+/// "\x1b[{n}A\r" — move up n rows and return to column 1.
+pub fn cursorUpCr(buf: []u8, n: anytype) []const u8 {
+    return std.fmt.bufPrint(buf, FMT_CURSOR_UP ++ "\r", .{n}) catch "";
+}
+
+/// "\x1b[{n}S" — scroll the viewport up by n lines.
+pub fn scrollUp(buf: []u8, n: anytype) []const u8 {
+    return std.fmt.bufPrint(buf, FMT_SCROLL_UP, .{n}) catch "";
+}
+
+test "ansi helpers: exact byte output" {
+    var buf: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("\x1b[5;1H", moveToRow(&buf, 5));
+    try std.testing.expectEqualStrings("\x1b[12;34H", moveTo(&buf, 12, 34));
+    try std.testing.expectEqualStrings("\x1b[7G", moveToCol(&buf, 7));
+    try std.testing.expectEqualStrings("\x1b[3A\r", cursorUpCr(&buf, 3));
+    try std.testing.expectEqualStrings("\x1b[9S", scrollUp(&buf, 9));
+}
+
+test "ansi constants: exact bytes" {
+    try std.testing.expectEqualStrings("\x1b[?25l", CURSOR_HIDE);
+    try std.testing.expectEqualStrings("\x1b[?12h\x1b[?25h", CURSOR_SHOW_BLINK);
+    try std.testing.expectEqualStrings("\x1b[?1049h\x1b[?7l", ALT_SCREEN_ON ++ WRAP_OFF);
+    try std.testing.expectEqualStrings("\x1b[?1004h", FOCUS_ON);
+    try std.testing.expectEqualStrings("\x1b[2K\r", CLEAR_LINE_CR);
+    try std.testing.expectEqualStrings("\r\x1b[2K", CR_CLEAR_LINE);
+    try std.testing.expectEqualStrings("\x1b[B\r", CURSOR_DOWN_CR);
+    try std.testing.expectEqualStrings("\x1b[1m", BOLD);
+    try std.testing.expectEqualStrings("\x1b[22m", BOLD_OFF);
+    try std.testing.expectEqualStrings("\x1b[7m", REVERSE);
+    try std.testing.expectEqualStrings("\x1b[27m", REVERSE_OFF);
+    // The terminal-restore trio (§2 safety) must keep these exact parts.
+    try std.testing.expect(std.mem.startsWith(u8, RESTORE, MOUSE_OFF));
+    try std.testing.expect(std.mem.indexOf(u8, RESTORE, CURSOR_SHOW) != null);
+    try std.testing.expect(std.mem.indexOf(u8, RESTORE_ALT, "\x1b[?1049l") != null);
+}
+
 // Escape sequence to disable all mouse tracking + focus reporting + cursor restore.
 // Uses 1003l (any-motion off) which covers 1000 as well, and 1004l to disable focus events.
 pub const MOUSE_OFF = "\x1b[?1003l\x1b[?1006l\x1b[?1004l";

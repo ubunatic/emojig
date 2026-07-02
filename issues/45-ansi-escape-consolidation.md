@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: open
+status: done
 ---
 
 # ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences
@@ -85,3 +85,41 @@ to prevent (leaving the terminal in a broken state on exit/panic). Any
 agent picking this up should add a byte-level assertion test (e.g. via
 `scripts/test_tui`'s PTY harness capturing raw output) *before* refactoring
 each call site, not after.
+
+## Resolution (2026-07-02)
+
+Applied as a mechanical, behavior-preserving refactor. `src/term.zig` gained
+a dedicated "ANSI escape sequences" block — one named constant / helper per
+concern, each **byte-tested first** (two new test blocks assert the exact
+emitted bytes, incl. the §2-critical RESTORE/RESTORE_ALT parts):
+
+- Constants: `CURSOR_HIDE/SHOW/BLINK/SHOW_BLINK/HOME`, `ALT_SCREEN_ON`,
+  `WRAP_OFF`, `FOCUS_ON`, `CLEAR_LINE`, `CLEAR_LINE_CR`, `CR_CLEAR_LINE`,
+  `CLEAR_BELOW`, `CLEAR_SCREEN`, `CURSOR_DOWN_CR`, `BOLD`/`BOLD_OFF`,
+  `REVERSE`/`REVERSE_OFF`.
+- Formatter helpers: `moveToRow`, `moveTo`, `moveToCol`, `cursorUpCr`,
+  `scrollUp`, plus comptime `FMT_*` fragments for concatenation into larger
+  format strings (e.g. `FMT_MOVE_TO_COL ++ "{s}"` at the 6 scrollbar sites).
+
+All concrete violations listed above were converted in `main.zig`:
+`clearTuiRows`, the startup scroll-reservation block, the defer-cleanup
+clear loop, the mode-toggle block (alt-screen/wrap/blink/hide/focus), the
+cursor hide/focus-tracking writes, the cursor-reposition `cursor_seq` blk,
+the resize/redraw moves, the `RowWriter` down-step, the dropdown/category
+bold toggles, and the scrollbar column-jump format strings. Raw `\x1b[`
+literal count in `main.zig`: **145 → 42**; the remainder is input *parsing*
+(`\x1b[I`/`\x1b[O` focus reports), the documented one-off `\x1b[6n` CPR
+query, `\x1b[K`/`\x1b[0m` row-termination/SGR-reset bytes interleaved with
+palette content (a color.zig concern, out of scope here), and two `\x1b[1G`
+column-1 jumps kept literal next to their `FMT_CURSOR_UP` concatenation.
+
+Test wiring note: `term.zig` belongs to the *exe* module (`main.zig` root),
+so its tests are referenced from a `test { _ = @import("term.zig"); }`
+block at the bottom of `main.zig` — importing it from `root.zig` fails with
+"file exists in modules 'root' and 'emojig'". Side effect: the exe test
+binary now actually runs tests (3, incl. `color.zig`'s previously-dormant
+test); the total went 79 → 82.
+
+Verified: `zig build test -Doptimize=ReleaseSafe -Dllvm=false` 82/82,
+`go test ./scripts/test_tui/` ok, screenshot frame unchanged (caps/seps/
+search bar render identically).

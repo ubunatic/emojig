@@ -249,35 +249,37 @@ fn clearTuiRows(fd: std.posix.fd_t, height: usize, row_off: i32) void {
     // Jump to TUI row 0 absolutely when we have a valid start row (the robust path);
     // fall back to a relative move from the assumed search-bar position otherwise.
     if (global_tui_start_row) |start_row| {
-        const abs = std.fmt.bufPrint(buf[pos..], "\x1b[{d};1H", .{start_row}) catch "";
+        const abs = term_lib.moveToRow(buf[pos..], start_row);
         pos += abs.len;
     } else {
         const up_rows = @as(usize, @intCast((if (global_top_padding) @as(i32, 1) else 0) + row_off));
-        const initial_up = std.fmt.bufPrint(buf[pos..], "\x1b[{d}A\r", .{up_rows}) catch "";
+        const initial_up = term_lib.cursorUpCr(buf[pos..], up_rows);
         pos += initial_up.len;
     }
 
+    const cr_clear = term_lib.CR_CLEAR_LINE;
+    const down_cr = term_lib.CURSOR_DOWN_CR;
     var i: usize = 0;
     while (i < height) : (i += 1) {
-        if (pos + 5 > buf.len) {
+        if (pos + cr_clear.len > buf.len) {
             _ = std.posix.system.write(fd, buf[0..pos].ptr, pos);
             pos = 0;
         }
-        @memcpy(buf[pos..][0..5], "\r\x1b[2K");
-        pos += 5;
+        @memcpy(buf[pos..][0..cr_clear.len], cr_clear);
+        pos += cr_clear.len;
         if (i < height - 1) {
-            if (pos + 4 > buf.len) {
+            if (pos + down_cr.len > buf.len) {
                 _ = std.posix.system.write(fd, buf[0..pos].ptr, pos);
                 pos = 0;
             }
-            @memcpy(buf[pos..][0..4], "\x1b[B\r");
-            pos += 4;
+            @memcpy(buf[pos..][0..down_cr.len], down_cr);
+            pos += down_cr.len;
         }
     }
     // Return cursor to TUI row 0.
     if (global_tui_start_row) |start_row| {
         var abs_buf: [32]u8 = undefined;
-        const abs = std.fmt.bufPrint(&abs_buf, "\x1b[{d};1H", .{start_row}) catch "";
+        const abs = term_lib.moveToRow(&abs_buf, start_row);
         if (abs.len > 0) {
             if (pos + abs.len > buf.len) {
                 _ = std.posix.system.write(fd, buf[0..pos].ptr, pos);
@@ -288,7 +290,7 @@ fn clearTuiRows(fd: std.posix.fd_t, height: usize, row_off: i32) void {
         }
     } else if (height > 1) {
         var up_seq_buf: [32]u8 = undefined;
-        const up_seq = std.fmt.bufPrint(&up_seq_buf, "\x1b[{d}A\r", .{height - 1}) catch "";
+        const up_seq = term_lib.cursorUpCr(&up_seq_buf, height - 1);
         if (up_seq.len > 0) {
             if (pos + up_seq.len > buf.len) {
                 _ = std.posix.system.write(fd, buf[0..pos].ptr, pos);
@@ -1115,12 +1117,12 @@ pub fn main(init: std.process.Init) !void {
         // startup work. Otherwise a slow-starting host (e.g. software-rendered
         // GUI terminals) briefly shows foot's own blinking cursor at row 1,
         // under the CSD title bar, before the first real frame is drawn.
-        try writeAll(stdout_fd, "\x1b[?25l");
+        try writeAll(stdout_fd, term_lib.CURSOR_HIDE);
 
         // Check for startup focus if spawned inside a GUI terminal window.
         if (gui_spawned) {
             // Enable focus reporting
-            try writeAll(stdout_fd, "\x1b[?1004h");
+            try writeAll(stdout_fd, term_lib.FOCUS_ON);
 
             // Read focus reports from stdin with a 200ms timeout.
             var focus_raw = raw;
@@ -1195,13 +1197,11 @@ pub fn main(init: std.process.Init) !void {
                     if (to_scroll > 0) {
                         var scroll_buf: [32]u8 = undefined;
                         // Scroll up by to_scroll lines.
-                        const scroll_seq = try std.fmt.bufPrint(&scroll_buf, "\x1b[{d}S", .{to_scroll});
-                        try writeAll(stdout_fd, scroll_seq);
+                        try writeAll(stdout_fd, term_lib.scrollUp(&scroll_buf, to_scroll));
 
                         var move_buf: [32]u8 = undefined;
                         // Move the cursor up by to_scroll lines to park it at the top-left of the viewport.
-                        const move_up_seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{to_scroll});
-                        try writeAll(stdout_fd, move_up_seq);
+                        try writeAll(stdout_fd, term_lib.cursorUpCr(&move_buf, to_scroll));
 
                         const y = if (cy_usize > to_scroll) cy_usize - to_scroll else 1;
                         global_tui_start_row = @intCast(y);
@@ -1217,8 +1217,7 @@ pub fn main(init: std.process.Init) !void {
                 for (0..final_h - 1) |_| {
                     try writeAll(stdout_fd, "\n");
                 }
-                const up_seq = try std.fmt.bufPrint(&up_buf, "\x1b[{d}A\r", .{final_h - 1});
-                try writeAll(stdout_fd, up_seq);
+                try writeAll(stdout_fd, term_lib.cursorUpCr(&up_buf, final_h - 1));
                 global_tui_start_row = null;
             }
         } else {
@@ -1287,7 +1286,7 @@ pub fn main(init: std.process.Init) !void {
             if (!is_first_render) {
                 var move_buf: [32]u8 = undefined;
                 if (rctx.is_hidden) {
-                    _ = std.posix.system.write(stdout_fd, "\x1b[2K\r", 5);
+                    _ = std.posix.system.write(stdout_fd, term_lib.CLEAR_LINE_CR, term_lib.CLEAR_LINE_CR.len);
                 } else {
                     // Jump to TUI row 0 absolutely — no assumptions about current cursor position.
                     // global_tui_start_row is set at TUI startup and kept current on each resize.
@@ -1295,7 +1294,7 @@ pub fn main(init: std.process.Init) !void {
                     // (cursor at TUI bottom), Ctrl-C via binding, etc.
                     var abs_move_buf: [32]u8 = undefined;
                     if (global_tui_start_row) |start_row| {
-                        const abs_seq = std.fmt.bufPrint(&abs_move_buf, "\x1b[{d};1H", .{start_row}) catch "";
+                        const abs_seq = term_lib.moveToRow(&abs_move_buf, start_row);
                         _ = std.posix.system.write(stdout_fd, abs_seq.ptr, abs_seq.len);
                     } else {
                         // Fallback when CPR was unavailable at startup.
@@ -1303,22 +1302,22 @@ pub fn main(init: std.process.Init) !void {
                             if (last_drawn_h > 0) last_drawn_h - 1 else 0
                         else
                             @as(usize, @intCast(1 + row_off));
-                        const move_seq = std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{up_to_tui_top}) catch "";
+                        const move_seq = term_lib.cursorUpCr(&move_buf, up_to_tui_top);
                         _ = std.posix.system.write(stdout_fd, move_seq.ptr, move_seq.len);
                     }
 
                     var k: usize = 0;
                     while (k < last_drawn_h) : (k += 1) {
-                        const clear_seq = "\x1b[2K";
+                        const clear_seq = term_lib.CLEAR_LINE;
                         _ = std.posix.system.write(stdout_fd, clear_seq.ptr, clear_seq.len);
                         if (k < last_drawn_h - 1) {
-                            const down_seq = "\x1b[B\r";
+                            const down_seq = term_lib.CURSOR_DOWN_CR;
                             _ = std.posix.system.write(stdout_fd, down_seq.ptr, down_seq.len);
                         }
                     }
                     // Return cursor to TUI row 0 (where the shell prompt will appear).
                     if (global_tui_start_row) |start_row| {
-                        const abs_seq = std.fmt.bufPrint(&abs_move_buf, "\x1b[{d};1H", .{start_row}) catch "";
+                        const abs_seq = term_lib.moveToRow(&abs_move_buf, start_row);
                         _ = std.posix.system.write(stdout_fd, abs_seq.ptr, abs_seq.len);
                     } else if (last_drawn_h > 1) {
                         _ = std.posix.system.write(stdout_fd, "\r\n", 2);
@@ -1337,23 +1336,23 @@ pub fn main(init: std.process.Init) !void {
         if (final_alt_screen) {
             global_alt_screen = true;
             if (gui_spawned) {
-                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l");
+                try writeAll(stdout_fd, term_lib.ALT_SCREEN_ON ++ term_lib.WRAP_OFF);
                 try writeAll(stdout_fd, mouse_enable);
-                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l\x1b[?1004h");
+                try writeAll(stdout_fd, term_lib.CURSOR_BLINK ++ term_lib.CURSOR_HIDE ++ term_lib.FOCUS_ON);
             } else {
-                try writeAll(stdout_fd, "\x1b[?1049h\x1b[?7l");
+                try writeAll(stdout_fd, term_lib.ALT_SCREEN_ON ++ term_lib.WRAP_OFF);
                 try writeAll(stdout_fd, mouse_enable);
-                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l");
+                try writeAll(stdout_fd, term_lib.CURSOR_BLINK ++ term_lib.CURSOR_HIDE);
             }
         } else {
             if (gui_spawned) {
-                try writeAll(stdout_fd, "\x1b[?7l");
+                try writeAll(stdout_fd, term_lib.WRAP_OFF);
                 try writeAll(stdout_fd, mouse_enable);
-                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l\x1b[?1004h");
+                try writeAll(stdout_fd, term_lib.CURSOR_BLINK ++ term_lib.CURSOR_HIDE ++ term_lib.FOCUS_ON);
             } else {
-                try writeAll(stdout_fd, "\x1b[?7l");
+                try writeAll(stdout_fd, term_lib.WRAP_OFF);
                 try writeAll(stdout_fd, mouse_enable);
-                try writeAll(stdout_fd, "\x1b[?12h\x1b[?25l");
+                try writeAll(stdout_fd, term_lib.CURSOR_BLINK ++ term_lib.CURSOR_HIDE);
             }
         }
 
@@ -1659,7 +1658,7 @@ pub fn main(init: std.process.Init) !void {
             const fast_render = !is_first_render and !exit_preview and
                 (last_was_motion or dragging_scrollbar) and has_pending_input;
             if (exit_preview or !should_copy_and_exit) {
-                try writeAll(stdout_fd, "\x1b[?25l");
+                try writeAll(stdout_fd, term_lib.CURSOR_HIDE);
 
                 var ws_size = std.mem.zeroes(std.posix.winsize);
                 const size_rc = std.posix.system.ioctl(stdout_fd, std.posix.system.T.IOCGWINSZ, @intFromPtr(&ws_size));
@@ -1743,11 +1742,11 @@ pub fn main(init: std.process.Init) !void {
                     var move_buf: [48]u8 = undefined;
                     if (resize_mode == .altscreen) {
                         if (resized) {
-                            try writeAll(stdout_fd, "\x1b[2J\x1b[1;1H");
+                            try writeAll(stdout_fd, term_lib.CLEAR_SCREEN ++ term_lib.CURSOR_HOME);
                             last_w = current_w;
                             last_h = current_h;
                         } else {
-                            try writeAll(stdout_fd, "\x1b[1;1H");
+                            try writeAll(stdout_fd, term_lib.CURSOR_HOME);
                         }
                     } else {
                         if (rctx.is_hidden) {
@@ -1755,18 +1754,17 @@ pub fn main(init: std.process.Init) !void {
                                 try writeAll(stdout_fd, "\r");
                             } else {
                                 const up_rows = @as(usize, @intCast(1 + row_off));
-                                const seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r\x1b[J", .{up_rows});
+                                const seq = try std.fmt.bufPrint(&move_buf, term_lib.FMT_CURSOR_UP ++ "\r" ++ term_lib.CLEAR_BELOW, .{up_rows});
                                 try writeAll(stdout_fd, seq);
                             }
                         } else {
                             if (rctx.was_hidden) {
-                                try writeAll(stdout_fd, "\r\x1b[J");
+                                try writeAll(stdout_fd, "\r" ++ term_lib.CLEAR_BELOW);
                             } else {
                                 // In simple mode the cursor ends on the prompt (last row), so move
                                 // up by the full height - 1 to return to the first list row.
                                 const up_rows = if ((exit_preview or final_simple) and last_drawn_h > 1) last_drawn_h - 1 else @as(usize, @intCast(1 + row_off));
-                                const seq = try std.fmt.bufPrint(&move_buf, "\x1b[{d}A\r", .{up_rows});
-                                try writeAll(stdout_fd, seq);
+                                try writeAll(stdout_fd, term_lib.cursorUpCr(&move_buf, up_rows));
                             }
                         }
                         if (resized) {
@@ -1799,7 +1797,7 @@ pub fn main(init: std.process.Init) !void {
                         try term_lib.writeAll(self.fd, "\x1b[0m\x1b[K");
                         self.count.* += 1;
                         if (self.count.* < self.total) {
-                            try term_lib.writeAll(self.fd, "\x1b[B\r");
+                            try term_lib.writeAll(self.fd, term_lib.CURSOR_DOWN_CR);
                         }
                     }
                     // Use for rows that already fill the full terminal width —
@@ -1809,7 +1807,7 @@ pub fn main(init: std.process.Init) !void {
                         try term_lib.writeAll(self.fd, "\x1b[0m");
                         self.count.* += 1;
                         if (self.count.* < self.total) {
-                            try term_lib.writeAll(self.fd, "\x1b[B\r");
+                            try term_lib.writeAll(self.fd, term_lib.CURSOR_DOWN_CR);
                         }
                     }
                 };
@@ -1821,8 +1819,8 @@ pub fn main(init: std.process.Init) !void {
                         for (choices, 0..) |choice, ci| {
                             const is_selected = (ci == active_dropdown_sel);
                             const prefix = if (is_selected) "> " else "  ";
-                            const bold_start = if (is_selected) "\x1b[1m" else "";
-                            const bold_end = if (is_selected) "\x1b[22m" else "";
+                            const bold_start = if (is_selected) term_lib.BOLD else "";
+                            const bold_end = if (is_selected) term_lib.BOLD_OFF else "";
                             if (std.mem.eql(u8, opt.id, "shell_key_binding")) {
                                 const caveat = if (std.mem.eql(u8, choice, "C-o"))
                                     "leaves C-e free"
@@ -1847,7 +1845,7 @@ pub fn main(init: std.process.Init) !void {
                 const rw = RowWriter{ .fd = stdout_fd, .total = current_total_rows, .count = &printed_rows };
 
                 if (rctx.is_hidden) {
-                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                     try rw.endRow();
                 } else if (final_simple) {
                     // -------------------------------------------------------
@@ -1855,7 +1853,7 @@ pub fn main(init: std.process.Init) !void {
                     // -------------------------------------------------------
                     var si: usize = 0;
                     while (si < total_cells) : (si += 1) {
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         const li = grid_scroll_top + si;
                         if (li < top_count) {
                             const entry = emojig.EmojiDb.getEntry(top_matches[li].index);
@@ -1877,20 +1875,20 @@ pub fn main(init: std.process.Init) !void {
                         try rw.endRow();
                     }
                     // Count row (status_bg includes bg + fg sequences).
-                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                     var count_buf: [64]u8 = undefined;
                     const count_line = try std.fmt.bufPrint(&count_buf, "{s}  {d}/{d}\x1b[0m", .{ palette.status_bg, top_count, total_matches });
                     try writeAll(stdout_fd, count_line);
                     try rw.endRow();
                     // Prompt row (search_bg includes bg + fg sequences).
-                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                     const prompt_line = try std.fmt.bufPrint(&line_buf, "{s}> {s}\x1b[0m", .{ palette.search_bg, query_buf[0..query_len] });
                     try writeAll(stdout_fd, prompt_line);
                     try rw.endRow();
                 } else {
                     // Optional top border row.
                     if (show_top_border) {
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, " ");
                         if (exit_preview and exit_preview_step >= 3) {
                             try writeAll(stdout_fd, palette.border_bg);
@@ -1914,14 +1912,14 @@ pub fn main(init: std.process.Init) !void {
 
                     // Blank top padding row.
                     if (g_spec.layout.top_padding) {
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, palette.app_topline_bg);
                         try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                         try rw.endRow();
                     }
 
                     // Search bar row.
-                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                     if (exit_preview and exit_preview_step >= 3) {
                         // Preview: blank/shade the search bar row.
                         try writeAll(stdout_fd, palette.app_bg);
@@ -2024,7 +2022,7 @@ pub fn main(init: std.process.Init) !void {
                         var lines = std.mem.splitScalar(u8, popup_msg.?, '\n');
                         var h_idx: usize = 0;
                         while (h_idx < popup_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             if (h_idx == 0) {
                                 text = popup_title;
@@ -2044,7 +2042,7 @@ pub fn main(init: std.process.Init) !void {
 
                         var h_idx: usize = 0;
                         while (h_idx < warning_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             const offset = if (warning_rows >= focus_lines.len + 3) @as(usize, 2) else 0;
                             if (h_idx >= offset and h_idx - offset < focus_lines.len) {
@@ -2068,7 +2066,7 @@ pub fn main(init: std.process.Init) !void {
                         const is_more = (query_len > 1 and query_buf[1] == '?');
                         var h_idx: usize = 0;
                         while (h_idx < help_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             // Help text comes from spec/strings/en.yaml: "?" shows the
                             // first page, "??" the second (search filters etc.).
                             var text: []const u8 = "";
@@ -2095,7 +2093,7 @@ pub fn main(init: std.process.Init) !void {
                         const pos_eighths_h = if (needs_scroll and max_scroll_h > 0) smoothScrollPos(help_scroll_top, max_scroll_h, travel_h) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             if (needs_scroll) {
                                 const li = help_scroll_top + h_idx;
@@ -2112,18 +2110,18 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_h, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 };
                                 try writeAll(stdout_fd, sb_seq);
@@ -2149,7 +2147,7 @@ pub fn main(init: std.process.Init) !void {
                         const pos_eighths_a = if (needs_scroll and max_scroll_a > 0) smoothScrollPos(about_scroll_top, max_scroll_a, travel_a) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             if (needs_scroll) {
                                 const li = about_scroll_top + h_idx;
@@ -2172,18 +2170,18 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_a, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 };
                                 try writeAll(stdout_fd, sb_seq);
@@ -2214,7 +2212,7 @@ pub fn main(init: std.process.Init) !void {
                         const pos_eighths_s = if (needs_scroll and max_scroll_s > 0) smoothScrollPos(status_scroll_top, max_scroll_s, travel_s) else 0;
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             if (needs_scroll) {
                                 const li = status_scroll_top + h_idx;
@@ -2231,18 +2229,18 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_s, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 };
                                 try writeAll(stdout_fd, sb_seq);
@@ -2299,7 +2297,7 @@ pub fn main(init: std.process.Init) !void {
                         };
                         var h_idx: usize = 0;
                         while (h_idx < viewport_h) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             if (needs_scroll) {
                                 const li = debug_scroll_top + h_idx;
@@ -2316,18 +2314,18 @@ pub fn main(init: std.process.Init) !void {
                                 const sb_seq = if (scrollbar_style == .expand) blk: {
                                     const cell = scrollbarCell(pos_eighths_d, thumb_h, h_idx);
                                     if (cell.invert) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else if (cell.char[0] != ' ') {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 } else blk: {
                                     const on_thumb = h_idx >= thumb_start and h_idx < thumb_start + thumb_h;
                                     if (on_thumb) {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                     } else {
-                                        break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                        break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                     }
                                 };
                                 try writeAll(stdout_fd, sb_seq);
@@ -2340,7 +2338,7 @@ pub fn main(init: std.process.Init) !void {
                         const settings_rows = rows + 4;
                         var h_idx: usize = 0;
                         while (h_idx < settings_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             var custom_rendered = false;
 
@@ -2389,7 +2387,7 @@ pub fn main(init: std.process.Init) !void {
                         const cats_rows = rows + 4;
                         var h_idx: usize = 0;
                         while (h_idx < cats_rows) : (h_idx += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             var text: []const u8 = "";
                             var custom_rendered = false;
 
@@ -2435,7 +2433,7 @@ pub fn main(init: std.process.Init) !void {
                         }
                     } else {
                         // Separator hline between search bar and grid.
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, palette.hline);
                         try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
@@ -2459,7 +2457,7 @@ pub fn main(init: std.process.Init) !void {
 
                         var r: usize = 0;
                         while (r < visible_rows) : (r += 1) {
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             if (is_too_small) {
                                 const grid_line = try std.fmt.bufPrint(&line_buf, "{s} {s}{s}", .{ palette.app_bg, palette.view_bg, spaces[0..@min(max_w, spaces.len)] });
                                 try writeAll(stdout_fd, grid_line);
@@ -2590,18 +2588,18 @@ pub fn main(init: std.process.Init) !void {
                                     const sb_seq = if (scrollbar_style == .expand) blk: {
                                         const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
                                         if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     } else blk: {
                                         const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                         if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                         } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     };
                                     try writeAll(stdout_fd, sb_seq);
@@ -2819,18 +2817,18 @@ pub fn main(init: std.process.Init) !void {
                                     const sb_seq = if (scrollbar_style == .expand) blk: {
                                         const cell = scrollbarCell(grid_pos_eighths, grid_tg.thumb_h, r);
                                         if (cell.invert) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}\x1b[7m{s}\x1b[27m", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}" ++ term_lib.REVERSE ++ "{s}" ++ term_lib.REVERSE_OFF, .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else if (cell.char[0] != ' ') {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, cell.char });
                                         } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     } else blk: {
                                         const on_thumb = r >= grid_thumb_start and r < grid_thumb_start + grid_tg.thumb_h;
                                         if (on_thumb) {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s}{s}{s}", .{ content_width + 1, palette.scrollbar_rail_bg, palette.grid_fg_only, g_spec.strings.scrollbar_char });
                                         } else {
-                                            break :blk try std.fmt.bufPrint(&sb_buf, "\x1b[{d}G{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
+                                            break :blk try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO_COL ++ "{s} ", .{ content_width + 1, palette.scrollbar_rail_bg });
                                         }
                                     };
                                     try writeAll(stdout_fd, sb_seq);
@@ -2847,7 +2845,7 @@ pub fn main(init: std.process.Init) !void {
                         // visible_rows < rows, i.e. there is a row budget for it).
                         if (show_switcher and visible_rows < rows) {
                             // Separator hline between grid and switcher.
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             try writeAll(stdout_fd, palette.hline);
                             try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                             try rw.endRowFull();
@@ -3028,7 +3026,7 @@ pub fn main(init: std.process.Init) !void {
                                 }
                             }.call;
 
-                            try writeAll(stdout_fd, "\x1b[2K\r");
+                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                             // row_pad_left: outer left margin of the entire switcher row.
                             if (sw_row_pad_left.len > 0) {
                                 try writeAll(stdout_fd, "\x1b[0m");
@@ -3089,13 +3087,13 @@ pub fn main(init: std.process.Init) !void {
                         }
 
                         // Separator hline between grid/switcher and description.
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, palette.hline);
                         try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                         try rw.endRowFull();
 
                         // Description row.
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         const max_len = if (content_width > 1) content_width - 1 else 0;
                         const is_hovering_sw = switcher_row_hovered and (switcher_hover_idx == null or switcher_hover_idx.? < switcherCatCount());
                         if (theme_hovered and !is_too_small) {
@@ -3147,12 +3145,12 @@ pub fn main(init: std.process.Init) !void {
                                     syn_len += copy_len;
                                 }
                                 if (syn_len > 0) {
-                                    break :blk try std.fmt.bufPrint(&desc_buf, "\x1b[1m{s}\x1b[22m, {s}", .{ cat.name, syn_buf[0..syn_len] });
+                                    break :blk try std.fmt.bufPrint(&desc_buf, term_lib.BOLD ++ "{s}" ++ term_lib.BOLD_OFF ++ ", {s}", .{ cat.name, syn_buf[0..syn_len] });
                                 } else {
-                                    break :blk try std.fmt.bufPrint(&desc_buf, "\x1b[1m{s}\x1b[22m", .{cat.name});
+                                    break :blk try std.fmt.bufPrint(&desc_buf, term_lib.BOLD ++ "{s}" ++ term_lib.BOLD_OFF, .{cat.name});
                                 }
                             } else blk: {
-                                break :blk "\x1b[1mAll\x1b[22m";
+                                break :blk term_lib.BOLD ++ "All" ++ term_lib.BOLD_OFF;
                             };
 
                             const desc_w = ansiDisplayWidth(desc);
@@ -3293,7 +3291,7 @@ pub fn main(init: std.process.Init) !void {
                     }
 
                     // Status bar row.
-                    try writeAll(stdout_fd, "\x1b[2K\r");
+                    try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                     if ((exit_preview and exit_preview_step >= 3) or is_too_small) {
                         try writeAll(stdout_fd, palette.app_bg);
                         try writeAll(stdout_fd, " ");
@@ -3405,7 +3403,7 @@ pub fn main(init: std.process.Init) !void {
 
                     // Optional bottom border row.
                     if (show_bottom_border) {
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         try writeAll(stdout_fd, " ");
                         if (exit_preview and exit_preview_step >= 3) {
                             try writeAll(stdout_fd, palette.border_bg);
@@ -3429,14 +3427,14 @@ pub fn main(init: std.process.Init) !void {
 
                     // Debug info rows.
                     if (show_debug) {
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         const line1 = " 🐞 Debug Info:";
                         const pad1 = if (current_w >= 16) current_w - 16 else 0;
                         try writeAll(stdout_fd, line1);
                         try writeAll(stdout_fd, spaces[0..@min(pad1, spaces.len)]);
                         try rw.endRow();
 
-                        try writeAll(stdout_fd, "\x1b[2K\r");
+                        try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         var dbg_buf: [128]u8 = undefined;
                         const line2 = try std.fmt.bufPrint(&dbg_buf, "    Size: W={d} H={d}", .{ current_w, current_h });
                         const pad2 = if (current_w > line2.len + 1) current_w - 1 - line2.len else 0;
@@ -3466,7 +3464,7 @@ pub fn main(init: std.process.Init) !void {
 
                     const cursor_seq: []const u8 = if (exit_preview or should_copy_and_exit) blk: {
                         // Exit or preview: hide cursor and leave it at the bottom
-                        break :blk "\x1b[?25l";
+                        break :blk term_lib.CURSOR_HIDE;
                     } else if (final_alt_screen and !final_simple) blk: {
                         // Alt-screen mode always homes the cursor to an absolute
                         // row 1 before drawing each frame (see the .altscreen
@@ -3479,34 +3477,34 @@ pub fn main(init: std.process.Init) !void {
                         const target_row: usize = @intCast(@max(search_row_idx, 1));
                         if (current_screen != .search) {
                             // Non-search screen: park at the search bar, cursor hidden.
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};{d}H\x1b[?25l", .{ target_row, 5 + cursor_col_off });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO ++ term_lib.CURSOR_HIDE, .{ target_row, 5 + cursor_col_off });
                         } else if (is_too_small) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};1H\x1b[?25l", .{target_row});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO_ROW ++ term_lib.CURSOR_HIDE, .{target_row});
                         } else {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d};{d}H\x1b[?12h\x1b[?25h", .{ target_row, 5 + cursor_col_off });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO ++ term_lib.CURSOR_SHOW_BLINK, .{ target_row, 5 + cursor_col_off });
                         }
                     } else if (current_screen != .search) blk: {
                         // Non-search screen: park at the search bar (row 2 + row_off) but hide cursor
                         if (cursor_up > 0) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?25l", .{ cursor_up, 5 + cursor_col_off });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_CURSOR_UP ++ term_lib.FMT_MOVE_TO_COL ++ term_lib.CURSOR_HIDE, .{ cursor_up, 5 + cursor_col_off });
                         } else {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?25l", .{5 + cursor_col_off});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO_COL ++ term_lib.CURSOR_HIDE, .{5 + cursor_col_off});
                         }
                     } else if (final_simple) blk: {
                         // Simple mode: prompt is already the last row; just position cursor after "> ".
-                        break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{3 + cursor_col_off});
+                        break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO_COL ++ term_lib.CURSOR_SHOW_BLINK, .{3 + cursor_col_off});
                     } else if (is_too_small) blk: {
                         if (cursor_up > 0) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[1G\x1b[?25l", .{cursor_up});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_CURSOR_UP ++ "\x1b[1G" ++ term_lib.CURSOR_HIDE, .{cursor_up});
                         } else {
-                            break :blk "\x1b[1G\x1b[?25l";
+                            break :blk "\x1b[1G" ++ term_lib.CURSOR_HIDE;
                         }
                     } else blk: {
                         // Normal full TUI: move up, position cursor, enable blink.
                         if (cursor_up > 0) {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}A\x1b[{d}G\x1b[?12h\x1b[?25h", .{ cursor_up, 5 + cursor_col_off });
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_CURSOR_UP ++ term_lib.FMT_MOVE_TO_COL ++ term_lib.CURSOR_SHOW_BLINK, .{ cursor_up, 5 + cursor_col_off });
                         } else {
-                            break :blk try std.fmt.bufPrint(&cursor_buf, "\x1b[{d}G\x1b[?12h\x1b[?25h", .{5 + cursor_col_off});
+                            break :blk try std.fmt.bufPrint(&cursor_buf, term_lib.FMT_MOVE_TO_COL ++ term_lib.CURSOR_SHOW_BLINK, .{5 + cursor_col_off});
                         }
                     };
                     try writeAll(stdout_fd, cursor_seq);
@@ -3812,7 +3810,7 @@ pub fn main(init: std.process.Init) !void {
                                             const on_t = sb_r >= new_thumb and sb_r < new_thumb + tg.thumb_h;
                                             const sb_char: []const u8 = if (on_t) g_spec.strings.scrollbar_char else " ";
                                             var sb_buf: [32]u8 = undefined;
-                                            const sb_seq = try std.fmt.bufPrint(&sb_buf, "\x1b[{d};{d}H{s}", .{ abs_row, content_width + 1, sb_char });
+                                            const sb_seq = try std.fmt.bufPrint(&sb_buf, term_lib.FMT_MOVE_TO ++ "{s}", .{ abs_row, content_width + 1, sb_char });
                                             try writeAll(stdout_fd, sb_seq);
                                         }
                                         // Park cursor at search-bar row so next render's
@@ -3820,8 +3818,7 @@ pub fn main(init: std.process.Init) !void {
                                         const search_row = @as(usize, @intCast(tui_top)) +
                                             @as(usize, @intCast(search_row_idx - 1));
                                         var park_buf: [24]u8 = undefined;
-                                        const park_seq = try std.fmt.bufPrint(&park_buf, "\x1b[{d};1H", .{search_row});
-                                        try writeAll(stdout_fd, park_seq);
+                                        try writeAll(stdout_fd, term_lib.moveToRow(&park_buf, search_row));
                                     }
                                 } else {
                                     const grid_row = @as(usize, @intCast(click_row - grid_first_row));
@@ -4821,4 +4818,11 @@ pub fn main(init: std.process.Init) !void {
         writeAll(std.posix.STDOUT_FILENO, emoji) catch {};
         writeAll(std.posix.STDOUT_FILENO, "\n") catch {};
     }
+}
+
+// Pull in the ANSI helper byte-output tests (issue 45) — term.zig belongs
+// to this (exe) module, so its tests must be referenced from here, not from
+// root.zig (a file may only belong to one module).
+test {
+    _ = @import("term.zig");
 }
