@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: in-progress
+status: done
 ---
 
 # Architecture, spec/, and readability review — 2026-07-02
@@ -87,3 +87,20 @@ Done. Filed four follow-up issues with concrete file:line findings:
 Research was done via three parallel investigation passes (main.zig
 structure, spec/ organization, and search/render perf) before writing the
 four issues above.
+
+## Follow-up progress (2026-07-02, refactor branch)
+
+- **47: done** — sorted synonym index + binary search, ~10× faster
+  keystroke search (4.2–5.1 ms → 0.36–0.61 ms), benchmark now an asserted
+  release-mode regression test.
+- **45: done** — cursor/clear/mode/scroll escapes routed through new
+  `term.zig` helpers with byte-exact tests; raw `\x1b[` literals in
+  `main.zig` down 145 → 42 (rest is input parsing / SGR content).
+- **46: in-progress** — `spec/web/` tier created, spec-lint bounds parsed
+  from Zig sources, layout-bounds + help-line-length lints added; yaml
+  merges / categories split / test-as-spec conversions still open.
+- **44: open (partial)** — the 6× scrollbar geometry/render cluster is
+  deduped into `tui_draw.zig` (`paneScroll`/`scrollbarSeq`, unit-tested);
+  the pane-render extraction and items 2–6 remain.
+- **48 (new)**: pre-existing PTY test flakes documented while verifying
+  the branch.
