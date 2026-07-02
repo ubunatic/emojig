@@ -64,3 +64,12 @@ Likely suspects, unverified:
   frame can't poison the result.
 - Re-run the 8× loop after any fix on an otherwise idle machine to confirm
   0 failures.
+
+## Related flake (same family)
+
+`TestTUISettingsHelpModalFromSpec` also fails intermittently under
+full-suite load ("settings screen did not open" — the captured frame shows
+the search screen, i.e. the menu-open keystroke landed before the app was
+ready), while passing 4/4 in isolation (`-run TestTUISettingsHelpModalFromSpec`,
+measured 2026-07-02). Any fix that replaces fixed sleep/collect windows
+with a render-complete sentinel should be applied to both tests.
