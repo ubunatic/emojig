@@ -1,0 +1,130 @@
+{
+  "description": "Interactive settings configuration options for the picker. Each option's `help` text is shown in the context-sensitive help modal (opened with ?/h/F1 on the selected settings row). Keep help lines short — the modal is rendered inside the picker window and long lines are truncated. Rows are rendered in option order; the Zig app resolves help by row index into this same options list, so order here is the single source of truth.",
+  "title": "⚙️ emojig settings",
+  "help_fallback": "Settings\n\n↑↓ select  ←→ change\n? help   Esc back",
+  "options": [
+    {
+      "id": "shell_integration",
+      "type": "boolean",
+      "label": "shell integration",
+      "default": "false",
+      "help": "Shell integration\n\nAdds an `emojig` shell\nfunction. Enable, then\n`source` your shell rc."
+    },
+    {
+      "id": "shell_key_binding",
+      "type": "choice",
+      "label": "shell key binding",
+      "choices": [
+        "C-o",
+        "C-e",
+        "C-x e",
+        "C-g",
+        "custom"
+      ],
+      "default": "C-o",
+      "help": "Shell key binding\n\nChoose a keybinding.\nOverride by selecting 5\nor edit shell_key_binding\nin ~/.config/emojig/config"
+    },
+    {
+      "id": "show_all_categories",
+      "type": "boolean",
+      "label": "show all categories",
+      "default": "true",
+      "help": "Show all categories\n\non/off — list every\ncategory filter, or only\nmatching/used ones."
+    },
+    {
+      "id": "ambiguous_chars",
+      "type": "choice",
+      "label": "ambiguous chars",
+      "choices": [
+        "wide",
+        "narrow"
+      ],
+      "default": "narrow",
+      "help": "Ambiguous chars\n\nwide | narrow\nColumn width of chars\nlike → ≈ ★."
+    },
+    {
+      "id": "theme",
+      "type": "choice",
+      "label": "theme",
+      "choices": [
+        "dark",
+        "light",
+        "system"
+      ],
+      "default": "dark",
+      "help": "Theme\n\ndark | light | system\nTUI follows terminal;\nGUI follows GNOME."
+    },
+    {
+      "id": "scrollbar_style",
+      "type": "choice",
+      "label": "scrollbar",
+      "choices": [
+        "expand",
+        "bar"
+      ],
+      "default": "expand",
+      "help": "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell."
+    },
+    {
+      "id": "cols",
+      "type": "integer",
+      "label": "grid width (cols)",
+      "default": "6",
+      "help": "Grid width (cols)\n\n5–16 columns. Type a\nnumber or use ‹ ›.\nApplies on next launch."
+    },
+    {
+      "id": "rows",
+      "type": "integer",
+      "label": "grid height (rows)",
+      "default": "4",
+      "help": "Grid height (rows)\n\n3–16 rows. Type a\nnumber or use ‹ ›.\nApplies on next launch."
+    },
+    {
+      "id": "compact",
+      "type": "boolean",
+      "label": "compact grid",
+      "default": "false",
+      "help": "Compact grid\n\non/off — 3-column cells\ninstead of 4-columns.\nApplies on next launch."
+    },
+    {
+      "id": "app_bg",
+      "type": "choice",
+      "label": "app background",
+      "choices": [
+        "default",
+        "deep",
+        "navy",
+        "slate"
+      ],
+      "default": "default",
+      "help": "App background\n\ndark/light preset for\nthe foot terminal bg.\nApplies on next launch."
+    },
+    {
+      "id": "title_bg",
+      "type": "choice",
+      "label": "title bar color",
+      "choices": [
+        "raised",
+        "same",
+        "accent",
+        "dark"
+      ],
+      "default": "raised",
+      "help": "Title bar color\n\nCSD title bar preset.\n(--decorated mode only)\nApplies on next launch."
+    },
+    {
+      "id": "decorated",
+      "type": "boolean",
+      "label": "decorated window",
+      "default": "false",
+      "help": "Decorated window\n\nShow title bar when\nlaunching --gui.\nApplies on next launch."
+    },
+    {
+      "id": "clear_mru",
+      "type": "action",
+      "label": "recent (MRU) history",
+      "default": "clear",
+      "help": "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone."
+    }
+  ]
+}

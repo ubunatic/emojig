@@ -1,0 +1,17 @@
+{
+  "description": "Fuzzy-search ranking weights for the emojig search engine. Consumed by the Zig app (src/search.zig, src/root.zig) and mirrored into the website simulator via scripts/gen_web_spec. All weights are integers; the final score of a term match is the sum of per-character scores minus penalties. Read docs/SearchEngine.md before tuning: the ranking tests in src/ranking_test.zig pin the relative order of hundreds of queries, so any change here must keep `zig build test` green.",
+  "scoring": {
+    "char_match": 10,
+    "word_start_bonus": 40,
+    "consecutive_bonus": 20,
+    "gap_penalty": 1,
+    "late_start_penalty": 1,
+    "length_penalty": 1,
+    "exact_word_bonus": 100,
+    "fallback_penalty": 5
+  },
+  "penalties": {
+    "box_art": 150,
+    "braille": 150
+  }
+}

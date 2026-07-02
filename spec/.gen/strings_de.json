@@ -2,6 +2,7 @@
   "description": "UI-Texte für die Emoji-Auswahl (Deutsch).",
   "search_prompt": " 🔍 ",
   "search_placeholder": "Suche…",
+  "mru_cleared": "Verlauf geleert.",
   "status_help_hint": " ?:Hilfe  ↕↔|↵|Esc",
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:Hilfe e:Bild t:Text  ↕↔|↵|Esc",

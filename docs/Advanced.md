@@ -181,7 +181,7 @@ an icon or pressing <kbd>Tab</kbd> filters the emoji grid by that category; clic
 same category again (or press <kbd>Tab</kbd> repeatedly) to cycle back to All.
 
 The switcher layout — icons, bracket chars, highlight colors and outer margins —
-is fully declarative in `spec/categories.json`. See
+is fully declarative in `spec/categories.yaml`. See
 [`docs/SpecDrivenConfig.md §11`](SpecDrivenConfig.md#11-category-switcher-bar-speccategoriesjson)
 for the full field reference.
 

@@ -653,24 +653,16 @@ fn debugLine(buf: []u8, idx: usize, ctx: DebugCtx) []const u8 {
 }
 
 /// Short, context-sensitive help for the selected settings row, shown as a
-/// modal when the user presses `?`/`h`/`F1`. Lines stay narrow to fit the popup.
+/// modal when the user presses `?`/`h`/`F1`. The texts live in
+/// spec/settings.yaml (`help` per option, `help_fallback` for the rest); rows
+/// are rendered from the same options list, so index lookup stays attached to
+/// its option even when the spec is reordered.
 fn settingHelp(idx: usize) []const u8 {
-    return switch (idx) {
-        0 => "Shell integration\n\nAdds an `emojig` shell\nfunction. Enable, then\n`source` your shell rc.",
-        1 => "Shell key binding\n\nChoose a keybinding.\nOverride by selecting 5\nor edit shell_key_binding\nin ~/.config/emojig/config",
-        2 => "Show all categories\n\non/off — list every\ncategory filter, or only\nmatching/used ones.",
-        3 => "Ambiguous chars\n\nwide | narrow\nColumn width of chars\nlike \u{2192} \u{2248} \u{2605}.",
-        4 => "Theme\n\ndark | light | system\nTUI follows terminal;\nGUI follows GNOME.",
-        5 => "Scrollbar\n\nexpand | bar\nProportional thumb, or\na fixed single cell.",
-        6 => "Grid width (cols)\n\n5\u{2013}16 columns. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
-        7 => "Grid height (rows)\n\n3\u{2013}16 rows. Type a\nnumber or use \u{2039} \u{203a}.\nApplies on next launch.",
-        8 => "Compact grid\n\non/off — 3-column cells\ninstead of 4-columns.\nApplies on next launch.",
-        9 => "App background\n\ndark/light preset for\nthe foot terminal bg.\nApplies on next launch.",
-        10 => "Title bar color\n\nCSD title bar preset.\n(--decorated mode only)\nApplies on next launch.",
-        11 => "Decorated window\n\nShow title bar when\nlaunching --gui.\nApplies on next launch.",
-        12 => "Clear MRU history\n\nEnter/Space clears the\nrecently-used list.\nCannot be undone.",
-        else => "Settings\n\n\u{2191}\u{2193} select  \u{2190}\u{2192} change\n? help   Esc back",
-    };
+    const settings = &g_spec.settings;
+    if (idx < settings.options.len) {
+        if (settings.options[idx].help) |h| return h;
+    }
+    return settings.help_fallback;
 }
 
 fn runSearch(
@@ -967,7 +959,7 @@ pub fn main(init: std.process.Init) !void {
             if (init.environ_map.get("EMOJIG_GUI_FONT_SIZE")) |v| {
                 if (std.fmt.parseInt(usize, v, 10)) |n| break :blk n else |_| {}
             }
-            break :blk cfg.font_size orelse 16;
+            break :blk cfg.font_size orelse g_spec.layout.gui.font_size;
         };
 
         host.spawnGuiWindow(
@@ -1006,7 +998,7 @@ pub fn main(init: std.process.Init) !void {
     var grid_cols: usize = base_cols;
     var grid_rows: usize = base_rows;
     // Coarse step for Space/Enter on a grid-size row (Left/Right adjust by ±1).
-    const grid_dim_step: usize = 2;
+    const grid_dim_step: usize = g_spec.layout.interaction.grid_dim_step;
     // Set once a grid-size row is edited this session — surfaced in the settings
     // status hint ("applies on next launch") instead of a per-step popup.
     var griddim_changed: bool = false;
@@ -1057,6 +1049,7 @@ pub fn main(init: std.process.Init) !void {
     const stdin_fd = tty_fd;
 
     {
+        mru.setLimit(g_spec.layout.mru_size);
         mru.load();
 
         const orig_termios = try std.posix.tcgetattr(stdin_fd);
@@ -1470,7 +1463,7 @@ pub fn main(init: std.process.Init) !void {
         // (declared before defer above)
         var exit_preview = false;
         var exit_preview_step: usize = 0;
-        const max_preview_steps: usize = 8;
+        const max_preview_steps: usize = g_spec.layout.animation.exit_preview_steps;
         var theme_hovered = false;
         var menu_hovered = false;
         // Which grid-size arrow (if any) the mouse is over, for hover feedback.
@@ -1483,7 +1476,7 @@ pub fn main(init: std.process.Init) !void {
         // Priority (highest wins):
         //   1. EMOJIG_EXIT_PREVIEW=0/false  — force-disable (immediate exit)
         //   2. EMOJIG_EXIT_PREVIEW=1/true   — force-enable
-        //   3. spec/layout.json animation.exit_preview_tui — per-mode default
+        //   3. spec/layout.yaml animation.exit_preview_tui — per-mode default
         //
         // EMOJIG_EXIT_PREVIEW_MS=N overrides the hold duration in ms (clamped 0–5000).
         // EMOJIG_EXIT_PREVIEW is set to "0" by the GUI launcher when the spec default
@@ -1498,7 +1491,7 @@ pub fn main(init: std.process.Init) !void {
             break :blk g_spec.layout.animation.exit_preview_tui;
         };
         const preview_hold_ns: u64 = blk: {
-            const default_ms: u64 = 200;
+            const default_ms: u64 = g_spec.layout.animation.exit_preview_ms;
             const ns_per_ms: u64 = 1_000_000;
             if (init.environ_map.get("EMOJIG_EXIT_PREVIEW_MS")) |v| {
                 const ms = std.fmt.parseInt(u64, v, 10) catch default_ms;
@@ -1507,6 +1500,12 @@ pub fn main(init: std.process.Init) !void {
             }
             break :blk default_ms * ns_per_ms;
         };
+
+        // Checkcell highlight used for picked cells when the multi-select
+        // mark glyph is disabled (mark == ""). The spec value is constant, so
+        // resolve the color name once here instead of on every frame.
+        var check_bg_buf: [16]u8 = undefined;
+        const check_bg = bgEscape(&check_bg_buf, g_spec.strings.multi_select_bg);
 
         var search_stats = SearchStats{};
         var total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
@@ -2070,7 +2069,7 @@ pub fn main(init: std.process.Init) !void {
                         var h_idx: usize = 0;
                         while (h_idx < help_rows) : (h_idx += 1) {
                             try writeAll(stdout_fd, "\x1b[2K\r");
-                            // Help text comes from spec/strings.json: "?" shows the
+                            // Help text comes from spec/strings/en.yaml: "?" shows the
                             // first page, "??" the second (search filters etc.).
                             var text: []const u8 = "";
                             const help_lines = if (is_more) g_spec.strings.help_lines_more else g_spec.strings.help_lines;
@@ -2467,11 +2466,6 @@ pub fn main(init: std.process.Init) !void {
                             smoothScrollPos(grid_scroll_top, grid_max_scroll, grid_tg.travel)
                         else
                             0;
-
-                        // Checkcell highlight used for picked cells when the
-                        // multi-select mark glyph is disabled (mark == "").
-                        var check_bg_buf: [16]u8 = undefined;
-                        const check_bg = bgEscape(&check_bg_buf, g_spec.strings.multi_select_bg);
 
                         var r: usize = 0;
                         while (r < visible_rows) : (r += 1) {
@@ -3704,7 +3698,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             // Decode the raw byte sequence into a logical key name; the binding
-            // table in spec/keys.json maps that name to an action below. Mouse
+            // table in spec/keys.yaml maps that name to an action below. Mouse
             // events and printable text are handled inline (not via bindings).
             // Reset here; the SGR mouse branch sets it to true for motion events.
             last_was_motion = false;
@@ -3738,7 +3732,7 @@ pub fn main(init: std.process.Init) !void {
                             // Mouse wheel: scroll whichever pane is shown by a fixed
                             // step, independent of keyboard focus (normal GUI feel).
                             const wheel_down = (event.button & 1) != 0;
-                            const step: usize = 3;
+                            const step: usize = g_spec.layout.interaction.wheel_scroll_step;
                             if (current_screen == .search) {
                                 const cc = if (final_simple) @as(usize, 1) else cols;
                                 const vp = if (final_simple) total_cells else visible_rows;
@@ -3966,7 +3960,7 @@ pub fn main(init: std.process.Init) !void {
                                             } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                                 mru.clear();
                                                 popup_title = "✔ done";
-                                                popup_msg = "Recent history cleared.";
+                                                popup_msg = g_spec.strings.mru_cleared;
                                             } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
                                                 gui_decorated = !gui_decorated;
                                                 saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
@@ -4185,8 +4179,8 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
 
-            // Dispatch the decoded key through the spec/keys.json bindings.
-            // Dispatch the decoded key through the spec/keys.json bindings.
+            // Dispatch the decoded key through the spec/keys.yaml bindings.
+            // Dispatch the decoded key through the spec/keys.yaml bindings.
             if (logical) |name| {
                 const action = g_spec.actionFor(name) orelse "";
                 if (active_dropdown_opt_idx) |opt_idx| {
@@ -4327,7 +4321,7 @@ pub fn main(init: std.process.Init) !void {
                             } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
                                 mru.clear();
                                 popup_title = "✔ done";
-                                popup_msg = "Recent history cleared.";
+                                popup_msg = g_spec.strings.mru_cleared;
                             } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
                                 gui_decorated = !gui_decorated;
                                 saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");

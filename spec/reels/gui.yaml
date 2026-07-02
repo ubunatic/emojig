@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+$schema: ../../../wayreel/reel.schema.json
+mode: gui
+build:
+    - zig
+    - build
+    - -Doptimize=ReleaseSmall
+binary: zig-out/bin/emojig
+bitrate: 1M
+fps: 30
+record_fps: 30
+scene_width: 850
+scene_height: 480
+font_size: 15
+output: website/emojig-gui-light.webm
+app_cmd:
+    - gedit
+    - $demo_file
+app_id: gedit
+app_width: 530
+app_height: 400
+env:
+    - GTK_THEME=Adwaita:light
+script:
+    - type: 'Hello GUI '
+      desc: pre-emoji text
+    - type: <C-A-space>
+      desc: fake gui hotkey
+      show_keys: true
+    - next: emojig
+    - type: <S-ins>
+      desc: (fake) paste hotkey
+      show_keys: true
+    - type: "\U0001F5A5️"
+      desc: (fake) paste
+      speed: 0.5
+    - pause: 2s
+apps:
+    emojig:
+        args:
+            - --gui
+            - --theme
+            - light
+        app_id: emojig-picker
+        app_width: 460
+        app_height: 400
+        env:
+            - EMOJIG_TERMINAL=foot
+            - EMOJIG_GUI_FONT_SIZE=13
+            - EMOJIG_COLS=12
+            - EMOJIG_ROWS=10
+        script:
+            - type: compu
+              desc: search query
+              speed: 0.4
+            - pause: 1s
+            - type: ' desk'
+              desc: search query
+              speed: 0.4
+            - pause: 1s
+            - type: <cr>
+              desc: select first result
+              show_keys: true

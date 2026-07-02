@@ -88,7 +88,7 @@ reason (see `Worktrees.md`).
 The committed, shareable artifacts derived from it are `src/emojis.bin` and
 `website/emojis.js` (both produced by `make pack`) plus the loader code in
 `internal/emoji/emoji.go`. **Always run `make pack` after editing
-`data/emoji.json` or `spec/synonyms.json`/`spec/boxart.json`/`spec/braille.json`**,
+`data/emoji.json` or `spec/synonyms.yaml`/`spec/boxart.yaml`/`spec/braille.yaml`**,
 then commit the regenerated `src/emojis.bin` and `website/emojis.js` alongside the
 spec/source change.
 
@@ -96,7 +96,7 @@ spec/source change.
 
 ## 3. Synonyms vs. direct tags: pick the one with less ambiguity
 
-`spec/synonyms.json` expands a search term to alternate words tried against the
+`spec/synonyms.yaml` expands a search term to alternate words tried against the
 *same* target string (`matchTerm`: try the term itself, then any `synonyms[term]`
 entries, keep whichever scores higher *per entry*). This is the right tool for
 many-to-many word substitution (`"fast" <-> "quick"/"rapid"/"speedy"`), but it is
@@ -117,7 +117,7 @@ emoji":
   entry in `data/emoji.json`. A rare/unique word as a direct tag has no competing
   entries to lose a tie-break against, so it deterministically wins.
 
-**Rule of thumb**: use `spec/synonyms.json` when several existing words are true
+**Rule of thumb**: use `spec/synonyms.yaml` when several existing words are true
 synonyms of each other across many entries (adjectives like fast/quick/rapid).
 Use a direct tag on `data/emoji.json` when you want one specific arbitrary
 string (a brand name, a typo, a non-obvious nickname) to reliably surface one
@@ -189,7 +189,7 @@ browsing the TUI uses the category-filter mechanism (§6 below).
 `searchOptions()` parses `c:<word> <rest>` before the fuzzy-match phase:
 `filter_category = word`, `actual_query = rest`.  `findCategorySpec` resolves
 `filter_category` against `CategoriesSpec` (name, short, or any synonym from
-`spec/categories.json`).  The matched `CategorySpec` is then used to filter each
+`spec/categories.yaml`).  The matched `CategorySpec` is then used to filter each
 emoji by whether its search string contains one of the category's synonyms
 (`emojiMatchesCategory`).
 
@@ -217,7 +217,7 @@ food pizza     →  Food & Drink filter + "pizza"        →  🍕
 the first word is not a known category or synonym — it's a no-op in those cases, so existing
 query behaviour is unchanged.
 
-### Spec file: `spec/categories.json`
+### Spec file: `spec/categories.yaml`
 
 Maps friendly category names to their canonical short name and synonyms.  The
 short name must match the word injected by the packer (§5) so that
@@ -272,7 +272,7 @@ Classic case: `"cute cat"`.
 2. **Stem exclusion** (anti-synonym): the trailing-'e' fallback (`"race"` → `"rac"`)
    legitimately helps verb stems find gerunds but misfires on adjectives and common
    nouns ("cute" → "cut", "note" → "not", "care" → "car"). The `"stem_exclusions"`
-   list in `spec/synonyms.json` suppresses the fallback for listed terms without
+   list in `spec/synonyms.yaml` suppresses the fallback for listed terms without
    touching the positive-synonym or plural-fallback paths.
 
 Without the positive synonym fix the void term just has fewer false positives — the
@@ -291,7 +291,7 @@ plain-twin entries (distinguished by `︎` / U+FE0E in the emoji character).
 
 ### stem_exclusions: when to add a word
 
-Add a term to `spec/synonyms.json → "stem_exclusions"` when:
+Add a term to `spec/synonyms.yaml → "stem_exclusions"` when:
 - It ends in `e`, has length 4+, and the stem (drop `e`) is a real common word.
 - The expected search use-case for the term is as a *modifier* or *adjective*, not as
   a verb infinitive.
@@ -344,11 +344,11 @@ Whenever the header layout changes:
 
 ---
 
-## 11. Keyboard key symbols in `spec/boxart.json`
+## 11. Keyboard key symbols in `spec/boxart.yaml`
 
 ### What they are and why they don't get the box-art penalty
 
-`spec/boxart.json` is not limited to U+2500–U+259F box-drawing characters.  It also
+`spec/boxart.yaml` is not limited to U+2500–U+259F box-drawing characters.  It also
 holds keyboard-key glyphs in scattered Unicode ranges (Miscellaneous Technical,
 Combining Diacritical Marks for Symbols, …).  The `isBoxArt(emoji)` codepoint
 predicate only checks **U+2500–U+259F**.  Keyboard symbols like ↵ (U+21B5), ⭾
@@ -423,7 +423,7 @@ consecutive).
 ### Why `"arrow keys"` needs a `"key"` tag on the emoji entries
 
 `↕` (up down arrow) and `↔` (left right arrow) live in `data/emoji.json`, not in
-`spec/boxart.json`.  Their original tags had no `"key"` keyword.  The query
+`spec/boxart.yaml`.  Their original tags had no `"key"` keyword.  The query
 `"arrow keys"` is a two-term AND query; `"keys"` uses the plural-fallback to try
 `"key"`, which then fails to match any word in the search string — zero results.
 

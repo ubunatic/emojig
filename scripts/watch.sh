@@ -31,14 +31,20 @@ do
   if test "$cur" != "$last"
   then last="$cur"
        case "$base" in
-       (en.yaml|de.yaml|es.yaml|fr.yaml|it.yaml|nl.yaml|pl.yaml|pt.yaml|ru.yaml|tr.yaml|uk.yaml)
-           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/strings_${stem}.json"
+       (en.yaml)
+           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/.gen/strings.json"
+           then echo "INF: strings spec compiled"
+           else echo "ERR: failed to compile strings spec"; exit 1
+           fi
+           ;;
+       (de.yaml|es.yaml|fr.yaml|it.yaml|nl.yaml|pl.yaml|pt.yaml|ru.yaml|tr.yaml|uk.yaml)
+           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/.gen/strings_${stem}.json"
            then echo "INF: strings spec compiled"
            else echo "ERR: failed to compile strings spec"; exit 1
            fi
            ;;
        (art.yaml)
-           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/art.json" &&
+           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/.gen/art.json" &&
               _go run ./scripts/gen_about_art/ &&
               _go run ./scripts/gen_about_art/ print
            then echo "INF: art compiled and printed"
@@ -52,7 +58,7 @@ do
            fi
            ;;
        (*.yaml)
-           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/$stem.json"
+           if _go run ./scripts/convert_spec/ "$ED_FILE" "spec/.gen/$stem.json"
            then echo "INF: spec compiled"
            else echo "ERR: failed to compile spec"; exit 1
            fi

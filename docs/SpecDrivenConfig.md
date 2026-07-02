@@ -15,10 +15,10 @@ the single source of truth, shared between the Zig app (`emojig`) and the Go por
 (`mojigo`). Edit the JSON, rebuild, and **both** apps change.
 
 ```
-spec/layout.json   grid dimensions (TUI + GUI), widths, query length, overhead, animation defaults
-spec/theme.json    icons, palette color indices (xterm-256), terminal OSC colors
-spec/keys.json     logical-key-name -> action bindings
-spec/strings.json  search prompt, status bar, help screen text
+spec/layout.yaml   grid dimensions (TUI + GUI), widths, query length, overhead, animation defaults
+spec/theme.yaml    icons, palette color indices (xterm-256), terminal OSC colors
+spec/keys.yaml     logical-key-name -> action bindings
+spec/strings/en.yaml  search prompt, status bar, help screen text
 ```
 
 This document records how the Zig app consumes them and the non-obvious things we
@@ -30,29 +30,29 @@ learned wiring it up.
 
 | Want to change…                         | Edit                              | Key(s) |
 |-----------------------------------------|-----------------------------------|--------|
-| TUI/GUI grid size, content width        | `spec/layout.json`                | `tui`/`gui` `{cols,rows,width}` |
-| Vertical overhead, max query length, top padding | `spec/layout.json`                | `layout_overhead`, `max_query_len`, `top_padding` |
-| Exit-fade in TUI / GUI / both / neither | `spec/layout.json`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
-| Theme icons (🌙🌞🔆≡) + hamburger menu icon | `spec/theme.json`               | `icons` |
-| Grid/selection/search/margins/layout colors | `spec/theme.json`                 | `themes.{dark,light}.*` (256-color ints / hex) |
-| Color *names* (`grn`, `orange`, hex map)| `spec/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
-| Terminal bg/fg/border (OSC + GUI window)| `spec/theme.json`                 | `terminal_{bg,fg,border}` (hex) |
+| TUI/GUI grid size, content width        | `spec/layout.yaml`                | `tui`/`gui` `{cols,rows,width}` |
+| Vertical overhead, max query length, top padding | `spec/layout.yaml`                | `layout_overhead`, `max_query_len`, `top_padding` |
+| Exit-fade in TUI / GUI / both / neither | `spec/layout.yaml`                | `animation.exit_preview_tui`, `animation.exit_preview_gui` |
+| Theme icons (🌙🌞🔆≡) + hamburger menu icon | `spec/theme.yaml`               | `icons` |
+| Grid/selection/search/margins/layout colors | `spec/theme.yaml`                 | `themes.{dark,light}.*` (256-color ints / hex) |
+| Color *names* (`grn`, `orange`, hex map)| `spec/.gen/colors.json` (generated)    | regenerate with `make gen-colors`; see §9 |
+| Terminal bg/fg/border (OSC + GUI window)| `spec/theme.yaml`                 | `terminal_{bg,fg,border}` (hex) |
 | Raw byte sequence → logical key name    | `spec/input.yaml` (→ gen-input)   | `input.key_sequences[].{seq,name}` — add terminal variants here; see §4 |
 | Mouse encoding (masks, enable seqs)     | `spec/input.yaml`                 | `input.mouse.*` |
-| What a key does                         | `spec/keys.json`                  | `bindings.<logical-name>` |
-| Command start chars (`:` vs `/`)        | `spec/commands.json`              | `cmd_start_chars` |
-| Search prompt, status bar, help text, scrollbar char | `spec/strings.json`               | see §5, `scrollbar_char` |
-| Toolbar separator char (between theme/menu icons) | `spec/strings.json`             | `toolbar_sep` (must be exactly 1 display cell) |
-| Pane separator hline character                 | `spec/strings.json`               | `hline_char` (custom separator line glyph) |
-| Container/controls backgrounds, margins, separators, caps | `spec/theme.json` | `app_bg`, `view_bg`, `search_{left,right}_cap_{fg,bg}`, `search_sep_fg`, `hline_fg`, etc. (see §13) |
-| Search bar text area fg colors (cursor, text, placeholder) | `spec/theme.json` | `search_cursor_fg`, `search_text_fg`, `search_placeholder_fg` (see §13) |
-| Search bar per-segment sep char and colors | `spec/theme.json` + `spec/strings.json` | `search_theme_sep_{fg,bg}`, `theme_settings_sep_{fg,bg}`; chars `search_theme_sep`, `theme_settings_sep` (see §13) |
-| Search bar left/right cap character | `spec/strings.json` | `search_left_cap`, `search_right_cap` (default `▌`/`▐`, must be exactly 1 display cell) |
-| Named inline styles for templates       | `spec/styles.json`                | see §10 |
-| Warning/success text colors             | `spec/theme.json`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
-| Focus lost (startup/runtime) warnings   | `spec/strings.json`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
-| Category switcher bar layout            | `spec/categories.json`            | see §11 |
-| Category synonyms / search keywords     | `spec/categories.json`            | `categories[].synonyms` |
+| What a key does                         | `spec/keys.yaml`                  | `bindings.<logical-name>` |
+| Command start chars (`:` vs `/`)        | `spec/commands.yaml`              | `cmd_start_chars` |
+| Search prompt, status bar, help text, scrollbar char | `spec/strings/en.yaml`               | see §5, `scrollbar_char` |
+| Toolbar separator char (between theme/menu icons) | `spec/strings/en.yaml`             | `toolbar_sep` (must be exactly 1 display cell) |
+| Pane separator hline character                 | `spec/strings/en.yaml`               | `hline_char` (custom separator line glyph) |
+| Container/controls backgrounds, margins, separators, caps | `spec/theme.yaml` | `app_bg`, `view_bg`, `search_{left,right}_cap_{fg,bg}`, `search_sep_fg`, `hline_fg`, etc. (see §13) |
+| Search bar text area fg colors (cursor, text, placeholder) | `spec/theme.yaml` | `search_cursor_fg`, `search_text_fg`, `search_placeholder_fg` (see §13) |
+| Search bar per-segment sep char and colors | `spec/theme.yaml` + `spec/strings/en.yaml` | `search_theme_sep_{fg,bg}`, `theme_settings_sep_{fg,bg}`; chars `search_theme_sep`, `theme_settings_sep` (see §13) |
+| Search bar left/right cap character | `spec/strings/en.yaml` | `search_left_cap`, `search_right_cap` (default `▌`/`▐`, must be exactly 1 display cell) |
+| Named inline styles for templates       | `spec/styles.yaml`                | see §10 |
+| Warning/success text colors             | `spec/theme.yaml`                 | `themes.{dark,light}.{warning_fg,success_fg}` (256-color ints) |
+| Focus lost (startup/runtime) warnings   | `spec/strings/en.yaml`               | `focus_lost_startup_lines`, `focus_lost_runtime_lines` |
+| Category switcher bar layout            | `spec/categories.yaml`            | see §11 |
+| Category synonyms / search keywords     | `spec/categories.yaml`            | `categories[].synonyms` |
 
 The compile-time file `src/defaults.zig` is **not** a layout copy anymore — it only
 holds spec-independent upper bounds (`MAX_COLS`, `MAX_ROWS`, `MAX_CELLS`,
@@ -83,7 +83,7 @@ files are registered as **anonymous imports** in `build.zig` and embedded by imp
 name:
 
 ```zig
-exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
+exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.yaml") });
 // …then in src/spec.zig:
 const layout_json = @embedFile("spec_layout");
 ```
@@ -118,7 +118,7 @@ Raise the `MAX_*` bounds only if a spec grid would ever exceed them.
 
 ### User-configurable grid size (`cols`/`rows`)
 
-The `spec/layout.json` `cols`/`rows` are *defaults*. The end user overrides them
+The `spec/layout.yaml` `cols`/`rows` are *defaults*. The end user overrides them
 per machine via `~/.config/emojig/config` (`cols=`/`rows=`) or the **Settings**
 screen ("grid width (cols)" / "grid height (rows)" rows — Left/Right adjust ±1,
 Space/Enter steps coarsely). Both axes are clamped to `[MIN_COLS, MAX_COLS]` /
@@ -168,7 +168,7 @@ exe.root_module.addAnonymousImport("spec_input_generated",
 `spec/input.yaml` also carries the mouse encoding spec (`mouse.enable_motion`,
 `mouse.btn_button_mask`, `mouse.btn_motion_flag`, …) and tokenizer rules.
 
-### Layer 2 — logical name → action (`spec/keys.json`)
+### Layer 2 — logical name → action (`spec/keys.yaml`)
 
 `keys.json` maps logical names to semantic actions (`quit`, `select`, `delete`,
 `cycle_theme`, `nav_*`). `g_spec.actionFor(name)` returns `""` for unbound keys.
@@ -224,7 +224,7 @@ The strings for focus warning screens are also declaratively configured:
 
 ## 6. Per-mode animation defaults
 
-The `spec/layout.json` `animation` block controls whether the block-shade
+The `spec/layout.yaml` `animation` block controls whether the block-shade
 exit-fade animation plays, independently for TUI and GUI:
 
 ```json
@@ -258,7 +258,7 @@ exit-fade animation plays, independently for TUI and GUI:
 > The GUI launcher always explicitly sets `EMOJIG_EXIT_PREVIEW` now, even when
 > the spec value is `true`. This means a user's ambient `EMOJIG_EXIT_PREVIEW`
 > env var will be **shadowed** for GUI launches unless they also update the spec.
-> For a per-user override, editing `spec/layout.json` and rebuilding is the
+> For a per-user override, editing `spec/layout.yaml` and rebuilding is the
 > correct mechanism; `EMOJIG_EXIT_PREVIEW` remains useful for quick one-off
 > overrides in TUI mode.
 
@@ -277,7 +277,7 @@ tmux capture-pane -t emj -p          # see the 🔍 prompt, 6×4 grid, status ba
 ```
 
 **JSON-edit proof** (the real "is the spec authoritative?" test): edit
-`spec/layout.json` (`cols` 6→4, `rows` 4→3), `zig build`, and the grid renders 4×3 —
+`spec/layout.yaml` (`cols` 6→4, `rows` 4→3), `zig build`, and the grid renders 4×3 —
 no code change. Cross-check `mojigo`: it picks up the same edit because it reads the
 same files.
 
@@ -295,11 +295,11 @@ To provide a clear visual indication that the floating GUI window is inactive, t
 
 ---
 
-## 9. Named colors (`spec/colors.json`)
+## 9. Named colors (`spec/.gen/colors.json`)
 
 Any color value in a spec — `multi_select_bg` in `strings.json`, the `bg=`/`fg=`
 attributes in `styles.json`, etc. — accepts a **name**, not just a 0-255 palette
-index. The names are documented in `spec/colors.json`, one entry per xterm slot:
+index. The names are documented in `spec/.gen/colors.json`, one entry per xterm slot:
 
 ```json
 { "i": 208, "name": "orange", "short": "org", "hex": "#ff8700", "desc": "orange",
@@ -319,7 +319,7 @@ index. The names are documented in `spec/colors.json`, one entry per xterm slot:
 
 ### Generation
 
-`spec/colors.json` is **generated**, never hand-edited — run `make gen-colors`
+`spec/.gen/colors.json` is **generated**, never hand-edited — run `make gen-colors`
 (`go run ./scripts/gen_colors/`, stdlib-only). The generator owns the system-color
 table, the popular-name overrides, the cube/gray math (hex), and an HSV-based
 `desc` classifier. To rename a color or add a popular alias, edit
@@ -349,9 +349,9 @@ and in unit tests that never load it (it just returns `null` → numeric fallbac
 > never per emoji cell). The Go `mojigo` port ignores `colors.json` (unknown spec
 > file); the name system is a Zig-app feature.
 
-## 10. Named styles and the `$fmtvars` template system (`spec/styles.json`)
+## 10. Named styles and the `$fmtvars` template system (`spec/styles.yaml`)
 
-`spec/styles.json` defines **named SGR style aliases** used by any string field that
+`spec/styles.yaml` defines **named SGR style aliases** used by any string field that
 accepts `$fmtvars` syntax (status-bar templates, switcher patterns, etc.):
 
 ```json
@@ -390,18 +390,18 @@ Attrs are comma-separated tokens resolved by `color.buildSgr()`:
 | `fg=<color>` | foreground — color name, short, or 0-255 index |
 | `bg=<color>` | background — same |
 
-Color names resolve via `spec/colors.json` (§9): `fg=white`, `fg=24`, `fg=grn`,
+Color names resolve via `spec/.gen/colors.json` (§9): `fg=white`, `fg=24`, `fg=grn`,
 `fg=orange` all work.
 
 ### Special value `"none"` (switcher patterns only)
 
-In `spec/categories.json` `select_pattern`/`hl_pattern`, the value `"none"` means
+In `spec/categories.yaml` `select_pattern`/`hl_pattern`, the value `"none"` means
 *use `status_bg` — no highlight at all*. Useful when visual selection is conveyed
 by bracket chars (`select_left`/`select_right`) rather than a bg color change.
 
 ---
 
-## 11. Category switcher bar (`spec/categories.json`)
+## 11. Category switcher bar (`spec/categories.yaml`)
 
 The switcher is a single row rendered below the emoji grid (visible in `--gui` mode
 by default; toggle with `--switcher` / `EMOJIG_SWITCHER`). Its layout and appearance
@@ -475,7 +475,7 @@ hovered slot highlights the whole bracket group in `palette.selection_bg`.
 
 ## 13. Container/Controls Palette Fields
 
-All layout cell colors are semantic theme variables in `spec/theme.json`, resolved in `buildPalette` (`src/spec.zig`). The key fallback rule: **`null` = use `cap_fallback_idx`** (= `app_bg` if set, else the nearest xterm-256 index to the effective theme's `terminal_bg2`). This is the "punch-through" semantics — a null color lets the explicit canvas background show through the search bar without exposing the host terminal's actual background.
+All layout cell colors are semantic theme variables in `spec/theme.yaml`, resolved in `buildPalette` (`src/spec.zig`). The key fallback rule: **`null` = use `cap_fallback_idx`** (= `app_bg` if set, else the nearest xterm-256 index to the effective theme's `terminal_bg2`). This is the "punch-through" semantics — a null color lets the explicit canvas background show through the search bar without exposing the host terminal's actual background.
 
 ### Layout background fields
 
@@ -493,7 +493,7 @@ All layout cell colors are semantic theme variables in `spec/theme.json`, resolv
 
 ### Search bar cap fields
 
-Caps (`▌` left, `▐` right) are the half-block characters at the edges of the search bar. Their glyph comes from `spec/strings.json` (`search_left_cap` / `search_right_cap`, default `▌`/`▐`, each must be exactly 1 display cell); the color from `spec/theme.json`:
+Caps (`▌` left, `▐` right) are the half-block characters at the edges of the search bar. Their glyph comes from `spec/strings/en.yaml` (`search_left_cap` / `search_right_cap`, default `▌`/`▐`, each must be exactly 1 display cell); the color from `spec/theme.yaml`:
 
 | Field | Fallback | Effect |
 |-------|----------|--------|
@@ -554,15 +554,15 @@ src/host.zig            spawnGuiWindow takes font_size: usize; --override=font=m
 src/defaults.zig        comptime MAX_* bounds only
 src/term.zig            Palette fields: search_{left,right}_cap_seq (color-only, no glyph); search_theme_sep;
                         theme_settings_sep; search_{cursor,text,placeholder}_fg; toolbar_sep_fg; hline
-scripts/gen_colors/     generates spec/colors.json (make gen-colors); see §9
-spec/colors.json        generated full xterm-256 palette with name/short/hex/desc/alt
-spec/categories.json    category switcher bar layout + category synonyms; see §11
-spec/styles.json        named SGR style aliases for $fmtvars templates; see §10
-spec/layout.json        animation.{exit_preview_tui,exit_preview_gui}
-spec/theme.json         terminal_border, warning_fg, success_fg; icons.menu; terminal_bg2 (cap_fallback source);
+scripts/gen_colors/     generates spec/.gen/colors.json (make gen-colors); see §9
+spec/.gen/colors.json        generated full xterm-256 palette with name/short/hex/desc/alt
+spec/categories.yaml    category switcher bar layout + category synonyms; see §11
+spec/styles.yaml        named SGR style aliases for $fmtvars templates; see §10
+spec/layout.yaml        animation.{exit_preview_tui,exit_preview_gui}
+spec/theme.yaml         terminal_border, warning_fg, success_fg; icons.menu; terminal_bg2 (cap_fallback source);
                         search_{left,right}_cap_{fg,bg}; search_{cursor,text,placeholder}_fg;
                         search_theme_sep_{fg,bg}; theme_settings_sep_{fg,bg}; search_sep_fg
-spec/strings.json       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint); toolbar_sep;
+spec/strings/en.yaml       status_*_wide, focus_lost_*_lines, help_lines_more, on_grid_wide (Tab:cat hint); toolbar_sep;
                         search_left_cap, search_right_cap (cap glyphs, 1 cell each);
                         search_theme_sep, theme_settings_sep (sep glyphs, fallback to toolbar_sep)
 internal/spec/spec.go   Go structs mirror theme and strings fields

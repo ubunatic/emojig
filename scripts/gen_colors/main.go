@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Uwe Jugel
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Generates spec/colors.json — the full xterm-256 palette documented with a
+// Generates spec/.gen/colors.json — the full xterm-256 palette documented with a
 // long name, a 3-letter short name, a hex value, and a human description for
 // every index 0-255. The 16 system colors and a curated set of popular colors
 // (orange, teal, navy, …) get real names + shorts; the rest get systematic
 // rgbRGB / grayNN names. Both the long name and the short are accepted wherever
-// the picker resolves a color (e.g. spec/strings.json multi_select_bg).
+// the picker resolves a color (e.g. spec/strings/en.yaml multi_select_bg).
 // Run: go run ./scripts/gen_colors/
 package main
 
@@ -160,10 +160,37 @@ func main() {
 	}
 	sort.Strings(uniqueEnums)
 
+	// Palette fields that accept a color value (index, name, hex, or null).
+	// Must match src/spec.zig PaletteSpec — extend both together.
+	paletteColorFields := []string{
+		"grid_bg", "grid_fg", "selection_bg", "selection_fg",
+		"search_bg", "search_fg", "search_shade_fg",
+		"info_bg", "info_fg", "status_bg", "status_fg", "status_shade_fg",
+		"categories_bg", "border_bg", "border_shade_fg",
+		"app_bg", "app_topline_bg", "emoji_pane_bg", "scrollbar_rail_bg", "view_bg",
+		"search_cursor_fg", "search_text_fg", "search_placeholder_fg",
+		"search_left_cap_fg", "search_left_cap_bg",
+		"search_right_cap_fg", "search_right_cap_bg",
+		"search_sep_fg",
+		"search_theme_sep_fg", "search_theme_sep_bg",
+		"theme_settings_sep_fg", "theme_settings_sep_bg",
+		"hline_fg", "warning_fg", "success_fg",
+	}
+	paletteProps := map[string]any{
+		"terminal_bg2":    map[string]any{"type": "string"},
+		"terminal_bg":     map[string]any{"type": "string"},
+		"terminal_fg":     map[string]any{"type": "string"},
+		"terminal_border": map[string]any{"type": "string"},
+	}
+	for _, f := range paletteColorFields {
+		paletteProps[f] = map[string]any{"$ref": "#/definitions/color"}
+	}
+
 	themeSchema := map[string]any{
 		"$schema": "http://json-schema.org/draft-07/schema#",
 		"type":    "object",
 		"properties": map[string]any{
+			"$schema":     map[string]any{"type": "string"},
 			"description": map[string]any{"type": "string"},
 			"notes":       map[string]any{"type": "object"},
 			"icons": map[string]any{
@@ -172,9 +199,34 @@ func main() {
 					"dark":   map[string]any{"type": "string"},
 					"light":  map[string]any{"type": "string"},
 					"system": map[string]any{"type": "string"},
+					"menu":   map[string]any{"type": "string"},
 				},
 				"additionalProperties": false,
-				"required":             []string{"dark", "light", "system"},
+				"required":             []string{"dark", "light", "system", "menu"},
+			},
+			"csd": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"title_bold":                map[string]any{"type": "boolean"},
+					"title_fg_on_dark":          map[string]any{"type": "string"},
+					"title_fg_on_light":         map[string]any{"type": "string"},
+					"title_luminance_threshold": map[string]any{"type": "integer", "minimum": 0, "maximum": 255},
+					"size_fallback":             map[string]any{"type": "integer", "minimum": 0},
+					"size_pt_factor":            map[string]any{"type": "integer", "minimum": 1},
+				},
+				"additionalProperties": false,
+				"required": []string{
+					"title_bold", "title_fg_on_dark", "title_fg_on_light",
+					"title_luminance_threshold", "size_fallback", "size_pt_factor",
+				},
+			},
+			"detect": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"osc_luma_threshold": map[string]any{"type": "integer", "minimum": 0, "maximum": 65535},
+				},
+				"additionalProperties": false,
+				"required":             []string{"osc_luma_threshold"},
 			},
 			"themes": map[string]any{
 				"type": "object",
@@ -187,7 +239,7 @@ func main() {
 			},
 		},
 		"additionalProperties": false,
-		"required":             []string{"icons", "themes"},
+		"required":             []string{"icons", "themes", "csd", "detect"},
 		"definitions": map[string]any{
 			"color": map[string]any{
 				"anyOf": []any{
@@ -204,29 +256,8 @@ func main() {
 				},
 			},
 			"palette": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"grid_bg":         map[string]any{"$ref": "#/definitions/color"},
-					"grid_fg":         map[string]any{"$ref": "#/definitions/color"},
-					"selection_bg":    map[string]any{"$ref": "#/definitions/color"},
-					"selection_fg":    map[string]any{"$ref": "#/definitions/color"},
-					"search_bg":       map[string]any{"$ref": "#/definitions/color"},
-					"search_fg":       map[string]any{"$ref": "#/definitions/color"},
-					"search_shade_fg": map[string]any{"$ref": "#/definitions/color"},
-					"info_bg":         map[string]any{"$ref": "#/definitions/color"},
-					"info_fg":         map[string]any{"$ref": "#/definitions/color"},
-					"status_bg":       map[string]any{"$ref": "#/definitions/color"},
-					"status_fg":       map[string]any{"$ref": "#/definitions/color"},
-					"status_shade_fg": map[string]any{"$ref": "#/definitions/color"},
-					"border_bg":       map[string]any{"$ref": "#/definitions/color"},
-					"border_shade_fg": map[string]any{"$ref": "#/definitions/color"},
-					"terminal_bg2":    map[string]any{"type": "string"},
-					"terminal_bg":     map[string]any{"type": "string"},
-					"terminal_fg":     map[string]any{"type": "string"},
-					"terminal_border": map[string]any{"type": "string"},
-					"warning_fg":      map[string]any{"$ref": "#/definitions/color"},
-					"success_fg":      map[string]any{"$ref": "#/definitions/color"},
-				},
+				"type":                 "object",
+				"properties":           paletteProps,
 				"additionalProperties": false,
 			},
 		},
@@ -331,14 +362,14 @@ func main() {
 		}
 	}
 
-	writeSchema("spec/theme.schema.json", themeSchema)
-	writeSchema("spec/art.schema.json", artSchema)
+	writeSchema("spec/.schema/theme.schema.json", themeSchema)
+	writeSchema("spec/.schema/art.schema.json", artSchema)
 
 	out := map[string]any{
 		"description": "Full xterm-256 palette. Each entry: i (index 0-255), " +
 			"name (long), short (3-letter), hex, desc (human colour family). " +
 			"Both name and short resolve anywhere the picker takes a colour " +
-			"(e.g. multi_select_bg in spec/strings.json) — else use the numeric " +
+			"(e.g. multi_select_bg in spec/strings/en.yaml) — else use the numeric " +
 			"index. System colours (0-15) and popular colours get friendly names; " +
 			"the rest use systematic rgbRGB / grayN names (cube level digits 0-5). " +
 			"Generated by scripts/gen_colors — run `make gen-colors` to regenerate.",

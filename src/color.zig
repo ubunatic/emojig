@@ -109,7 +109,7 @@ pub fn appendIndexedColor(codes: []u16, n: *usize, idx: u16, normal: u16, bright
 }
 
 /// Resolve a color spec value to a 0-255 palette index: a name from
-/// spec/colors.json (long/short/alias) or a literal numeric index. Returns null
+/// spec/.gen/colors.json (long/short/alias) or a literal numeric index. Returns null
 /// for anything unrecognised. The 8 basic ANSI names are handled separately by
 /// the callers (they prefer the compact 3X/4X form), so they never reach here.
 pub fn colorNameToIndex(val: []const u8) ?u16 {
@@ -245,7 +245,7 @@ pub fn detectSystemTheme(io: anytype, stdin_fd: std.posix.fd_t, stdout_fd: std.p
     return term.detectSystemTheme(io, stdin_fd, stdout_fd, raw);
 }
 
-test "color names from spec/colors.json resolve to palette indices" {
+test "color names from spec/.gen/colors.json resolve to palette indices" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const spec = try spec_mod.load(arena.allocator(), null);

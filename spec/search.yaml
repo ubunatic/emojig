@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+description: >-
+  Fuzzy-search ranking weights for the emojig search engine. Consumed by the
+  Zig app (src/search.zig, src/root.zig) and mirrored into the website
+  simulator via scripts/gen_web_spec. All weights are integers; the final
+  score of a term match is the sum of per-character scores minus penalties.
+  Read docs/SearchEngine.md before tuning: the ranking tests in
+  src/ranking_test.zig pin the relative order of hundreds of queries, so any
+  change here must keep `zig build test` green.
+
+scoring:
+  # Base score for every matched character of the search term.
+  char_match: 10
+  # Extra score when the matched character sits at the start of a word
+  # (position 0 or after a space). This is what makes "fir" find "fire"
+  # before "butterfly".
+  word_start_bonus: 40
+  # Compounding bonus for consecutive matched characters: the N-th character
+  # of an unbroken run adds consecutive_bonus × (N-1). Rewards substring-like
+  # matches over scattered subsequences.
+  consecutive_bonus: 20
+  # Subtracted for every target character skipped between matches. Keeps
+  # sparse subsequence matches below tight ones.
+  gap_penalty: 1
+  # Multiplier for the match start offset: score -= late_start_penalty ×
+  # start_index. Discourages matches that begin deep inside the target.
+  late_start_penalty: 1
+  # Multiplier for the target length tie-breaker: score -= length_penalty ×
+  # target_length. Prefers shorter, more precise descriptions on equal
+  # matches.
+  length_penalty: 1
+  # One-shot bonus when the whole term matches a complete word exactly
+  # (bounded by spaces or string edges). Lifts "cat" the animal above
+  # "cathedral".
+  exact_word_bonus: 100
+  # Subtracted once when a term only matches through a morphological
+  # fallback (plural strip "cars"→"car", "-ing" stem "racing"→"race",
+  # trailing-e strip "race"→"rac", synonym expansion is unaffected). Keeps
+  # exact-form matches ahead of derived ones.
+  fallback_penalty: 5
+
+penalties:
+  # Box-drawing / block-element glyphs (spec/boxart.yaml, U+2500–U+259F) drop
+  # by this much in general searches so borders rank below genuine emoji
+  # matches. The b: prefix filter shows them unpenalized on their own.
+  box_art: 150
+  # Braille patterns (spec/braille.yaml, U+2800–U+28FF) drop by this much in
+  # general searches. The br: prefix filter shows them unpenalized.
+  braille: 150

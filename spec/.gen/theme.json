@@ -1,5 +1,5 @@
 {
-  "$schema": "./theme.schema.json",
+  "$schema": "./.schema/theme.schema.json",
   "description": "Language-neutral theme/palette spec. Colors are stored as semantic values (xterm 256-color indices, or hex for OSC terminal colors) so any renderer can emit its own escape sequences. Mirrors src/term.zig.",
   "notes": {
     "0": "Black",
@@ -42,6 +42,9 @@
     "title_luminance_threshold": 140,
     "size_fallback": 26,
     "size_pt_factor": 25
+  },
+  "detect": {
+    "osc_luma_threshold": 32767
   },
   "themes": {
     "dark": {

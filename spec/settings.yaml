@@ -1,13 +1,30 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-description: Interactive settings configuration options for the picker.
+description: >-
+  Interactive settings configuration options for the picker. Each option's
+  `help` text is shown in the context-sensitive help modal (opened with
+  ?/h/F1 on the selected settings row). Keep help lines short — the modal is
+  rendered inside the picker window and long lines are truncated. Rows are
+  rendered in option order; the Zig app resolves help by row index into this
+  same options list, so order here is the single source of truth.
 title: ⚙️ emojig settings
+help_fallback: |-
+  Settings
+
+  ↑↓ select  ←→ change
+  ? help   Esc back
 options:
     - id: shell_integration
       type: boolean
       label: shell integration
       default: "false"
+      help: |-
+        Shell integration
+
+        Adds an `emojig` shell
+        function. Enable, then
+        `source` your shell rc.
     - id: shell_key_binding
       type: choice
       label: shell key binding
@@ -18,10 +35,23 @@ options:
         - C-g
         - custom
       default: C-o
+      help: |-
+        Shell key binding
+
+        Choose a keybinding.
+        Override by selecting 5
+        or edit shell_key_binding
+        in ~/.config/emojig/config
     - id: show_all_categories
       type: boolean
       label: show all categories
       default: "true"
+      help: |-
+        Show all categories
+
+        on/off — list every
+        category filter, or only
+        matching/used ones.
     - id: ambiguous_chars
       type: choice
       label: ambiguous chars
@@ -29,6 +59,12 @@ options:
         - wide
         - narrow
       default: narrow
+      help: |-
+        Ambiguous chars
+
+        wide | narrow
+        Column width of chars
+        like → ≈ ★.
     - id: theme
       type: choice
       label: theme
@@ -37,6 +73,12 @@ options:
         - light
         - system
       default: dark
+      help: |-
+        Theme
+
+        dark | light | system
+        TUI follows terminal;
+        GUI follows GNOME.
     - id: scrollbar_style
       type: choice
       label: scrollbar
@@ -44,18 +86,42 @@ options:
         - expand
         - bar
       default: expand
+      help: |-
+        Scrollbar
+
+        expand | bar
+        Proportional thumb, or
+        a fixed single cell.
     - id: cols
       type: integer
       label: grid width (cols)
       default: "6"
+      help: |-
+        Grid width (cols)
+
+        5–16 columns. Type a
+        number or use ‹ ›.
+        Applies on next launch.
     - id: rows
       type: integer
       label: grid height (rows)
       default: "4"
+      help: |-
+        Grid height (rows)
+
+        3–16 rows. Type a
+        number or use ‹ ›.
+        Applies on next launch.
     - id: compact
       type: boolean
       label: compact grid
       default: "false"
+      help: |-
+        Compact grid
+
+        on/off — 3-column cells
+        instead of 4-columns.
+        Applies on next launch.
     - id: app_bg
       type: choice
       label: app background
@@ -65,6 +131,12 @@ options:
         - navy
         - slate
       default: default
+      help: |-
+        App background
+
+        dark/light preset for
+        the foot terminal bg.
+        Applies on next launch.
     - id: title_bg
       type: choice
       label: title bar color
@@ -74,11 +146,29 @@ options:
         - accent
         - dark
       default: raised
+      help: |-
+        Title bar color
+
+        CSD title bar preset.
+        (--decorated mode only)
+        Applies on next launch.
     - id: decorated
       type: boolean
       label: decorated window
       default: "false"
+      help: |-
+        Decorated window
+
+        Show title bar when
+        launching --gui.
+        Applies on next launch.
     - id: clear_mru
       type: action
       label: recent (MRU) history
       default: clear
+      help: |-
+        Clear MRU history
+
+        Enter/Space clears the
+        recently-used list.
+        Cannot be undone.

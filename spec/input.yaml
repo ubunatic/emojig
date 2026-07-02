@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# yaml-language-server: $schema=./input.schema.json
+# yaml-language-server: $schema=./.schema/input.schema.json
 # Emojig input spec — terminal input state machine.
 # This is the source format for key aliases, signal events, mouse encoding,
 # and tokenizer rules used by the input layer.
-$schema: "./input.schema.json"
+$schema: "./.schema/input.schema.json"
 
 input:
   key_aliases:

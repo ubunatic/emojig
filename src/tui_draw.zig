@@ -94,7 +94,7 @@ pub fn ringBell(armed: bool, suppressed: *bool) void {
     suppressed.* = true;
 }
 
-/// Apply a "nav_*" action (from spec/keys.json) to the current grid selection,
+/// Apply a "nav_*" action (from spec/keys.yaml) to the current grid selection,
 /// returning the new index. Wrapping mirrors the historical arrow-key behavior.
 pub fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
     if (count == 0) return sel_in;
@@ -281,7 +281,7 @@ pub fn truncateAnsi(buf: []u8, text: []const u8, max_width: usize) []const u8 {
     return buf[0..out];
 }
 
-/// Render a status-bar template from spec/strings.json, substituting the live
+/// Render a status-bar template from spec/strings/en.yaml, substituting the live
 /// match count for a "{count}" placeholder. Templates without the placeholder
 /// (the help hints) are returned unchanged, avoiding a copy.
 pub fn formatStatus(buf: []u8, tmpl: []const u8, total: usize) ![]const u8 {

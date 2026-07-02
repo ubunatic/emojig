@@ -3,11 +3,22 @@
 
 const std = @import("std");
 
-pub const MAX_MRU = 24;
+/// Compile-time **upper bound** for the MRU buffers (same pattern as the
+/// spec-independent bounds in src/defaults.zig — only large *enough*, never
+/// exact). The effective list size is `mru_limit`, set from spec/layout.yaml
+/// `mru_size` at startup and clamped to this bound.
+pub const MAX_MRU: usize = 64;
 
 var mru_buf: [MAX_MRU][32]u8 = undefined;
 var mru_lens: [MAX_MRU]u8 = undefined;
 var mru_count: usize = 0;
+var mru_limit: usize = MAX_MRU;
+
+/// Apply the spec/layout.yaml `mru_size` value, clamped to [1, MAX_MRU].
+pub fn setLimit(n: usize) void {
+    mru_limit = @max(1, @min(n, MAX_MRU));
+    if (mru_count > mru_limit) mru_count = mru_limit;
+}
 
 pub fn getCount() usize {
     return mru_count;
@@ -39,7 +50,7 @@ pub fn load() void {
     pos += 1;
 
     mru_count = 0;
-    while (pos < content.len and mru_count < MAX_MRU) {
+    while (pos < content.len and mru_count < mru_limit) {
         while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t' or
             content[pos] == '\r' or content[pos] == '\n' or content[pos] == ','))
         {
@@ -99,7 +110,7 @@ pub fn save(emoji: []const u8) void {
     new_count = 1;
 
     var i: usize = 0;
-    while (i < mru_count and new_count < MAX_MRU) : (i += 1) {
+    while (i < mru_count and new_count < mru_limit) : (i += 1) {
         const existing = mru_buf[i][0..mru_lens[i]];
         if (std.mem.eql(u8, existing, emoji)) continue;
         @memcpy(new_buf[new_count][0..mru_lens[i]], existing);
@@ -137,7 +148,8 @@ pub fn save(emoji: []const u8) void {
     const wr_flags = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
     const fd = std.posix.openat(std.posix.AT.FDCWD, tmp_path_buf[0..tmp_path.len :0], wr_flags, 0o644) catch return;
 
-    var json_buf: [2048]u8 = undefined;
+    // Worst case per entry: 31 emoji bytes + 2 quotes + 1 comma; +2 brackets.
+    var json_buf: [2 + MAX_MRU * 34]u8 = undefined;
     var jpos: usize = 0;
     json_buf[jpos] = '[';
     jpos += 1;

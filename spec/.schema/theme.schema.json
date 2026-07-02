@@ -427,25 +427,22 @@
     "palette": {
       "additionalProperties": false,
       "properties": {
-        "border_bg": {
-          "$ref": "#/definitions/color"
-        },
-        "border_shade_fg": {
-          "$ref": "#/definitions/color"
-        },
         "app_bg": {
           "$ref": "#/definitions/color"
         },
         "app_topline_bg": {
           "$ref": "#/definitions/color"
         },
+        "border_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "border_shade_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "categories_bg": {
+          "$ref": "#/definitions/color"
+        },
         "emoji_pane_bg": {
-          "$ref": "#/definitions/color"
-        },
-        "scrollbar_rail_bg": {
-          "$ref": "#/definitions/color"
-        },
-        "view_bg": {
           "$ref": "#/definitions/color"
         },
         "grid_bg": {
@@ -454,22 +451,37 @@
         "grid_fg": {
           "$ref": "#/definitions/color"
         },
+        "hline_fg": {
+          "$ref": "#/definitions/color"
+        },
         "info_bg": {
           "$ref": "#/definitions/color"
         },
         "info_fg": {
           "$ref": "#/definitions/color"
         },
+        "scrollbar_rail_bg": {
+          "$ref": "#/definitions/color"
+        },
         "search_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_cursor_fg": {
           "$ref": "#/definitions/color"
         },
         "search_fg": {
           "$ref": "#/definitions/color"
         },
-        "search_shade_fg": {
+        "search_left_cap_bg": {
           "$ref": "#/definitions/color"
         },
         "search_left_cap_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_placeholder_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_right_cap_bg": {
           "$ref": "#/definitions/color"
         },
         "search_right_cap_fg": {
@@ -478,7 +490,16 @@
         "search_sep_fg": {
           "$ref": "#/definitions/color"
         },
-        "hline_fg": {
+        "search_shade_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_text_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_theme_sep_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "search_theme_sep_fg": {
           "$ref": "#/definitions/color"
         },
         "selection_bg": {
@@ -511,6 +532,15 @@
         "terminal_fg": {
           "type": "string"
         },
+        "theme_settings_sep_bg": {
+          "$ref": "#/definitions/color"
+        },
+        "theme_settings_sep_fg": {
+          "$ref": "#/definitions/color"
+        },
+        "view_bg": {
+          "$ref": "#/definitions/color"
+        },
         "warning_fg": {
           "$ref": "#/definitions/color"
         }
@@ -519,8 +549,61 @@
     }
   },
   "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "csd": {
+      "additionalProperties": false,
+      "properties": {
+        "size_fallback": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "size_pt_factor": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "title_bold": {
+          "type": "boolean"
+        },
+        "title_fg_on_dark": {
+          "type": "string"
+        },
+        "title_fg_on_light": {
+          "type": "string"
+        },
+        "title_luminance_threshold": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "title_bold",
+        "title_fg_on_dark",
+        "title_fg_on_light",
+        "title_luminance_threshold",
+        "size_fallback",
+        "size_pt_factor"
+      ],
+      "type": "object"
+    },
     "description": {
       "type": "string"
+    },
+    "detect": {
+      "additionalProperties": false,
+      "properties": {
+        "osc_luma_threshold": {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "osc_luma_threshold"
+      ],
+      "type": "object"
     },
     "icons": {
       "additionalProperties": false,
@@ -531,6 +614,9 @@
         "light": {
           "type": "string"
         },
+        "menu": {
+          "type": "string"
+        },
         "system": {
           "type": "string"
         }
@@ -538,7 +624,8 @@
       "required": [
         "dark",
         "light",
-        "system"
+        "system",
+        "menu"
       ],
       "type": "object"
     },
@@ -564,7 +651,9 @@
   },
   "required": [
     "icons",
-    "themes"
+    "themes",
+    "csd",
+    "detect"
   ],
   "type": "object"
 }

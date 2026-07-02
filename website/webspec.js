@@ -3,14 +3,15 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-// generated from spec/*.json by scripts/gen_web_spec; do not edit by hand
+// generated from the spec YAML sources (via spec/.gen/*.json) by scripts/gen_web_spec; do not edit by hand
 const EMOJIG_WEB_SPEC = {
   "generated_from": [
-    "spec/layout.json",
-    "spec/strings.json",
-    "spec/categories.json",
-    "spec/boxart.json",
-    "spec/braille.json"
+    "spec/layout.yaml",
+    "spec/strings/en.yaml",
+    "spec/categories.yaml",
+    "spec/boxart.yaml",
+    "spec/braille.yaml",
+    "spec/search.yaml"
   ],
   "layout": {
     "cols": 8,
@@ -439,5 +440,15 @@ const EMOJIG_WEB_SPEC = {
       "penalty": 150,
       "count": 256
     }
+  },
+  "scoring": {
+    "char_match": 10,
+    "word_start_bonus": 40,
+    "consecutive_bonus": 20,
+    "gap_penalty": 1,
+    "late_start_penalty": 1,
+    "length_penalty": 1,
+    "exact_word_bonus": 100,
+    "fallback_penalty": 5
   }
 };

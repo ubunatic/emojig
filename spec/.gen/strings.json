@@ -45,6 +45,8 @@
   "hline_char": " ",
   "search_placeholder": "search…",
   "search_prompt": " 🔍 ",
+  "gui_title": "😀 Emojig",
+  "mru_cleared": "Recent history cleared.",
   "status": {
     "default": {
       "on_view": " ?:help  ↕↔|↵|Esc",

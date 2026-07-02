@@ -31,10 +31,25 @@ func TestTUIRenderedLineWidthsAreEqual(t *testing.T) {
 		t.Fatal("query redraw produced no bytes")
 	}
 
+	// Under load the collection window can cut the stream mid-row, which
+	// reads as a bogus width mismatch. Retry with any late bytes before
+	// declaring failure so only a *stable* bad frame fails the test.
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		screen := NewTerminalState(80, 24)
+		screen.Parse(rawBytes)
+		lastErr = screen.ValidatePaintedRowWidths(34)
+		if lastErr == nil {
+			return
+		}
+		more := collectScreenBytes(chunksChan, 200*time.Millisecond)
+		if len(more) == 0 {
+			break
+		}
+		rawBytes = append(rawBytes, more...)
+	}
 	screen := NewTerminalState(80, 24)
 	screen.Parse(rawBytes)
-	if err := screen.ValidatePaintedRowWidths(34); err != nil {
-		screen.PrintScreen()
-		t.Fatal(err)
-	}
+	screen.PrintScreen()
+	t.Fatal(lastErr)
 }

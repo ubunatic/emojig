@@ -25,8 +25,8 @@
 - Use this concept only on demand or when you see a need for it.
   Example: We are changing strings and layout a lot, and the user wants to have finegrained control.
 - Add `spec/<feature>.json` to drive compile-time features:
-  - `spec/strings.json` defines labels, titles, messages
-  - `spec/layout.json` defines app layout, ordering, and more
+  - `spec/strings/en.yaml` defines labels, titles, messages
+  - `spec/layout.yaml` defines app layout, ordering, and more
   - `spec/screen-help.json` home screen content
   - `spec/screen-home.json` help screen content
   - add more as needed and create structs for parsing

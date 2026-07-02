@@ -4,13 +4,13 @@
 //! Compile-time **upper bounds** for the emojig TUI/GUI stack buffers.
 //!
 //! The actual grid dimensions, widths, and query length now live in the
-//! declarative spec (`spec/layout.json`) and are loaded at runtime by
+//! declarative spec (`spec/layout.yaml`) and are loaded at runtime by
 //! src/spec.zig. Only the buffer-sizing bounds need to be known at compile
 //! time, and those only need to be large *enough*, not exact — so they are
 //! deliberately spec-independent. Code that sizes a stack array uses these
 //! `MAX_*` constants and asserts the runtime layout fits (see main.zig).
 //!
-//! To change the default layout, edit `spec/layout.json`. Only raise the
+//! To change the default layout, edit `spec/layout.yaml`. Only raise the
 //! bounds below if a spec grid would ever exceed them.
 
 /// Largest grid column count any spec layout may use.
@@ -35,3 +35,7 @@ pub const MAX_RESULTS: usize = 5 * MAX_CELLS;
 
 /// Largest search query length any spec layout may use (sizes query buffers).
 pub const MAX_QUERY_LEN: usize = 63;
+
+// Note: the MRU buffer bound lives in src/mru.zig (MAX_MRU) because mru.zig
+// belongs to the `emojig` module and this file to the exe module — a shared
+// import would place defaults.zig in two modules, which Zig rejects.

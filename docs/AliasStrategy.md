@@ -11,7 +11,7 @@ naturally type.  This gap is the primary source of "why can't I find X?"
 complaints.
 
 This document records the strategy for closing that gap via `data/emoji.json`
-aliases, `spec/synonyms.json` mappings, and ranking-test assertions.  Read it
+aliases, `spec/synonyms.yaml` mappings, and ranking-test assertions.  Read it
 before touching search data.  The mechanics (packer, binary format, scorer) are
 in `docs/SearchEngine.md`.
 
@@ -99,7 +99,7 @@ but not necessarily in the first row.
 **When to use**: supplementary synonyms, alternate contexts (`"celebration"` on
 🍾), rare but valid searches.
 
-### 3. `spec/synonyms.json` — cross-emoji word expansion
+### 3. `spec/synonyms.yaml` — cross-emoji word expansion
 
 Use for true many-to-many substitutions that should apply to *every* emoji
 containing a word.
@@ -192,7 +192,7 @@ Run a quick mental test before every edit:
    - Position ≥ 8 → add as first alias.
    - Not present at all → add as first alias or tag depending on importance.
 3. **Check if the same word would help multiple emojis.**  If yes, consider
-   `spec/synonyms.json`.  If it's only one or two specific emojis, use aliases.
+   `spec/synonyms.yaml`.  If it's only one or two specific emojis, use aliases.
 4. **Write the assertion first**, then fix the data, then verify.
 
 ---

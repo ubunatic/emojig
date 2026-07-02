@@ -7,20 +7,58 @@ const Theme = term_lib.Theme;
 const writeAll = term_lib.writeAll;
 const spec_mod = @import("spec.zig");
 
-/// Known terminal emulators with specific argv layouts.
-pub const HostKind = enum {
-    foot,
-    kitty,
-    alacritty,
-    wezterm,
-    ghostty,
-    konsole,
-    gnome_terminal,
-    ptyxis,
-    xfce4_terminal,
-    xterm,
-    generic,
+// ---------------------------------------------------------------------------
+// Host terminal spec (spec/host.yaml → spec/.gen/host.json, embedded)
+// ---------------------------------------------------------------------------
+
+const host_json = @embedFile("spec_host");
+
+/// One terminal's launch argv template (see spec/host.yaml for the
+/// placeholder contract). All lists default to empty so a minimal entry is
+/// just a name plus tail_separator.
+pub const TerminalSpec = struct {
+    name: []const u8,
+    args: []const []const u8 = &.{},
+    borderless_args: []const []const u8 = &.{},
+    decorated_args: []const []const u8 = &.{},
+    post_args: []const []const u8 = &.{},
+    tail_separator: []const u8 = "",
 };
+
+pub const HostSpec = struct {
+    detection: []const []const u8 = &.{},
+    terminals: []const TerminalSpec = &.{},
+};
+
+var parsed_host_spec: ?HostSpec = null;
+var host_arena_bytes: [16 * 1024]u8 = undefined;
+
+/// Lazily parse the embedded host spec. The parsed slices point into the
+/// global fixed buffer, so no heap allocation and process lifetime.
+pub fn getGlobalHostSpec() *const HostSpec {
+    if (parsed_host_spec == null) {
+        var fba = std.heap.FixedBufferAllocator.init(&host_arena_bytes);
+        parsed_host_spec = std.json.parseFromSliceLeaky(HostSpec, fba.allocator(), host_json, .{ .ignore_unknown_fields = true }) catch unreachable;
+    }
+    return &parsed_host_spec.?;
+}
+
+/// Last-resort template when spec/host.yaml has no `generic` entry: run the
+/// terminal as `<term> -e <tail>` like the spec's own generic fallback.
+const generic_terminal = TerminalSpec{ .name = "generic", .tail_separator = "-e" };
+
+/// Find the argv template for a terminal basename ("kitty"), falling back to
+/// the spec's `generic` entry (or a built-in equivalent as a safety net).
+pub fn terminalSpecFor(name: []const u8) *const TerminalSpec {
+    const hspec = getGlobalHostSpec();
+    for (hspec.terminals) |*t| {
+        if (std.mem.eql(u8, t.name, name)) return t;
+    }
+    for (hspec.terminals) |*t| {
+        if (std.mem.eql(u8, t.name, "generic")) return t;
+    }
+    return &generic_terminal;
+}
 
 /// Check whether `name` (a basename like "kitty") exists as an executable on
 /// `$PATH`. Uses only stack buffers — no heap allocation.
@@ -39,13 +77,12 @@ pub fn whichOnPath(path_env: []const u8, name: []const u8) bool {
 /// Select the terminal host to use, following this precedence:
 ///   1. EMOJIG_TERMINAL (absolute path or name; used as-is, no PATH check needed)
 ///   2. $TERMINAL env var if the program exists on PATH
-///   3. Detection list: foot, kitty, alacritty, wezterm, ghostty, konsole,
-///      gnome-terminal, xterm — first found on PATH wins.
-/// Returns the terminal executable string and its HostKind.
+///   3. spec/host.yaml `detection` list — first found on PATH wins.
+/// Returns the terminal executable string and its argv template.
 /// Returns null if no usable terminal could be found.
 pub const TerminalSelection = struct {
     exe: []const u8,
-    kind: HostKind,
+    tspec: *const TerminalSpec,
 };
 
 pub fn selectTerminalHost(environ_map: anytype) ?TerminalSelection {
@@ -55,50 +92,25 @@ pub fn selectTerminalHost(environ_map: anytype) ?TerminalSelection {
     if (environ_map.get("EMOJIG_TERMINAL")) |t| {
         if (t.len > 0) {
             const base = std.fs.path.basename(t);
-            return .{ .exe = t, .kind = hostKindFromName(base) };
+            return .{ .exe = t, .tspec = terminalSpecFor(base) };
         }
     }
 
     // 2. $TERMINAL if it exists on PATH
     if (environ_map.get("TERMINAL")) |t| {
         if (t.len > 0 and whichOnPath(path_env, t)) {
-            return .{ .exe = t, .kind = hostKindFromName(t) };
+            return .{ .exe = t, .tspec = terminalSpecFor(t) };
         }
     }
 
-    // 3. Detection list — foot preferred (listed first)
-    const candidates = [_][]const u8{
-        "foot",
-        "ptyxis",
-        "kitty",
-        "alacritty",
-        "wezterm",
-        "ghostty",
-        "konsole",
-        "gnome-terminal",
-        "xterm",
-    };
-    for (candidates) |name| {
+    // 3. Detection list from spec/host.yaml — foot preferred (listed first)
+    for (getGlobalHostSpec().detection) |name| {
         if (whichOnPath(path_env, name)) {
-            return .{ .exe = name, .kind = hostKindFromName(name) };
+            return .{ .exe = name, .tspec = terminalSpecFor(name) };
         }
     }
 
     return null;
-}
-
-pub fn hostKindFromName(name: []const u8) HostKind {
-    if (std.mem.eql(u8, name, "foot")) return .foot;
-    if (std.mem.eql(u8, name, "kitty")) return .kitty;
-    if (std.mem.eql(u8, name, "alacritty")) return .alacritty;
-    if (std.mem.eql(u8, name, "wezterm")) return .wezterm;
-    if (std.mem.eql(u8, name, "ghostty")) return .ghostty;
-    if (std.mem.eql(u8, name, "konsole")) return .konsole;
-    if (std.mem.eql(u8, name, "gnome-terminal")) return .gnome_terminal;
-    if (std.mem.eql(u8, name, "ptyxis")) return .ptyxis;
-    if (std.mem.eql(u8, name, "xfce4-terminal")) return .xfce4_terminal;
-    if (std.mem.eql(u8, name, "xterm")) return .xterm;
-    return .generic;
 }
 
 fn concreteThemeString(theme: Theme) []const u8 {
@@ -185,250 +197,116 @@ pub fn csdTitleFgHex(
     return if (lum < threshold) fg_on_dark else fg_on_light;
 }
 
-/// Maximum argv length — foot (borderless) is the largest at ~10 prefix tokens
-/// plus a 17-token tail (27 total); 32 gives safe headroom.
-pub const MAX_ARGV = 32;
+/// Maximum argv length — foot (borderless) is the largest at ~14 prefix tokens
+/// plus a 17-token tail; 40 gives safe headroom for spec-added flags.
+pub const MAX_ARGV = 40;
+
+/// Longest substituted argv token (placeholder templates only; literal
+/// entries are passed through without copying).
+pub const MAX_ARG_LEN = 192;
+
+/// Values available to spec/host.yaml `{placeholder}` argv templates. Every
+/// field holds a fully formatted argument fragment; an empty value drops the
+/// template entry that references it.
+pub const ArgValues = struct {
+    title: []const u8 = "",
+    size: []const u8 = "",
+    font: []const u8 = "",
+    bg: []const u8 = "",
+    fg: []const u8 = "",
+    border_color: []const u8 = "",
+    csd_size: []const u8 = "",
+    csd_color: []const u8 = "",
+    csd_title_font: []const u8 = "",
+};
+
+fn argValueFor(values: ArgValues, name: []const u8) ?[]const u8 {
+    inline for (std.meta.fields(ArgValues)) |f| {
+        if (std.mem.eql(u8, f.name, name)) return @field(values, f.name);
+    }
+    return null;
+}
+
+/// Substitute `{placeholder}` occurrences in one argv template entry.
+/// Returns null when the entry must be dropped: unknown/malformed placeholder,
+/// empty placeholder value, or overflow of `buf`. Entries without any
+/// placeholder are returned as-is (no copy).
+fn renderArg(template: []const u8, values: ArgValues, buf: []u8) ?[]const u8 {
+    if (std.mem.indexOfScalar(u8, template, '{') == null) return template;
+    var len: usize = 0;
+    var i: usize = 0;
+    while (i < template.len) {
+        if (template[i] == '{') {
+            const end = std.mem.indexOfScalarPos(u8, template, i, '}') orelse return null;
+            const value = argValueFor(values, template[i + 1 .. end]) orelse return null;
+            if (value.len == 0) return null;
+            if (len + value.len > buf.len) return null;
+            @memcpy(buf[len..][0..value.len], value);
+            len += value.len;
+            i = end + 1;
+        } else {
+            if (len >= buf.len) return null;
+            buf[len] = template[i];
+            len += 1;
+            i += 1;
+        }
+    }
+    return buf[0..len];
+}
+
+fn appendTemplated(
+    out: *[MAX_ARGV][]const u8,
+    bufs: *[MAX_ARGV][MAX_ARG_LEN]u8,
+    n: usize,
+    templates: []const []const u8,
+    values: ArgValues,
+) usize {
+    var m = n;
+    for (templates) |t| {
+        if (m >= out.len) return m;
+        if (renderArg(t, values, &bufs[m])) |arg| {
+            out[m] = arg;
+            m += 1;
+        }
+    }
+    return m;
+}
 
 /// Assemble the full launch argv into `out[0..N]` and return the live slice.
-/// All string arguments must have lifetimes at least as long as `out`.
-/// `tail` is the terminal-independent suffix: "env" VARS... exe_path "--tui".
+/// Argument strings are either literals from the embedded host spec, slices
+/// of `values` inputs copied into `bufs`, or `tail` entries — all with
+/// lifetimes at least as long as `out`.
 ///
-/// `borderless` requests a window with no decorations / title bar (default behaviour).
-/// It is honoured only for terminals that expose a CLI flag for it (foot, kitty,
-/// alacritty, ghostty, wezterm); gnome-terminal, ptyxis, konsole and xterm have no
-/// such flag, so the request is silently ignored for them. This is unrelated to the
-/// in-TUI `--border` / `EMOJIG_BORDER` colored row.
+/// `borderless` selects `borderless_args` over `decorated_args` (see
+/// spec/host.yaml). Terminals without a decorations CLI flag simply have no
+/// mode args, so the request is silently ignored for them. This is unrelated
+/// to the in-TUI `--border` / `EMOJIG_BORDER` colored row.
 ///
 /// NOTE: Cell-precise window sizing is foot-only. Other terminals receive the
 /// `env EMOJIG_RESIZE_MODE=altscreen` tail and adapt via altscreen mode.
 pub fn buildGuiArgv(
     out: *[MAX_ARGV][]const u8,
-    kind: HostKind,
+    bufs: *[MAX_ARGV][MAX_ARG_LEN]u8,
+    tspec: *const TerminalSpec,
     term: []const u8,
     borderless: bool,
-    size_arg: []const u8,
-    bg_arg: []const u8,
-    fg_arg: []const u8,
-    border_color_arg: []const u8,
-    font_arg: []const u8,
-    csd_font_arg: []const u8,
-    csd_color_arg: []const u8,
-    csd_title_font_arg: []const u8,
+    values: ArgValues,
     tail: []const []const u8,
 ) []const []const u8 {
     var n: usize = 0;
-    switch (kind) {
-        .foot => {
-            out[n] = term;
-            n += 1;
-            out[n] = "--app-id=emojig-picker";
-            n += 1;
-            out[n] = "--override=title=\xf0\x9f\x98\x80 Emojig";
-            n += 1;
-            out[n] = size_arg;
-            n += 1;
-            out[n] = font_arg;
-            n += 1;
-            out[n] = "--override=cursor.blink=yes";
-            n += 1;
-            out[n] = "--override=scrollback.lines=0";
-            n += 1;
-            out[n] = "--override=pad=0x4";
-            n += 1;
-            if (borderless) {
-                // CSD with zero-height title bar + 1px border for drop shadow.
-                out[n] = "--override=csd.preferred=client";
-                n += 1;
-                out[n] = "--override=csd.size=0";
-                n += 1;
-                out[n] = "--override=csd.border-width=1";
-                n += 1;
-                if (border_color_arg.len > 0) {
-                    out[n] = border_color_arg;
-                    n += 1;
-                }
-            } else {
-                // Explicit CSD title bar. Must set csd.size to override any foot.ini
-                // that has csd.size=0 (our own borderless config sets it that way).
-                out[n] = "--override=csd.preferred=client";
-                n += 1;
-                out[n] = "--override=csd.size=26";
-                n += 1;
-                // Bold title font; :size is ignored by foot for CSD (auto-scales to csd.size).
-                if (csd_title_font_arg.len > 0) {
-                    out[n] = csd_title_font_arg;
-                    n += 1;
-                }
-                if (csd_font_arg.len > 0) {
-                    out[n] = csd_font_arg;
-                    n += 1;
-                }
-                if (csd_color_arg.len > 0) {
-                    out[n] = csd_color_arg;
-                    n += 1;
-                }
-            }
-            if (bg_arg.len > 0) {
-                out[n] = bg_arg;
-                n += 1;
-            }
-            if (fg_arg.len > 0) {
-                out[n] = fg_arg;
-                n += 1;
-            }
-            // foot runs the command as plain positional args (no -e)
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .kitty => {
-            out[n] = term;
-            n += 1;
-            out[n] = "--class";
-            n += 1;
-            out[n] = "emojig-picker";
-            n += 1;
-            if (borderless) {
-                out[n] = "-o";
-                n += 1;
-                out[n] = "hide_window_decorations=titlebar-only";
-                n += 1;
-            }
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .alacritty => {
-            out[n] = term;
-            n += 1;
-            out[n] = "--class";
-            n += 1;
-            out[n] = "emojig-picker";
-            n += 1;
-            if (borderless) {
-                out[n] = "-o";
-                n += 1;
-                out[n] = "window.decorations=None";
-                n += 1;
-            }
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .wezterm => {
-            out[n] = term;
-            n += 1;
-            out[n] = "start";
-            n += 1;
-            out[n] = "--class";
-            n += 1;
-            out[n] = "emojig-picker";
-            n += 1;
-            if (borderless) {
-                out[n] = "--config";
-                n += 1;
-                out[n] = "window_decorations=\"RESIZE\"";
-                n += 1;
-            }
-            out[n] = "--";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .ghostty => {
-            out[n] = term;
-            n += 1;
-            out[n] = "--class=emojig-picker";
-            n += 1;
-            if (borderless) {
-                out[n] = "--window-decoration=false";
-                n += 1;
-            }
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .konsole => {
-            // konsole has no CLI flag to disable window decorations.
-            out[n] = term;
-            n += 1;
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .gnome_terminal => {
-            // gnome-terminal (GTK CSD) has no CLI flag to disable decorations.
-            out[n] = term;
-            n += 1;
-            out[n] = "--";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .ptyxis => {
-            // ptyxis (GTK4/libadwaita) has no CLI flag to disable decorations.
-            out[n] = term;
-            n += 1;
-            out[n] = "--";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .xfce4_terminal => {
-            out[n] = term;
-            n += 1;
-            out[n] = "-x";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .xterm => {
-            // xterm decorations are WM-controlled; no CLI borderless flag.
-            out[n] = term;
-            n += 1;
-            out[n] = "-class";
-            n += 1;
-            out[n] = "emojig";
-            n += 1;
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
-        .generic => {
-            // Generic fallback: <term> -e <tail>
-            out[n] = term;
-            n += 1;
-            out[n] = "-e";
-            n += 1;
-            for (tail) |s| {
-                out[n] = s;
-                n += 1;
-            }
-        },
+    out[n] = term;
+    n += 1;
+    n = appendTemplated(out, bufs, n, tspec.args, values);
+    n = appendTemplated(out, bufs, n, if (borderless) tspec.borderless_args else tspec.decorated_args, values);
+    n = appendTemplated(out, bufs, n, tspec.post_args, values);
+    if (tspec.tail_separator.len > 0 and n < out.len) {
+        out[n] = tspec.tail_separator;
+        n += 1;
+    }
+    for (tail) |s| {
+        if (n >= out.len) break;
+        out[n] = s;
+        n += 1;
     }
     return out[0..n];
 }
@@ -538,7 +416,7 @@ pub fn spawnGuiWindow(
 ) !void {
     const io = init.io;
 
-    // GUI window colors come from spec/theme.json (foot wants bare hex, so we
+    // GUI window colors come from spec/theme.yaml (foot wants bare hex, so we
     // strip the leading '#'). Resolve `system` from GNOME before spawning so
     // the host window starts with the same effective palette as the child TUI.
     // Foot requires full 6-digit RGB (rrggbb) or 8-digit ARGB — 3-char shorthand
@@ -591,9 +469,9 @@ pub fn spawnGuiWindow(
     var bg_buf: [64]u8 = undefined;
     var csd_fg_dark_exp: [8]u8 = undefined;
     var csd_fg_light_exp: [8]u8 = undefined;
-    const csd_fg_dark = expandHex(csd.title_fg_on_dark orelse "#e0e0e0", &csd_fg_dark_exp);
-    const csd_fg_light = expandHex(csd.title_fg_on_light orelse "#1e1e1e", &csd_fg_light_exp);
-    const csd_threshold: u32 = if (csd.title_luminance_threshold) |v| v else 140;
+    const csd_fg_dark = expandHex(csd.title_fg_on_dark, &csd_fg_dark_exp);
+    const csd_fg_light = expandHex(csd.title_fg_on_light, &csd_fg_light_exp);
+    const csd_threshold: u32 = csd.title_luminance_threshold;
     const bg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
         try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{csdTitleFgHex(title_hex_early, csd_fg_dark, csd_fg_light, csd_threshold)})
     else if (foot_bg.len > 0)
@@ -642,19 +520,17 @@ pub fn spawnGuiWindow(
     var font_buf: [64]u8 = undefined;
     const font_arg = try std.fmt.bufPrint(&font_buf, "--override=font=monospace:size={d}", .{font_size});
 
-    const csd_fallback: usize = if (csd.size_fallback) |v| v else 26;
-    const csd_pt_factor: usize = if (csd.size_pt_factor) |v| v else 25;
-    const effective_csd_size = if (title_size > 0) title_size else detectCsdSize(io, csd_fallback, csd_pt_factor);
+    const effective_csd_size = if (title_size > 0) title_size else detectCsdSize(io, csd.size_fallback, csd.size_pt_factor);
     var csd_size_buf: [64]u8 = undefined;
-    const csd_font_arg = if (!borderless)
+    const csd_size_arg = if (!borderless)
         try std.fmt.bufPrint(&csd_size_buf, "--override=csd.size={d}", .{effective_csd_size})
     else
         "";
 
-    const title_bold = csd.title_bold orelse true;
     var csd_title_font_buf: [64]u8 = undefined;
+    // Bold title font; :size is ignored by foot for CSD (auto-scales to csd.size).
     const csd_title_font_arg = if (!borderless)
-        try std.fmt.bufPrint(&csd_title_font_buf, "--override=csd.font=monospace{s}", .{if (title_bold) ":bold" else ""})
+        try std.fmt.bufPrint(&csd_title_font_buf, "--override=csd.font=monospace{s}", .{if (csd.title_bold) ":bold" else ""})
     else
         "";
 
@@ -670,7 +546,7 @@ pub fn spawnGuiWindow(
     var env_rows: [64]u8 = undefined;
     const env_rows_arg = try std.fmt.bufPrint(&env_rows, "EMOJIG_ROWS={d}", .{rows_val});
 
-    // Propagate the GUI exit-preview default from spec/layout.json → animation.exit_preview_gui.
+    // Propagate the GUI exit-preview default from spec/layout.yaml → animation.exit_preview_gui.
     // The child process (running --tui inside the spawned window) will see this env var and
     // use it as its override, bypassing the TUI default (animation.exit_preview_tui).
     var env_exit_preview: [64]u8 = undefined;
@@ -714,7 +590,18 @@ pub fn spawnGuiWindow(
     };
 
     var argv_out: [MAX_ARGV][]const u8 = undefined;
-    const argv = buildGuiArgv(&argv_out, sel.kind, sel.exe, borderless, size_arg, bg_arg, fg_arg, border_color_arg, font_arg, csd_font_arg, csd_color_arg, csd_title_font_arg, &tail);
+    var arg_bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
+    const argv = buildGuiArgv(&argv_out, &arg_bufs, sel.tspec, sel.exe, borderless, .{
+        .title = spec.strings.gui_title,
+        .size = size_arg,
+        .font = font_arg,
+        .bg = bg_arg,
+        .fg = fg_arg,
+        .border_color = border_color_arg,
+        .csd_size = csd_size_arg,
+        .csd_color = csd_color_arg,
+        .csd_title_font = csd_title_font_arg,
+    }, &tail);
 
     var child = try std.process.spawn(io, .{
         .argv = argv,
@@ -742,11 +629,20 @@ test "GUI child theme env uses concrete theme names" {
 
 test "buildGuiArgv: foot borderless adds csd overrides" {
     var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", true, "--window-size-chars=27x10", "--override=colors.background=1c1c1c", "--override=colors.foreground=a8a8a8", "--override=csd.border-color=3c3c3c", "--override=font=monospace:size=14", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, &bufs, terminalSpecFor("foot"), "foot", true, .{
+        .title = "\xf0\x9f\x98\x80 Emojig",
+        .size = "--window-size-chars=27x10",
+        .font = "--override=font=monospace:size=14",
+        .bg = "--override=colors.background=1c1c1c",
+        .fg = "--override=colors.foreground=a8a8a8",
+        .border_color = "--override=csd.border-color=3c3c3c",
+    }, &tail);
     try std.testing.expectEqualStrings("foot", argv[0]);
     try std.testing.expectEqualStrings("--app-id=emojig-picker", argv[1]);
-    try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[2]);
+    try std.testing.expectEqualStrings("--override=title=\xf0\x9f\x98\x80 Emojig", argv[2]);
+    try std.testing.expectEqualStrings("--window-size-chars=27x10", argv[3]);
     try std.testing.expect(argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
     try std.testing.expect(argvContains(argv, "--override=csd.border-width=1"));
@@ -756,8 +652,19 @@ test "buildGuiArgv: foot borderless adds csd overrides" {
 
 test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .foot, "foot", false, "--window-size-chars=27x10", "bg", "fg", "border", "--override=font=monospace:size=14", "--override=csd.size=40", "--override=csd.color=ff3c3c3c", "--override=csd.font=monospace:bold", &tail);
+    const argv = buildGuiArgv(&out, &bufs, terminalSpecFor("foot"), "foot", false, .{
+        .title = "Emojig",
+        .size = "--window-size-chars=27x10",
+        .font = "--override=font=monospace:size=14",
+        .bg = "bg",
+        .fg = "fg",
+        .border_color = "border",
+        .csd_size = "--override=csd.size=40",
+        .csd_color = "--override=csd.color=ff3c3c3c",
+        .csd_title_font = "--override=csd.font=monospace:bold",
+    }, &tail);
     try std.testing.expect(!argvContains(argv, "--override=csd.size=0"));
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
     try std.testing.expect(argvContains(argv, "--override=csd.size=40"));
@@ -767,10 +674,11 @@ test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
 test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
     var on_out: [MAX_ARGV][]const u8 = undefined;
     var off_out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
-    const on = buildGuiArgv(&on_out, .kitty, "kitty", true, "", "", "", "", "", "", "", "", &tail);
+    const on = buildGuiArgv(&on_out, &bufs, terminalSpecFor("kitty"), "kitty", true, .{}, &tail);
     try std.testing.expect(argvContains(on, "hide_window_decorations=titlebar-only"));
-    const off = buildGuiArgv(&off_out, .kitty, "kitty", false, "", "", "", "", "", "", "", "", &tail);
+    const off = buildGuiArgv(&off_out, &bufs, terminalSpecFor("kitty"), "kitty", false, .{}, &tail);
     try std.testing.expect(!argvContains(off, "hide_window_decorations=titlebar-only"));
     try std.testing.expectEqualStrings("kitty", off[0]);
     try std.testing.expectEqualStrings("-e", off[3]);
@@ -778,8 +686,9 @@ test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {
 
 test "buildGuiArgv: xterm argv starts with expected tokens" {
     var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_WIDTH=25", "EMOJIG_RESIZE_MODE=altscreen", "/usr/bin/emojig", "--tui" };
-    const argv = buildGuiArgv(&out, .xterm, "xterm", true, "", "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, &bufs, terminalSpecFor("xterm"), "xterm", true, .{}, &tail);
     try std.testing.expect(argv.len >= 2);
     try std.testing.expectEqualStrings("xterm", argv[0]);
     try std.testing.expectEqualStrings("-class", argv[1]);
@@ -791,8 +700,9 @@ test "buildGuiArgv: xterm argv starts with expected tokens" {
 
 test "buildGuiArgv: ptyxis uses -- separator" {
     var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .ptyxis, "ptyxis", true, "", "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, &bufs, terminalSpecFor("ptyxis"), "ptyxis", true, .{}, &tail);
     try std.testing.expectEqualStrings("ptyxis", argv[0]);
     try std.testing.expectEqualStrings("--", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
@@ -806,10 +716,37 @@ test "whichOnPath finds and rejects" {
 
 test "buildGuiArgv: generic argv uses -e" {
     var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const tail = [_][]const u8{ "env", "EMOJIG_RESIZE_MODE=altscreen", "/bin/true", "--tui" };
-    const argv = buildGuiArgv(&out, .generic, "/bin/true", true, "", "", "", "", "", "", "", "", &tail);
+    const argv = buildGuiArgv(&out, &bufs, terminalSpecFor("zzz-unknown-term"), "/bin/true", true, .{}, &tail);
     try std.testing.expectEqualStrings("/bin/true", argv[0]);
     try std.testing.expectEqualStrings("-e", argv[1]);
     try std.testing.expectEqualStrings("env", argv[2]);
     try std.testing.expectEqualStrings("--tui", argv[argv.len - 1]);
+}
+
+test "host spec: detection list and all referenced terminals exist" {
+    const hspec = getGlobalHostSpec();
+    try std.testing.expect(hspec.detection.len > 0);
+    try std.testing.expectEqualStrings("foot", hspec.detection[0]);
+    for (hspec.detection) |name| {
+        // Every detection candidate must have a dedicated template (never
+        // silently fall through to generic).
+        try std.testing.expect(!std.mem.eql(u8, terminalSpecFor(name).name, "generic"));
+    }
+}
+
+test "renderArg: placeholder substitution and drop semantics" {
+    var buf: [MAX_ARG_LEN]u8 = undefined;
+    // Literal entries pass through untouched.
+    try std.testing.expectEqualStrings("-e", renderArg("-e", .{}, &buf).?);
+    // Substitution composes prefix + value.
+    try std.testing.expectEqualStrings(
+        "--override=title=Emojig",
+        renderArg("--override=title={title}", .{ .title = "Emojig" }, &buf).?,
+    );
+    // Empty value drops the whole entry.
+    try std.testing.expect(renderArg("{size}", .{}, &buf) == null);
+    // Unknown placeholder drops the entry (misspelled spec stays harmless).
+    try std.testing.expect(renderArg("{no_such_value}", .{ .title = "x" }, &buf) == null);
 }

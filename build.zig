@@ -112,51 +112,45 @@ pub fn build(b: *std.Build) void {
     // binary is self-contained. `src/` is the module root, so @embedFile cannot
     // reach `../spec`; registering the files as anonymous imports makes them
     // available to @embedFile by import name from any file in this module.
-    mod.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
-    mod.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
-    mod.addAnonymousImport("spec_keys", .{ .root_source_file = b.path("spec/keys.json") });
-    mod.addAnonymousImport("spec_strings", .{ .root_source_file = b.path("spec/strings.json") });
-    mod.addAnonymousImport("spec_commands", .{ .root_source_file = b.path("spec/commands.json") });
-    mod.addAnonymousImport("spec_settings", .{ .root_source_file = b.path("spec/settings.json") });
-    mod.addAnonymousImport("spec_categories", .{ .root_source_file = b.path("spec/categories.json") });
-    mod.addAnonymousImport("spec_debug", .{ .root_source_file = b.path("spec/debug.json") });
-    mod.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
-    mod.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
-    mod.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });
-    mod.addAnonymousImport("spec_strings_it", .{ .root_source_file = b.path("spec/strings_it.json") });
-    mod.addAnonymousImport("spec_strings_de", .{ .root_source_file = b.path("spec/strings_de.json") });
-    mod.addAnonymousImport("spec_strings_pl", .{ .root_source_file = b.path("spec/strings_pl.json") });
-    mod.addAnonymousImport("spec_strings_ru", .{ .root_source_file = b.path("spec/strings_ru.json") });
-    mod.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
-    mod.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
-    mod.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
-    mod.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
-    mod.addAnonymousImport("spec_colors", .{ .root_source_file = b.path("spec/colors.json") });
-    mod.addAnonymousImport("spec_art_generated", .{ .root_source_file = b.path("spec/art.generated.json") });
-    mod.addAnonymousImport("spec_input_generated", .{ .root_source_file = b.path("spec/input.generated.json") });
-
-    exe.root_module.addAnonymousImport("spec_layout", .{ .root_source_file = b.path("spec/layout.json") });
-    exe.root_module.addAnonymousImport("spec_theme", .{ .root_source_file = b.path("spec/theme.json") });
-    exe.root_module.addAnonymousImport("spec_keys", .{ .root_source_file = b.path("spec/keys.json") });
-    exe.root_module.addAnonymousImport("spec_strings", .{ .root_source_file = b.path("spec/strings.json") });
-    exe.root_module.addAnonymousImport("spec_commands", .{ .root_source_file = b.path("spec/commands.json") });
-    exe.root_module.addAnonymousImport("spec_settings", .{ .root_source_file = b.path("spec/settings.json") });
-    exe.root_module.addAnonymousImport("spec_categories", .{ .root_source_file = b.path("spec/categories.json") });
-    exe.root_module.addAnonymousImport("spec_debug", .{ .root_source_file = b.path("spec/debug.json") });
-    exe.root_module.addAnonymousImport("spec_strings_es", .{ .root_source_file = b.path("spec/strings_es.json") });
-    exe.root_module.addAnonymousImport("spec_strings_pt", .{ .root_source_file = b.path("spec/strings_pt.json") });
-    exe.root_module.addAnonymousImport("spec_strings_fr", .{ .root_source_file = b.path("spec/strings_fr.json") });
-    exe.root_module.addAnonymousImport("spec_strings_it", .{ .root_source_file = b.path("spec/strings_it.json") });
-    exe.root_module.addAnonymousImport("spec_strings_de", .{ .root_source_file = b.path("spec/strings_de.json") });
-    exe.root_module.addAnonymousImport("spec_strings_pl", .{ .root_source_file = b.path("spec/strings_pl.json") });
-    exe.root_module.addAnonymousImport("spec_strings_ru", .{ .root_source_file = b.path("spec/strings_ru.json") });
-    exe.root_module.addAnonymousImport("spec_strings_uk", .{ .root_source_file = b.path("spec/strings_uk.json") });
-    exe.root_module.addAnonymousImport("spec_strings_nl", .{ .root_source_file = b.path("spec/strings_nl.json") });
-    exe.root_module.addAnonymousImport("spec_strings_tr", .{ .root_source_file = b.path("spec/strings_tr.json") });
-    exe.root_module.addAnonymousImport("spec_styles", .{ .root_source_file = b.path("spec/styles.json") });
-    exe.root_module.addAnonymousImport("spec_colors", .{ .root_source_file = b.path("spec/colors.json") });
-    exe.root_module.addAnonymousImport("spec_art_generated", .{ .root_source_file = b.path("spec/art.generated.json") });
-    exe.root_module.addAnonymousImport("spec_input_generated", .{ .root_source_file = b.path("spec/input.generated.json") });
+    // Generated JSON artifacts live in spec/.gen/ (compiled from the YAML
+    // sources in spec/ by `make gen-spec`). Import name = "spec_" + stem with
+    // '.' replaced by '_' (e.g. art.generated.json -> spec_art_generated).
+    const spec_json_files = [_][]const u8{
+        "layout.json",
+        "theme.json",
+        "keys.json",
+        "strings.json",
+        "commands.json",
+        "settings.json",
+        "categories.json",
+        "debug.json",
+        "search.json",
+        "host.json",
+        "strings_es.json",
+        "strings_pt.json",
+        "strings_fr.json",
+        "strings_it.json",
+        "strings_de.json",
+        "strings_pl.json",
+        "strings_ru.json",
+        "strings_uk.json",
+        "strings_nl.json",
+        "strings_tr.json",
+        "styles.json",
+        "colors.json",
+        "art.generated.json",
+        "input.generated.json",
+    };
+    for (spec_json_files) |file| {
+        const stem = file[0 .. file.len - ".json".len];
+        const name = b.fmt("spec_{s}", .{stem});
+        for (name) |*c| {
+            if (c.* == '.') c.* = '_';
+        }
+        const path = b.path(b.fmt("spec/.gen/{s}", .{file}));
+        mod.addAnonymousImport(name, .{ .root_source_file = path });
+        exe.root_module.addAnonymousImport(name, .{ .root_source_file = path });
+    }
 
     const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
     const options = b.addOptions();

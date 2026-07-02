@@ -77,43 +77,36 @@ watch-%:
 watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input spec
 	@scripts/watch.sh spec/input.yaml
 
-gen-spec: ⚙️  # compile YAML spec sources to generated JSON artifacts
-	go run ./scripts/convert_spec/ spec/layout.yaml spec/layout.json
-	go run ./scripts/convert_spec/ spec/theme.yaml spec/theme.json
-	go run ./scripts/convert_spec/ spec/keys.yaml spec/keys.json
-	go run ./scripts/convert_spec/ spec/commands.yaml spec/commands.json
-	go run ./scripts/convert_spec/ spec/settings.yaml spec/settings.json
-	go run ./scripts/convert_spec/ spec/categories.yaml spec/categories.json
-	go run ./scripts/convert_spec/ spec/debug.yaml spec/debug.json
-	go run ./scripts/convert_spec/ spec/styles.yaml spec/styles.json
-	go run ./scripts/convert_spec/ spec/art.yaml spec/art.json
-	go run ./scripts/convert_spec/ spec/boxart.yaml spec/boxart.json
-	go run ./scripts/convert_spec/ spec/braille.yaml spec/braille.json
-	go run ./scripts/convert_spec/ spec/synonyms.yaml spec/synonyms.json
-	go run ./scripts/convert_spec/ spec/jsdemo.yaml spec/jsdemo.json
-	go run ./scripts/convert_spec/ spec/crt-theme.yaml spec/crt-theme.json
-	go run ./scripts/convert_spec/ spec/strings/en.yaml spec/strings.json
-	go run ./scripts/convert_spec/ spec/strings/de.yaml spec/strings_de.json
-	go run ./scripts/convert_spec/ spec/strings/es.yaml spec/strings_es.json
-	go run ./scripts/convert_spec/ spec/strings/fr.yaml spec/strings_fr.json
-	go run ./scripts/convert_spec/ spec/strings/it.yaml spec/strings_it.json
-	go run ./scripts/convert_spec/ spec/strings/nl.yaml spec/strings_nl.json
-	go run ./scripts/convert_spec/ spec/strings/pl.yaml spec/strings_pl.json
-	go run ./scripts/convert_spec/ spec/strings/pt.yaml spec/strings_pt.json
-	go run ./scripts/convert_spec/ spec/strings/ru.yaml spec/strings_ru.json
-	go run ./scripts/convert_spec/ spec/strings/tr.yaml spec/strings_tr.json
-	go run ./scripts/convert_spec/ spec/strings/uk.yaml spec/strings_uk.json
+# YAML spec sources in spec/ compiled to JSON artifacts in spec/.gen/.
+# spec/ holds only the documented YAML sources (plus schemas in spec/.schema/);
+# the generated JSON is tracked so plain `zig build` works without Go.
+SPEC_YAMLS = layout theme keys commands settings categories debug styles \
+             art boxart braille synonyms jsdemo crt-theme search host
+SPEC_LANGS = de es fr it nl pl pt ru tr uk
+SPEC_REELS = gui tui-dark tui-light
+
+gen-spec: ⚙️  # compile YAML spec sources in spec/ to generated JSON in spec/.gen/
+	@for f in $(SPEC_YAMLS); \
+	 do go run ./scripts/convert_spec/ "spec/$$f.yaml" "spec/.gen/$$f.json" || exit 1; \
+	 done
+	@go run ./scripts/convert_spec/ spec/strings/en.yaml spec/.gen/strings.json
+	@for l in $(SPEC_LANGS); \
+	 do go run ./scripts/convert_spec/ "spec/strings/$$l.yaml" "spec/.gen/strings_$$l.json" || exit 1; \
+	 done
+	@for r in $(SPEC_REELS); \
+	 do go run ./scripts/convert_spec/ "spec/reels/$$r.yaml" "spec/.gen/reels/$$r.json" || exit 1; \
+	 done
 	go run ./scripts/gen_input_spec/
 	go run ./scripts/gen_about_art/
 
-gen-art: gen-spec ⚙️  # compile spec/art.json → spec/art.generated.json
+gen-art: gen-spec ⚙️  # compile spec/art.yaml → spec/.gen/art.generated.json
 	@true
 
-gen-input: ⚙️  # compile spec/input.yaml → spec/input.generated.json
+gen-input: ⚙️  # compile spec/input.yaml → spec/.gen/input.generated.json
 	go run ./scripts/gen_input_spec/
 
-gen-colors: ⚙️  # regenerate spec/colors.json (full xterm-256 palette)
-	go run ./scripts/gen_colors/ > spec/colors.json
+gen-colors: ⚙️  # regenerate spec/.gen/colors.json (full xterm-256 palette)
+	go run ./scripts/gen_colors/ > spec/.gen/colors.json
 
 test: gen-spec ⚙️  # run the unit tests (ReleaseSafe, self-hosted backend for fast iteration)
 	zig build test -Doptimize=ReleaseSafe -Dllvm=false
@@ -140,7 +133,7 @@ gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ct
 	python3 explore_gtk_emoji.py
 
 jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/jsdemo.yaml
-	@printf '// generated from spec/jsdemo.json — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/jsdemo.json)" > website/jsdemo.js
+	@printf '// generated from spec/jsdemo.yaml — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/.gen/jsdemo.json)" > website/jsdemo.js
 	go run ./scripts/gen_web_spec/
 
 browse: ⚙️ jsdemo  # open the website homepage in the default web browser
@@ -160,22 +153,22 @@ WAYREEL      := $(HOME)/go/bin/wayreel
 wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
 
-record: ⚙️ wayreel-install  # record all three demos (tui-dark, tui-light, gui)
-	$(WAYREEL) record spec/reels/tui-dark.json
-	$(WAYREEL) record spec/reels/tui-light.json
-	$(WAYREEL) record spec/reels/gui.json
+record: ⚙️ wayreel-install gen-spec  # record all three demos (tui-dark, tui-light, gui)
+	$(WAYREEL) record spec/.gen/reels/tui-dark.json
+	$(WAYREEL) record spec/.gen/reels/tui-light.json
+	$(WAYREEL) record spec/.gen/reels/gui.json
 	open website
 
-record-dark: ⚙️ wayreel-install  # record TUI demo (dark theme)
-	$(WAYREEL) record spec/reels/tui-dark.json
+record-dark: ⚙️ wayreel-install gen-spec  # record TUI demo (dark theme)
+	$(WAYREEL) record spec/.gen/reels/tui-dark.json
 	open website/emojig-tui-dark.webm
 
-record-light: ⚙️ wayreel-install  # record TUI demo (light theme)
-	$(WAYREEL) record spec/reels/tui-light.json
+record-light: ⚙️ wayreel-install gen-spec  # record TUI demo (light theme)
+	$(WAYREEL) record spec/.gen/reels/tui-light.json
 	open website/emojig-tui-light.webm
 
-record-gui: ⚙️ wayreel-install  # record GUI desktop scenario
-	$(WAYREEL) record spec/reels/gui.json
+record-gui: ⚙️ wayreel-install gen-spec  # record GUI desktop scenario
+	$(WAYREEL) record spec/.gen/reels/gui.json
 	open website/emojig-gui-light.webm
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory

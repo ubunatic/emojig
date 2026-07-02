@@ -33,6 +33,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**38**](38-more-common-search-tests.md) | [Tests for common searches](38-more-common-search-tests.md) | **P2** | Phase 1+2 done: 55 ranking tests + 23 synonyms added; Phase 3 open (food/drinks/feelings: ~20 more tests need synonyms/tags). |
 | [**40**](40-wayland-focused-window-placement.md) | [Wayland focused-window placement for GUI picker](40-wayland-focused-window-placement.md) | **P2** | Opt-in `--placement=focus` to open the picker near the focused window via compositor-specific control APIs (sway/Hyprland first). |
 | [**41**](41-width-fit-and-cosmetic-recorder-gap.md) | [Width side of height_guard resilience is still missing](41-width-fit-and-cosmetic-recorder-gap.md) | **P3** | `height_guard=fit` shrinks the grid when the terminal is too *short*; no equivalent exists for a terminal that's too *wide* — cosmetic-only gap seen in `gui.json` recordings. |
+| [**42**](42-report-command-open-issue-url.md) | [`:report` command — file a bug/problem via prefilled Codeberg issue URL](42-report-command-open-issue-url.md) | **P3** | New `:report`/`:r` command opens a title/body screen and launches the browser at a prefilled `codeberg.org/.../issues/new?title=&body=` URL; needs a new browser-opener helper and URL encoder, neither of which exist yet. |
 
 ---
 

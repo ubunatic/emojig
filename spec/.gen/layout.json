@@ -1,0 +1,46 @@
+{
+  "description": "Language-neutral layout spec for the emojig picker. Consumed by the Zig app. Grid sizes are clamped at load time to the compile-time bounds in src/defaults.zig (5–16 columns, 3–16 rows) — those bounds only size stack buffers; the values here are the actual defaults (env EMOJIG_COLS/ROWS and the cols=/rows= config lines override them per user).",
+  "tui": {
+    "cols": 8,
+    "rows": 10,
+    "width": 36
+  },
+  "gui": {
+    "cols": 8,
+    "rows": 10,
+    "width": 36,
+    "font_size": 16
+  },
+  "layout_overhead": 6,
+  "top_padding": true,
+  "max_query_len": 63,
+  "mru_size": 24,
+  "animation": {
+    "description": "Controls the exit-fade (block-shade preview) animation. exit_preview_tui applies when running inline in a terminal (TUI mode); exit_preview_gui applies when launched as a floating window (GUI mode). Set either to false to skip the animation and exit immediately on selection. exit_preview_steps is the number of block-shade frames; exit_preview_ms is the hold duration. The EMOJIG_EXIT_PREVIEW env var and EMOJIG_EXIT_PREVIEW_MS override these defaults at runtime.",
+    "exit_preview_tui": false,
+    "exit_preview_gui": false,
+    "exit_preview_steps": 8,
+    "exit_preview_ms": 200
+  },
+  "interaction": {
+    "wheel_scroll_step": 3,
+    "grid_dim_step": 2
+  },
+  "components": {
+    "scrollpane": {
+      "overflow": "hidden"
+    },
+    "dropdown": {
+      "overflow": "hidden"
+    }
+  },
+  "rows_order": [
+    "top_padding",
+    "search_bar",
+    "spacer",
+    "grid",
+    "spacer",
+    "description",
+    "status"
+  ]
+}

@@ -141,13 +141,9 @@ pub fn search(query: []const u8, top_matches: []Match, top_count: *usize, limit:
     return searchOptions(query, top_matches, top_count, limit, cats, &[_][]const u8{}, null);
 }
 
-/// Box-art scores drop by this much in general searches so borders and
-/// blocks rank below genuine emoji matches; b: shows them on their own.
-const box_art_penalty: i32 = 150;
-
-/// Braille scores drop by this much in general searches so patterns rank
-/// below genuine emoji matches; br: shows them on their own.
-const braille_penalty: i32 = 150;
+// Box-art and Braille scores drop by spec/search.yaml `penalties` in general
+// searches so they rank below genuine emoji matches; the b:/br: filters show
+// them on their own (the uniform penalty does not affect ordering there).
 
 pub fn searchOptions(
     query: []const u8,
@@ -421,8 +417,9 @@ pub fn searchOptions(
         if (fuzzyMatch(actual_query, entry.search)) |raw_score| {
             // Box art ranks below genuine emoji matches in general searches;
             // under b: the uniform penalty does not affect ordering.
-            var score = if (search_mod.isBoxArt(entry.emoji)) raw_score - box_art_penalty else raw_score;
-            if (search_mod.isBraille(entry.emoji)) score -= braille_penalty;
+            const penalties = search_mod.getSearchSpec().penalties;
+            var score = if (search_mod.isBoxArt(entry.emoji)) raw_score - penalties.box_art else raw_score;
+            if (search_mod.isBraille(entry.emoji)) score -= penalties.braille;
             // br: text searches still gate on relevance above, but order
             // purely by ascending dot count (fewer raised dots first).
             if (filter_braille) score = -@as(i32, @intCast(search_mod.brailleDotCount(entry.emoji)));

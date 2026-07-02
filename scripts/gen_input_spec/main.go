@@ -86,7 +86,7 @@ type TokenizerRule struct {
 
 func main() {
 	inPath := filepath.Clean("spec/input.yaml")
-	outPath := filepath.Clean("spec/input.generated.json")
+	outPath := filepath.Clean("spec/.gen/input.generated.json")
 
 	data, err := os.ReadFile(inPath)
 	if err != nil {

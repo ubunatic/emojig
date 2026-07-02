@@ -91,8 +91,23 @@ class EmojigSimulator {
 
   // --- Fuzzy Matching Algorithm (Zig Port) ---
 
+  // Ranking weights from spec/search.yaml (via webspec.js); fallbacks mirror
+  // the spec defaults so the simulator works without a regenerated webspec.
+  scoring() {
+    const s = this.webSpec?.scoring ?? null;
+    return {
+      charMatch: s?.char_match ?? 10,
+      wordStartBonus: s?.word_start_bonus ?? 40,
+      consecutiveBonus: s?.consecutive_bonus ?? 20,
+      gapPenalty: s?.gap_penalty ?? 1,
+      lateStartPenalty: s?.late_start_penalty ?? 1,
+      fallbackPenalty: s?.fallback_penalty ?? 5,
+    };
+  }
+
   matchTermDirect(term, target) {
     if (term.length === 0) return 0;
+    const w = this.scoring();
 
     let score = 0;
     let targetIdx = 0;
@@ -109,16 +124,16 @@ class EmojigSimulator {
       const targetChar = targetLower[targetIdx];
 
       if (termChar === targetChar) {
-        let charScore = 10;
+        let charScore = w.charMatch;
 
         // Bonus for matching at the start of a word
         if (targetIdx === 0 || target[targetIdx - 1] === " ") {
-          charScore += 40;
+          charScore += w.wordStartBonus;
         }
 
         // Compounding bonus for consecutive matches
         if (consecutive > 0) {
-          charScore += 20 * consecutive;
+          charScore += w.consecutiveBonus * consecutive;
         }
 
         score += charScore;
@@ -126,7 +141,7 @@ class EmojigSimulator {
         termIdx += 1;
       } else {
         // Small gap penalty
-        score -= 1;
+        score -= w.gapPenalty;
         consecutive = 0;
       }
       targetIdx += 1;
@@ -134,7 +149,7 @@ class EmojigSimulator {
 
     // Penalty for starting late in the target string
     const startIdx = targetIdx - term.length;
-    score -= startIdx;
+    score -= w.lateStartPenalty * startIdx;
 
     return score;
   }
@@ -142,7 +157,7 @@ class EmojigSimulator {
   // matchTerm scores a term with plural/stem fallbacks plus synonym
   // matching (max score across all attempts) — mirrors src/root.zig and
   // internal/emoji/fuzzy.go. The synonym map is emitted into emojis.js
-  // by scripts/pack_emojis from spec/synonyms.json.
+  // by scripts/pack_emojis from spec/synonyms.yaml.
   matchTerm(term, target) {
     if (term.length === 0) return 0;
 
@@ -167,6 +182,7 @@ class EmojigSimulator {
   matchTermSelf(term, target) {
     let score = this.matchTermDirect(term, target);
     if (score !== null) return score;
+    const fp = this.scoring().fallbackPenalty;
 
     // Fallback: Plurals (if term ends in 's' and length > 3, e.g. "cars" -> "car")
     if (term.length > 3 && term[term.length - 1].toLowerCase() === "s") {
@@ -181,22 +197,22 @@ class EmojigSimulator {
         ) {
           const alternate = term.slice(0, term.length - 3) + "y";
           const s = this.matchTermDirect(alternate, target);
-          if (s !== null) return s - 5;
+          if (s !== null) return s - fp;
         }
         // If it ends in "es" and length > 4 (e.g. "boxes" -> "box")
         if (term.length > 4 && last2 === "e") {
           const alternate1 = term.slice(0, term.length - 2); // strip "es"
           const s1 = this.matchTermDirect(alternate1, target);
-          if (s1 !== null) return s1 - 5;
+          if (s1 !== null) return s1 - fp;
 
           const alternate2 = term.slice(0, term.length - 1); // strip "s" (e.g. "shoes" -> "shoe")
           const s2 = this.matchTermDirect(alternate2, target);
-          if (s2 !== null) return s2 - 5;
+          if (s2 !== null) return s2 - fp;
         }
         // Default plural strip 's'
         const alternate = term.slice(0, term.length - 1);
         const s = this.matchTermDirect(alternate, target);
-        if (s !== null) return s - 5;
+        if (s !== null) return s - fp;
       }
     }
 
@@ -205,18 +221,18 @@ class EmojigSimulator {
       const stem = term.slice(0, term.length - 3);
       // try stem directly (e.g. "racing" -> "rac")
       const s = this.matchTermDirect(stem, target);
-      if (s !== null) return s - 5;
+      if (s !== null) return s - fp;
 
       // try stem + "e" (e.g. "racing" -> "race")
       const alternate = stem + "e";
       const s2 = this.matchTermDirect(alternate, target);
-      if (s2 !== null) return s2 - 5;
+      if (s2 !== null) return s2 - fp;
 
       // If double consonant stem (e.g. "running" -> "run")
       if (stem.length > 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
         const alternate2 = stem.slice(0, stem.length - 1);
         const s3 = this.matchTermDirect(alternate2, target);
-        if (s3 !== null) return s3 - 5;
+        if (s3 !== null) return s3 - fp;
       }
     }
 
@@ -224,7 +240,7 @@ class EmojigSimulator {
     if (term.length > 3 && term[term.length - 1].toLowerCase() === "e") {
       const alternate = term.slice(0, term.length - 1);
       const s = this.matchTermDirect(alternate, target);
-      if (s !== null) return s - 5;
+      if (s !== null) return s - fp;
     }
 
     return null;
@@ -258,7 +274,7 @@ class EmojigSimulator {
     };
   }
 
-  // Box-drawing / block-element glyphs generated from spec/boxart.json.
+  // Box-drawing / block-element glyphs generated from spec/boxart.yaml.
   isBoxArt(emoji) {
     if (!emoji) return false;
     const range = this.rangeFilter("box_art", 0x2500, 0x259f, 150);
@@ -266,7 +282,7 @@ class EmojigSimulator {
     return cp >= range.min && cp <= range.max;
   }
 
-  // Braille pattern glyphs generated from spec/braille.json.
+  // Braille pattern glyphs generated from spec/braille.yaml.
   isBraille(emoji) {
     if (!emoji) return false;
     const range = this.rangeFilter("braille", 0x2800, 0x28ff, 150);

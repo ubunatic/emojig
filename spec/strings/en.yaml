@@ -43,6 +43,10 @@ search_right_cap: ▐
 hline_char: ' '
 search_placeholder: search…
 search_prompt: " \U0001F50D "
+# Window title of the floating --gui terminal window.
+gui_title: "\U0001F600 Emojig"
+# Popup shown after the recent-emoji (MRU) history is cleared.
+mru_cleared: Recent history cleared.
 status:
     default:
         on_view: ' ?:help  ↕↔|↵|Esc'

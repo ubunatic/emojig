@@ -7,10 +7,55 @@ const EmojiDb = root.EmojiDb;
 const SynonymDb = root.SynonymDb;
 const Match = root.Match;
 
+// ---------------------------------------------------------------------------
+// Ranking weights (spec/search.yaml → spec/.gen/search.json, embedded)
+// ---------------------------------------------------------------------------
+
+const search_json = @embedFile("spec_search");
+
+/// Per-character scoring weights for `matchTermDirect`. All values are
+/// required in spec/search.yaml — the spec is the single source of truth.
+pub const ScoringSpec = struct {
+    char_match: i32,
+    word_start_bonus: i32,
+    consecutive_bonus: i32,
+    gap_penalty: i32,
+    late_start_penalty: i32,
+    length_penalty: i32,
+    exact_word_bonus: i32,
+    fallback_penalty: i32,
+};
+
+/// Glyph-class score drops applied in general searches (see root.zig).
+pub const PenaltiesSpec = struct {
+    box_art: i32,
+    braille: i32,
+};
+
+pub const SearchSpec = struct {
+    scoring: ScoringSpec,
+    penalties: PenaltiesSpec,
+};
+
+var parsed_search_spec: ?SearchSpec = null;
+var search_spec_buf: [4096]u8 = undefined;
+
+/// Lazily parse the embedded search spec (all-int struct: the fixed buffer
+/// only backs the parse itself, no slices point into it afterwards). Zero
+/// heap allocations, safe in tests and before the main spec loads.
+pub fn getSearchSpec() *const SearchSpec {
+    if (parsed_search_spec == null) {
+        var fba = std.heap.FixedBufferAllocator.init(&search_spec_buf);
+        parsed_search_spec = std.json.parseFromSliceLeaky(SearchSpec, fba.allocator(), search_json, .{ .ignore_unknown_fields = true }) catch unreachable;
+    }
+    return &parsed_search_spec.?;
+}
+
 /// Match a single search term against a target search string.
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
 pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
+    const w = getSearchSpec().scoring;
 
     // The fuzzy section ends at the first '\t'; category keywords follow the tab
     // and are only used by the exact-word c: filter, never by the ranker.
@@ -29,16 +74,16 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
         const target_char = std.ascii.toLower(ftarget[target_idx]);
 
         if (term_char == target_char) {
-            var char_score: i32 = 10;
+            var char_score: i32 = w.char_match;
 
             // Bonus for matching at the start of a word
             if (target_idx == 0 or ftarget[target_idx - 1] == ' ') {
-                char_score += 40;
+                char_score += w.word_start_bonus;
             }
 
             // Compounding bonus for consecutive matches
             if (consecutive > 0) {
-                char_score += 20 * consecutive;
+                char_score += w.consecutive_bonus * consecutive;
             }
 
             score += char_score;
@@ -46,7 +91,7 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
             term_idx += 1;
         } else {
             // Small gap penalty
-            score -= 1;
+            score -= w.gap_penalty;
             consecutive = 0;
         }
         target_idx += 1;
@@ -54,7 +99,7 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
 
     // Penalty for starting late in the target string
     const start_idx = target_idx - term.len;
-    score -= @intCast(start_idx);
+    score -= w.late_start_penalty * @as(i32, @intCast(start_idx));
 
     // Exact word match bonus (consecutive match bounded by word boundaries)
     if (consecutive == term.len) {
@@ -62,12 +107,12 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
         const is_start_boundary = (start_pos == 0 or ftarget[start_pos - 1] == ' ');
         const is_end_boundary = (target_idx == ftarget.len or ftarget[target_idx] == ' ');
         if (is_start_boundary and is_end_boundary) {
-            score += 100;
+            score += w.exact_word_bonus;
         }
     }
 
     // Tie-breaker penalty for longer targets (prefer shorter, more precise descriptions)
-    score -= @intCast(ftarget.len);
+    score -= w.length_penalty * @as(i32, @intCast(ftarget.len));
 
     return score;
 }
@@ -76,6 +121,7 @@ pub fn matchTermDirect(term: []const u8, target: []const u8) ?i32 {
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
 pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
     if (term.len == 0) return 0;
+    const w = getSearchSpec().scoring;
     if (matchTermDirect(term, target)) |score| {
         return score;
     }
@@ -93,24 +139,24 @@ pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
                 buf[term.len - 3] = 'y';
                 const alternate = buf[0 .. term.len - 2];
                 if (matchTermDirect(alternate, target)) |score| {
-                    return score - 5;
+                    return score - w.fallback_penalty;
                 }
             }
             // If it ends in "es" and length > 4 (e.g. "boxes" -> "box")
             if (term.len > 4 and last2 == 'e') {
                 const alternate1 = term[0 .. term.len - 2]; // strip "es"
                 if (matchTermDirect(alternate1, target)) |score| {
-                    return score - 5;
+                    return score - w.fallback_penalty;
                 }
                 const alternate2 = term[0 .. term.len - 1]; // strip "s" (e.g. "shoes" -> "shoe")
                 if (matchTermDirect(alternate2, target)) |score| {
-                    return score - 5;
+                    return score - w.fallback_penalty;
                 }
             }
             // Default plural strip 's'
             const alternate = term[0 .. term.len - 1];
             if (matchTermDirect(alternate, target)) |score| {
-                return score - 5;
+                return score - w.fallback_penalty;
             }
         }
     }
@@ -120,7 +166,7 @@ pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
         const stem = term[0 .. term.len - 3];
         // try stem directly (e.g. "racing" -> "rac")
         if (matchTermDirect(stem, target)) |score| {
-            return score - 5;
+            return score - w.fallback_penalty;
         }
         // try stem + "e" (e.g. "racing" -> "race")
         var buf: [64]u8 = undefined;
@@ -131,27 +177,27 @@ pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
             buf[stem.len] = 'e';
             const alternate = buf[0 .. stem.len + 1];
             if (matchTermDirect(alternate, target)) |score| {
-                return score - 5;
+                return score - w.fallback_penalty;
             }
         }
         // If double consonant stem (e.g. "running" -> "run")
         if (stem.len > 2 and stem[stem.len - 1] == stem[stem.len - 2]) {
             const alternate = stem[0 .. stem.len - 1];
             if (matchTermDirect(alternate, target)) |score| {
-                return score - 5;
+                return score - w.fallback_penalty;
             }
         }
     }
 
     // Fallback: Query stem (if term ends in 'e' and length > 3, e.g. "race" -> "rac")
-    // Suppressed for terms in spec/synonyms.json "stem_exclusions" (e.g. "cute" must not
+    // Suppressed for terms in spec/synonyms.yaml "stem_exclusions" (e.g. "cute" must not
     // fall back to "cut", which would match unrelated targets like "cut of meat").
     if (term.len > 3 and std.ascii.toLower(term[term.len - 1]) == 'e' and
         !SynonymDb.isStemExcluded(term))
     {
         const alternate = term[0 .. term.len - 1];
         if (matchTermDirect(alternate, target)) |score| {
-            return score - 5;
+            return score - w.fallback_penalty;
         }
     }
 
@@ -218,7 +264,7 @@ pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
 }
 
 /// True for box-drawing and block-element glyphs (U+2500–U+259F), the
-/// entries from spec/boxart.json. Used by the b: filter and ranking.
+/// entries from spec/boxart.yaml. Used by the b: filter and ranking.
 pub fn isBoxArt(emoji: []const u8) bool {
     const view = std.unicode.Utf8View.init(emoji) catch return false;
     var iterator = view.iterator();
@@ -227,7 +273,7 @@ pub fn isBoxArt(emoji: []const u8) bool {
 }
 
 /// True for Braille pattern glyphs (U+2800–U+28FF), the entries from
-/// spec/braille.json. Used by the br: filter and ranking.
+/// spec/braille.yaml. Used by the br: filter and ranking.
 pub fn isBraille(emoji: []const u8) bool {
     const view = std.unicode.Utf8View.init(emoji) catch return false;
     var iterator = view.iterator();
@@ -339,4 +385,15 @@ pub fn getEmojiWidth(emoji: []const u8) usize {
     }
 
     return 1;
+}
+
+test "search spec: embedded weights parse and are positive" {
+    const s = getSearchSpec();
+    try std.testing.expect(s.scoring.char_match > 0);
+    try std.testing.expect(s.scoring.word_start_bonus > 0);
+    try std.testing.expect(s.scoring.consecutive_bonus > 0);
+    try std.testing.expect(s.scoring.exact_word_bonus > 0);
+    try std.testing.expect(s.scoring.fallback_penalty > 0);
+    try std.testing.expect(s.penalties.box_art > 0);
+    try std.testing.expect(s.penalties.braille > 0);
 }

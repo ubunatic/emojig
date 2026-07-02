@@ -52,11 +52,32 @@ pub const Dims = struct {
     width: usize,
 };
 
+pub const GuiDims = struct {
+    cols: usize,
+    rows: usize,
+    width: usize,
+    /// Default font size (pt) for the floating --gui window. Overridden by
+    /// EMOJIG_GUI_FONT_SIZE env or the font_size= config line.
+    font_size: usize,
+};
+
 pub const Animation = struct {
     /// Whether the block-shade exit-fade plays in TUI (inline terminal) mode.
-    exit_preview_tui: bool = true,
+    exit_preview_tui: bool,
     /// Whether the block-shade exit-fade plays in GUI (floating window) mode.
-    exit_preview_gui: bool = true,
+    exit_preview_gui: bool,
+    /// Number of block-shade frames in the exit fade.
+    exit_preview_steps: usize,
+    /// Hold duration (ms) of the exit fade; EMOJIG_EXIT_PREVIEW_MS overrides.
+    exit_preview_ms: u64,
+};
+
+/// Interaction step sizes (spec/layout.yaml `interaction`).
+pub const Interaction = struct {
+    /// Rows scrolled per mouse-wheel tick on any pane.
+    wheel_scroll_step: usize,
+    /// Coarse step for Space/Enter on a settings grid-size row.
+    grid_dim_step: usize,
 };
 
 pub const ComponentStyle = struct {
@@ -70,10 +91,13 @@ pub const Components = struct {
 
 pub const Layout = struct {
     tui: Dims,
-    gui: Dims,
+    gui: GuiDims,
     layout_overhead: usize,
     max_query_len: usize,
-    animation: Animation = .{},
+    /// Recently-used list size, clamped to defaults.MAX_MRU by mru.setLimit.
+    mru_size: usize,
+    animation: Animation,
+    interaction: Interaction,
     top_padding: bool = true,
     components: Components = .{},
 };
@@ -186,20 +210,29 @@ fn resolveRequiredColorValue(val: std.json.Value, colors_spec: *const ColorsSpec
     return default_val;
 }
 
+/// CSD title-bar styling. All fields are required in spec/theme.yaml — the
+/// spec is the single source of truth, no code-side fallback values.
 pub const CsdSpec = struct {
     /// Show title text in bold face.
-    title_bold: ?bool = null,
+    title_bold: bool,
     /// Title text color when the title bar background is dark (lum < threshold).
-    title_fg_on_dark: ?[]const u8 = null,
+    title_fg_on_dark: []const u8,
     /// Title text color when the title bar background is light (lum >= threshold).
-    title_fg_on_light: ?[]const u8 = null,
+    title_fg_on_light: []const u8,
     /// Luminance threshold (0–255) separating "dark" from "light" title bars.
-    title_luminance_threshold: ?u32 = null,
+    title_luminance_threshold: u32,
     /// Pixel height of the CSD title bar when gsettings auto-detection fails.
-    size_fallback: ?u32 = null,
+    size_fallback: usize,
     /// Multiplier (in hundredths) applied to pt×text-scale when auto-sizing the
-    /// title bar: size = pt × scale × (size_pt_factor / 100).  Default 25 = 2.5×.
-    size_pt_factor: ?u32 = null,
+    /// title bar: size = pt × scale × (size_pt_factor / 100).  25 = 2.5×.
+    size_pt_factor: usize,
+};
+
+/// System-theme detection tuning (spec/theme.yaml `detect`).
+pub const DetectSpec = struct {
+    /// OSC 11 luma cutoff (0–65535): terminal backgrounds brighter than this
+    /// resolve `--theme system` to the light palette in TUI mode.
+    osc_luma_threshold: u32,
 };
 
 pub const Theme = struct {
@@ -213,7 +246,8 @@ pub const Theme = struct {
         dark: PaletteSpec,
         light: PaletteSpec,
     },
-    csd: CsdSpec = .{},
+    csd: CsdSpec,
+    detect: DetectSpec,
 };
 
 pub const Keys = struct {
@@ -239,10 +273,14 @@ pub const SettingOption = struct {
     label: []const u8,
     choices: ?[]const []const u8 = null,
     default: []const u8,
+    /// Context-sensitive help modal text for this row (spec/settings.yaml).
+    help: ?[]const u8 = null,
 };
 
 pub const SettingsSpec = struct {
     title: []const u8,
+    /// Modal text shown when the selected row has no per-option help.
+    help_fallback: []const u8,
     options: []const SettingOption,
 };
 
@@ -377,6 +415,10 @@ pub const StatusStrings = struct {
 pub const Strings = struct {
     search_prompt: []const u8,
     search_placeholder: []const u8,
+    // Window title of the floating --gui terminal window (spec/strings/en.yaml).
+    gui_title: []const u8 = "\xf0\x9f\x98\x80 Emojig",
+    // Popup shown after the recent-emoji (MRU) history is cleared.
+    mru_cleared: []const u8 = "Recent history cleared.",
     help_lines: []const []const u8,
     help_lines_more: []const []const u8,
     about_frames: []const []const []const u8 = &[_][]const []const u8{},
@@ -393,7 +435,7 @@ pub const Strings = struct {
     // to "" the mark is dropped and picked cells are shown with multi_select_bg.
     multi_select_mark: []const u8 = "✓",
     // Background highlight for picked cells when multi_select_mark is empty —
-    // any color name from spec/colors.json (long like `forest`/`teal`, 3-letter
+    // any color name from spec/.gen/colors.json (long like `forest`/`teal`, 3-letter
     // short like `grn`/`blu`) or a literal 0-255 palette index.
     multi_select_bg: []const u8 = "green",
     // Scrollbar thumb character (default ▐). Must be exactly one display cell.
@@ -417,7 +459,7 @@ pub const StylesSpec = struct {
     styles: std.json.ArrayHashMap([]const u8) = .{},
 };
 
-/// One documented xterm-256 palette slot (see spec/colors.json).
+/// One documented xterm-256 palette slot (see spec/.gen/colors.json).
 pub const ColorEntry = struct {
     i: u16,
     name: []const u8 = "",
@@ -565,6 +607,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         if (layout.layout_overhead > 0) layout.layout_overhead -= 1;
     }
     const theme = try std.json.parseFromSliceLeaky(Theme, arena, theme_json, parse_opts);
+    term.system_luma_threshold = theme.detect.osc_luma_threshold;
     const keys = try std.json.parseFromSliceLeaky(Keys, arena, keys_json, parse_opts);
 
     const input_file = try std.json.parseFromSliceLeaky(InputFile, arena, input_generated_json, parse_opts);

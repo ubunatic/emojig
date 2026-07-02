@@ -2,6 +2,7 @@
   "description": "UI-tekstreeksen voor de emoji-kiezer (Nederlands).",
   "search_prompt": " 🔍 ",
   "search_placeholder": "zoeken…",
+  "mru_cleared": "Recente geschiedenis gewist.",
   "status_help_hint": " ?:hulp  ↕↔|↵|Esc",
   "status_matches": " {count}  ↕↔|↵|Esc",
   "status_help_hint_wide": " ?:hulp e:afb t:tekst  ↕↔|↵|Esc",

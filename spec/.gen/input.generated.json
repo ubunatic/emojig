@@ -1,5 +1,5 @@
 {
-  "$schema": "./input.schema.json",
+  "$schema": "./.schema/input.schema.json",
   "input": {
     "key_aliases": {
       "backspace": "",

@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-description: Language-neutral layout spec for the emojig picker. Consumed by the Zig app. Mirrors src/defaults.zig.
+description: >-
+  Language-neutral layout spec for the emojig picker. Consumed by the Zig
+  app. Grid sizes are clamped at load time to the compile-time bounds in
+  src/defaults.zig (5–16 columns, 3–16 rows) — those bounds only size stack
+  buffers; the values here are the actual defaults (env EMOJIG_COLS/ROWS and
+  the cols=/rows= config lines override them per user).
 tui:
     cols: 8
     rows: 10
@@ -10,13 +15,35 @@ gui:
     cols: 8
     rows: 10
     width: 36
+    # Default font size (pt) for the floating --gui window; overridden by
+    # EMOJIG_GUI_FONT_SIZE env or the font_size= config line.
+    font_size: 16
 layout_overhead: 6
 top_padding: true
 max_query_len: 63
+# Default number of recent (MRU) emojis remembered across runs. Clamped to
+# the compile-time buffer bound (src/defaults.zig MAX_MRU).
+mru_size: 24
 animation:
-    description: Controls the exit-fade (block-shade preview) animation. exit_preview_tui applies when running inline in a terminal (TUI mode); exit_preview_gui applies when launched as a floating window (GUI mode). Set either to false to skip the animation and exit immediately on selection. The EMOJIG_EXIT_PREVIEW env var and EMOJIG_EXIT_PREVIEW_MS override these defaults at runtime.
+    description: >-
+      Controls the exit-fade (block-shade preview) animation.
+      exit_preview_tui applies when running inline in a terminal (TUI mode);
+      exit_preview_gui applies when launched as a floating window (GUI
+      mode). Set either to false to skip the animation and exit immediately
+      on selection. exit_preview_steps is the number of block-shade frames;
+      exit_preview_ms is the hold duration. The EMOJIG_EXIT_PREVIEW env var
+      and EMOJIG_EXIT_PREVIEW_MS override these defaults at runtime.
     exit_preview_tui: false
     exit_preview_gui: false
+    exit_preview_steps: 8
+    exit_preview_ms: 200
+interaction:
+    # Rows scrolled per mouse-wheel tick, on any pane (grid, settings,
+    # categories, help/about/status popups).
+    wheel_scroll_step: 3
+    # Coarse step applied by Space/Enter on a settings grid-size row
+    # (Left/Right always adjust by ±1).
+    grid_dim_step: 2
 components:
     scrollpane:
         overflow: hidden

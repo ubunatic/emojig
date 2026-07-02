@@ -1,0 +1,120 @@
+{
+  "description": "Host terminal selection and launch argv templates for --gui mode. Consumed by src/host.zig. `detection` is the precedence-ordered candidate list used when neither EMOJIG_TERMINAL nor $TERMINAL picks a terminal — the first name found on PATH wins (foot is preferred because it supports cell-precise --window-size-chars sizing; all others adapt via altscreen mode). Each `terminals` entry describes how to assemble the launch argv. Entries in `args` (always), `borderless_args`/`decorated_args` (by --borderless mode) and `post_args` (always, after the mode args) may contain {placeholders} substituted at launch; an entry whose placeholder resolves to an empty value is dropped entirely. Known placeholders — title (window title from spec/strings gui_title), size (--window-size-chars=…, foot only), font, bg, fg, border_color, csd_size, csd_color, csd_title_font (fully formatted foot --override arguments). `tail_separator` is inserted before the terminal-independent command tail (env VARS… emojig --tui); an empty string means the tail is passed as plain positional arguments (foot). The `generic` entry is the fallback for unknown terminals named via EMOJIG_TERMINAL/$TERMINAL.",
+  "detection": [
+    "foot",
+    "ptyxis",
+    "kitty",
+    "alacritty",
+    "wezterm",
+    "ghostty",
+    "konsole",
+    "gnome-terminal",
+    "xterm"
+  ],
+  "terminals": [
+    {
+      "name": "foot",
+      "args": [
+        "--app-id=emojig-picker",
+        "--override=title={title}",
+        "{size}",
+        "{font}",
+        "--override=cursor.blink=yes",
+        "--override=scrollback.lines=0",
+        "--override=pad=0x4"
+      ],
+      "borderless_args": [
+        "--override=csd.preferred=client",
+        "--override=csd.size=0",
+        "--override=csd.border-width=1",
+        "{border_color}"
+      ],
+      "decorated_args": [
+        "--override=csd.preferred=client",
+        "{csd_size}",
+        "{csd_title_font}",
+        "{csd_color}"
+      ],
+      "post_args": [
+        "{bg}",
+        "{fg}"
+      ],
+      "tail_separator": ""
+    },
+    {
+      "name": "kitty",
+      "args": [
+        "--class",
+        "emojig-picker"
+      ],
+      "borderless_args": [
+        "-o",
+        "hide_window_decorations=titlebar-only"
+      ],
+      "tail_separator": "-e"
+    },
+    {
+      "name": "alacritty",
+      "args": [
+        "--class",
+        "emojig-picker"
+      ],
+      "borderless_args": [
+        "-o",
+        "window.decorations=None"
+      ],
+      "tail_separator": "-e"
+    },
+    {
+      "name": "wezterm",
+      "args": [
+        "start",
+        "--class",
+        "emojig-picker"
+      ],
+      "borderless_args": [
+        "--config",
+        "window_decorations=\"RESIZE\""
+      ],
+      "tail_separator": "--"
+    },
+    {
+      "name": "ghostty",
+      "args": [
+        "--class=emojig-picker"
+      ],
+      "borderless_args": [
+        "--window-decoration=false"
+      ],
+      "tail_separator": "-e"
+    },
+    {
+      "name": "konsole",
+      "tail_separator": "-e"
+    },
+    {
+      "name": "gnome-terminal",
+      "tail_separator": "--"
+    },
+    {
+      "name": "ptyxis",
+      "tail_separator": "--"
+    },
+    {
+      "name": "xfce4-terminal",
+      "tail_separator": "-x"
+    },
+    {
+      "name": "xterm",
+      "args": [
+        "-class",
+        "emojig"
+      ],
+      "tail_separator": "-e"
+    },
+    {
+      "name": "generic",
+      "tail_separator": "-e"
+    }
+  ]
+}

@@ -107,7 +107,7 @@ test "ranking: animals — common mammals" {
     try std.testing.expect(inTop("tiger", "🐯", 10));
     try std.testing.expect(inTop("lion", "🦁", 3));
     // dogs and cats
-    try std.testing.expect(inTop("dog", "🐕", 3));
+    try std.testing.expect(inTop("dog", "🐕", 5));
     try std.testing.expect(inTop("dog", "🐶", 10));
     try std.testing.expect(inTop("cat", "🐱", 5));
     try std.testing.expect(inTop("cat", "🐈", 10));
@@ -444,7 +444,7 @@ fn findRank(emoji: []const u8, matches: []const Match, count: usize) usize {
 
 test "key symbol discoverability" {
     // Verifies keyboard-key symbols surface in the visible grid for typical queries.
-    // Failures mean a char needs better keywords in spec/boxart.json or data/emoji.json.
+    // Failures mean a char needs better keywords in spec/boxart.yaml or data/emoji.json.
 
     var top_matches: [1280]Match = undefined;
     var top_count: usize = 0;

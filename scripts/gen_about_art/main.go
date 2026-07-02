@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Uwe Jugel
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Reads spec/art.json and compiles pixel-art entries into $[fg=N,bg=M]{char}
+// Reads spec/art.yaml and compiles pixel-art entries into $[fg=N,bg=M]{char}
 // DSL strings, then upserts the resulting *_lines / *_frames arrays into
 // spec/art.generated.json.  Single-frame entries use inline "shape";
 // multi-frame entries use "frames_dir" or "stack" sources.
@@ -35,7 +35,7 @@ const link = "\x1b]8;;https://ubunatic.com/emojig\x1b\\ubunatic.com/emojig\x1b]8
 
 // ── JSON shapes ──────────────────────────────────────────────────────────────
 
-// Global Colors Schema loaded from spec/colors.json
+// Global Colors Schema loaded from spec/.gen/colors.json
 type GlobalColor struct {
 	I     int      `json:"i"`
 	Name  string   `json:"name"`
@@ -771,13 +771,13 @@ func loadFrames(dir string, priority []string, imgPal color.Palette) ([][]string
 func main() {
 	doPrint := len(os.Args) > 1 && os.Args[1] == "print"
 
-	colorsData, err := os.ReadFile("spec/colors.json")
+	colorsData, err := os.ReadFile("spec/.gen/colors.json")
 	if err != nil {
-		fatalf("read spec/colors.json: %v", err)
+		fatalf("read spec/.gen/colors.json: %v", err)
 	}
 	var gColorsSpec GlobalColorsSpec
 	if err := json.Unmarshal(colorsData, &gColorsSpec); err != nil {
-		fatalf("parse spec/colors.json: %v", err)
+		fatalf("parse spec/.gen/colors.json: %v", err)
 	}
 	globalColors = gColorsSpec.Colors
 	for _, c := range globalColors {
@@ -788,13 +788,13 @@ func main() {
 		globalRGBs[c.I] = rgb
 	}
 
-	artData, err := os.ReadFile("spec/art.json")
+	artData, err := os.ReadFile("spec/.gen/art.json")
 	if err != nil {
-		fatalf("read spec/art.json: %v", err)
+		fatalf("read spec/.gen/art.json: %v", err)
 	}
 	var raw rawArtSpec
 	if err := json.Unmarshal(artData, &raw); err != nil {
-		fatalf("parse spec/art.json: %v", err)
+		fatalf("parse spec/.gen/art.json: %v", err)
 	}
 	palette, err := resolvePalette(raw.Palette, raw.Colors)
 	if err != nil {
@@ -991,21 +991,22 @@ func main() {
 		}
 
 		// Write to art.generated.json.
+		const artGenPath = "spec/.gen/art.generated.json"
 		if strings.HasSuffix(entry.Target, "_frames") {
-			if err := upsertFrames("spec/art.generated.json", entry.Target, allFrames); err != nil {
+			if err := upsertFrames(artGenPath, entry.Target, allFrames); err != nil {
 				fatalf("upsert %s: %v", entry.Target, err)
 			}
 			delaysKey := strings.TrimSuffix(entry.Target, "_frames") + "_delays"
-			if err := upsertInts("spec/art.generated.json", delaysKey, delays); err != nil {
+			if err := upsertInts(artGenPath, delaysKey, delays); err != nil {
 				fatalf("upsert %s: %v", delaysKey, err)
 			}
-			fmt.Printf("spec/art.generated.json: updated %s (%d frames) + %s\n",
-				entry.Target, len(allFrames), delaysKey)
+			fmt.Printf("%s: updated %s (%d frames) + %s\n",
+				artGenPath, entry.Target, len(allFrames), delaysKey)
 		} else {
-			if err := upsertLines("spec/art.generated.json", entry.Target, allFrames[0]); err != nil {
+			if err := upsertLines(artGenPath, entry.Target, allFrames[0]); err != nil {
 				fatalf("upsert %s: %v", entry.Target, err)
 			}
-			fmt.Printf("spec/art.generated.json: updated %s (%d lines)\n", entry.Target, len(allFrames[0]))
+			fmt.Printf("%s: updated %s (%d lines)\n", artGenPath, entry.Target, len(allFrames[0]))
 		}
 	}
 }

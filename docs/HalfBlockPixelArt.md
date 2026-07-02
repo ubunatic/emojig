@@ -1,7 +1,7 @@
 # Half-Block Pixel Art in the TUI
 
 This document captures the technique used for the about-screen smiley face and
-serves as a recipe for any future pixel-art additions to `spec/strings.json`.
+serves as a recipe for any future pixel-art additions to `spec/strings/en.yaml`.
 
 ---
 
@@ -56,7 +56,7 @@ Group consecutive cells that share the same `(fg, bg)` into a single ANSI span.
 
 ### 3. Use the Style DSL
 
-The `$[fg=N,bg=M]{content}` DSL (see `spec/styles.json` and `expandTemplate` in
+The `$[fg=N,bg=M]{content}` DSL (see `spec/styles.yaml` and `expandTemplate` in
 `src/main.zig`) emits `\x1b[38;5;Nm\x1b[48;5;Mm` before `content` and
 `\x1b[0m` after.  This means each span is self-contained — no manual reset
 sequences needed.
@@ -78,7 +78,7 @@ Colour codes used in the smiley:
 | W     | 255  | near-white (sclera, teeth) |
 | K     | 232  | near-black (pupil, mouth) |
 
-### 4. Encode in `spec/strings.json`
+### 4. Encode in `spec/strings/en.yaml`
 
 - **No raw ESC bytes** in JSON — they are invalid per spec and Zig's parser
   rejects them.  Write `` (6-char JSON escape) for every ESC.
@@ -101,7 +101,7 @@ ESC).
 
 ### 5. Wire into the rendering pipeline
 
-`about_lines` in `spec/strings.json` are rendered by chaining:
+`about_lines` in `spec/strings/en.yaml` are rendered by chaining:
 
 ```zig
 const after_vars = expandVars(&var_expand_buf, line, &spec_vars);
@@ -228,13 +228,13 @@ that use a geometric (pixel-accurate) font renderer:
 - ⚠️  `gnome-terminal`, `xterm` — font-dependent; may render as tofu or
      incorrectly sized if the system font lacks these codepoints
 
-For art in `spec/strings.json` that is displayed in `about_lines`, this is
+For art in `spec/strings/en.yaml` that is displayed in `about_lines`, this is
 acceptable: it degrades gracefully (the codepoints render as blank boxes in
 the worst case, and the text fallback next to the art remains readable).
 
 ### The `:about` screen
 
-The quad-block smiley in `about_lines` (generated from `spec/art.json` by
+The quad-block smiley in `about_lines` (generated from `spec/art.yaml` by
 `make gen-art`) uses a 12-col × 7-row canvas with rounded corners:
 
 ```
@@ -250,16 +250,16 @@ TR  pixel rows  visual            Difference from about
 
 ---
 
-## Data-driven pipeline: `spec/art.json` + `scripts/gen_about_art`
+## Data-driven pipeline: `spec/art.yaml` + `scripts/gen_about_art`
 
-The manual Go-script workflow above (§4 "Encode in `spec/strings.json`") has been superseded for quad-mode art by a declarative compiler that reads `.png` frame assets directly:
+The manual Go-script workflow above (§4 "Encode in `spec/strings/en.yaml`") has been superseded for quad-mode art by a declarative compiler that reads `.png` frame assets directly:
 
 * **Source Project (`sheet.pxo`)**: The animations are designed using Pixelorama. The project source file `spec/art/about/sheet.pxo` is tracked in Git.
 * **Exported Frames (`sheet_000*.png`)**: Individual frame files are exported from Pixelorama and saved to `spec/art/about/`. The compiler reads these PNG frames directly.
-* **`spec/art.json`** holds `colors` (name → xterm 256-color code), `palette` (pixel-char → color name, or `null` for transparent), `priority` (tie-break order when a cell has 2+ colors), and one or more `art` entries (`frames_dir`, `delays_ms`, `header`, `footer`, `indent`).
-* **`scripts/gen_about_art/main.go`** (`go run ./scripts/gen_about_art/`) decodes each PNG frame from the `frames_dir`, maps pixel colors to the closest palette characters, compiles them into `$[fg=N,bg=M]{...}` DSL rows, and upserts them into the named array (`target`) in `spec/strings.json`.
+* **`spec/art.yaml`** holds `colors` (name → xterm 256-color code), `palette` (pixel-char → color name, or `null` for transparent), `priority` (tie-break order when a cell has 2+ colors), and one or more `art` entries (`frames_dir`, `delays_ms`, `header`, `footer`, `indent`).
+* **`scripts/gen_about_art/main.go`** (`go run ./scripts/gen_about_art/`) decodes each PNG frame from the `frames_dir`, maps pixel colors to the closest palette characters, compiles them into `$[fg=N,bg=M]{...}` DSL rows, and upserts them into the named array (`target`) in `spec/strings/en.yaml`.
 * **`go run ./scripts/gen_about_art/ print`** renders the same compiled rows straight to stdout as live ANSI for fast preview.
-* **`make gen-art`** compiles the configuration and frames into `spec/strings.json`.
+* **`make gen-art`** compiles the configuration and frames into `spec/strings/en.yaml`.
 
 ---
 

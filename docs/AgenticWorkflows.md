@@ -111,8 +111,8 @@ Developers using terminal tools frequently have deep Vim muscle memory. Forcing 
 
 ## 6. Programmatic Schema Generation & Resource Validation
 
-Emojig defines a custom 256-color palette spec (`spec/colors.json`) mapping xterm-256 indices to names, shorts, hex values, and description aliases.
-* **Schema Generation from Master Specs**: Hardcoding valid values in multiple schemas (e.g., themes and pixel-art definitions) is a maintenance hazard. We solved this by having the color generation tool (`scripts/gen_colors/main.go`) auto-generate `spec/theme.schema.json` and `spec/art.schema.json` using the master colors database. This programmatically embeds valid xterm color names, hex patterns, and short codes into the schemas, ensuring immediate validation using standard JSON Schema tooling.
+Emojig defines a custom 256-color palette spec (`spec/.gen/colors.json`) mapping xterm-256 indices to names, shorts, hex values, and description aliases.
+* **Schema Generation from Master Specs**: Hardcoding valid values in multiple schemas (e.g., themes and pixel-art definitions) is a maintenance hazard. We solved this by having the color generation tool (`scripts/gen_colors/main.go`) auto-generate `spec/.schema/theme.schema.json` and `spec/.schema/art.schema.json` using the master colors database. This programmatically embeds valid xterm color names, hex patterns, and short codes into the schemas, ensuring immediate validation using standard JSON Schema tooling.
 * **Animation Warn-Once Suppression**: When compiling half-block pixel art frames from PNG images, we verify that every non-transparent pixel maps to an exact color in our schema. If an incompatible color is found, we warn and match to the closest schema color. To avoid flooding stdout with thousands of identical warnings (one per pixel per frame), we maintain a cache of warned colors and alert the developer *only once* per color/animation.
 
 ---
@@ -136,7 +136,7 @@ Simulating keyboard/mouse interactions in terminal apps using Unix pseudo-termin
 
 ## 9. Decoupling Development Schema Warnings from TUI Runtime Streams
 
-When loading structured layout specifications or themes (e.g., `spec/theme.json`), properties may trigger validation checks (such as color mapping or xterm-256 color index compatibility).
+When loading structured layout specifications or themes (e.g., `spec/theme.yaml`), properties may trigger validation checks (such as color mapping or xterm-256 color index compatibility).
 * **Stderr Pollution**: Printing diagnostic warnings directly to `stderr` during terminal execution is useful for developers running locally. However, if the app is launched via standard scripts or graphical wrappers (e.g., `--gui` or inside a launcher), these warnings pollute standard error and can cause visual corruption or console errors.
 * **Logging Delegation**: Separate warnings by build context. During unit testing (`builtin.is_test`), print validations directly to `stderr` for developer visibility. At runtime, write them silently to a diagnostic log file (such as `/tmp/emojig.log` via `term.appendLog`) to ensure production terminal execution streams remain clean.
 
@@ -155,7 +155,7 @@ See `docs/SearchEngine.md §12` for the full synonym pitfall table.  Short rules
 1. **`to` word must appear in at least one emoji's search string.** For multi-word `to` values, ALL words must appear in at least one *single* emoji's search (not spread across different emojis). Verify with `grep '"<emoji>"' src/emojis.bin` — but the canonical source is the binary, not the website file.
 2. **Check for duplicate keys before adding.** Run `grep -n "^    <term>:" spec/synonyms.yaml`. The YAML-to-JSON converter silently takes the last duplicate — old entries become invisible dead code.
 3. **`make preflight` catches both.** `go run ./scripts/check_synonyms/` runs automatically; it errors on duplicate YAML keys and on multi-word `to` values where no emoji contains all the words.
-4. **Website output is a derivative, not the source.** The canonical data flow is `spec/synonyms.yaml` → `make gen-spec` → `spec/synonyms.json` → `make pack` → `src/emojis.bin`. Focus on the Zig binary; `website/emojis.js` is generated last and checked last.
+4. **Website output is a derivative, not the source.** The canonical data flow is `spec/synonyms.yaml` → `make gen-spec` → `spec/synonyms.yaml` → `make pack` → `src/emojis.bin`. Focus on the Zig binary; `website/emojis.js` is generated last and checked last.
 5. **No debug test blocks in committed code.** Use a one-off `std.debug.print` inside an *existing* test, verify, then remove before committing. The debug block will show up in `zig build test` output even when all assertions pass, causing noise and fmt failures.
 
 

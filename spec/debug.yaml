@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-$schema: ./debug.schema.json
+$schema: ./.schema/debug.schema.json
 description: Spec-driven debug pane fields. Each field id is resolved by the TUI at render time.
 title: "\U0001F41E emojig debug"
 groups:

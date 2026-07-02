@@ -2,6 +2,7 @@
   "description": "Chaînes de caractères de l'interface utilisateur pour le sélecteur (Français).",
   "search_prompt": " 🔍 ",
   "search_placeholder": "rechercher…",
+  "mru_cleared": "Historique récent effacé.",
   "status_help_hint": " ?:aide  ↕↔|↵|Échap",
   "status_matches": " {count}  ↕↔|↵|Échap",
   "status_help_hint_wide": " ?:aide e:img t:txt  ↕↔|↵|Échap",

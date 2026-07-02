@@ -46,7 +46,7 @@ pub const Palette = struct {
 };
 
 // Palettes, the theme icon, and terminal color values now live in the
-// declarative spec (spec/theme.json) and are built at startup by src/spec.zig.
+// declarative spec (spec/theme.yaml) and are built at startup by src/spec.zig.
 // See Spec.paletteFor / Spec.iconFor / Spec.terminalColors.
 
 /// Apply the terminal background/foreground via OSC 11/10. `bg`/`fg` are hex
@@ -226,6 +226,11 @@ pub const DetectedTermColor = struct {
 
 pub var last_system_theme_color: ?DetectedTermColor = null;
 
+/// OSC 11 luma cutoff (0–65535) for `--theme system` detection. Set from
+/// spec/theme.yaml `detect.osc_luma_threshold` when the spec loads; the
+/// initializer only covers detection that runs before spec.load (none today).
+pub var system_luma_threshold: u32 = 32767;
+
 /// Run `gsettings get SCHEMA KEY` and return the output stripped of shell-ish
 /// quoting. Returns a slice into `buf`, or empty on failure.
 fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u8 {
@@ -323,7 +328,7 @@ pub fn detectSystemTheme(io: anytype, stdin_fd: std.posix.fd_t, stdout_fd: std.p
             r;
 
         const luma = (@as(u32, r) * 299 + @as(u32, g) * 587 + @as(u32, b) * 114) / 1000;
-        const detected_theme = if (luma > 32767) Theme.light else Theme.dark;
+        const detected_theme = if (luma > system_luma_threshold) Theme.light else Theme.dark;
         last_system_theme_color = .{ .r = r, .g = g, .b = b, .luma = luma, .theme = detected_theme };
         return detected_theme;
     }

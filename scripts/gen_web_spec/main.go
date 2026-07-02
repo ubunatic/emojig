@@ -64,12 +64,32 @@ type GlyphEntry struct {
 	Char string `json:"char"`
 }
 
+type SearchSpec struct {
+	Scoring   ScoringSpec `json:"scoring"`
+	Penalties struct {
+		BoxArt  int `json:"box_art"`
+		Braille int `json:"braille"`
+	} `json:"penalties"`
+}
+
+type ScoringSpec struct {
+	CharMatch        int `json:"char_match"`
+	WordStartBonus   int `json:"word_start_bonus"`
+	ConsecutiveBonus int `json:"consecutive_bonus"`
+	GapPenalty       int `json:"gap_penalty"`
+	LateStartPenalty int `json:"late_start_penalty"`
+	LengthPenalty    int `json:"length_penalty"`
+	ExactWordBonus   int `json:"exact_word_bonus"`
+	FallbackPenalty  int `json:"fallback_penalty"`
+}
+
 type WebSpec struct {
 	GeneratedFrom []string       `json:"generated_from"`
 	Layout        WebLayoutSpec  `json:"layout"`
 	Strings       WebStringsSpec `json:"strings"`
 	Categories    []CategorySpec `json:"categories"`
 	Filters       WebFilterSpec  `json:"filters"`
+	Scoring       ScoringSpec    `json:"scoring"`
 }
 
 type WebLayoutSpec struct {
@@ -116,19 +136,21 @@ type WebRangeFilterSpec struct {
 }
 
 func main() {
-	layout := mustReadJSON[LayoutSpec]("spec/layout.json")
-	stringsSpec := mustReadJSON[StringsSpec]("spec/strings.json")
-	categories := mustReadJSON[CategoriesSpec]("spec/categories.json")
-	boxart := mustReadJSON[GlyphSpec]("spec/boxart.json")
-	braille := mustReadJSON[GlyphSpec]("spec/braille.json")
+	layout := mustReadJSON[LayoutSpec]("spec/.gen/layout.json")
+	stringsSpec := mustReadJSON[StringsSpec]("spec/.gen/strings.json")
+	categories := mustReadJSON[CategoriesSpec]("spec/.gen/categories.json")
+	boxart := mustReadJSON[GlyphSpec]("spec/.gen/boxart.json")
+	braille := mustReadJSON[GlyphSpec]("spec/.gen/braille.json")
+	searchSpec := mustReadJSON[SearchSpec]("spec/.gen/search.json")
 
 	web := WebSpec{
 		GeneratedFrom: []string{
-			"spec/layout.json",
-			"spec/strings.json",
-			"spec/categories.json",
-			"spec/boxart.json",
-			"spec/braille.json",
+			"spec/layout.yaml",
+			"spec/strings/en.yaml",
+			"spec/categories.yaml",
+			"spec/boxart.yaml",
+			"spec/braille.yaml",
+			"spec/search.yaml",
 		},
 		Layout: WebLayoutSpec{
 			Cols:           layout.GUI.Cols,
@@ -159,9 +181,10 @@ func main() {
 		},
 		Categories: categories.Categories,
 		Filters: WebFilterSpec{
-			BoxArt:  rangeSpec(boxart, 150),
-			Braille: rangeSpec(braille, 150),
+			BoxArt:  rangeSpec(boxart, searchSpec.Penalties.BoxArt),
+			Braille: rangeSpec(braille, searchSpec.Penalties.Braille),
 		},
+		Scoring: searchSpec.Scoring,
 	}
 
 	var jsonBuf bytes.Buffer
@@ -177,7 +200,7 @@ func main() {
 	out.WriteString(" * SPDX-FileCopyrightText: 2026 Uwe Jugel\n")
 	out.WriteString(" * SPDX-License-Identifier: AGPL-3.0-or-later\n")
 	out.WriteString(" */\n\n")
-	out.WriteString("// generated from spec/*.json by scripts/gen_web_spec; do not edit by hand\n")
+	out.WriteString("// generated from the spec YAML sources (via spec/.gen/*.json) by scripts/gen_web_spec; do not edit by hand\n")
 	out.WriteString("const EMOJIG_WEB_SPEC = ")
 	out.Write(bytes.TrimSpace(jsonBuf.Bytes()))
 	out.WriteString(";\n")

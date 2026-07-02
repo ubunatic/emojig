@@ -21,9 +21,9 @@ Every key event produces two strings before reaching the dispatch chain:
 | Variable | Source | Example |
 |----------|--------|---------|
 | `name`   | Escape-sequence decoder in `main.zig` | `"ctrl-left"`, `"del"`, `"f1"` |
-| `action` | `g_spec.actionFor(name)` → lookup in `spec/keys.json` | `"nav_left"`, `"delete"`, `""` |
+| `action` | `g_spec.actionFor(name)` → lookup in `spec/keys.yaml` | `"nav_left"`, `"delete"`, `""` |
 
-`action` is empty (`""`) for any key not listed in `spec/keys.json`.
+`action` is empty (`""`) for any key not listed in `spec/keys.yaml`.
 
 **The critical rule**: the `else if (std.mem.startsWith(u8, action, "nav_"))` block
 is only entered when `action` starts with `"nav_"`.  A key whose `action` is `""`
@@ -102,7 +102,7 @@ The SGR mouse parser (`nextSgrMouseEvent`) lives alongside the key decoder in
 
 ## 3. `"del"` vs `"delete"`: distinguish forward-delete from backspace/dismiss
 
-`spec/keys.json` maps `"backspace"` → `action = "delete"`.  The `"delete"` action is
+`spec/keys.yaml` maps `"backspace"` → `action = "delete"`.  The `"delete"` action is
 also used as a generic dismiss action on non-search screens (settings, help, etc.).
 **Do not reuse `"delete"` for the Del (forward-delete) key.**
 

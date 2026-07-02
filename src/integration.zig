@@ -273,7 +273,7 @@ pub fn captureShellCmd(io: std.Io, home: []const u8, cmd: []const u8, out: []u8)
 
 pub fn runUpdate(io: std.Io, home: []const u8, cfg_cmd: ?[]const u8, spec_cmd: ?[]const u8, out: []u8) []const u8 {
     var cmd_buf: [512]u8 = undefined;
-    // Priority: config file > spec/commands.json cmd > auto-detect.
+    // Priority: config file > spec/commands.yaml cmd > auto-detect.
     var cmd: ?[]const u8 = if (cfg_cmd != null) cfg_cmd else spec_cmd;
 
     if (cmd != null) {

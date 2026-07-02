@@ -212,11 +212,11 @@ func main() {
 	}
 	fmt.Printf("Derived %d plain text-presentation twins.\n", plainTwins)
 
-	// Append box-drawing / block-element entries from spec/boxart.json.
+	// Append box-drawing / block-element entries from spec/boxart.yaml.
 	// They share the emoji entry format; search engines rank them below
 	// emojis and the b: query prefix filters to them (see internal/emoji
 	// and src/root.zig).
-	boxartPath := "spec/boxart.json"
+	boxartPath := "spec/.gen/boxart.json"
 	fmt.Printf("Reading %s...\n", boxartPath)
 	boxartData, err := os.ReadFile(boxartPath)
 	if err != nil {
@@ -245,10 +245,10 @@ func main() {
 	}
 	fmt.Printf("Added %d box art entries.\n", len(boxart.Entries))
 
-	// Append Braille pattern entries from spec/braille.json. They share the
+	// Append Braille pattern entries from spec/braille.yaml. They share the
 	// emoji entry format; search engines rank them below emojis and the br:
 	// query prefix filters to them (see internal/emoji and src/root.zig).
-	braillePath := "spec/braille.json"
+	braillePath := "spec/.gen/braille.json"
 	fmt.Printf("Reading %s...\n", braillePath)
 	brailleData, err := os.ReadFile(braillePath)
 	if err != nil {
@@ -277,8 +277,8 @@ func main() {
 	}
 	fmt.Printf("Added %d braille entries.\n", len(braille.Entries))
 
-	// Read synonyms from spec/synonyms.json
-	synonymsPath := "spec/synonyms.json"
+	// Read synonyms from spec/synonyms.yaml
+	synonymsPath := "spec/.gen/synonyms.json"
 	fmt.Printf("Reading %s...\n", synonymsPath)
 	synonymsData, err := os.ReadFile(synonymsPath)
 	if err != nil {

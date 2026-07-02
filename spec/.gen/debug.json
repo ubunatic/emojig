@@ -1,5 +1,5 @@
 {
-  "$schema": "./debug.schema.json",
+  "$schema": "./.schema/debug.schema.json",
   "description": "Spec-driven debug pane fields. Each field id is resolved by the TUI at render time.",
   "title": "🐞 emojig debug",
   "groups": [
