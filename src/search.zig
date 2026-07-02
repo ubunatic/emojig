@@ -204,6 +204,46 @@ pub fn matchTermSelf(term: []const u8, target: []const u8) ?i32 {
     return null;
 }
 
+// ---------------------------------------------------------------------------
+// Synonym lookup index (sorted, lazily built, zero heap allocations)
+// ---------------------------------------------------------------------------
+
+/// Synonym indices sorted by `from` term, so `matchTerm` can binary-search
+/// instead of scanning the full table per query term per DB entry (issue 47:
+/// the unconditional linear scan cost ~4-5ms per keystroke). Backed by a
+/// static array sized from the embedded binary header at comptime; built
+/// once on first use (same lazy pattern as `getSearchSpec`).
+var syn_order: [SynonymDb.synonym_count]u32 = undefined;
+var syn_order_ready = false;
+
+fn synLessThan(_: void, a: u32, b: u32) bool {
+    return std.mem.order(u8, SynonymDb.getSynonym(a).from, SynonymDb.getSynonym(b).from) == .lt;
+}
+
+fn synonymOrder() []const u32 {
+    if (!syn_order_ready) {
+        for (&syn_order, 0..) |*slot, i| slot.* = @intCast(i);
+        std.sort.pdq(u32, &syn_order, {}, synLessThan);
+        syn_order_ready = true;
+    }
+    return &syn_order;
+}
+
+/// First position in the sorted synonym order whose `from` is >= `term`.
+fn synonymLowerBound(order: []const u32, term: []const u8) usize {
+    var lo: usize = 0;
+    var hi: usize = order.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        if (std.mem.order(u8, SynonymDb.getSynonym(order[mid]).from, term) == .lt) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
 /// Match a single search term against a target search string.
 /// Returns a score if the term is a subsequence of the target, or null otherwise.
 pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
@@ -214,18 +254,21 @@ pub fn matchTerm(term: []const u8, target: []const u8) ?i32 {
         best_score = score;
     }
 
-    var syn_idx: usize = 0;
-    while (syn_idx < SynonymDb.synonym_count) : (syn_idx += 1) {
-        const syn = SynonymDb.getSynonym(syn_idx);
-        if (std.mem.eql(u8, syn.from, term)) {
-            if (matchTermDirect(syn.to, target)) |score| {
-                if (best_score) |best| {
-                    if (score > best) {
-                        best_score = score;
-                    }
-                } else {
+    // Binary-search the sorted synonym index for entries whose `from` equals
+    // the term; equal keys are contiguous, so scan forward from the lower
+    // bound. Order of evaluation doesn't matter — we keep the max score.
+    const order = synonymOrder();
+    var pos = synonymLowerBound(order, term);
+    while (pos < order.len) : (pos += 1) {
+        const syn = SynonymDb.getSynonym(order[pos]);
+        if (!std.mem.eql(u8, syn.from, term)) break;
+        if (matchTermDirect(syn.to, target)) |score| {
+            if (best_score) |best| {
+                if (score > best) {
                     best_score = score;
                 }
+            } else {
+                best_score = score;
             }
         }
     }

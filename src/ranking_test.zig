@@ -1296,8 +1296,13 @@ test "benchmark: search throughput" {
     const ns_plural = runBench("hearts", duration_ms);
     _ = runBench("xyzxyz", duration_ms);
 
-    if (duration_ms > 10 and is_release) {
-        const max_ns: u64 = 5_000_000;
+    // Regression guard (issue 47): non-empty queries must stay well below the
+    // ~4-5ms/keystroke cost of the old unconditional synonym-table scan. The
+    // sorted-index lookup keeps these around 0.1-0.3ms; 2ms leaves generous
+    // headroom for slow/loaded CI machines while still catching a return of
+    // the linear scan.
+    if (is_release) {
+        const max_ns: u64 = 2_000_000;
         try std.testing.expect(ns_a < max_ns);
         try std.testing.expect(ns_fire < max_ns);
         try std.testing.expect(ns_multi < max_ns);

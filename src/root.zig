@@ -294,8 +294,12 @@ pub fn searchOptions(
             }
         }
 
+        // One pass fills the remainder (after the MRU block above) *and*
+        // counts the filtered total — these were two separate full-DB scans
+        // before (issue 47, secondary finding).
+        var total: usize = 0;
         var db_idx: usize = 0;
-        while (db_idx < EmojiDb.count and top_count.* < limit) : (db_idx += 1) {
+        while (db_idx < EmojiDb.count) : (db_idx += 1) {
             const entry = EmojiDb.getEntry(db_idx);
             if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
             if (filter_width) |fw| {
@@ -327,6 +331,9 @@ pub fn searchOptions(
             };
             if (!matches_cat) continue;
 
+            total += 1;
+            if (top_count.* >= limit) continue;
+
             var already_shown = false;
             var k: usize = 0;
             while (k < mru_resolved) : (k += 1) {
@@ -338,43 +345,6 @@ pub fn searchOptions(
             if (already_shown) continue;
             top_matches[top_count.*] = Match{ .index = db_idx, .score = 0 };
             top_count.* += 1;
-        }
-
-        var total: usize = 0;
-        var count_idx: usize = 0;
-        while (count_idx < EmojiDb.count) : (count_idx += 1) {
-            const entry = EmojiDb.getEntry(count_idx);
-            if (disable_zwj and std.mem.indexOf(u8, entry.emoji, "\xe2\x80\x8d") != null) continue;
-            if (filter_width) |fw| {
-                if (getEmojiWidth(entry.emoji) != fw) continue;
-            }
-            if (filter_box and !search_mod.isBoxArt(entry.emoji)) continue;
-            if (!search_mod.braillePasses(entry.emoji, filter_braille, braille_dot_filter)) continue;
-
-            const matches_cat = blk: {
-                if (filter_category) |fc| {
-                    if (findCategorySpec(categories_spec, fc)) |cat| {
-                        break :blk emojiMatchesCategory(entry.search, cat);
-                    } else {
-                        break :blk false;
-                    }
-                }
-                if (disabled_categories.len > 0 and categories_spec != null) {
-                    for (disabled_categories) |dc_name| {
-                        for (categories_spec.?.categories) |cat| {
-                            if (std.mem.eql(u8, cat.name, dc_name)) {
-                                if (emojiMatchesCategory(entry.search, cat)) {
-                                    break :blk false;
-                                }
-                            }
-                        }
-                    }
-                }
-                break :blk true;
-            };
-            if (!matches_cat) continue;
-
-            total += 1;
         }
         if (filter_braille) search_mod.sortBrailleByDots(top_matches, top_count.*);
         return total;

@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: open
+status: done
 ---
 
 # Search hot path: unconditional synonym scan costs ~4-5ms per keystroke
@@ -133,3 +133,43 @@ numbers above are already reproducible today via `zig build test
 for that follow-up to hit (target: get non-empty single/short queries back
 down toward the same order of magnitude as the empty-query fast path,
 i.e. well under 1ms).
+
+## Resolution (2026-07-02)
+
+Fixed without any packer/binary-format change — the sorted index is built at
+*runtime*, lazily, from the existing embedded synonym table (so `make pack`
+is not required and Zig/Go engine parity is untouched; scoring semantics are
+identical because `matchTerm` still takes the max over the same synonym set,
+just found via binary search instead of a full scan):
+
+- **Primary** (`src/search.zig`): added `synonymOrder()` — a static
+  `[SynonymDb.synonym_count]u32` index (comptime-sized from the embedded
+  header, zero heap allocations) sorted by `from` on first use via
+  `std.sort.pdq`, mirroring the `getSearchSpec()` lazy-init pattern.
+  `matchTerm` now binary-searches (`synonymLowerBound`) and scans only the
+  contiguous run of equal `from` keys, replacing the unconditional ~350-entry
+  linear scan per term per DB entry.
+- **Secondary** (`src/root.zig`): merged the empty-query remainder-fill and
+  total-count loops into one full-DB pass (was two identical filter
+  traversals). The MRU-resolution scan is unchanged (dedup usually skips it,
+  per the original analysis).
+- **Regression guard** (`src/ranking_test.zig`): the benchmark assertion now
+  runs on **every** release-mode `zig build test` (previously only when
+  `EMOJIG_BENCH > 10` was set), with a 2ms/search bound — generous headroom
+  over the fixed cost, but well below the old 4-5ms scan cost.
+
+Before/after (`zig build test -Doptimize=ReleaseSafe -Dllvm=false`, same
+machine, 2533 emojis):
+
+| query       | before (ns/search) | after (ns/search) |
+|-------------|-------------------:|------------------:|
+| (empty)     |             32 809 |            34 419 |
+| `a`         |          4 219 025 |           478 501 |
+| `fire`      |          4 466 231 |           611 582 |
+| `red heart` |          5 117 062 |           440 249 |
+| `hearts`    |          4 268 979 |           465 905 |
+| `xyzxyz`    |          4 116 073 |           358 625 |
+
+~10x faster; all non-empty queries now well under the 1ms target. Verified
+with `zig build test` (all ranking tests green), `go test ./...`, and a
+screenshot run (`go run scripts/screenshot/*.go zig-out/bin/emojig "fire"`).
