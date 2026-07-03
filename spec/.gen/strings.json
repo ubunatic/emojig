@@ -47,6 +47,8 @@
   "search_prompt": " 🔍 ",
   "gui_title": "😀 Emojig",
   "mru_cleared": "Recent history cleared.",
+  "setting_help_title": "❔ setting help",
+  "done_title": "✔ done",
   "status": {
     "default": {
       "on_view": " ?:help  ↕↔|↵|Esc",

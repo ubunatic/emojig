@@ -22,6 +22,7 @@ const pid_lock = @import("pid_lock.zig");
 const color = @import("color.zig");
 const tui_draw = @import("tui_draw.zig");
 const debug_pane = @import("debug_pane.zig");
+const settings_ctl = @import("settings_ctl.zig");
 const clipboard = @import("clipboard.zig");
 const copyToClipboard = clipboard.copyToClipboard;
 
@@ -62,12 +63,7 @@ const saveKeyToConfig = config.saveKeyToConfig;
 const saveThemeToConfig = config.saveThemeToConfig;
 const saveUsizeToConfig = config.saveUsizeToConfig;
 const saveDisabledCategories = config.saveDisabledCategories;
-const finalizeGridTyping = config.finalizeGridTyping;
-const applyGridDimClick = config.applyGridDimClick;
-const typeGridDim = config.typeGridDim;
-const stepGridDim = config.stepGridDim;
-const cycleGridDim = config.cycleGridDim;
-const clampGridDim = config.clampGridDim;
+const cycleTheme = settings_ctl.cycleTheme;
 
 inline fn settingDefault(id: []const u8) []const u8 {
     return config.settingDefault(&g_spec, id);
@@ -331,101 +327,8 @@ const StdoutWriter = struct {
     }
 };
 
-const BufferWriter = struct {
-    buf: []u8,
-    pos: *usize,
-
-    pub fn writeAll(self: @This(), bytes: []const u8) !void {
-        if (self.pos.* + bytes.len > self.buf.len) return error.NoSpaceLeft;
-        @memcpy(self.buf[self.pos.*..][0..bytes.len], bytes);
-        self.pos.* += bytes.len;
-    }
-};
-
-/// Apply a non-text settings change (toggles and 2-state enums) without any
-/// confirmation popup — the per-setting help modal (`?`/`h`/`F1`) explains what
-/// each does. `forward` only matters for multi-state enums; 2-state toggles
-/// flip regardless of direction. Theme (idx 4) is handled inline in the event
-/// loop because it needs terminal-colour side effects.
-fn toggleSetting(
-    init: std.process.Init,
-    idx: usize,
-    shell_int: *bool,
-    show_cats: *bool,
-    amb_chars: *[]const u8,
-    scrollbar: *ScrollbarStyle,
-    grid_compact: *bool,
-    home: []const u8,
-    shell_name: []const u8,
-) void {
-    _ = amb_chars;
-    const io = init.io;
-    switch (idx) {
-        0 => {
-            shell_int.* = !shell_int.*;
-            saveKeyToConfig(io, "shell_integration", if (shell_int.*) "true" else "false");
-            if (shell_int.*) {
-                // Install the integration; the rc-sourcing reminder lives in the
-                // settings help modal, so the write output is discarded here.
-                var scratch: [1024]u8 = undefined;
-                var pos: usize = 0;
-                installShellIntegration(io, home, shell_name, null, BufferWriter{ .buf = &scratch, .pos = &pos });
-            }
-        },
-        2 => {
-            show_cats.* = !show_cats.*;
-            saveKeyToConfig(io, "show_all_categories", if (show_cats.*) "true" else "false");
-        },
-        5 => {
-            scrollbar.* = switch (scrollbar.*) {
-                .expand => .bar,
-                .bar => .expand,
-            };
-            saveKeyToConfig(io, "scrollbar_style", @tagName(scrollbar.*));
-        },
-        8 => {
-            grid_compact.* = !grid_compact.*;
-            saveKeyToConfig(io, "compact", if (grid_compact.*) "true" else "false");
-        },
-        else => {}, // 1 = text input, 3 = choice, 4 = theme, 6/7 = grid dims, 9 = clear MRU — handled inline
-    }
-}
-
-fn saveChoice(
-    init: std.process.Init,
-    opt_id: []const u8,
-    choice: []const u8,
-    shell_key_binding: *[]const u8,
-    ambiguous_chars: *[]const u8,
-    app_bg_choice: *[]const u8,
-    title_bg_choice: *[]const u8,
-) void {
-    saveKeyToConfig(init.io, opt_id, choice);
-    if (std.mem.eql(u8, opt_id, "shell_key_binding")) {
-        shell_key_binding.* = choice;
-    } else if (std.mem.eql(u8, opt_id, "ambiguous_chars")) {
-        ambiguous_chars.* = choice;
-        tui_draw.g_wide_ambiguous = !std.mem.eql(u8, choice, "narrow");
-    } else if (std.mem.eql(u8, opt_id, "app_bg")) {
-        app_bg_choice.* = choice;
-    } else if (std.mem.eql(u8, opt_id, "title_bg")) {
-        title_bg_choice.* = choice;
-    }
-}
-
-/// Cycle the theme enum forward (dark → light → system) or backward.
-fn cycleTheme(t: Theme, forward: bool) Theme {
-    if (forward) return switch (t) {
-        .dark => .light,
-        .light => .system,
-        .system => .dark,
-    };
-    return switch (t) {
-        .dark => .system,
-        .system => .light,
-        .light => .dark,
-    };
-}
+// Settings toggles, choice dropdowns, keybind editing, and grid-dim editing
+// live in src/settings_ctl.zig (issue 44 item 3).
 
 /// Number of categories with switcher:true in the spec.
 /// (Lives in debug_pane.zig for now; move to switcher.zig with issue 44 item 4.)
@@ -566,19 +469,6 @@ const CategoriesListPane = struct {
         return try std.fmt.bufPrint(buf, "{s} {s}{s}[{s}] {s}\x1b[0m", .{ self.palette.app_bg, bg, sel_prefix, cb, cat.name });
     }
 };
-
-/// Short, context-sensitive help for the selected settings row, shown as a
-/// modal when the user presses `?`/`h`/`F1`. The texts live in
-/// spec/settings.yaml (`help` per option, `help_fallback` for the rest); rows
-/// are rendered from the same options list, so index lookup stays attached to
-/// its option even when the spec is reordered.
-fn settingHelp(idx: usize) []const u8 {
-    const settings = &g_spec.settings;
-    if (idx < settings.options.len) {
-        if (settings.options[idx].help) |h| return h;
-    }
-    return settings.help_fallback;
-}
 
 fn runSearch(
     query: []const u8,
@@ -912,14 +802,6 @@ pub fn main(init: std.process.Init) !void {
     // next launch (the live grid keeps its launch dimensions for safety).
     var grid_cols: usize = base_cols;
     var grid_rows: usize = base_rows;
-    // Coarse step for Space/Enter on a grid-size row (Left/Right adjust by ±1).
-    const grid_dim_step: usize = g_spec.layout.interaction.grid_dim_step;
-    // Set once a grid-size row is edited this session — surfaced in the settings
-    // status hint ("applies on next launch") instead of a per-step popup.
-    var griddim_changed: bool = false;
-    // True while consecutive digits are being typed into a grid-size row, so
-    // "1" then "2" builds 12. Any non-digit key (nav/select/esc) clears it.
-    var griddim_typing: bool = false;
     const term_width = final_width;
     const show_border = final_border;
     // --gui implies show_switcher unless explicitly overridden.
@@ -1278,7 +1160,6 @@ pub fn main(init: std.process.Init) !void {
 
         var current_screen: ScreenState = .search;
         var cat_scroll_top: usize = 0;
-        var settings_scroll_top: usize = 0;
         // Number of rows on the Settings screen (JSON toggles + theme + scrollbar).
         const settings_count: usize = g_spec.settings.options.len;
         var help_scroll_top: usize = 0;
@@ -1312,21 +1193,36 @@ pub fn main(init: std.process.Init) !void {
         var app_bg_choice: []const u8 = cfg.app_bg orelse settingDefault("app_bg");
         var title_bg_choice: []const u8 = cfg.title_bg orelse settingDefault("title_bg");
         var gui_decorated: bool = cfg.decorated orelse false;
-        var colors_changed: bool = false;
-
-        var keybind_editing: bool = false;
-        var active_dropdown_opt_idx: ?usize = null;
-        var active_dropdown_sel: usize = 0;
-        var keybind_input_buf: [32]u8 = undefined;
-        var keybind_input_len: usize = 0;
-        var keybind_committed_buf: [32]u8 = undefined;
-        var keybind_committed_len: usize = 0;
 
         var popup_msg: ?[]const u8 = null;
         // Title shown on the popup's first row — set alongside `popup_msg` so the
         // modal header reflects what it actually shows (settings help vs. update).
         var popup_title: []const u8 = "💬 emojig message";
         var popup_buf: [1024]u8 = undefined;
+
+        // Settings-screen controller: dropdowns, keybind editor, grid-dim
+        // editing, scroll state (src/settings_ctl.zig, issue 44 item 3).
+        var sctl = settings_ctl.State{};
+        const senv = settings_ctl.Env{
+            .io = init.io,
+            .spec = &g_spec,
+            .theme = &theme,
+            .shell_integration = &shell_integration,
+            .show_all_categories = &show_all_categories,
+            .ambiguous_chars = &ambiguous_chars,
+            .scrollbar_style = &scrollbar_style,
+            .grid_cols = &grid_cols,
+            .grid_rows = &grid_rows,
+            .grid_compact = &grid_compact,
+            .gui_decorated = &gui_decorated,
+            .shell_key_binding = &shell_key_binding,
+            .app_bg_choice = &app_bg_choice,
+            .title_bg_choice = &title_bg_choice,
+            .popup_title = &popup_title,
+            .popup_msg = &popup_msg,
+            .home = std.mem.span(std.c.getenv("HOME") orelse ""),
+            .shell_name = detectShell(init.environ_map),
+        };
 
         // Pre-formatted emoji count — doesn't change at runtime.
         var emojis_count_buf: [16]u8 = undefined;
@@ -1378,9 +1274,6 @@ pub fn main(init: std.process.Init) !void {
         const max_preview_steps: usize = g_spec.layout.animation.exit_preview_steps;
         var theme_hovered = false;
         var menu_hovered = false;
-        // Which grid-size arrow (if any) the mouse is over, for hover feedback.
-        var griddim_hover_left = false;
-        var griddim_hover_right = false;
 
         // ---------------------------------------------------------------------------
         // Exit preview configuration (parsed once before the render loop).
@@ -1631,7 +1524,7 @@ pub fn main(init: std.process.Init) !void {
                         if (show_top_border) current_total_rows += 1;
                         if (g_spec.layout.top_padding) current_total_rows += 1; // Top padding
                         current_total_rows += 1; // Search bar
-                        if (active_dropdown_opt_idx) |opt_idx| {
+                        if (sctl.dropdown_opt_idx) |opt_idx| {
                             current_total_rows += 2 + (g_spec.settings.options[opt_idx].choices.?.len);
                         } else {
                             current_total_rows += 1; // Spacer
@@ -1701,37 +1594,8 @@ pub fn main(init: std.process.Init) !void {
                 var tmpl_expand_buf: [512]u8 = undefined;
 
                 var printed_rows: usize = 0;
-                if (active_dropdown_opt_idx) |opt_idx| {
-                    const opt = g_spec.settings.options[opt_idx];
-                    popup_title = opt.label;
-                    var pos: usize = 0;
-                    if (opt.choices) |choices| {
-                        for (choices, 0..) |choice, ci| {
-                            const is_selected = (ci == active_dropdown_sel);
-                            const prefix = if (is_selected) "> " else "  ";
-                            const bold_start = if (is_selected) term_lib.BOLD else "";
-                            const bold_end = if (is_selected) term_lib.BOLD_OFF else "";
-                            if (std.mem.eql(u8, opt.id, "shell_key_binding")) {
-                                const caveat = if (std.mem.eql(u8, choice, "C-o"))
-                                    "leaves C-e free"
-                                else if (std.mem.eql(u8, choice, "C-e"))
-                                    "blocks end-line"
-                                else if (std.mem.eql(u8, choice, "C-x e"))
-                                    "blocks editor"
-                                else if (std.mem.eql(u8, choice, "C-g"))
-                                    "blocks abort key"
-                                else
-                                    "edit config";
-                                const line = std.fmt.bufPrint(popup_buf[pos..], "{s}{s}{s}: {s}{s}\n", .{ prefix, bold_start, choice, caveat, bold_end }) catch break;
-                                pos += line.len;
-                            } else {
-                                const line = std.fmt.bufPrint(popup_buf[pos..], "{s}{s}{s}{s}\n", .{ prefix, bold_start, choice, bold_end }) catch break;
-                                pos += line.len;
-                            }
-                        }
-                    }
-                    popup_msg = if (pos > 0) popup_buf[0 .. pos - 1] else "";
-                }
+                // Choice captions come from spec/settings.yaml `choice_help`.
+                if (sctl.dropdown_opt_idx != null) settings_ctl.dropdownPopup(&sctl, senv, &popup_buf);
                 const rw = tui_draw.RowWriter{ .fd = stdout_fd, .total = current_total_rows, .count = &printed_rows };
                 const pane_env = tui_draw.PaneEnv{
                     .fd = stdout_fd,
@@ -1925,7 +1789,7 @@ pub fn main(init: std.process.Init) !void {
                     const is_focus_lost = !has_focus;
                     const is_help_mode = (query_len > 0 and query_buf[0] == '?');
                     if (popup_msg != null and !is_too_small) {
-                        const popup_rows = if (active_dropdown_opt_idx) |opt_idx| 2 + (g_spec.settings.options[opt_idx].choices.?.len) else rows + 3;
+                        const popup_rows = if (sctl.dropdown_opt_idx) |opt_idx| 2 + (g_spec.settings.options[opt_idx].choices.?.len) else rows + 3;
                         var lines = std.mem.splitScalar(u8, popup_msg.?, '\n');
                         var h_idx: usize = 0;
                         while (h_idx < popup_rows) : (h_idx += 1) {
@@ -2070,7 +1934,7 @@ pub fn main(init: std.process.Init) !void {
                             .selected_idx = selected_idx,
                             .shell_integration = shell_integration,
                             .shell_key_binding = shell_key_binding,
-                            .keybind_editing = keybind_editing,
+                            .keybind_editing = sctl.keybind_editing,
                             .show_all_categories = show_all_categories,
                             .ambiguous_chars = ambiguous_chars,
                             .theme = theme,
@@ -2079,14 +1943,14 @@ pub fn main(init: std.process.Init) !void {
                             .grid_rows = grid_rows,
                             .grid_compact = grid_compact,
                             .gui_decorated = gui_decorated,
-                            .hover_left = griddim_hover_left,
-                            .hover_right = griddim_hover_right,
+                            .hover_left = sctl.hover_left,
+                            .hover_right = sctl.hover_right,
                             .app_bg_choice = app_bg_choice,
                             .title_bg_choice = title_bg_choice,
                             .palette = palette,
                             .overflow_hidden = std.mem.eql(u8, g_spec.layout.components.dropdown.overflow, "hidden"),
                         };
-                        try tui_draw.renderListPane(pane_env, &line_buf, "⚙️ emojig settings", rows, settings_scroll_top, &src);
+                        try tui_draw.renderListPane(pane_env, &line_buf, "⚙️ emojig settings", rows, sctl.scroll_top, &src);
                     } else if (current_screen == .categories and !is_too_small) {
                         const src = CategoriesListPane{
                             .selected_idx = selected_idx,
@@ -2967,22 +2831,23 @@ pub fn main(init: std.process.Init) !void {
                             } else if (current_screen == .debug) {
                                 const vph = rows + 3;
                                 break :blk if (debug_pane.lineCount(&g_spec) > vph) st.view.scrollable else st.view.default;
-                            } else if (current_screen == .settings and keybind_editing) {
+                            } else if (current_screen == .settings and sctl.keybind_editing) {
                                 break :blk st.settings.keybind;
                             } else if (current_screen == .settings and selected_idx != null and
-                                (selected_idx.? == 6 or selected_idx.? == 7))
+                                settings_ctl.gridDimAt(&g_spec, selected_idx.?) != null)
                             {
                                 // Grid-size row: show the controls and (once edited)
                                 // the "applies on next launch" note, instead of a
                                 // popup on every step.
-                                const lbl = if (selected_idx.? == 6) "width" else "height";
-                                const val = if (selected_idx.? == 6) grid_cols else grid_rows;
-                                break :blk if (griddim_changed)
+                                const is_cols = settings_ctl.gridDimAt(&g_spec, selected_idx.?).?;
+                                const lbl = if (is_cols) "width" else "height";
+                                const val = if (is_cols) grid_cols else grid_rows;
+                                break :blk if (sctl.griddim_changed)
                                     std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039}\u{203a}/0-9/Bksp ?:help · next launch", .{ lbl, val }) catch st.settings.navigate
                                 else
                                     std.fmt.bufPrint(&status_text_buf, " grid {s} {d}  \u{2039} \u{203a}/0-9 ?:help · Esc:back", .{ lbl, val }) catch st.settings.navigate;
                             } else if (current_screen == .settings) {
-                                break :blk if (griddim_changed or colors_changed)
+                                break :blk if (sctl.griddim_changed or sctl.colors_changed)
                                     " ↕:nav ←→:change ?:help · next launch"
                                 else
                                     st.settings.navigate;
@@ -3365,9 +3230,9 @@ pub fn main(init: std.process.Init) !void {
                                 else if (grid_scroll_top > step) grid_scroll_top - step else 0;
                             } else if (current_screen == .settings) {
                                 const max_top = if (settings_count > rows) settings_count - rows else 0;
-                                settings_scroll_top = if (wheel_down)
-                                    @min(settings_scroll_top + step, max_top)
-                                else if (settings_scroll_top > step) settings_scroll_top - step else 0;
+                                sctl.scroll_top = if (wheel_down)
+                                    @min(sctl.scroll_top + step, max_top)
+                                else if (sctl.scroll_top > step) sctl.scroll_top - step else 0;
                             } else if (current_screen == .categories) {
                                 const total = g_spec.categories.categories.len;
                                 const max_top = if (total > rows) total - rows else 0;
@@ -3402,18 +3267,11 @@ pub fn main(init: std.process.Init) !void {
                             // Settings/categories have title+blank before first item → offset +1.
                             const list_first_row: i32 = grid_first_row + 1;
                             if (current_screen == .settings) {
-                                griddim_hover_left = false;
-                                griddim_hover_right = false;
-                                if (click_row >= list_first_row) {
-                                    const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
-                                    if (opt_idx < settings_count) selected_idx = opt_idx;
-                                    // Bold the grid-size arrow under the cursor (same
-                                    // hit-zones as applyGridDimClick: 3–5 ‹, 8–10 ›).
-                                    if (opt_idx == 6 or opt_idx == 7) {
-                                        griddim_hover_left = local_col >= 3 and local_col <= 5;
-                                        griddim_hover_right = local_col >= 8 and local_col <= 10;
-                                    }
-                                }
+                                const list_row: ?usize = if (click_row >= list_first_row)
+                                    @as(usize, @intCast(click_row - list_first_row))
+                                else
+                                    null;
+                                settings_ctl.hover(&sctl, senv, &selected_idx, list_row, local_col);
                             } else if (current_screen == .categories) {
                                 if (click_row >= list_first_row) {
                                     const cat_idx = cat_scroll_top + @as(usize, @intCast(click_row - list_first_row));
@@ -3481,7 +3339,7 @@ pub fn main(init: std.process.Init) !void {
                         } else if (!is_motion and btn_id == 0 and event.term_char == 'M' and has_focus) {
                             // Left click press.
                             if (popup_msg != null) {
-                                active_dropdown_opt_idx = null;
+                                sctl.dropdown_opt_idx = null;
                                 popup_msg = null;
                                 break :sgr_loop;
                             }
@@ -3497,11 +3355,7 @@ pub fn main(init: std.process.Init) !void {
                                     local_col >= cw_click - sw_click * 2 - 4 and local_col < cw_click - 2)
                                 {
                                     // Theme toggle icon — cycle and persist to config.
-                                    theme = switch (theme) {
-                                        .dark => .light,
-                                        .light => .system,
-                                        .system => .dark,
-                                    };
+                                    theme = cycleTheme(theme, true);
                                     saveThemeToConfig(init.io, theme);
                                     if (theme == .system)
                                         system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
@@ -3537,60 +3391,13 @@ pub fn main(init: std.process.Init) !void {
                                 } else {
                                     const list_first_row: i32 = grid_first_row + 1;
                                     if (current_screen == .settings and click_row >= list_first_row) {
-                                        const opt_idx = settings_scroll_top + @as(usize, @intCast(click_row - list_first_row));
+                                        const opt_idx = sctl.scroll_top + @as(usize, @intCast(click_row - list_first_row));
                                         if (opt_idx < settings_count) {
                                             selected_idx = opt_idx;
-                                            const opt = g_spec.settings.options[opt_idx];
-                                            if (std.mem.eql(u8, opt.type, "choice")) {
-                                                active_dropdown_opt_idx = opt_idx;
-                                                const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
-                                                    shell_key_binding
-                                                else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
-                                                    ambiguous_chars
-                                                else if (std.mem.eql(u8, opt.id, "app_bg"))
-                                                    app_bg_choice
-                                                else if (std.mem.eql(u8, opt.id, "title_bg"))
-                                                    title_bg_choice
-                                                else
-                                                    "";
-                                                var found_idx: usize = 0;
-                                                if (opt.choices) |choices| {
-                                                    for (choices, 0..) |choice, ci| {
-                                                        if (std.mem.eql(u8, choice, current_val)) {
-                                                            found_idx = ci;
-                                                            break;
-                                                        }
-                                                    }
-                                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
-                                                        found_idx = 4; // custom
-                                                    }
-                                                }
-                                                active_dropdown_sel = found_idx;
-                                            } else if (opt_idx == 4) {
-                                                theme = cycleTheme(theme, true);
-                                                saveThemeToConfig(init.io, theme);
+                                            if (settings_ctl.activate(&sctl, senv, opt_idx, local_col) == .theme_changed) {
                                                 if (theme == .system)
                                                     system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                                            } else if (opt_idx == 6 or opt_idx == 7) {
-                                                griddim_typing = false;
-                                                const v = if (opt_idx == 6) &grid_cols else &grid_rows;
-                                                if (applyGridDimClick(init.io, opt_idx == 6, local_col, v)) {
-                                                    griddim_changed = true;
-                                                }
-                                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
-                                                mru.clear();
-                                                popup_title = "✔ done";
-                                                popup_msg = g_spec.strings.mru_cleared;
-                                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
-                                                gui_decorated = !gui_decorated;
-                                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
-                                                colors_changed = true;
-                                            } else {
-                                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                                const shell_s = detectShell(init.environ_map);
-                                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
-                                                if (opt_idx == 8) griddim_changed = true;
                                             }
                                         }
                                     } else if (current_screen == .categories and click_row >= list_first_row) {
@@ -3672,58 +3479,20 @@ pub fn main(init: std.process.Init) !void {
                 };
             } else {
                 // Printable text — append to keybind input or search query.
-                if (has_focus and active_dropdown_opt_idx != null) {
-                    const opt_idx = active_dropdown_opt_idx.?;
-                    const opt = g_spec.settings.options[opt_idx];
-                    if (opt.choices) |choices| {
-                        for (bytes) |b| {
-                            if (b >= '1' and b <= '0' + @as(u8, @intCast(choices.len))) {
-                                const sel_idx = b - '1';
-                                const choice = choices[sel_idx];
-                                if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
-                                    active_dropdown_opt_idx = null;
-                                    popup_msg = null;
-                                    keybind_editing = true;
-                                    keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
-                                    @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
-                                    keybind_input_len = keybind_committed_len;
-                                    @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
-                                    shell_key_binding = keybind_input_buf[0..keybind_input_len];
-                                } else {
-                                    saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
-                                    active_dropdown_opt_idx = null;
-                                    popup_msg = null;
-                                }
-                            }
-                        }
-                    }
-                } else if (has_focus and keybind_editing) {
+                if (has_focus and sctl.dropdown_opt_idx != null) {
+                    // A digit picks that dropdown choice directly.
                     for (bytes) |b| {
-                        if (b >= 32 and b <= 126 and keybind_input_len < keybind_input_buf.len) {
-                            keybind_input_buf[keybind_input_len] = b;
-                            keybind_input_len += 1;
-                            shell_key_binding = keybind_input_buf[0..keybind_input_len];
+                        if (settings_ctl.dropdownPrintable(&sctl, senv, b) == .theme_changed) {
+                            if (theme == .system)
+                                system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
+                            applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                         }
                     }
+                } else if (has_focus and sctl.keybind_editing) {
+                    for (bytes) |b| settings_ctl.keybindPrintable(&sctl, senv, b);
                 } else if (has_focus and current_screen == .settings) {
-                    const on_grid = selected_idx != null and (selected_idx.? == 6 or selected_idx.? == 7);
-                    for (bytes) |b| {
-                        if (b == '?' or b == 'h') {
-                            // Context-sensitive help for the selected setting —
-                            // the same key toggles the modal closed again.
-                            popup_title = "❔ setting help";
-                            popup_msg = if (popup_msg == null) settingHelp(selected_idx orelse 0) else null;
-                        } else if (on_grid and b >= '0' and b <= '9') {
-                            // Type a number directly into the selected grid-size row.
-                            const is_cols = selected_idx.? == 6;
-                            const max = if (is_cols) defaults.MAX_COLS else defaults.MAX_ROWS;
-                            const v = if (is_cols) &grid_cols else &grid_rows;
-                            typeGridDim(v, b, griddim_typing, max);
-                            griddim_typing = true;
-                            griddim_changed = true;
-                            saveUsizeToConfig(init.io, if (is_cols) "cols" else "rows", v.*);
-                        }
-                    }
+                    // `?`/`h` toggle the help modal, digits edit a grid-dim row.
+                    for (bytes) |b| settings_ctl.printable(&sctl, senv, selected_idx, b);
                 } else if (has_focus and current_screen == .search and
                     selected_idx != null and bytes.len == 1 and bytes[0] == ' ')
                 {
@@ -3801,40 +3570,13 @@ pub fn main(init: std.process.Init) !void {
             }
 
             // Dispatch the decoded key through the spec/keys.yaml bindings.
-            // Dispatch the decoded key through the spec/keys.yaml bindings.
             if (logical) |name| {
                 const action = g_spec.actionFor(name) orelse "";
-                if (active_dropdown_opt_idx) |opt_idx| {
-                    const opt = g_spec.settings.options[opt_idx];
-                    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "q") or std.mem.eql(u8, action, "quit")) {
-                        active_dropdown_opt_idx = null;
-                        popup_msg = null;
-                    } else if (std.mem.eql(u8, name, "up") or std.mem.eql(u8, action, "nav_up")) {
-                        if (opt.choices) |choices| {
-                            active_dropdown_sel = if (active_dropdown_sel > 0) active_dropdown_sel - 1 else choices.len - 1;
-                        }
-                    } else if (std.mem.eql(u8, name, "down") or std.mem.eql(u8, action, "nav_down")) {
-                        if (opt.choices) |choices| {
-                            active_dropdown_sel = (active_dropdown_sel + 1) % choices.len;
-                        }
-                    } else if (std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "select")) {
-                        if (opt.choices) |choices| {
-                            const choice = choices[active_dropdown_sel];
-                            if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
-                                active_dropdown_opt_idx = null;
-                                popup_msg = null;
-                                keybind_editing = true;
-                                keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
-                                @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
-                                keybind_input_len = keybind_committed_len;
-                                @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
-                                shell_key_binding = keybind_input_buf[0..keybind_input_len];
-                            } else {
-                                saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
-                                active_dropdown_opt_idx = null;
-                                popup_msg = null;
-                            }
-                        }
+                if (sctl.dropdown_opt_idx != null) {
+                    if (settings_ctl.dropdownKey(&sctl, senv, name, action) == .theme_changed) {
+                        if (theme == .system)
+                            system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
+                        applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                     }
                 } else if (popup_msg != null) {
                     if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "f1") or std.mem.eql(u8, action, "delete") or std.mem.eql(u8, action, "select") or std.mem.eql(u8, action, "quit")) {
@@ -3861,193 +3603,42 @@ pub fn main(init: std.process.Init) !void {
                     if (std.mem.eql(u8, action, "open_settings")) {
                         current_screen = .settings;
                         selected_idx = 0;
-                        settings_scroll_top = 0;
+                        sctl.scroll_top = 0;
                     } else if (current_screen == .settings) {
-                        if (keybind_editing) {
-                            if (std.mem.eql(u8, name, "backspace")) {
-                                if (keybind_input_len > 0) {
-                                    keybind_input_len -= 1;
-                                    shell_key_binding = keybind_input_buf[0..keybind_input_len];
-                                }
-                            } else if (std.mem.eql(u8, name, "enter")) {
-                                keybind_editing = false;
-                                keybind_committed_len = @min(keybind_input_len, keybind_committed_buf.len);
-                                @memcpy(keybind_committed_buf[0..keybind_committed_len], keybind_input_buf[0..keybind_committed_len]);
-                                shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
-                                saveKeyToConfig(init.io, "shell_key_binding", shell_key_binding);
-                            } else if (std.mem.eql(u8, name, "esc")) {
-                                keybind_editing = false;
-                                shell_key_binding = keybind_committed_buf[0..keybind_committed_len];
-                            }
+                        if (sctl.keybind_editing) {
+                            settings_ctl.keybindKey(&sctl, senv, name);
                         } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
-                            keybind_editing = false;
-                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
-                            griddim_typing = false;
-                            griddim_hover_left = false;
-                            griddim_hover_right = false;
+                            settings_ctl.endNav(&sctl, senv, selected_idx);
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else settings_count - 1;
-                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
+                            adjustScrollTop(selected_idx.?, &sctl.scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
-                            keybind_editing = false;
-                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
-                            griddim_typing = false;
-                            griddim_hover_left = false;
-                            griddim_hover_right = false;
+                            settings_ctl.endNav(&sctl, senv, selected_idx);
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < settings_count) selected_idx.? + 1 else 0;
-                            adjustScrollTop(selected_idx.?, &settings_scroll_top, rows, settings_count);
+                            adjustScrollTop(selected_idx.?, &sctl.scroll_top, rows, settings_count);
                         } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
-                            const opt_idx = selected_idx orelse 0;
-                            const opt = g_spec.settings.options[opt_idx];
-                            if (std.mem.eql(u8, opt.type, "choice")) {
-                                active_dropdown_opt_idx = opt_idx;
-                                const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
-                                    shell_key_binding
-                                else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
-                                    ambiguous_chars
-                                else if (std.mem.eql(u8, opt.id, "app_bg"))
-                                    app_bg_choice
-                                else if (std.mem.eql(u8, opt.id, "title_bg"))
-                                    title_bg_choice
-                                else
-                                    "";
-                                var found_idx: usize = 0;
-                                if (opt.choices) |choices| {
-                                    for (choices, 0..) |choice, ci| {
-                                        if (std.mem.eql(u8, choice, current_val)) {
-                                            found_idx = ci;
-                                            break;
-                                        }
-                                    }
-                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
-                                        found_idx = 4; // custom
-                                    }
-                                }
-                                active_dropdown_sel = found_idx;
-                            } else if (opt_idx == 4) {
-                                theme = cycleTheme(theme, true);
-                                saveThemeToConfig(init.io, theme);
+                            if (settings_ctl.activate(&sctl, senv, selected_idx orelse 0, null) == .theme_changed) {
                                 if (theme == .system)
                                     system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                            } else if (opt_idx == 6) {
-                                grid_cols = cycleGridDim(grid_cols, grid_dim_step, defaults.MIN_COLS, defaults.MAX_COLS);
-                                saveUsizeToConfig(init.io, "cols", grid_cols);
-                                griddim_changed = true;
-                                griddim_typing = false;
-                            } else if (opt_idx == 7) {
-                                grid_rows = cycleGridDim(grid_rows, grid_dim_step, defaults.MIN_ROWS, defaults.MAX_ROWS);
-                                saveUsizeToConfig(init.io, "rows", grid_rows);
-                                griddim_changed = true;
-                                griddim_typing = false;
-                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
-                                mru.clear();
-                                popup_title = "✔ done";
-                                popup_msg = g_spec.strings.mru_cleared;
-                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
-                                gui_decorated = !gui_decorated;
-                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
-                                colors_changed = true;
-                            } else {
-                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                const shell_s = detectShell(init.environ_map);
-                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
-                                if (opt_idx == 8) griddim_changed = true;
                             }
                         } else if ((std.mem.eql(u8, action, "nav_left") or std.mem.eql(u8, action, "nav_right")) and selected_idx != null) {
                             // Left/Right change the value of the selected setting:
-                            // ±1 on grid dims, forward/back cycle on theme, and a
-                            // plain toggle on the booleans and 2-state enums.
-                            const opt_idx = selected_idx.?;
+                            // ±1 on grid dims, forward/back cycle on choices (theme
+                            // applies live), plain toggle on the booleans.
                             const increase = std.mem.eql(u8, action, "nav_right");
-                            griddim_typing = false;
-                            if (opt_idx == 6) {
-                                grid_cols = stepGridDim(grid_cols, increase, defaults.MIN_COLS, defaults.MAX_COLS);
-                                saveUsizeToConfig(init.io, "cols", grid_cols);
-                                griddim_changed = true;
-                            } else if (opt_idx == 7) {
-                                grid_rows = stepGridDim(grid_rows, increase, defaults.MIN_ROWS, defaults.MAX_ROWS);
-                                saveUsizeToConfig(init.io, "rows", grid_rows);
-                                griddim_changed = true;
-                            } else if (opt_idx == 4) {
-                                theme = cycleTheme(theme, increase);
-                                saveThemeToConfig(init.io, theme);
+                            if (settings_ctl.step(&sctl, senv, selected_idx.?, increase) == .theme_changed) {
                                 if (theme == .system)
                                     system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
-                            } else if (opt_idx < settings_count and std.mem.eql(u8, g_spec.settings.options[opt_idx].type, "choice")) {
-                                const opt = g_spec.settings.options[opt_idx];
-                                if (opt.choices) |choices| {
-                                    const current_val = if (std.mem.eql(u8, opt.id, "shell_key_binding"))
-                                        shell_key_binding
-                                    else if (std.mem.eql(u8, opt.id, "ambiguous_chars"))
-                                        ambiguous_chars
-                                    else if (std.mem.eql(u8, opt.id, "app_bg"))
-                                        app_bg_choice
-                                    else if (std.mem.eql(u8, opt.id, "title_bg"))
-                                        title_bg_choice
-                                    else
-                                        "";
-                                    var found_idx: usize = 0;
-                                    for (choices, 0..) |choice, ci| {
-                                        if (std.mem.eql(u8, choice, current_val)) {
-                                            found_idx = ci;
-                                            break;
-                                        }
-                                    }
-                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and found_idx == 0 and !std.mem.eql(u8, current_val, choices[0])) {
-                                        found_idx = 4; // custom
-                                    }
-                                    const next_idx = if (increase)
-                                        (found_idx + 1) % choices.len
-                                    else
-                                        (found_idx + choices.len - 1) % choices.len;
-
-                                    const choice = choices[next_idx];
-                                    if (std.mem.eql(u8, opt.id, "shell_key_binding") and std.mem.eql(u8, choice, "custom")) {
-                                        keybind_editing = true;
-                                        keybind_committed_len = @min(shell_key_binding.len, keybind_committed_buf.len);
-                                        @memcpy(keybind_committed_buf[0..keybind_committed_len], shell_key_binding[0..keybind_committed_len]);
-                                        keybind_input_len = keybind_committed_len;
-                                        @memcpy(keybind_input_buf[0..keybind_input_len], keybind_committed_buf[0..keybind_committed_len]);
-                                        shell_key_binding = keybind_input_buf[0..keybind_input_len];
-                                    } else {
-                                        saveChoice(init, opt.id, choice, &shell_key_binding, &ambiguous_chars, &app_bg_choice, &title_bg_choice);
-                                        if (std.mem.eql(u8, opt.id, "app_bg") or std.mem.eql(u8, opt.id, "title_bg"))
-                                            colors_changed = true;
-                                    }
-                                }
-                            } else if (std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "decorated")) {
-                                gui_decorated = !gui_decorated;
-                                saveKeyToConfig(init.io, "decorated", if (gui_decorated) "true" else "false");
-                                colors_changed = true;
-                            } else if (opt_idx != 1 and !std.mem.eql(u8, g_spec.settings.options[opt_idx].id, "clear_mru")) {
-                                const home_s = std.mem.span(std.c.getenv("HOME") orelse "");
-                                const shell_s = detectShell(init.environ_map);
-                                toggleSetting(init, opt_idx, &shell_integration, &show_all_categories, &ambiguous_chars, &scrollbar_style, &grid_compact, home_s, shell_s);
-                                if (opt_idx == 8) griddim_changed = true;
                             }
                         } else if (std.mem.eql(u8, name, "f1")) {
-                            popup_title = "❔ setting help";
-                            popup_msg = settingHelp(selected_idx orelse 0);
+                            settings_ctl.openHelp(senv, selected_idx orelse 0);
                         } else if (std.mem.eql(u8, name, "backspace") and selected_idx != null and
-                            (selected_idx.? == 6 or selected_idx.? == 7))
+                            settings_ctl.gridDimAt(&g_spec, selected_idx.?) != null)
                         {
-                            // Backspace on a grid-size row resets it to the spec
-                            // default and ends the typing run, so the next digit
-                            // starts a fresh number rather than appending.
-                            if (selected_idx.? == 6) {
-                                grid_cols = clampGridDim(g_spec.layout.tui.cols, defaults.MIN_COLS, defaults.MAX_COLS);
-                                saveUsizeToConfig(init.io, "cols", grid_cols);
-                            } else {
-                                grid_rows = clampGridDim(g_spec.layout.tui.rows, defaults.MIN_ROWS, defaults.MAX_ROWS);
-                                saveUsizeToConfig(init.io, "rows", grid_rows);
-                            }
-                            griddim_changed = true;
-                            griddim_typing = false;
+                            settings_ctl.resetGridDim(&sctl, senv, selected_idx.?);
                         } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
-                            keybind_editing = false;
-                            if (griddim_typing) finalizeGridTyping(init.io, selected_idx, &grid_cols, &grid_rows);
-                            griddim_typing = false;
+                            settings_ctl.endNav(&sctl, senv, selected_idx);
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
@@ -4163,7 +3754,7 @@ pub fn main(init: std.process.Init) !void {
                                 } else if (std.mem.eql(u8, cmd.action, "open_settings")) {
                                     current_screen = .settings;
                                     selected_idx = 0;
-                                    settings_scroll_top = 0;
+                                    sctl.scroll_top = 0;
                                 } else if (std.mem.eql(u8, cmd.action, "open_categories")) {
                                     current_screen = .categories;
                                     selected_idx = 0;
@@ -4461,4 +4052,5 @@ test {
     _ = @import("term.zig");
     _ = @import("tui_draw.zig");
     _ = @import("debug_pane.zig");
+    _ = @import("settings_ctl.zig");
 }

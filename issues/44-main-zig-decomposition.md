@@ -126,6 +126,51 @@ bound now also scales with the measured empty-query baseline
 (`max(2ms, 50 × ns_empty)`) — uniform load inflates both sides, a
 return of the linear synonym scan only inflates the left side.
 
+## Progress (2026-07-03, item 3 done)
+
+Item 3 (settings screen control) extracted to **`src/settings_ctl.zig`**:
+`State` (scroll_top, dropdown, keybind-editor buffers, grid-dim
+typing/changed/hover flags, colors_changed) replaces 13 scattered
+`main()` locals; `Env` holds pointers to the app-wide setting values.
+The event loop now calls `hover`/`activate`/`step`/`dropdownKey`/
+`dropdownPrintable`/`keybindKey`/`keybindPrintable`/`printable`/
+`resetGridDim`/`endNav`/`dropdownPopup`, all unit-tested against a fake
+spec. `main.zig` is down to 4056 lines (from 4834 at review time).
+
+**Dispatch is now id-based, not index-based** — `toggleSetting`'s
+hard-coded `0/2/5/8` switch (with a stale comment: it said "9 = clear
+MRU" while clear_mru sat at index 12 of 13 options) and the
+`opt_idx == 4/6/7/8` arms are gone; `spec/settings.yaml` is reorderable.
+`config.finalizeGridTyping` takes `is_cols: ?bool` instead of the row
+index. The `found_idx = 4 // custom` magic number is replaced by
+searching the choices for `"custom"`.
+
+Deliberate behavior fixes folded in:
+
+- **Theme dropdown commit applies the theme live.** The old
+  `opt_idx == 4` click/Enter arms were dead code (theme is type
+  `choice`, so the choice branch always matched first) — selecting a
+  theme from the dropdown only wrote the config and left the running
+  picker unchanged. `applyChoice` now sets the live theme, saves, and
+  returns `Effect.theme_changed` so main reapplies terminal colors
+  (same for a digit-typed dropdown pick, which had the same gap).
+- **`colors_changed` is set on dropdown commit** of app_bg/title_bg
+  (previously only the Left/Right cycle path set it, so the
+  "next launch" status hint was missed for dropdown picks).
+
+Spec wins: the shell-keybinding dropdown captions ("leaves C-e free",
+"blocks end-line", …) moved from a hard-coded Zig if-chain into
+`spec/settings.yaml` as a generic per-option `choice_help` list
+(`SettingOption.choice_help`, rendered for any option that has it);
+popup titles "❔ setting help" / "✔ done" moved to
+`spec/strings/en.yaml` (`setting_help_title`/`done_title`, Zig-side
+defaults so other languages fall back).
+
+Note for later items: `zig build test` sometimes prints a spurious
+`failed command: ...test --listen=-` line even when all 119 tests pass
+and the exit code is 0 — pre-existing on main (verified via stash), not
+a regression signal by itself; trust the exit code / Build Summary.
+
 ## Progress (2026-07-03, item 2 done)
 
 Item 2 (debug pane model) extracted to **`src/debug_pane.zig`**:

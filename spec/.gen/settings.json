@@ -22,6 +22,13 @@
         "C-g",
         "custom"
       ],
+      "choice_help": [
+        "leaves C-e free",
+        "blocks end-line",
+        "blocks editor",
+        "blocks abort key",
+        "edit config"
+      ],
       "default": "C-o",
       "help": "Shell key binding\n\nChoose a keybinding.\nOverride by selecting 5\nor edit shell_key_binding\nin ~/.config/emojig/config"
     },

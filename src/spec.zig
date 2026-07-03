@@ -275,6 +275,9 @@ pub const SettingOption = struct {
     default: []const u8,
     /// Context-sensitive help modal text for this row (spec/settings.yaml).
     help: ?[]const u8 = null,
+    /// Per-choice captions shown in the dropdown modal, index-aligned with
+    /// `choices` (spec/settings.yaml); a missing tail entry renders bare.
+    choice_help: ?[]const []const u8 = null,
 };
 
 pub const SettingsSpec = struct {
@@ -419,6 +422,9 @@ pub const Strings = struct {
     gui_title: []const u8 = "\xf0\x9f\x98\x80 Emojig",
     // Popup shown after the recent-emoji (MRU) history is cleared.
     mru_cleared: []const u8 = "Recent history cleared.",
+    // Popup titles used by the settings screen (spec/strings/en.yaml).
+    setting_help_title: []const u8 = "❔ setting help",
+    done_title: []const u8 = "✔ done",
     help_lines: []const []const u8,
     help_lines_more: []const []const u8,
     about_frames: []const []const []const u8 = &[_][]const []const u8{},

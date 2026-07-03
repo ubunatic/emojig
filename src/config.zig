@@ -246,10 +246,13 @@ pub fn finalizeGridDim(io: std.Io, val: *usize, key: []const u8, min: usize, max
     }
 }
 
-pub fn finalizeGridTyping(io: std.Io, sel: ?usize, cols: *usize, rows: *usize) void {
-    const s = sel orelse return;
-    if (s == 6) finalizeGridDim(io, cols, "cols", defaults.MIN_COLS, defaults.MAX_COLS);
-    if (s == 7) finalizeGridDim(io, rows, "rows", defaults.MIN_ROWS, defaults.MAX_ROWS);
+pub fn finalizeGridTyping(io: std.Io, is_cols: ?bool, cols: *usize, rows: *usize) void {
+    const c = is_cols orelse return;
+    if (c) {
+        finalizeGridDim(io, cols, "cols", defaults.MIN_COLS, defaults.MAX_COLS);
+    } else {
+        finalizeGridDim(io, rows, "rows", defaults.MIN_ROWS, defaults.MAX_ROWS);
+    }
 }
 
 pub fn applyGridDimClick(io: std.Io, is_cols: bool, local_col: i32, val: *usize) bool {

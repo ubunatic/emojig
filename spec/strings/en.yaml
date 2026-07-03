@@ -47,6 +47,9 @@ search_prompt: " \U0001F50D "
 gui_title: "\U0001F600 Emojig"
 # Popup shown after the recent-emoji (MRU) history is cleared.
 mru_cleared: Recent history cleared.
+# Popup titles used by the settings screen.
+setting_help_title: "❔ setting help"
+done_title: "✔ done"
 status:
     default:
         on_view: ' ?:help  ↕↔|↵|Esc'

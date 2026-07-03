@@ -39,6 +39,14 @@ options:
         - C-x e
         - C-g
         - custom
+      # Dropdown captions, index-aligned with choices (a missing tail entry
+      # renders the bare choice).
+      choice_help:
+        - leaves C-e free
+        - blocks end-line
+        - blocks editor
+        - blocks abort key
+        - edit config
       default: C-o
       help: |-
         Shell key binding
