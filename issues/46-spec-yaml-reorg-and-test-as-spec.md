@@ -178,11 +178,22 @@ Done in this pass:
   of every option's `help` (and `help_fallback`) against it — silent modal
   truncation is now guarded.
 
+## Resolution (2026-07-03) — §3 categories split applied
+
+Done together with issue 44 item 4 (`src/switcher.zig` extraction): the
+12 switcher-bar layout knobs moved from `spec/categories.yaml` into a
+new **`spec/switcher.yaml`** (own file rather than `layout.yaml`, since
+it pairs 1:1 with the new `src/switcher.zig` consumer and `layout.yaml`
+was already flagged as grab-bag). `spec.SwitcherSpec` holds the knobs;
+`CategoriesSpec` (root.zig, shared with the search library) is now pure
+category data. Wiring: Makefile `SPEC_YAMLS` + build.zig embed list +
+`src/spec.zig` load. Grep-verified `gen_web_spec`/`webspec.js` never
+read the layout knobs.
+
 Still open (invasive, left for follow-ups):
 
 - §2 merges (`keys.yaml`→`input.yaml`, `styles.yaml`→strings tier) — touch
   the generator, `@embedFile` wiring in build.zig, and two Zig spec structs.
-- §3 `categories.yaml` split (switcher-layout knobs → `layout.yaml`).
 - §5.1 ranking regression list in `spec/search.yaml` (triple-engine parity).
 - §5.2 theme punch-through contract as data (Zig-side `buildPalette` test).
 - §5.3 host argv golden tests against the real argv assembly.

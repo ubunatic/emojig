@@ -82,8 +82,9 @@ watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input s
 # the generated JSON is tracked so plain `zig build` works without Go.
 # Non-Zig-app spec tiers live in subdirectories: spec/web/ (website/JS demo
 # only) and spec/reels/ (wayreel recorder only) — never loaded by src/spec.zig.
-SPEC_YAMLS = layout theme keys commands settings categories debug styles \
-             art boxart braille synonyms search host
+SPEC_YAMLS = layout theme keys commands settings categories switcher \
+             debug styles art boxart braille synonyms search host
+
 SPEC_WEB   = jsdemo crt-theme
 SPEC_LANGS = de es fr it nl pl pt ru tr uk
 SPEC_REELS = gui tui-dark tui-light
@@ -154,10 +155,19 @@ termstate: ⚙️  # print active terminal mode snapshot (scroll region, mouse, 
 termstate-watch: ⚙️  # watch terminal modes live, refreshing every 2 s (Ctrl-C to stop)
 	@sh scripts/termstate.sh --watch
 
-WAYREEL      := $(HOME)/go/bin/wayreel
+WAYREEL := $(HOME)/go/bin/wayreel
 
 wayreel-install: ⚙️  # build and install wayreel from ../wayreel
 	cd ../wayreel && go install .
+
+REELS     := $(wildcard spec/**/*.reel)
+REEL_INFO := $$(grep -o 'title *=.*' $$reel | sed 's/.*=[ ]*//g')\n  ├╴file   = $$reel\n  ╰╴$$(grep -o 'output *=.*' "$$reel")
+
+reels: ⚙️  # show all reel files and info how to use them
+	@echo "Wayreel Reels:"
+	@for reel in $(REELS); do echo -e "  $(REEL_INFO)"; done
+	@echo "Watch with:       wayreel play <file>"
+	@echo "Record webm with: wayreel record <file>"
 
 record: ⚙️ wayreel-install gen-spec  # record all three demos (tui-dark, tui-light, gui)
 	$(WAYREEL) record spec/.gen/reels/tui-dark.json

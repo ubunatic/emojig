@@ -171,6 +171,30 @@ Note for later items: `zig build test` sometimes prints a spurious
 and the exit code is 0 — pre-existing on main (verified via stash), not
 a regression signal by itself; trust the exit code / Build Summary.
 
+## Progress (2026-07-03, item 4 done)
+
+Item 4 (category switcher) extracted to **`src/switcher.zig`**: `State`
+(cat_idx/hover_idx/row_hovered replaces 3 `main()` locals), the
+switcher-category walkers (`catCount`/`catAt`/`catName`/`catIcon` —
+`catCount` reclaimed from its temporary home in debug_pane.zig),
+Tab/Shift+Tab `cycle`, mouse `slotIndexAt`/`hoverAt`/`click` hit-zone
+geometry, `isHovering`/`hoveredCat` for the description-row hint, and
+the full row renderer (`prefix`/`bgOnlyFromPattern`/`renderSlot`/
+`renderRow`) that replaced the three per-render-pass local closures
+(`swPrefix`/`bgOnlyFromPattern`/`swRenderSlot`) — the "pure string/color
+logic with no possible unit test today" gap is closed with 9 direct
+tests including a pipe-based renderRow byte test. `main.zig` is down to
+3762 lines. No behavior change (screenshot-verified: active-All slot
+renders `[🗃️]` + category icons as before).
+
+Done together with **issue 46 §3**: the 12 switcher-bar layout knobs
+(`row_pad_left`…`select_pattern`) moved from `spec/categories.yaml` into
+a new **`spec/switcher.yaml`** (`spec.SwitcherSpec` in spec.zig, embedded
+as `spec_switcher`); `categories.yaml` and the library-side
+`CategoriesSpec` (root.zig) are now pure category data. Grep-verified no
+Go/JS consumer reads the layout knobs (`gen_web_spec`'s Go struct only
+reads `categories`).
+
 ## Progress (2026-07-03, item 2 done)
 
 Item 2 (debug pane model) extracted to **`src/debug_pane.zig`**:
@@ -181,8 +205,8 @@ gained a `spec: *const spec_mod.Spec` field (no `g_spec` global access)
 and stores a pre-resolved `screen_name` string instead of main's
 `ScreenState` enum. `themeName` moved to `term.zig` (next to `Theme`);
 `categorySynonymCount`/`disabledCategoryCount` moved along (spec-param
-form); `switcherCatCount` lives in debug_pane temporarily and should
-move to `switcher.zig` when item 4 creates it.
+form); `switcherCatCount` lived in debug_pane temporarily and moved to
+`switcher.zig` as `catCount` when item 4 created it (done, see above).
 
 ## Earlier progress (2026-07-02, partial)
 

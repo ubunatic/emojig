@@ -123,6 +123,7 @@ pub fn build(b: *std.Build) void {
         "commands.json",
         "settings.json",
         "categories.json",
+        "switcher.json",
         "debug.json",
         "search.json",
         "host.json",

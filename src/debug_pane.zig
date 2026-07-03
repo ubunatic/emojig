@@ -12,6 +12,7 @@ const mru = emojig.mru;
 const term = @import("term.zig");
 const host = @import("host.zig");
 const spec_mod = @import("spec.zig");
+const switcher = @import("switcher.zig");
 const config = @import("config.zig");
 const resize = @import("resize.zig");
 
@@ -90,16 +91,6 @@ inline fn boolText(v: bool) []const u8 {
     return if (v) "true" else "false";
 }
 
-/// Number of categories with switcher:true in the spec. (Shared with main's
-/// switcher bar; move to switcher.zig when issue 44 item 4 extracts it.)
-pub fn switcherCatCount(spec: *const spec_mod.Spec) usize {
-    var count: usize = 0;
-    for (spec.categories.categories) |cat| {
-        if (cat.switcher) count += 1;
-    }
-    return count;
-}
-
 fn categorySynonymCount(spec: *const spec_mod.Spec) usize {
     var count: usize = 0;
     for (spec.categories.categories) |cat| {
@@ -174,7 +165,7 @@ fn value(buf: []u8, id: []const u8, ctx: DebugCtx) []const u8 {
     if (std.mem.eql(u8, id, "synonym_pairs")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.synonym_count}) catch "?";
     if (std.mem.eql(u8, id, "stem_exclusions")) return std.fmt.bufPrint(buf, "{d}", .{emojig.SynonymDb.stem_excl_count}) catch "?";
     if (std.mem.eql(u8, id, "category_count")) return std.fmt.bufPrint(buf, "{d}", .{spec.categories.categories.len}) catch "?";
-    if (std.mem.eql(u8, id, "switcher_category_count")) return std.fmt.bufPrint(buf, "{d}", .{switcherCatCount(spec)}) catch "?";
+    if (std.mem.eql(u8, id, "switcher_category_count")) return std.fmt.bufPrint(buf, "{d}", .{switcher.catCount(spec)}) catch "?";
     if (std.mem.eql(u8, id, "category_synonyms")) return std.fmt.bufPrint(buf, "{d}", .{categorySynonymCount(spec)}) catch "?";
     if (std.mem.eql(u8, id, "disabled_categories")) return std.fmt.bufPrint(buf, "{d}", .{disabledCategoryCount(spec, ctx.disabled_cats)}) catch "?";
     if (std.mem.eql(u8, id, "command_count")) return std.fmt.bufPrint(buf, "{d}", .{spec.commands.commands.len}) catch "?";

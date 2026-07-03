@@ -24,6 +24,7 @@ const strings_json = @embedFile("spec_strings");
 const commands_json = @embedFile("spec_commands");
 const settings_json = @embedFile("spec_settings");
 const categories_json = @embedFile("spec_categories");
+const switcher_json = @embedFile("spec_switcher");
 const debug_json = @embedFile("spec_debug");
 const strings_es = @embedFile("spec_strings_es");
 const strings_pt = @embedFile("spec_strings_pt");
@@ -357,6 +358,41 @@ const emojig_mod = @import("emojig");
 pub const CategorySpec = emojig_mod.CategorySpec;
 pub const CategoriesSpec = emojig_mod.CategoriesSpec;
 
+/// Switcher-bar layout (spec/switcher.yaml). Category *data* (name/icon/
+/// switcher flag) stays in CategoriesSpec; these knobs only shape the row.
+pub const SwitcherSpec = struct {
+    /// Written once at the very start of the switcher row, in status_bg.
+    row_pad_left: []const u8 = "",
+    /// Written once at the very end of the switcher row (after fill), in status_bg.
+    row_pad_right: []const u8 = "",
+    /// Icon for the "All" slot (no category filter). Must be exactly 2 display cols.
+    /// Use a 1-wide char + space (e.g. "✱ ", "* ") or a 2-wide emoji.
+    all_icon: []const u8 = "\u{2731} ",
+    /// Prefix for every normal (unselected, unhovered) slot. Must be 1 display col.
+    pad_left: []const u8 = " ",
+    /// Prefix for the selected (active) slot — replaces pad_left. Same width.
+    select_left: []const u8 = "",
+    /// Prefix for the slot immediately AFTER the selected one — replaces that
+    /// slot's pad_left, "stealing" one col so the total row width stays constant.
+    select_right: []const u8 = "",
+    /// How much of the selected slot the bg color covers.
+    /// "all"  → left + icon + right all get sel_bg (right bracket also highlighted).
+    /// "icon" → only the 2-col icon gets sel_bg; left/right stay in status_bg.
+    select_scope: []const u8 = "all",
+    /// Prefix for the hovered (mouse-over) slot — replaces pad_left.
+    hl_left: []const u8 = "",
+    /// Prefix for the slot immediately after the hovered one — replaces pad_left.
+    hl_right: []const u8 = "",
+    /// Same scope control for hover. "all" or "icon".
+    hl_scope: []const u8 = "all",
+    /// $fmtvars attrs string applied as bg color for the hovered slot.
+    /// Empty → palette.selection_bg.
+    hl_pattern: []const u8 = "",
+    /// $fmtvars attrs string applied as bg color for the selected slot.
+    /// Empty → palette.selection_bg. "none" → status_bg (no highlight).
+    select_pattern: []const u8 = "",
+};
+
 pub const AboutArtFile = struct {
     about_frames: []const []const []const u8 = &.{},
     about_delays: []const u16 = &.{},
@@ -563,6 +599,7 @@ pub const Spec = struct {
     commands: Commands,
     settings: SettingsSpec,
     categories: CategoriesSpec,
+    switcher: SwitcherSpec,
     debug: DebugSpec,
     styles: StylesSpec,
     colors: ColorsSpec,
@@ -657,6 +694,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     const commands = try std.json.parseFromSliceLeaky(Commands, arena, commands_json, parse_opts);
     const settings = try std.json.parseFromSliceLeaky(SettingsSpec, arena, settings_json, parse_opts);
     const categories = try std.json.parseFromSliceLeaky(CategoriesSpec, arena, categories_json, parse_opts);
+    const switcher = try std.json.parseFromSliceLeaky(SwitcherSpec, arena, switcher_json, parse_opts);
     const debug = try std.json.parseFromSliceLeaky(DebugSpec, arena, debug_json, parse_opts);
     const styles = try std.json.parseFromSliceLeaky(StylesSpec, arena, styles_json, parse_opts);
     const colors = try std.json.parseFromSliceLeaky(ColorsSpec, arena, colors_json, parse_opts);
@@ -670,6 +708,7 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
         .commands = commands,
         .settings = settings,
         .categories = categories,
+        .switcher = switcher,
         .debug = debug,
         .styles = styles,
         .colors = colors,

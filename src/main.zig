@@ -23,6 +23,7 @@ const color = @import("color.zig");
 const tui_draw = @import("tui_draw.zig");
 const debug_pane = @import("debug_pane.zig");
 const settings_ctl = @import("settings_ctl.zig");
+const switcher = @import("switcher.zig");
 const clipboard = @import("clipboard.zig");
 const copyToClipboard = clipboard.copyToClipboard;
 
@@ -330,35 +331,8 @@ const StdoutWriter = struct {
 // Settings toggles, choice dropdowns, keybind editing, and grid-dim editing
 // live in src/settings_ctl.zig (issue 44 item 3).
 
-/// Number of categories with switcher:true in the spec.
-/// (Lives in debug_pane.zig for now; move to switcher.zig with issue 44 item 4.)
-fn switcherCatCount() usize {
-    return debug_pane.switcherCatCount(&g_spec);
-}
-
-/// Return the name of the i-th switcher category (0-based). Null when out of range.
-fn switcherCatName(idx: usize) ?[]const u8 {
-    var count: usize = 0;
-    for (g_spec.categories.categories) |cat| {
-        if (cat.switcher) {
-            if (count == idx) return cat.name;
-            count += 1;
-        }
-    }
-    return null;
-}
-
-/// Return the icon of the i-th switcher category (0-based). Empty slice when out of range.
-fn switcherCatIcon(idx: usize) []const u8 {
-    var count: usize = 0;
-    for (g_spec.categories.categories) |cat| {
-        if (cat.switcher) {
-            if (count == idx) return cat.icon;
-            count += 1;
-        }
-    }
-    return "";
-}
+// Category switcher state, hit-zones, and row rendering live in
+// src/switcher.zig (issue 44 item 4).
 
 // --- pane line sources (issue 44 item 1) ---------------------------------
 // One source type per doc/list pane; tui_draw.renderScrollPane and
@@ -806,10 +780,8 @@ pub fn main(init: std.process.Init) !void {
     const show_border = final_border;
     // --gui implies show_switcher unless explicitly overridden.
     const show_switcher: bool = final_show_switcher_pref orelse (init.environ_map.get("EMOJIG_GUI_SPAWNED") != null);
-    // Switcher cat index: null = all emojis; 0..N-1 = specific switcher category.
-    var switcher_cat_idx: ?usize = null;
-    var switcher_hover_idx: ?usize = null; // null = All slot hovered, none = not on switcher row
-    var switcher_row_hovered = false;
+    // Category switcher state (active filter index + mouse hover).
+    var swst = switcher.State{};
 
     // Row offset: when border is shown, all content rows shift down by 1.
     const row_off: i32 = if (show_border) 1 else 0;
@@ -2348,240 +2320,11 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, hlines[0..@min((content_width + 1) * hline_unit_len, hlines.len)]);
                             try rw.endRowFull();
 
-                            // Switcher row — prefix-theft layout.
-                            // Every slot: prefix(1 col) + icon(2 cols) = sw_slot_w cols.
-                            // select_left/select_right replace pad_left of active slot and the
-                            // slot after it ("stealing" one col → total row width stays constant).
-                            //
-                            // select_scope / hl_scope control what the bg color covers:
-                            //   "all"  → left + icon + right all get the highlight color.
-                            //            right bracket is the stolen prefix of the next slot,
-                            //            so that slot's bg is also set to sel/hl color.
-                            //   "icon" → only the 2-col icon gets highlight; left/right stay
-                            //            in status_bg (brackets visible, no bg bleed).
-                            const sw_cats = g_spec.categories;
-                            const sw_pad_left = sw_cats.pad_left;
-                            const sw_slot_w = sw_pad_left.len + 2;
-                            const sw_row_pad_left = sw_cats.row_pad_left;
-                            const sw_row_pad_right = sw_cats.row_pad_right;
-                            const sw_sel_scope_all = !std.mem.eql(u8, sw_cats.select_scope, "icon");
-                            const sw_hl_scope_all = !std.mem.eql(u8, sw_cats.hl_scope, "icon");
-
-                            // Resolve bg colors (attrs-only). "none" → categories_bg (no highlight).
-                            var sw_hl_buf: [128]u8 = undefined;
-                            const sw_hl_bg: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
-                                palette.categories_bg
-                            else if (sw_cats.hl_pattern.len > 0)
-                                color.buildSgr(&sw_hl_buf, sw_cats.hl_pattern, &g_spec.styles)
-                            else
-                                palette.selection_bg;
-                            var sw_sel_buf: [128]u8 = undefined;
-                            const sw_sel_bg: []const u8 = if (std.mem.eql(u8, sw_cats.select_pattern, "none"))
-                                palette.categories_bg
-                            else if (sw_cats.select_pattern.len > 0)
-                                color.buildSgr(&sw_sel_buf, sw_cats.select_pattern, &g_spec.styles)
-                            else
-                                palette.selection_bg;
-
-                            const sw_n = switcherCatCount();
-                            // slot index: 0 = All, 1..sw_n = categories.
-                            const sw_active_slot: ?usize = if (switcher_cat_idx == null) 0 else switcher_cat_idx.? + 1;
-                            const sw_hover_slot: ?usize = if (!switcher_row_hovered) null else if (switcher_hover_idx == null) 0 else switcher_hover_idx.? + 1;
-
-                            // Return the prefix char(s) for a given slot index.
-                            const swPrefix = struct {
-                                fn call(slot: usize, active: ?usize, hover: ?usize, cats: spec_mod.CategoriesSpec) []const u8 {
-                                    if (active != null and slot == active.?) return if (cats.select_left.len > 0) cats.select_left else cats.pad_left;
-                                    if (active != null and slot > 0 and slot == active.? + 1) return if (cats.select_right.len > 0) cats.select_right else cats.pad_left;
-                                    if (hover != null and slot == hover.?) return if (cats.hl_left.len > 0) cats.hl_left else cats.pad_left;
-                                    if (hover != null and slot > 0 and slot == hover.? + 1) return if (cats.hl_right.len > 0) cats.hl_right else cats.pad_left;
-                                    return cats.pad_left;
-                                }
-                            }.call;
-
-                            const eff_theme = if (theme == .system) system_theme else theme;
-                            const palette_spec = if (eff_theme == .light) g_spec.theme.themes.light else g_spec.theme.themes.dark;
-
-                            const bgOnlyFromPattern = struct {
-                                fn call(buf: []u8, pattern: []const u8) []const u8 {
-                                    var it = std.mem.splitScalar(u8, pattern, ',');
-                                    while (it.next()) |p_raw| {
-                                        const attr = std.mem.trim(u8, p_raw, " \t");
-                                        if (std.mem.indexOfScalar(u8, attr, '=')) |eq| {
-                                            const key = attr[0..eq];
-                                            const val = attr[eq + 1 ..];
-                                            if (std.mem.eql(u8, key, "bg")) {
-                                                return color.bgEscape(buf, val);
-                                            }
-                                        }
-                                    }
-                                    return "";
-                                }
-                            }.call;
-
-                            var sel_bg_only_buf: [64]u8 = undefined;
-                            const sw_sel_bg_only: []const u8 = blk: {
-                                switch (palette_spec.selection_bg) {
-                                    .null => break :blk "",
-                                    .integer => |i| {
-                                        var val_buf: [16]u8 = undefined;
-                                        const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{i}) catch "";
-                                        break :blk color.bgEscape(&sel_bg_only_buf, val_str);
-                                    },
-                                    .string => |s| {
-                                        break :blk color.bgEscape(&sel_bg_only_buf, s);
-                                    },
-                                    else => break :blk "",
-                                }
-                            };
-
-                            // categories_bg_only: bg-only escape for the switcher row base color.
-                            // Reads categories_bg spec first, falls back to search_bg (same default as buildPalette).
-                            var cat_bg_only_buf: [64]u8 = undefined;
-                            const cat_bg_only: []const u8 = blk: {
-                                const cat_spec_val = palette_spec.categories_bg;
-                                const effective = switch (cat_spec_val) {
-                                    .null => palette_spec.search_bg,
-                                    else => cat_spec_val,
-                                };
-                                switch (effective) {
-                                    .null => break :blk "",
-                                    .integer => |i| {
-                                        var val_buf: [16]u8 = undefined;
-                                        const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{i}) catch "";
-                                        break :blk color.bgEscape(&cat_bg_only_buf, val_str);
-                                    },
-                                    .string => |s| {
-                                        break :blk color.bgEscape(&cat_bg_only_buf, s);
-                                    },
-                                    else => break :blk "",
-                                }
-                            };
-
-                            var sw_hl_bg_only_buf: [64]u8 = undefined;
-                            const sw_hl_bg_only: []const u8 = if (std.mem.eql(u8, sw_cats.hl_pattern, "none"))
-                                cat_bg_only
-                            else if (sw_cats.hl_pattern.len > 0)
-                                bgOnlyFromPattern(&sw_hl_bg_only_buf, sw_cats.hl_pattern)
-                            else
-                                sw_sel_bg_only;
-
-                            // Render one slot. In "all" scope, the slot-after-active also gets
-                            // sel_bg for its prefix (the stolen right bracket).
-                            const swRenderSlot = struct {
-                                fn call(
-                                    fd: i32,
-                                    slot: usize,
-                                    icon: []const u8,
-                                    active: ?usize,
-                                    hover: ?usize,
-                                    sel_bg: []const u8,
-                                    hl_bg: []const u8,
-                                    hl_bg_only: []const u8,
-                                    status_bg: []const u8,
-                                    cats: spec_mod.CategoriesSpec,
-                                    sel_scope_all: bool,
-                                    hl_scope_all: bool,
-                                ) !void {
-                                    const is_active = active != null and slot == active.?;
-                                    const is_hover = hover != null and slot == hover.?;
-                                    const is_after_active = active != null and slot > 0 and slot == active.? + 1;
-                                    const is_after_hover = hover != null and slot > 0 and slot == hover.? + 1;
-
-                                    const prefix = swPrefix(slot, active, hover, cats);
-                                    const is_active_bracket = is_active or is_after_active;
-
-                                    // Hover always wins over active for bg color — the brackets
-                                    // already indicate active state visually.
-                                    var prefix_bg_buf: [128]u8 = undefined;
-                                    const prefix_bg: []const u8 = blk: {
-                                        if (hl_scope_all and (is_hover or is_after_hover)) {
-                                            if (is_active_bracket) {
-                                                break :blk std.fmt.bufPrint(&prefix_bg_buf, "{s}{s}", .{ status_bg, hl_bg_only }) catch status_bg;
-                                            } else {
-                                                break :blk hl_bg;
-                                            }
-                                        } else if (sel_scope_all and (is_active or is_after_active)) {
-                                            break :blk sel_bg;
-                                        } else {
-                                            break :blk status_bg;
-                                        }
-                                    };
-                                    const icon_bg: []const u8 = blk: {
-                                        if (is_hover) break :blk hl_bg;
-                                        if (is_active) break :blk sel_bg;
-                                        break :blk status_bg;
-                                    };
-
-                                    try term_lib.writeAll(fd, "\x1b[0m");
-                                    try term_lib.writeAll(fd, prefix_bg);
-                                    try term_lib.writeAll(fd, prefix);
-                                    if (!std.mem.eql(u8, icon_bg, prefix_bg)) {
-                                        try term_lib.writeAll(fd, "\x1b[0m");
-                                        try term_lib.writeAll(fd, icon_bg);
-                                    }
-                                    if (icon.len > 0) try term_lib.writeAll(fd, icon);
-                                }
-                            }.call;
-
-                            try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
-                            // row_pad_left: outer left margin of the entire switcher row.
-                            if (sw_row_pad_left.len > 0) {
-                                try writeAll(stdout_fd, "\x1b[0m");
-                                try writeAll(stdout_fd, palette.app_bg);
-                                try writeAll(stdout_fd, sw_row_pad_left);
-                            }
-                            // all_icon must be exactly 2 display cols (spec-defined).
-                            const sw_all_icon = sw_cats.all_icon;
-                            try swRenderSlot(stdout_fd, 0, sw_all_icon, sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.categories_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
-                            var sw_i: usize = 0;
-                            while (sw_i < sw_n) : (sw_i += 1) {
-                                try swRenderSlot(stdout_fd, sw_i + 1, switcherCatIcon(sw_i), sw_active_slot, sw_hover_slot, sw_sel_bg, sw_hl_bg, sw_hl_bg_only, palette.categories_bg, sw_cats, sw_sel_scope_all, sw_hl_scope_all);
-                            }
-                            // Fill area: always write fill_prefix with fill_bg (even when it
-                            // equals pad_left) so scope="all" hover color reaches the right
-                            // boundary of the last slot. Then reset to categories_bg for remainder.
-                            const sw_slots_used: usize = sw_slot_w * (1 + sw_n) + sw_row_pad_left.len + sw_row_pad_right.len;
-                            if (content_width > sw_slots_used) {
-                                const last_slot = sw_n;
-                                const fill_prefix = swPrefix(last_slot + 1, sw_active_slot, sw_hover_slot, sw_cats);
-                                const is_after_hov = sw_hover_slot != null and last_slot == sw_hover_slot.? and sw_hl_scope_all;
-                                const is_after_act = sw_active_slot != null and last_slot == sw_active_slot.? and sw_sel_scope_all;
-                                var fill_bg_buf: [128]u8 = undefined;
-                                const fill_bg: []const u8 = blk: {
-                                    const is_active_bracket = sw_active_slot != null and last_slot == sw_active_slot.?;
-                                    if (is_after_hov) {
-                                        if (is_active_bracket) {
-                                            break :blk std.fmt.bufPrint(&fill_bg_buf, "{s}{s}", .{ palette.categories_bg, sw_hl_bg_only }) catch palette.categories_bg;
-                                        } else {
-                                            break :blk sw_hl_bg;
-                                        }
-                                    } else if (is_after_act) {
-                                        break :blk sw_sel_bg;
-                                    } else {
-                                        break :blk palette.categories_bg;
-                                    }
-                                };
-                                // Write fill_prefix with fill_bg — this covers the "right side"
-                                // of the last slot in scope="all" even when no bracket char is set.
-                                try writeAll(stdout_fd, "\x1b[0m");
-                                try writeAll(stdout_fd, fill_bg);
-                                try writeAll(stdout_fd, fill_prefix);
-                                // Remaining fill in categories_bg.
-                                const rem = content_width - sw_slots_used - fill_prefix.len;
-                                if (rem > 0) {
-                                    try writeAll(stdout_fd, "\x1b[0m");
-                                    try writeAll(stdout_fd, palette.categories_bg);
-                                    try writeAll(stdout_fd, spaces[0..@min(rem, spaces.len)]);
-                                }
-                            }
-                            // row_pad_right: outer right margin.
-                            if (sw_row_pad_right.len > 0) {
-                                try writeAll(stdout_fd, "\x1b[0m");
-                                try writeAll(stdout_fd, palette.app_bg);
-                                try writeAll(stdout_fd, sw_row_pad_right);
-                            }
-                            try rw.endRow();
+                            // Switcher row itself — see switcher.renderRow for the
+                            // prefix-theft layout and scope rules.
+                            const sw_eff_theme = if (theme == .system) system_theme else theme;
+                            const sw_palette_spec = if (sw_eff_theme == .light) &g_spec.theme.themes.light else &g_spec.theme.themes.dark;
+                            try switcher.renderRow(stdout_fd, rw, &g_spec, &palette, sw_palette_spec, &swst, content_width, spaces);
                         }
 
                         // Separator hline between grid/switcher and description.
@@ -2593,7 +2336,7 @@ pub fn main(init: std.process.Init) !void {
                         // Description row.
                         try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
                         const max_len = if (content_width > 1) content_width - 1 else 0;
-                        const is_hovering_sw = switcher_row_hovered and (switcher_hover_idx == null or switcher_hover_idx.? < switcherCatCount());
+                        const is_hovering_sw = switcher.isHovering(&swst, &g_spec);
                         if (theme_hovered and !is_too_small) {
                             const theme_name = switch (theme) {
                                 .dark => "dark",
@@ -2611,19 +2354,7 @@ pub fn main(init: std.process.Init) !void {
                             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s} {s}{s}", .{ palette.info_bg, palette.info_fg, desc, spaces[0..@min(pad_len, spaces.len)] });
                             try writeAll(stdout_fd, name_line);
                         } else if (is_hovering_sw and !is_too_small) {
-                            var opt_cat: ?spec_mod.CategorySpec = null;
-                            if (switcher_hover_idx) |sh_idx| {
-                                var count: usize = 0;
-                                for (g_spec.categories.categories) |cat| {
-                                    if (cat.switcher) {
-                                        if (count == sh_idx) {
-                                            opt_cat = cat;
-                                            break;
-                                        }
-                                        count += 1;
-                                    }
-                                }
-                            }
+                            const opt_cat = switcher.hoveredCat(&swst, &g_spec);
 
                             var desc_buf: [256]u8 = undefined;
                             const desc = if (opt_cat) |cat| blk: {
@@ -3325,16 +3056,9 @@ pub fn main(init: std.process.Init) !void {
                             // Switcher row hover.
                             const sw_row: i32 = grid_first_row + @as(i32, @intCast(visible_rows)) + 1;
                             if (show_switcher and current_screen == .search and click_row == sw_row) {
-                                switcher_row_hovered = true;
-                                const sw_slot_w_h = g_spec.categories.pad_left.len + 2;
-                                const sw_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
-                                const sw_adj_col = @max(0, local_col - 1 - sw_rpl);
-                                const slot_idx = @as(usize, @intCast(sw_adj_col)) / sw_slot_w_h;
-                                const sw_n = switcherCatCount();
-                                switcher_hover_idx = if (slot_idx == 0) null else if (slot_idx - 1 < sw_n) slot_idx - 1 else sw_n;
+                                switcher.hoverAt(&swst, &g_spec, local_col);
                             } else {
-                                switcher_row_hovered = false;
-                                switcher_hover_idx = null;
+                                switcher.clearHover(&swst);
                             }
                         } else if (!is_motion and btn_id == 0 and event.term_char == 'M' and has_focus) {
                             // Left click press.
@@ -3373,17 +3097,8 @@ pub fn main(init: std.process.Init) !void {
                                     click_row == grid_first_row + @as(i32, @intCast(visible_rows)) + 1)
                                 {
                                     // Click on the switcher bar: map col to slot.
-                                    const sw_click_slot_w = g_spec.categories.pad_left.len + 2;
-                                    const sw_click_rpl = @as(i32, @intCast(g_spec.categories.row_pad_left.len));
-                                    const sw_click_col = @max(0, local_col - 1 - sw_click_rpl);
-                                    const slot_idx = @as(usize, @intCast(sw_click_col)) / sw_click_slot_w;
-                                    const sw_n = switcherCatCount();
-                                    if (slot_idx == 0) {
-                                        switcher_cat_idx = null;
-                                    } else if (slot_idx - 1 < sw_n) {
-                                        switcher_cat_idx = slot_idx - 1;
-                                    }
-                                    g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                    switcher.click(&swst, &g_spec, local_col);
+                                    g_switcher_cat_filter = switcher.activeFilter(&swst, &g_spec);
                                     g_search_switcher_gen +%= 1;
                                     selected_idx = null;
                                     grid_scroll_top = 0;
@@ -3906,13 +3621,8 @@ pub fn main(init: std.process.Init) !void {
                         } else if (std.mem.eql(u8, action, "cycle_theme") or std.mem.eql(u8, name, "ctrl-t")) {
                             if (show_switcher and std.mem.eql(u8, action, "cycle_theme")) {
                                 // Tab cycles the category switcher forward when it is visible.
-                                const n_cats = switcherCatCount();
-                                if (n_cats > 0) {
-                                    switcher_cat_idx = if (switcher_cat_idx == null) 0 else blk: {
-                                        const next = switcher_cat_idx.? + 1;
-                                        break :blk if (next >= n_cats) null else next;
-                                    };
-                                    g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                                if (switcher.cycle(&swst, &g_spec, true)) {
+                                    g_switcher_cat_filter = switcher.activeFilter(&swst, &g_spec);
                                     g_search_switcher_gen +%= 1;
                                     selected_idx = null;
                                     grid_scroll_top = 0;
@@ -3932,13 +3642,8 @@ pub fn main(init: std.process.Init) !void {
                             }
                         } else if (show_switcher and std.mem.eql(u8, name, "shift-tab")) {
                             // Shift+Tab cycles the category switcher backward.
-                            const n_cats = switcherCatCount();
-                            if (n_cats > 0) {
-                                switcher_cat_idx = if (switcher_cat_idx == null) n_cats - 1 else blk: {
-                                    if (switcher_cat_idx.? == 0) break :blk null;
-                                    break :blk switcher_cat_idx.? - 1;
-                                };
-                                g_switcher_cat_filter = if (switcher_cat_idx) |si| switcherCatName(si) else null;
+                            if (switcher.cycle(&swst, &g_spec, false)) {
+                                g_switcher_cat_filter = switcher.activeFilter(&swst, &g_spec);
                                 g_search_switcher_gen +%= 1;
                                 selected_idx = null;
                                 grid_scroll_top = 0;
@@ -4053,4 +3758,5 @@ test {
     _ = @import("tui_draw.zig");
     _ = @import("debug_pane.zig");
     _ = @import("settings_ctl.zig");
+    _ = @import("switcher.zig");
 }
