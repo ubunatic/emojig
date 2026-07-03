@@ -2916,7 +2916,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             // Decode the raw byte sequence into a logical key name; the binding
-            // table in spec/keys.yaml maps that name to an action below. Mouse
+            // table in spec/input.yaml maps that name to an action below. Mouse
             // events and printable text are handled inline (not via bindings).
             // Reset here; the SGR mouse branch sets it to true for motion events.
             last_was_motion = false;
@@ -3284,26 +3284,30 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
 
-            // Dispatch the decoded key through the spec/keys.yaml bindings.
+            // Dispatch the decoded key through the spec/input.yaml bindings:
+            // the name resolves to a Key tag and its bound action to an Action
+            // tag (both input.zig enums), so the chain below compares enums
+            // instead of strings.
             if (logical) |name| {
-                const action = g_spec.actionFor(name) orelse "";
+                const key = input.keyFromName(name);
+                const action = g_spec.actionFor(name);
                 if (sctl.dropdown_opt_idx != null) {
-                    if (settings_ctl.dropdownKey(&sctl, senv, name, action) == .theme_changed) {
+                    if (settings_ctl.dropdownKey(&sctl, senv, key, action) == .theme_changed) {
                         if (theme == .system)
                             system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                         applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                     }
                 } else if (popup_msg != null) {
-                    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "f1") or std.mem.eql(u8, action, "delete") or std.mem.eql(u8, action, "select") or std.mem.eql(u8, action, "quit")) {
+                    if (key == .esc or key == .enter or key == .space or key == .f1 or action == .delete or action == .select or action == .quit) {
                         popup_msg = null;
                     }
-                } else if (std.mem.eql(u8, action, "quit")) {
+                } else if (action == .quit) {
                     if (current_screen != .search) {
                         current_screen = .search;
                         query_len = 0;
                         selected_idx = null;
                         total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
-                    } else if (multi_select_active and std.mem.eql(u8, name, "esc")) {
+                    } else if (multi_select_active and key == .esc) {
                         multi_select_active = false;
                         multi_selected_emojis.clearRetainingCapacity();
                         selected_idx = null;
@@ -3315,44 +3319,44 @@ pub fn main(init: std.process.Init) !void {
                         break;
                     }
                 } else if (has_focus) {
-                    if (std.mem.eql(u8, action, "open_settings")) {
+                    if (action == .open_settings) {
                         current_screen = .settings;
                         selected_idx = 0;
                         sctl.scroll_top = 0;
                     } else if (current_screen == .settings) {
                         if (sctl.keybind_editing) {
-                            settings_ctl.keybindKey(&sctl, senv, name);
-                        } else if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                            settings_ctl.keybindKey(&sctl, senv, key);
+                        } else if (action == .nav_up or key == .up) {
                             settings_ctl.endNav(&sctl, senv, selected_idx);
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else settings_count - 1;
                             adjustScrollTop(selected_idx.?, &sctl.scroll_top, rows, settings_count);
-                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                        } else if (action == .nav_down or key == .down) {
                             settings_ctl.endNav(&sctl, senv, selected_idx);
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < settings_count) selected_idx.? + 1 else 0;
                             adjustScrollTop(selected_idx.?, &sctl.scroll_top, rows, settings_count);
-                        } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
+                        } else if (action == .select or key == .space or key == .enter) {
                             if (settings_ctl.activate(&sctl, senv, selected_idx orelse 0, null) == .theme_changed) {
                                 if (theme == .system)
                                     system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             }
-                        } else if ((std.mem.eql(u8, action, "nav_left") or std.mem.eql(u8, action, "nav_right")) and selected_idx != null) {
+                        } else if ((action == .nav_left or action == .nav_right) and selected_idx != null) {
                             // Left/Right change the value of the selected setting:
                             // ±1 on grid dims, forward/back cycle on choices (theme
                             // applies live), plain toggle on the booleans.
-                            const increase = std.mem.eql(u8, action, "nav_right");
+                            const increase = action == .nav_right;
                             if (settings_ctl.step(&sctl, senv, selected_idx.?, increase) == .theme_changed) {
                                 if (theme == .system)
                                     system_theme = gui_effective_theme orelse detectSystemTheme(init.io, stdin_fd, stdout_fd, raw);
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             }
-                        } else if (std.mem.eql(u8, name, "f1")) {
+                        } else if (key == .f1) {
                             settings_ctl.openHelp(senv, selected_idx orelse 0);
-                        } else if (std.mem.eql(u8, name, "backspace") and selected_idx != null and
+                        } else if (key == .backspace and selected_idx != null and
                             settings_ctl.gridDimAt(&g_spec, selected_idx.?) != null)
                         {
                             settings_ctl.resetGridDim(&sctl, senv, selected_idx.?);
-                        } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
+                        } else if (key == .esc or action == .delete) {
                             settings_ctl.endNav(&sctl, senv, selected_idx);
                             current_screen = .search;
                             query_len = 0;
@@ -3360,31 +3364,31 @@ pub fn main(init: std.process.Init) !void {
                             total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .categories) {
-                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                        if (action == .nav_up or key == .up) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else g_spec.categories.categories.len - 1;
                             adjustScrollTop(selected_idx.?, &cat_scroll_top, rows, g_spec.categories.categories.len);
-                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                        } else if (action == .nav_down or key == .down) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < g_spec.categories.categories.len) selected_idx.? + 1 else 0;
                             adjustScrollTop(selected_idx.?, &cat_scroll_top, rows, g_spec.categories.categories.len);
-                        } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, name, "enter")) {
+                        } else if (action == .select or key == .space or key == .enter) {
                             const idx = selected_idx orelse 0;
                             if (idx < disabled_cats.len) {
                                 disabled_cats[idx] = !disabled_cats[idx];
                                 saveDisabledCategories(init.io, g_spec.categories.categories, &disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, action, "delete")) {
+                        } else if (key == .esc or action == .delete) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
                             total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                         }
                     } else if (current_screen == .about or current_screen == .help or current_screen == .status or current_screen == .debug) {
-                        if (current_screen == .about and std.mem.eql(u8, name, "space")) {
+                        if (current_screen == .about and key == .space) {
                             anim_frame = 0;
                             anim_done = false;
                             const delays = g_spec.strings.about_delays;
                             anim_timer = getMonotonicMs() + @as(i64, if (delays.len > 0) delays[0] else 500);
-                        } else if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "delete")) {
+                        } else if (key == .esc or key == .enter or key == .space or action == .delete) {
                             current_screen = .search;
                             query_len = 0;
                             selected_idx = null;
@@ -3395,17 +3399,17 @@ pub fn main(init: std.process.Init) !void {
                             const about_lines_len2: usize = if (g_spec.strings.about_frames.len > 0) g_spec.strings.about_frames[0].len else 0;
                             const lines_len = if (current_screen == .help) g_spec.strings.help_lines_more.len else if (current_screen == .about) about_lines_len2 else if (current_screen == .debug) debug_pane.lineCount(&g_spec) else g_spec.strings.status_lines.len;
                             const max_scroll: usize = if (lines_len > viewport_h) lines_len - viewport_h else 0;
-                            if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                            if (action == .nav_up or key == .up) {
                                 if (sp.* > 0) sp.* -= 1;
-                            } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                            } else if (action == .nav_down or key == .down) {
                                 if (sp.* < max_scroll) sp.* += 1;
-                            } else if (std.mem.eql(u8, action, "scroll_pageup")) {
+                            } else if (action == .scroll_pageup) {
                                 sp.* = if (sp.* > viewport_h) sp.* - viewport_h else 0;
-                            } else if (std.mem.eql(u8, action, "scroll_pagedown")) {
+                            } else if (action == .scroll_pagedown) {
                                 sp.* = @min(sp.* + viewport_h, max_scroll);
-                            } else if (std.mem.eql(u8, action, "nav_home")) {
+                            } else if (action == .nav_home) {
                                 sp.* = 0;
-                            } else if (std.mem.eql(u8, action, "nav_end")) {
+                            } else if (action == .nav_end) {
                                 sp.* = max_scroll;
                             } else {
                                 // Any other key is dead on a doc screen → bell.
@@ -3413,15 +3417,15 @@ pub fn main(init: std.process.Init) !void {
                             }
                         }
                     } else if (is_cmd_autocomplete) {
-                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                        if (action == .nav_up or key == .up) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else cmd_match_count - 1;
-                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                        } else if (action == .nav_down or key == .down) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < cmd_match_count) selected_idx.? + 1 else 0;
-                        } else if (std.mem.eql(u8, name, "esc")) {
+                        } else if (key == .esc) {
                             query_len = 0;
                             selected_idx = null;
                             total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
-                        } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter")) {
+                        } else if (action == .select or key == .enter) {
                             // Find the selected command
                             var opt_cmd: ?spec_mod.CommandSpec = null;
                             if (selected_idx != null and selected_idx.? < cmd_match_count) {
@@ -3491,13 +3495,13 @@ pub fn main(init: std.process.Init) !void {
                                     break;
                                 }
                             }
-                        } else if (std.mem.eql(u8, action, "delete")) {
+                        } else if (action == .delete) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, name, "del")) {
+                        } else if (key == .del) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
@@ -3505,15 +3509,15 @@ pub fn main(init: std.process.Init) !void {
                             }
                         }
                     } else if (is_cat_autocomplete) {
-                        if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, name, "up")) {
+                        if (action == .nav_up or key == .up) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? > 0) selected_idx.? - 1 else cat_match_count - 1;
-                        } else if (std.mem.eql(u8, action, "nav_down") or std.mem.eql(u8, name, "down")) {
+                        } else if (action == .nav_down or key == .down) {
                             selected_idx = if (selected_idx == null) 0 else if (selected_idx.? + 1 < cat_match_count) selected_idx.? + 1 else 0;
-                        } else if (std.mem.eql(u8, name, "esc")) {
+                        } else if (key == .esc) {
                             query_len = 0;
                             selected_idx = null;
                             total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
-                        } else if (std.mem.eql(u8, action, "select") or std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space")) {
+                        } else if (action == .select or key == .enter or key == .space) {
                             var opt_cat: ?spec_mod.CategorySpec = null;
                             if (selected_idx != null and selected_idx.? < cat_match_count) {
                                 opt_cat = g_spec.categories.categories[cat_matches[selected_idx.?]];
@@ -3526,13 +3530,13 @@ pub fn main(init: std.process.Init) !void {
                                 selected_idx = null;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, action, "delete")) {
+                        } else if (action == .delete) {
                             if (query_cursor > 0) {
                                 deleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, name, "del")) {
+                        } else if (key == .del) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = if (query_len == 0) null else 0;
@@ -3541,7 +3545,7 @@ pub fn main(init: std.process.Init) !void {
                         }
                     } else {
                         // Normal search screen logic
-                        if (std.mem.eql(u8, action, "confirm_multi_exit")) {
+                        if (action == .confirm_multi_exit) {
                             if (multi_select_active) {
                                 if (multi_selected_emojis.items.len > 0) {
                                     const joined = try std.mem.join(spec_arena.allocator(), "", multi_selected_emojis.items);
@@ -3552,7 +3556,7 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 should_copy_and_exit = true;
                             }
-                        } else if (std.mem.eql(u8, action, "select")) {
+                        } else if (action == .select) {
                             if (multi_select_active) {
                                 const sel = selected_idx orelse if (top_count > 0) @as(usize, 0) else null;
                                 if (sel) |s| {
@@ -3581,7 +3585,7 @@ pub fn main(init: std.process.Init) !void {
                             } else {
                                 should_copy_and_exit = true;
                             }
-                        } else if (std.mem.eql(u8, action, "delete")) {
+                        } else if (action == .delete) {
                             if (multi_select_active) {
                                 var removed = false;
                                 if (selected_idx) |sel| {
@@ -3611,15 +3615,15 @@ pub fn main(init: std.process.Init) !void {
                                 grid_scroll_top = 0;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, name, "del")) {
+                        } else if (key == .del) {
                             if (query_cursor < query_len) {
                                 forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
                                 selected_idx = null;
                                 grid_scroll_top = 0;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, action, "cycle_theme") or std.mem.eql(u8, name, "ctrl-t")) {
-                            if (show_switcher and std.mem.eql(u8, action, "cycle_theme")) {
+                        } else if (action == .cycle_theme or key == .ctrl_t) {
+                            if (show_switcher and action == .cycle_theme) {
                                 // Tab cycles the category switcher forward when it is visible.
                                 if (switcher.cycle(&swst, &g_spec, true)) {
                                     g_switcher_cat_filter = switcher.activeFilter(&swst, &g_spec);
@@ -3640,7 +3644,7 @@ pub fn main(init: std.process.Init) !void {
                                 }
                                 applyTerminalColors(stdout_fd, theme, system_theme, final_alt_screen);
                             }
-                        } else if (show_switcher and std.mem.eql(u8, name, "shift-tab")) {
+                        } else if (show_switcher and key == .shift_tab) {
                             // Shift+Tab cycles the category switcher backward.
                             if (switcher.cycle(&swst, &g_spec, false)) {
                                 g_switcher_cat_filter = switcher.activeFilter(&swst, &g_spec);
@@ -3649,9 +3653,9 @@ pub fn main(init: std.process.Init) !void {
                                 grid_scroll_top = 0;
                                 total_matches = searchDedupMeasured(&search_stats, query_buf[0..query_len], &top_matches, &top_count, fetch_limit, &g_spec.categories, disabled_cats);
                             }
-                        } else if (std.mem.eql(u8, action, "scroll_pageup") or std.mem.eql(u8, action, "scroll_pagedown")) {
+                        } else if (action == .scroll_pageup or action == .scroll_pagedown) {
                             if (top_count > 0) {
-                                const down = std.mem.eql(u8, action, "scroll_pagedown");
+                                const down = action == .scroll_pagedown;
                                 const cc = if (final_simple) @as(usize, 1) else cols;
                                 const vp = if (final_simple) total_cells else visible_rows;
                                 const trows = (top_count + cc - 1) / cc;
@@ -3662,18 +3666,18 @@ pub fn main(init: std.process.Init) !void {
                                 else if (cur > step) cur - step else 0;
                                 adjustScrollTop(selected_idx.? / cc, &grid_scroll_top, vp, trows);
                             }
-                        } else if (std.mem.startsWith(u8, action, "nav_")) {
-                            const is_home = std.mem.eql(u8, action, "nav_home");
-                            const is_end = std.mem.eql(u8, action, "nav_end");
+                        } else if (action.isNav()) {
+                            const is_home = action == .nav_home;
+                            const is_end = action == .nav_end;
                             const cc = if (final_simple) @as(usize, 1) else cols;
                             const vp = if (final_simple) total_cells else visible_rows;
                             const trows = (top_count + cc - 1) / cc;
                             if (selected_idx == null) {
                                 // Prompt focus: Left/Right/Home/End move the text
                                 // cursor; Up/Down enter the grid at the first hit.
-                                if (std.mem.eql(u8, action, "nav_left")) {
+                                if (action == .nav_left) {
                                     if (query_cursor > 0) query_cursor -= 1;
-                                } else if (std.mem.eql(u8, action, "nav_right")) {
+                                } else if (action == .nav_right) {
                                     if (query_cursor < query_len) {
                                         query_cursor += 1;
                                     } else if (top_count > 0) {
@@ -3685,13 +3689,13 @@ pub fn main(init: std.process.Init) !void {
                                     query_cursor = 0;
                                 } else if (is_end) {
                                     query_cursor = query_len;
-                                } else if (std.mem.eql(u8, action, "nav_down") and top_count > 0) {
+                                } else if (action == .nav_down and top_count > 0) {
                                     // Down enters the grid at the first hit;
                                     // Up is a no-op in the prompt (the grid is
                                     // below, so entering it on Up reads backwards).
                                     selected_idx = 0;
                                     adjustScrollTop(0, &grid_scroll_top, vp, trows);
-                                } else if (std.mem.eql(u8, action, "nav_up")) {
+                                } else if (action == .nav_up) {
                                     // Up is ignored in the prompt, but emit a BEL
                                     // so the terminal's own bell config (audible,
                                     // visual flash, or silent) acknowledges it —
@@ -3707,15 +3711,15 @@ pub fn main(init: std.process.Init) !void {
                                     selected_idx = top_count - 1;
                                 } else if (final_simple) {
                                     // Linear prev/next; nav_up off the top releases focus.
-                                    if (std.mem.eql(u8, action, "nav_up") or std.mem.eql(u8, action, "nav_left")) {
+                                    if (action == .nav_up or action == .nav_left) {
                                         selected_idx = if (sel == 0) null else sel - 1;
                                     } else {
                                         selected_idx = if (sel + 1 < top_count) sel + 1 else 0;
                                     }
-                                } else if (std.mem.eql(u8, action, "nav_up") and sel < cols) {
+                                } else if (action == .nav_up and sel < cols) {
                                     // Top grid row → release focus back to prompt.
                                     selected_idx = null;
-                                } else if (std.mem.eql(u8, action, "nav_left") and sel == 0) {
+                                } else if (action == .nav_left and sel == 0) {
                                     // First cell → release focus back to prompt instead of wrapping.
                                     selected_idx = null;
                                 } else {
@@ -3727,10 +3731,10 @@ pub fn main(init: std.process.Init) !void {
                                     grid_scroll_top = 0;
                                 }
                             }
-                        } else if (std.mem.eql(u8, name, "ctrl-left")) {
+                        } else if (key == .ctrl_left) {
                             if (selected_idx == null)
                                 query_cursor = wordLeft(query_buf[0..query_len], query_cursor);
-                        } else if (std.mem.eql(u8, name, "ctrl-right")) {
+                        } else if (key == .ctrl_right) {
                             if (selected_idx == null)
                                 query_cursor = wordRight(query_buf[0..query_len], query_len, query_cursor);
                         }
@@ -3759,4 +3763,5 @@ test {
     _ = @import("debug_pane.zig");
     _ = @import("settings_ctl.zig");
     _ = @import("switcher.zig");
+    _ = @import("spec.zig");
 }

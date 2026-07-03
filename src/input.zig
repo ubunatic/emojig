@@ -8,6 +8,101 @@ pub const KeySeq = struct {
     name: []const u8,
 };
 
+/// Semantic key action, the target of a `spec/input.yaml` `bindings:` entry.
+/// A load-time spec test (spec.zig) and the Go spec lint assert that every
+/// bound action name parses into this enum — adding a new action means adding
+/// it here, in the spec, and in the dispatch switch that consumes it.
+pub const Action = enum {
+    quit,
+    select,
+    confirm_multi_exit,
+    delete,
+    cycle_theme,
+    open_settings,
+    nav_up,
+    nav_down,
+    nav_left,
+    nav_right,
+    nav_home,
+    nav_end,
+    scroll_pageup,
+    scroll_pagedown,
+    /// The key is not bound to any action (or the name is unknown).
+    none,
+
+    /// Whether this is one of the four directional/home/end grid-nav actions.
+    pub fn isNav(self: Action) bool {
+        return switch (self) {
+            .nav_up, .nav_down, .nav_left, .nav_right, .nav_home, .nav_end => true,
+            else => false,
+        };
+    }
+};
+
+const action_map = std.StaticStringMap(Action).initComptime(.{
+    .{ "quit", .quit },
+    .{ "select", .select },
+    .{ "confirm_multi_exit", .confirm_multi_exit },
+    .{ "delete", .delete },
+    .{ "cycle_theme", .cycle_theme },
+    .{ "open_settings", .open_settings },
+    .{ "nav_up", .nav_up },
+    .{ "nav_down", .nav_down },
+    .{ "nav_left", .nav_left },
+    .{ "nav_right", .nav_right },
+    .{ "nav_home", .nav_home },
+    .{ "nav_end", .nav_end },
+    .{ "scroll_pageup", .scroll_pageup },
+    .{ "scroll_pagedown", .scroll_pagedown },
+});
+
+/// Resolve a spec action string to the enum; unknown/empty names map to .none.
+pub fn actionFromName(name: []const u8) Action {
+    return action_map.get(name) orelse .none;
+}
+
+/// Logical key, decoded from terminal bytes (spec key_sequences table or the
+/// hardcoded single-byte decode in main.zig). Only the names the dispatch
+/// chain matches on directly get a tag; everything else is .other — those
+/// keys are either handled via their bound Action or intentionally dead.
+pub const Key = enum {
+    esc,
+    enter,
+    space,
+    tab,
+    shift_tab,
+    backspace,
+    del,
+    up,
+    down,
+    f1,
+    ctrl_t,
+    ctrl_left,
+    ctrl_right,
+    other,
+};
+
+const key_map = std.StaticStringMap(Key).initComptime(.{
+    .{ "esc", .esc },
+    .{ "enter", .enter },
+    .{ "space", .space },
+    .{ "tab", .tab },
+    .{ "shift-tab", .shift_tab },
+    .{ "backspace", .backspace },
+    .{ "del", .del },
+    .{ "up", .up },
+    .{ "down", .down },
+    .{ "f1", .f1 },
+    .{ "ctrl-t", .ctrl_t },
+    .{ "ctrl-left", .ctrl_left },
+    .{ "ctrl-right", .ctrl_right },
+});
+
+/// Resolve a decoded logical key name to the enum; unmatched names are .other.
+pub fn keyFromName(name: []const u8) Key {
+    return key_map.get(name) orelse .other;
+}
+
 /// Decode an escape sequence into the logical key name defined in the spec's
 /// `key_sequences` table. Returns null for unrecognised sequences. The table
 /// is authoritative — all variants (CSI, SS3, Kitty, XTerm modifyOtherKeys)
@@ -95,6 +190,32 @@ const test_key_sequences = [_]KeySeq{
     .{ .seq = "\x1b[7~", .name = "home" },
     .{ .seq = "\x1bOH", .name = "home" },
 };
+
+test "actionFromName resolves every Action tag and rejects unknowns" {
+    // Every enum tag except .none must round-trip through its own name, so
+    // the comptime table can never silently miss a newly added action.
+    inline for (@typeInfo(Action).@"enum".fields) |f| {
+        const tag: Action = @enumFromInt(f.value);
+        if (tag != .none) try std.testing.expectEqual(tag, actionFromName(f.name));
+    }
+    try std.testing.expectEqual(Action.none, actionFromName(""));
+    try std.testing.expectEqual(Action.none, actionFromName("warp_drive"));
+    try std.testing.expect(Action.nav_left.isNav());
+    try std.testing.expect(Action.nav_end.isNav());
+    try std.testing.expect(!Action.scroll_pageup.isNav());
+    try std.testing.expect(!Action.none.isNav());
+}
+
+test "keyFromName resolves dispatch keys and maps the rest to .other" {
+    try std.testing.expectEqual(Key.esc, keyFromName("esc"));
+    try std.testing.expectEqual(Key.shift_tab, keyFromName("shift-tab"));
+    try std.testing.expectEqual(Key.ctrl_left, keyFromName("ctrl-left"));
+    try std.testing.expectEqual(Key.del, keyFromName("del"));
+    // Keys without a direct dispatch branch fall through to .other.
+    try std.testing.expectEqual(Key.other, keyFromName("f5"));
+    try std.testing.expectEqual(Key.other, keyFromName("pageup"));
+    try std.testing.expectEqual(Key.other, keyFromName(""));
+}
 
 test "decodeEscapeKeySpec resolves all variants from the spec table" {
     try std.testing.expectEqualStrings("esc", decodeEscapeKeySpec("\x1b", &test_key_sequences).?);

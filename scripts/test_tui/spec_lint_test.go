@@ -324,3 +324,88 @@ func TestSpecStringsLocalesParse(t *testing.T) {
 		}
 	}
 }
+
+// zigEnumTags extracts the tag names of `pub const NAME = enum {...}`. The
+// capture stops at the first `}` (inside a method body if the enum has any),
+// which is fine because Zig convention puts all tags before the methods.
+func zigEnumTags(t *testing.T, src, file, name string) []string {
+	t.Helper()
+	re := regexp.MustCompile(`pub const ` + name + ` = enum \{([^}]*)`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s: could not find `pub const %s = enum {...}` (lint needs updating?)", file, name)
+	}
+	tagRe := regexp.MustCompile(`(?m)^\s*([a-z_][a-z0-9_]*),`)
+	var tags []string
+	for _, f := range tagRe.FindAllStringSubmatch(m[1], -1) {
+		tags = append(tags, f[1])
+	}
+	if len(tags) == 0 {
+		t.Fatalf("%s: no tags parsed from enum %s", file, name)
+	}
+	return tags
+}
+
+// zigStringArray extracts the elements of `const NAME = [_][]const u8{...}`.
+func zigStringArray(t *testing.T, src, file, name string) []string {
+	t.Helper()
+	re := regexp.MustCompile(`const ` + name + ` = \[_\]\[\]const u8\{([^}]*)\}`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s: could not find `const %s = [_][]const u8{...}` (lint needs updating?)", file, name)
+	}
+	elemRe := regexp.MustCompile(`"([^"]+)"`)
+	var elems []string
+	for _, f := range elemRe.FindAllStringSubmatch(m[1], -1) {
+		elems = append(elems, f[1])
+	}
+	if len(elems) == 0 {
+		t.Fatalf("%s: no strings parsed from array %s", file, name)
+	}
+	return elems
+}
+
+// TestSpecInputBindingsResolve asserts the spec/input.yaml `bindings:` table
+// against the Zig source of truth (issue 46 §4 input lint gap): every bound
+// action must be a tag of src/input.zig's Action enum, and every bound key
+// name must be producible by the decoder — either a key_sequences name or one
+// of main.zig's hardcoded single-byte decodes (mirrored as spec.zig's
+// hardcoded_key_names, which the Zig-side spec test also checks against).
+func TestSpecInputBindingsResolve(t *testing.T) {
+	var input struct {
+		Input struct {
+			Bindings     map[string]string `json:"bindings"`
+			KeySequences []struct {
+				Seq  string `json:"seq"`
+				Name string `json:"name"`
+			} `json:"key_sequences"`
+		} `json:"input"`
+	}
+	readSpecJSON(t, "input.generated.json", &input)
+	if len(input.Input.Bindings) == 0 {
+		t.Fatal("input.yaml: bindings must not be empty")
+	}
+
+	actions := map[string]bool{}
+	for _, tag := range zigEnumTags(t, readZigSource(t, "input.zig"), "src/input.zig", "Action") {
+		if tag != "none" { // .none marks "unbound"; binding to it is a spec error
+			actions[tag] = true
+		}
+	}
+	decodable := map[string]bool{}
+	for _, ks := range input.Input.KeySequences {
+		decodable[ks.Name] = true
+	}
+	for _, n := range zigStringArray(t, readZigSource(t, "spec.zig"), "src/spec.zig", "hardcoded_key_names") {
+		decodable[n] = true
+	}
+
+	for key, action := range input.Input.Bindings {
+		if !actions[action] {
+			t.Errorf("input.yaml binding %q: action %q is not a src/input.zig Action tag", key, action)
+		}
+		if !decodable[key] {
+			t.Errorf("input.yaml binding %q: no key sequence or hardcoded decode produces this name", key)
+		}
+	}
+}

@@ -195,6 +195,35 @@ as `spec_switcher`); `categories.yaml` and the library-side
 Go/JS consumer reads the layout knobs (`gen_web_spec`'s Go struct only
 reads `categories`).
 
+## Progress (2026-07-03, item 6 done)
+
+Item 6 (key-name dispatch) is table-driven: `src/input.zig` gained an
+`Action` enum (all `bindings:` targets + `.none`, with an `isNav()`
+helper) and a `Key` enum (the 13 logical names the dispatch chain
+matches on directly + `.other`), both resolved through comptime
+`std.StaticStringMap` tables (`actionFromName`/`keyFromName`).
+`g_spec.actionFor(name)` now returns `input.Action` instead of
+`?[]const u8`; the ~80 `std.mem.eql` string comparisons in the main.zig
+dispatch chain (and `std.mem.startsWith(action, "nav_")`) became enum
+comparisons. `tui_draw.navSelect` and
+`settings_ctl.dropdownKey`/`keybindKey` take the enums too (tests
+updated); `dropdownKey`'s `name == "q"` check was dropped as dead code —
+printables never reach the logical-key path (they go through
+`dropdownPrintable`). The chain's *structure* (per-screen if-nesting) is
+unchanged; restructuring is item 5's mouse-dispatch sibling concern.
+
+Done together with **issue 46 §2 (keys.yaml→input.yaml)** — see that
+issue's resolution note; `spec/keys.yaml` and the `spec.Keys` struct are
+gone, and the bindings are double-guarded (Zig spec-load test + Go lint
+`TestSpecInputBindingsResolve`). `docs/KeyDispatch.md` §1/§3 and
+`docs/SpecDrivenConfig.md` Layer-2 rewritten for the enum pipeline.
+main.zig: 3762 → 3767 lines (+5: the two enum resolutions and comment
+lines; this item's win is greppability/type-safety, not line count).
+
+Remaining items: 5 (mouse dispatch → src/mouse.zig), 7 (RowWriter
+reconciliation — partially done via item 1), 8 (terminal-restore trio →
+term.zig).
+
 ## Progress (2026-07-03, item 2 done)
 
 Item 2 (debug pane model) extracted to **`src/debug_pane.zig`**:

@@ -1,6 +1,27 @@
 {
   "$schema": "./.schema/input.schema.json",
   "input": {
+    "bindings": {
+      "backspace": "delete",
+      "ctrl-.": "open_settings",
+      "ctrl-c": "quit",
+      "ctrl-d": "quit",
+      "ctrl-enter": "confirm_multi_exit",
+      "ctrl-q": "quit",
+      "ctrl-w": "quit",
+      "down": "nav_down",
+      "end": "nav_end",
+      "enter": "select",
+      "esc": "quit",
+      "home": "nav_home",
+      "left": "nav_left",
+      "pagedown": "scroll_pagedown",
+      "pageup": "scroll_pageup",
+      "right": "nav_right",
+      "shift-enter": "confirm_multi_exit",
+      "tab": "cycle_theme",
+      "up": "nav_up"
+    },
     "key_aliases": {
       "backspace": "",
       "bs": "",

@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const config = @import("config.zig");
+const input_mod = @import("input.zig");
 const spec_mod = @import("spec.zig");
 const color = @import("color.zig");
 const term = @import("term.zig");
@@ -159,25 +160,28 @@ pub fn ringBell(armed: bool, suppressed: *bool) void {
     suppressed.* = true;
 }
 
-/// Apply a "nav_*" action (from spec/keys.yaml) to the current grid selection,
-/// returning the new index. Wrapping mirrors the historical arrow-key behavior.
-pub fn navSelect(action: []const u8, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
+/// Apply a nav_* action (from spec/input.yaml bindings) to the current grid
+/// selection, returning the new index. Wrapping mirrors the historical
+/// arrow-key behavior.
+pub fn navSelect(action: input_mod.Action, sel_in: usize, count: usize, cols: usize, rows: usize) usize {
     if (count == 0) return sel_in;
     var sel = sel_in;
-    if (std.mem.eql(u8, action, "nav_up")) {
-        if (sel >= cols) {
-            sel -= cols;
-        } else {
-            const target = sel + (rows - 1) * cols;
-            sel = if (target < count) target else count - 1;
-        }
-    } else if (std.mem.eql(u8, action, "nav_down")) {
-        const target = sel + cols;
-        sel = if (target < count) target else sel % cols;
-    } else if (std.mem.eql(u8, action, "nav_left")) {
-        sel = if (sel > 0) sel - 1 else count - 1;
-    } else if (std.mem.eql(u8, action, "nav_right")) {
-        sel = if (sel < count - 1) sel + 1 else 0;
+    switch (action) {
+        .nav_up => {
+            if (sel >= cols) {
+                sel -= cols;
+            } else {
+                const target = sel + (rows - 1) * cols;
+                sel = if (target < count) target else count - 1;
+            }
+        },
+        .nav_down => {
+            const target = sel + cols;
+            sel = if (target < count) target else sel % cols;
+        },
+        .nav_left => sel = if (sel > 0) sel - 1 else count - 1,
+        .nav_right => sel = if (sel < count - 1) sel + 1 else 0,
+        else => {},
     }
     return sel;
 }
@@ -548,14 +552,14 @@ test "navSelect wraps with more rows than one viewport" {
     const rows: usize = 5;
 
     // Down from the last row wraps to the same column on the top row.
-    try std.testing.expectEqual(@as(usize, 1), navSelect("nav_down", 25, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 1), navSelect(.nav_down, 25, count, cols, rows));
     // Down within range advances one row.
-    try std.testing.expectEqual(@as(usize, 7), navSelect("nav_down", 1, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 7), navSelect(.nav_down, 1, count, cols, rows));
     // Up from the top row wraps to the bottom row (same column).
-    try std.testing.expectEqual(@as(usize, 25), navSelect("nav_up", 1, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 25), navSelect(.nav_up, 1, count, cols, rows));
     // Left/right wrap at the ends of the whole result set.
-    try std.testing.expectEqual(@as(usize, 29), navSelect("nav_left", 0, count, cols, rows));
-    try std.testing.expectEqual(@as(usize, 0), navSelect("nav_right", 29, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 29), navSelect(.nav_left, 0, count, cols, rows));
+    try std.testing.expectEqual(@as(usize, 0), navSelect(.nav_right, 29, count, cols, rows));
 }
 
 test "adjustScrollTop keeps a row selection inside the viewport" {

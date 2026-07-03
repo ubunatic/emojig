@@ -10,6 +10,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "bindings",
         "key_aliases",
         "ctrl_pattern",
         "signals",
@@ -18,6 +19,28 @@
         "tokenizer"
       ],
       "properties": {
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "quit",
+              "select",
+              "confirm_multi_exit",
+              "delete",
+              "cycle_theme",
+              "open_settings",
+              "nav_up",
+              "nav_down",
+              "nav_left",
+              "nav_right",
+              "nav_home",
+              "nav_end",
+              "scroll_pageup",
+              "scroll_pagedown"
+            ]
+          }
+        },
         "key_aliases": {
           "type": "object",
           "additionalProperties": {

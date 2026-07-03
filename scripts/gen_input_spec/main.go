@@ -28,6 +28,7 @@ type KeySeq struct {
 }
 
 type Input struct {
+	Bindings         map[string]string `yaml:"bindings" json:"bindings"`
 	KeyAliases       map[string]string `yaml:"key_aliases" json:"key_aliases"`
 	KeySequences     []KeySeq          `yaml:"key_sequences" json:"key_sequences"`
 	CtrlPattern      CtrlPattern       `yaml:"ctrl_pattern" json:"ctrl_pattern"`
@@ -102,6 +103,9 @@ func main() {
 	}
 	if yamlRoot.Input.KeyAliases == nil {
 		fatalf("%s: missing input.key_aliases", inPath)
+	}
+	if len(yamlRoot.Input.Bindings) == 0 {
+		fatalf("%s: missing input.bindings", inPath)
 	}
 	if len(yamlRoot.Input.Tokenizer.Rules) == 0 {
 		fatalf("%s: missing input.tokenizer.rules", inPath)

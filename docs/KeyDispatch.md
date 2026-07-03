@@ -14,37 +14,43 @@ operations to the TUI event loop in `src/main.zig`.
 
 ---
 
-## 1. Two-variable dispatch: `name` vs `action`
+## 1. Two-variable dispatch: `key` vs `action`
 
-Every key event produces two strings before reaching the dispatch chain:
+Every key event produces two enum values (`src/input.zig`) before reaching the
+dispatch chain:
 
 | Variable | Source | Example |
 |----------|--------|---------|
-| `name`   | Escape-sequence decoder in `main.zig` | `"ctrl-left"`, `"del"`, `"f1"` |
-| `action` | `g_spec.actionFor(name)` → lookup in `spec/keys.yaml` | `"nav_left"`, `"delete"`, `""` |
+| `key`    | Escape-sequence decoder → `input.keyFromName(name)` | `.ctrl_left`, `.del`, `.f1` |
+| `action` | `g_spec.actionFor(name)` → `bindings:` lookup in `spec/input.yaml` | `.nav_left`, `.delete`, `.none` |
 
-`action` is empty (`""`) for any key not listed in `spec/keys.yaml`.
+`action` is `.none` for any key not listed under `spec/input.yaml` `bindings:`,
+and `key` is `.other` for any logical name the dispatch chain never matches on
+directly. Both resolve through comptime `std.StaticStringMap` tables — to add a
+new action or directly-dispatched key, add an enum tag + table entry in
+`src/input.zig` (a test asserts every `Action` tag round-trips through its own
+name, and the spec-side guards in §2 catch binding typos).
 
-**The critical rule**: the `else if (std.mem.startsWith(u8, action, "nav_"))` block
-is only entered when `action` starts with `"nav_"`.  A key whose `action` is `""`
-never enters this block — even if you place handlers inside it.  Any new key that
-does not (or should not) have a `keys.json` entry must be dispatched in a **sibling
-`else if`** branch that tests `name` directly:
+**The critical rule**: the `else if (action.isNav())` block is only entered
+when `action` is one of the `nav_*` tags.  A key whose `action` is `.none`
+never enters this block — even if you place handlers inside it.  Any new key
+that does not (or should not) have a `bindings:` entry must be dispatched in a
+**sibling `else if`** branch that tests `key` directly:
 
 ```zig
-} else if (std.mem.startsWith(u8, action, "nav_")) {
+} else if (action.isNav()) {
     // ... existing grid navigation ...
-} else if (std.mem.eql(u8, name, "ctrl-left")) {
-    // word-left: must be here, NOT inside the nav_ block above
+} else if (key == .ctrl_left) {
+    // word-left: must be here, NOT inside the nav block above
     if (selected_idx == null)
         query_cursor = wordLeft(query_buf[0..query_len], query_cursor);
-} else if (std.mem.eql(u8, name, "ctrl-right")) {
+} else if (key == .ctrl_right) {
     if (selected_idx == null)
         query_cursor = wordRight(query_buf[0..query_len], query_len, query_cursor);
 }
 ```
 
-Placing a handler inside the `nav_` block for an unbound key is a silent no-op —
+Placing a handler inside the nav block for an unbound key is a silent no-op —
 the block is never entered, the feature appears broken, and there is no compile or
 runtime error.
 
@@ -80,7 +86,7 @@ After editing, regenerate the embedded JSON:
 go run ./scripts/gen_input_spec/
 ```
 
-The generated `spec/input.generated.json` is embedded at compile time via
+The generated `spec/.gen/input.generated.json` is embedded at compile time via
 `build.zig` anonymous imports (`addAnonymousImport("spec_input_generated", …)`).
 
 **Common sequences** (already in the spec):
@@ -100,18 +106,19 @@ The SGR mouse parser (`nextSgrMouseEvent`) lives alongside the key decoder in
 
 ---
 
-## 3. `"del"` vs `"delete"`: distinguish forward-delete from backspace/dismiss
+## 3. `.del` vs `.delete`: distinguish forward-delete from backspace/dismiss
 
-`spec/keys.yaml` maps `"backspace"` → `action = "delete"`.  The `"delete"` action is
-also used as a generic dismiss action on non-search screens (settings, help, etc.).
-**Do not reuse `"delete"` for the Del (forward-delete) key.**
+`spec/input.yaml` `bindings:` maps `backspace` → `action = .delete`.  The
+`.delete` action is also used as a generic dismiss action on non-search screens
+(settings, help, etc.). **Do not reuse `.delete` for the Del (forward-delete)
+key.**
 
-The Del key must decode to its own logical name (`"del"`) and be handled separately:
+The Del key must decode to its own logical key (`.del`) and be handled separately:
 
 ```zig
-// backspace: uses action == "delete"
-// Del key: dispatched on name == "del"
-} else if (std.mem.eql(u8, name, "del")) {
+// backspace: uses action == .delete
+// Del key: dispatched on key == .del
+} else if (key == .del) {
     if (query_cursor < query_len) {
         forwardDeleteAtCursor(&query_buf, &query_len, &query_cursor);
         // ... re-search ...

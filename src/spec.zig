@@ -19,7 +19,6 @@ pub const KeySeq = input_mod.KeySeq;
 
 const layout_json = @embedFile("spec_layout");
 const theme_json = @embedFile("spec_theme");
-const keys_json = @embedFile("spec_keys");
 const strings_json = @embedFile("spec_strings");
 const commands_json = @embedFile("spec_commands");
 const settings_json = @embedFile("spec_settings");
@@ -251,10 +250,6 @@ pub const Theme = struct {
     detect: DetectSpec,
 };
 
-pub const Keys = struct {
-    bindings: std.json.ArrayHashMap([]const u8),
-};
-
 pub const CommandSpec = struct {
     name: []const u8,
     short: []const u8,
@@ -310,6 +305,8 @@ pub const InputFile = struct {
 };
 
 pub const InputSpec = struct {
+    /// Logical key name -> action name (spec/input.yaml `bindings:`).
+    bindings: std.json.ArrayHashMap([]const u8),
     key_aliases: std.json.ArrayHashMap([]const u8),
     key_sequences: []const KeySeq = &.{},
     ctrl_pattern: struct {
@@ -593,7 +590,6 @@ pub fn parseHex(hex_str: []const u8) ?[3]u8 {
 pub const Spec = struct {
     layout: Layout,
     theme: Theme,
-    keys: Keys,
     strings: Strings,
     input: InputSpec,
     commands: Commands,
@@ -609,10 +605,12 @@ pub const Spec = struct {
     dark_palette_dim: term.Palette,
     light_palette_dim: term.Palette,
 
-    /// Logical key name -> action ("quit", "select", ...), or null if unbound.
-    /// The input layer decodes raw terminal bytes into the logical names.
-    pub fn actionFor(self: *const Spec, logical_name: []const u8) ?[]const u8 {
-        return self.keys.bindings.map.get(logical_name);
+    /// Logical key name -> semantic action (spec/input.yaml `bindings:`),
+    /// or .none if unbound. The input layer decodes raw terminal bytes into
+    /// the logical names; input.actionFromName resolves the action string.
+    pub fn actionFor(self: *const Spec, logical_name: []const u8) input_mod.Action {
+        const a = self.input.bindings.map.get(logical_name) orelse return .none;
+        return input_mod.actionFromName(a);
     }
 
     /// Theme toggle icon for the given effective theme.
@@ -651,7 +649,6 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     }
     const theme = try std.json.parseFromSliceLeaky(Theme, arena, theme_json, parse_opts);
     term.system_luma_threshold = theme.detect.osc_luma_threshold;
-    const keys = try std.json.parseFromSliceLeaky(Keys, arena, keys_json, parse_opts);
 
     const input_file = try std.json.parseFromSliceLeaky(InputFile, arena, input_generated_json, parse_opts);
     const about_art = try std.json.parseFromSliceLeaky(AboutArtFile, arena, art_generated_json, parse_opts);
@@ -702,7 +699,6 @@ pub fn load(arena: std.mem.Allocator, lang: ?[]const u8) !Spec {
     return .{
         .layout = layout,
         .theme = theme,
-        .keys = keys,
         .strings = strings,
         .input = input_file.input,
         .commands = commands,
@@ -935,4 +931,42 @@ fn buildPalette(arena: std.mem.Allocator, p: PaletteSpec, colors_spec: *const Co
         .search_placeholder_fg = search_placeholder_fg_seq,
         .hline = hline,
     };
+}
+
+// Logical names produced by main.zig's hardcoded single-byte decode; a
+// bindings: key must resolve through either this list or key_sequences,
+// otherwise the binding can never fire.
+const hardcoded_key_names = [_][]const u8{
+    "backspace", "enter",  "tab",    "space",
+    "ctrl-c",    "ctrl-d", "ctrl-q", "ctrl-t",
+    "ctrl-w",
+};
+
+test "spec bindings: every action is known and every key can be decoded" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const spec = try load(arena.allocator(), null);
+
+    try std.testing.expect(spec.input.bindings.map.count() > 0);
+    var it = spec.input.bindings.map.iterator();
+    outer: while (it.next()) |e| {
+        const key_name = e.key_ptr.*;
+        const action_name = e.value_ptr.*;
+        // The action string must parse into input.zig's Action enum — a typo
+        // in spec/input.yaml bindings: would otherwise be a silent dead key.
+        if (input_mod.actionFromName(action_name) == .none) {
+            std.debug.print("binding '{s}: {s}' names an unknown action\n", .{ key_name, action_name });
+            return error.UnknownAction;
+        }
+        // The key name must be reachable from the decoder: either a
+        // key_sequences name or one of main.zig's hardcoded byte decodes.
+        for (spec.input.key_sequences) |ks| {
+            if (std.mem.eql(u8, ks.name, key_name)) continue :outer;
+        }
+        for (hardcoded_key_names) |hk| {
+            if (std.mem.eql(u8, hk, key_name)) continue :outer;
+        }
+        std.debug.print("binding '{s}' has no decodable key sequence\n", .{key_name});
+        return error.UnreachableBinding;
+    }
 }

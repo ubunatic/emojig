@@ -8,6 +8,31 @@
 $schema: "./.schema/input.schema.json"
 
 input:
+  # Language-neutral key bindings: each logical key name (produced by the
+  # decoder from key_sequences below, or hardcoded single-byte decode in
+  # main.zig) maps to a semantic action. Actions must match src/input.zig's
+  # Action enum — guarded by a Zig spec-load test and the Go spec lint.
+  bindings:
+    esc: quit
+    ctrl-c: quit
+    ctrl-d: quit
+    ctrl-q: quit
+    ctrl-w: quit
+    enter: select
+    shift-enter: confirm_multi_exit
+    ctrl-enter: confirm_multi_exit
+    backspace: delete
+    tab: cycle_theme
+    ctrl-.: open_settings
+    up: nav_up
+    down: nav_down
+    left: nav_left
+    right: nav_right
+    pageup: scroll_pageup
+    pagedown: scroll_pagedown
+    home: nav_home
+    end: nav_end
+
   key_aliases:
     esc: "\x1b"
     escape: "\x1b"

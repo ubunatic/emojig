@@ -118,7 +118,6 @@ pub fn build(b: *std.Build) void {
     const spec_json_files = [_][]const u8{
         "layout.json",
         "theme.json",
-        "keys.json",
         "strings.json",
         "commands.json",
         "settings.json",

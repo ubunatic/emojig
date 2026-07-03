@@ -17,7 +17,7 @@ the single source of truth, shared between the Zig app (`emojig`) and the Go por
 ```
 spec/layout.yaml   grid dimensions (TUI + GUI), widths, query length, overhead, animation defaults
 spec/theme.yaml    icons, palette color indices (xterm-256), terminal OSC colors
-spec/keys.yaml     logical-key-name -> action bindings
+spec/input.yaml    key decode tables + logical-key-name -> action bindings + mouse encoding
 spec/strings/en.yaml  search prompt, status bar, help screen text
 ```
 
@@ -39,7 +39,7 @@ learned wiring it up.
 | Terminal bg/fg/border (OSC + GUI window)| `spec/theme.yaml`                 | `terminal_{bg,fg,border}` (hex) |
 | Raw byte sequence → logical key name    | `spec/input.yaml` (→ gen-input)   | `input.key_sequences[].{seq,name}` — add terminal variants here; see §4 |
 | Mouse encoding (masks, enable seqs)     | `spec/input.yaml`                 | `input.mouse.*` |
-| What a key does                         | `spec/keys.yaml`                  | `bindings.<logical-name>` |
+| What a key does                         | `spec/input.yaml` (→ gen-input)   | `input.bindings.<logical-name>` — action must be an `src/input.zig` `Action` tag |
 | Command start chars (`:` vs `/`)        | `spec/commands.yaml`              | `cmd_start_chars` |
 | Search prompt, status bar, help text, scrollbar char | `spec/strings/en.yaml`               | see §5, `scrollbar_char` |
 | Toolbar separator char (between theme/menu icons) | `spec/strings/en.yaml`             | `toolbar_sep` (must be exactly 1 display cell) |
@@ -95,7 +95,7 @@ const layout_json = @embedFile("spec_layout");
 - Pass an explicitly-typed `std.json.ParseOptions{ .ignore_unknown_fields = true }`
   (an anonymous struct literal won't coerce). `ignore_unknown_fields` lets each JSON
   carry a `"description"` key for humans without breaking the struct.
-- Dynamic object keys (the `keys.json` bindings) parse cleanly into
+- Dynamic object keys (the `input.generated.json` bindings) parse cleanly into
   `std.json.ArrayHashMap([]const u8)`; look up with `.map.get(name)`.
 - `std.mem.trimLeft`/`trimRight` were renamed to `trimStart`/`trimEnd`.
 
@@ -168,19 +168,25 @@ exe.root_module.addAnonymousImport("spec_input_generated",
 `spec/input.yaml` also carries the mouse encoding spec (`mouse.enable_motion`,
 `mouse.btn_button_mask`, `mouse.btn_motion_flag`, …) and tokenizer rules.
 
-### Layer 2 — logical name → action (`spec/keys.yaml`)
+### Layer 2 — logical name → action (`spec/input.yaml` `bindings:`)
 
-`keys.json` maps logical names to semantic actions (`quit`, `select`, `delete`,
-`cycle_theme`, `nav_*`). `g_spec.actionFor(name)` returns `""` for unbound keys.
-The dispatcher branches on `action` first, then on `name` for keys that intentionally
-have no binding (see [KeyDispatch.md](KeyDispatch.md)).
+`input.bindings` maps logical names to semantic actions (`quit`, `select`,
+`delete`, `cycle_theme`, `nav_*`). `g_spec.actionFor(name)` resolves the bound
+action string through `input.actionFromName` into the `src/input.zig` `Action`
+enum and returns `.none` for unbound keys. The dispatcher branches on `action`
+first, then on `key` (`input.keyFromName(name)`, a `Key` enum tag) for keys
+that intentionally have no binding (see [KeyDispatch.md](KeyDispatch.md)).
+Binding validity is guarded twice: a Zig spec test rejects unknown actions and
+unreachable key names at `zig build test` time, and the Go spec lint
+(`TestSpecInputBindingsResolve`) cross-checks the YAML against the `Action`
+enum parsed from `src/input.zig`.
 
 The two steps combined:
 
 ```
 raw bytes
   → decodeEscapeKeySpec(bytes, g_spec.input.key_sequences)  → name
-  → g_spec.actionFor(name)                                  → action
+  → keyFromName(name) + g_spec.actionFor(name)              → key + action (enums)
   → dispatch
 ```
 

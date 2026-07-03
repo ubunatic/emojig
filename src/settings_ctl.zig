@@ -11,6 +11,7 @@
 const std = @import("std");
 const emojig = @import("emojig");
 const mru = emojig.mru;
+const input_mod = @import("input.zig");
 const spec_mod = @import("spec.zig");
 const config = @import("config.zig");
 const defaults = @import("defaults.zig");
@@ -255,19 +256,19 @@ pub fn dropdownPrintable(st: *State, env: Env, b: u8) Effect {
 }
 
 /// Key dispatch while the dropdown modal is open.
-pub fn dropdownKey(st: *State, env: Env, name: []const u8, action: []const u8) Effect {
+pub fn dropdownKey(st: *State, env: Env, key: input_mod.Key, action: input_mod.Action) Effect {
     const opt_idx = st.dropdown_opt_idx orelse return .none;
     const opt = env.spec.settings.options[opt_idx];
-    if (std.mem.eql(u8, name, "esc") or std.mem.eql(u8, name, "q") or std.mem.eql(u8, action, "quit")) {
+    if (key == .esc or action == .quit) {
         st.dropdown_opt_idx = null;
         env.popup_msg.* = null;
-    } else if (std.mem.eql(u8, name, "up") or std.mem.eql(u8, action, "nav_up")) {
+    } else if (key == .up or action == .nav_up) {
         if (opt.choices) |choices| {
             st.dropdown_sel = if (st.dropdown_sel > 0) st.dropdown_sel - 1 else choices.len - 1;
         }
-    } else if (std.mem.eql(u8, name, "down") or std.mem.eql(u8, action, "nav_down")) {
+    } else if (key == .down or action == .nav_down) {
         if (opt.choices) |choices| st.dropdown_sel = (st.dropdown_sel + 1) % choices.len;
-    } else if (std.mem.eql(u8, name, "enter") or std.mem.eql(u8, name, "space") or std.mem.eql(u8, action, "select")) {
+    } else if (key == .enter or key == .space or action == .select) {
         if (opt.choices) |choices| return commitDropdown(st, env, opt, choices[st.dropdown_sel]);
     }
     return .none;
@@ -312,21 +313,24 @@ pub fn keybindPrintable(st: *State, env: Env, b: u8) void {
 
 /// Key dispatch while the keybind editor is active: Backspace deletes,
 /// Enter commits + persists, Esc reverts to the committed value.
-pub fn keybindKey(st: *State, env: Env, name: []const u8) void {
-    if (std.mem.eql(u8, name, "backspace")) {
-        if (st.keybind_input_len > 0) {
+pub fn keybindKey(st: *State, env: Env, key: input_mod.Key) void {
+    switch (key) {
+        .backspace => if (st.keybind_input_len > 0) {
             st.keybind_input_len -= 1;
             env.shell_key_binding.* = st.keybind_input_buf[0..st.keybind_input_len];
-        }
-    } else if (std.mem.eql(u8, name, "enter")) {
-        st.keybind_editing = false;
-        st.keybind_committed_len = @min(st.keybind_input_len, st.keybind_committed_buf.len);
-        @memcpy(st.keybind_committed_buf[0..st.keybind_committed_len], st.keybind_input_buf[0..st.keybind_committed_len]);
-        env.shell_key_binding.* = st.keybind_committed_buf[0..st.keybind_committed_len];
-        config.saveKeyToConfig(env.io, "shell_key_binding", env.shell_key_binding.*);
-    } else if (std.mem.eql(u8, name, "esc")) {
-        st.keybind_editing = false;
-        env.shell_key_binding.* = st.keybind_committed_buf[0..st.keybind_committed_len];
+        },
+        .enter => {
+            st.keybind_editing = false;
+            st.keybind_committed_len = @min(st.keybind_input_len, st.keybind_committed_buf.len);
+            @memcpy(st.keybind_committed_buf[0..st.keybind_committed_len], st.keybind_input_buf[0..st.keybind_committed_len]);
+            env.shell_key_binding.* = st.keybind_committed_buf[0..st.keybind_committed_len];
+            config.saveKeyToConfig(env.io, "shell_key_binding", env.shell_key_binding.*);
+        },
+        .esc => {
+            st.keybind_editing = false;
+            env.shell_key_binding.* = st.keybind_committed_buf[0..st.keybind_committed_len];
+        },
+        else => {},
     }
 }
 
@@ -533,11 +537,11 @@ test "dropdownKey navigates with wrap and esc closes" {
     env.popup_msg = &popup;
     st.dropdown_opt_idx = 2;
     st.dropdown_sel = 0;
-    _ = dropdownKey(&st, env, "up", "");
+    _ = dropdownKey(&st, env, .up, .none);
     try std.testing.expectEqual(@as(usize, 2), st.dropdown_sel); // wraps to last
-    _ = dropdownKey(&st, env, "down", "");
+    _ = dropdownKey(&st, env, .down, .none);
     try std.testing.expectEqual(@as(usize, 0), st.dropdown_sel);
-    _ = dropdownKey(&st, env, "esc", "");
+    _ = dropdownKey(&st, env, .esc, .none);
     try std.testing.expectEqual(@as(?usize, null), st.dropdown_opt_idx);
     try std.testing.expectEqual(@as(?[]const u8, null), popup);
 }
@@ -577,9 +581,9 @@ test "keybind editor buffers: type, backspace, esc reverts" {
     keybindPrintable(&st, env, ' ');
     keybindPrintable(&st, env, 'x');
     try std.testing.expectEqualStrings("C-o x", binding);
-    keybindKey(&st, env, "backspace");
+    keybindKey(&st, env, .backspace);
     try std.testing.expectEqualStrings("C-o ", binding);
-    keybindKey(&st, env, "esc");
+    keybindKey(&st, env, .esc);
     try std.testing.expect(!st.keybind_editing);
     try std.testing.expectEqualStrings("C-o", binding);
 }

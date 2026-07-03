@@ -190,11 +190,35 @@ category data. Wiring: Makefile `SPEC_YAMLS` + build.zig embed list +
 `src/spec.zig` load. Grep-verified `gen_web_spec`/`webspec.js` never
 read the layout knobs.
 
+## Resolution (2026-07-03) — §2 keys→input merge + input lint applied
+
+Done together with issue 44 item 6 (table-driven key dispatch):
+
+- **§2 (first half): `spec/keys.yaml` merged into `spec/input.yaml`** as an
+  `input.bindings:` map — the whole "terminal input state machine" now
+  lives in one file compiled by one generator (`gen_input_spec`, which
+  validates bindings non-empty; `convert_spec` no longer sees a keys
+  file). `spec.Keys` struct, the `spec_keys` embed (build.zig), the
+  Makefile `SPEC_YAMLS` entry, and `spec/.gen/keys.json` are all gone;
+  `InputSpec` gained the `bindings` map and `Spec.actionFor` now returns
+  the `src/input.zig` `Action` enum (`.none` = unbound).
+  `spec/.schema/input.schema.json` enumerates the valid action values, so
+  YAML editors flag a typo'd action while typing.
+- **§4 input lint gap (bindings part)**: two new guards. Zig:
+  a spec-load test asserts every binding's action parses into the
+  `Action` enum *and* every bound key name is producible by the decoder
+  (a `key_sequences` name or one of main.zig's hardcoded single-byte
+  decodes, mirrored as `spec.zig`'s `hardcoded_key_names`). Go:
+  `TestSpecInputBindingsResolve` cross-checks the generated JSON against
+  the `Action` enum tags and `hardcoded_key_names` parsed from the Zig
+  source (new `zigEnumTags`/`zigStringArray` helpers) — no hand-mirrored
+  action list.
+
 Still open (invasive, left for follow-ups):
 
-- §2 merges (`keys.yaml`→`input.yaml`, `styles.yaml`→strings tier) — touch
-  the generator, `@embedFile` wiring in build.zig, and two Zig spec structs.
+- §2 (second half): `styles.yaml`→strings tier merge.
 - §5.1 ranking regression list in `spec/search.yaml` (triple-engine parity).
 - §5.2 theme punch-through contract as data (Zig-side `buildPalette` test).
 - §5.3 host argv golden tests against the real argv assembly.
-- §4's theme/input lint coverage gap (beyond the two magic-number fixes).
+- §4's remaining lint gaps: `theme.yaml` punch-through contract and the
+  `input.yaml` key_sequences/tokenizer tables beyond bindings.

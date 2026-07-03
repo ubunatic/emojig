@@ -82,7 +82,7 @@ watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input s
 # the generated JSON is tracked so plain `zig build` works without Go.
 # Non-Zig-app spec tiers live in subdirectories: spec/web/ (website/JS demo
 # only) and spec/reels/ (wayreel recorder only) — never loaded by src/spec.zig.
-SPEC_YAMLS = layout theme keys commands settings categories switcher \
+SPEC_YAMLS = layout theme commands settings categories switcher \
              debug styles art boxart braille synonyms search host
 
 SPEC_WEB   = jsdemo crt-theme
