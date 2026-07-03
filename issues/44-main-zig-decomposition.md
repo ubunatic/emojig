@@ -4,7 +4,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: open
+status: in-progress
 ---
 
 # `main.zig` decomposition: it regrew into one 4098-line function
@@ -271,8 +271,9 @@ win, least behavioral risk (pure refactor, no logic change).
   `src/panes.zig` from item 1 unless the extraction is big enough to
   warrant its own file.
 - **Test wiring**: a file's tests only run if it is reachable from a test
-  root. `main.zig` ends with `test { _ = @import("term.zig");
-  _ = @import("tui_draw.zig"); }` — add any newly extracted file there
+  root. `main.zig` ends with a `test { _ = @import(...); }` block listing
+  term/tui_draw/debug_pane/settings_ctl/switcher/spec — add any newly
+  extracted file there
   (a file may only belong to one Zig module, hence the exe-module test
   block). Beware: wiring a previously-unwired file can revive dormant
   tests whose expectations drifted (happened with `config.zig`'s
