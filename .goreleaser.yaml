@@ -39,10 +39,9 @@ signs:
     args:
       - -c
       - >-
-        if [ -n "${MINISIGN_PASSWORD}" ]; then
-          echo "${MINISIGN_PASSWORD}" | minisign -S -s "${MINISIGN_KEY_FILE}" -m "${artifact}" -t "emojig {{ .Version }}";
-        else
-          minisign -S -s "${MINISIGN_KEY_FILE}" -m "${artifact}" -t "emojig {{ .Version }}";
+        if test -n "${MINISIGN_PASSWORD}"
+        then echo "${MINISIGN_PASSWORD}" | minisign -S -s "${MINISIGN_KEY_FILE}" -m "${artifact}" -t "emojig {{ .Version }}"
+        else minisign -S -s "${MINISIGN_KEY_FILE}" -m "${artifact}" -t "emojig {{ .Version }}"
         fi
     artifacts: checksum
     signature: "${artifact}.minisig"
