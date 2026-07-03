@@ -302,7 +302,7 @@ func main() {
 				},
 			},
 			"priority": map[string]any{
-				"type": "array",
+				"type":  "array",
 				"items": map[string]any{"type": "string"},
 			},
 			"art": map[string]any{
@@ -310,11 +310,11 @@ func main() {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"name":           map[string]any{"type": "string"},
-						"target":         map[string]any{"type": "string"},
-						"mode":           map[string]any{"type": "string", "enum": []string{"quad"}},
-						"spaced":         map[string]any{"type": "boolean"},
-						"indent":         map[string]any{"type": "string"},
+						"name":   map[string]any{"type": "string"},
+						"target": map[string]any{"type": "string"},
+						"mode":   map[string]any{"type": "string", "enum": []string{"quad"}},
+						"spaced": map[string]any{"type": "boolean"},
+						"indent": map[string]any{"type": "string"},
 						"stack": map[string]any{
 							"type": "array",
 							"items": map[string]any{

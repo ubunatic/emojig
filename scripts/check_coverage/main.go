@@ -245,11 +245,11 @@ func main() {
 	// Tag coverage: for each GTK emoji that emojig has, report GTK tags
 	// that emojig lacks (potential search improvements).
 	type tagGap struct {
-		emoji    string
-		label    string
-		gtkTags  []string
+		emoji      string
+		label      string
+		gtkTags    []string
 		emojigTags []string
-		missing  []string
+		missing    []string
 	}
 	var tagGaps []tagGap
 
@@ -285,11 +285,11 @@ func main() {
 		}
 		if len(missingTags) > 0 {
 			tagGaps = append(tagGaps, tagGap{
-				emoji:    e.Emoji,
-				label:    e.Label,
-				gtkTags:  e.Tags,
+				emoji:      e.Emoji,
+				label:      e.Label,
+				gtkTags:    e.Tags,
 				emojigTags: emE.Tags,
-				missing:  missingTags,
+				missing:    missingTags,
 			})
 		}
 	}

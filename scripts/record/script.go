@@ -96,7 +96,6 @@ func parseVimKey(key string) (mods []string, xkbKey string) {
 	return
 }
 
-
 // vimToWtypeArgs returns wtype flag(s) for a vim-style key name.
 func vimToWtypeArgs(key string) []string {
 	mods, xkbKey := parseVimKey(key)
@@ -176,7 +175,6 @@ func stepLabel(step ScriptStep) string {
 	}
 	return strings.Join(parts, " ")
 }
-
 
 func srtTime(d time.Duration) string {
 	h := int(d.Hours())
@@ -279,7 +277,6 @@ func addSubtitles(videoPath, bitrate string, entries []SubtitleEntry) {
 		fmt.Printf("  Warning: failed to replace video: %v\n", err)
 	}
 }
-
 
 // runWtypeScript executes steps via wtype (Wayland / GUI recording).
 // onNext is called when a { "next": "name" } step is encountered; pass nil if unused.

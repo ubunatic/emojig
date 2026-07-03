@@ -55,7 +55,7 @@ flowchart TD
     end
     
     subgraph Validation (Go)
-        F --> G["test_tui.go (PTY Simulator)"]
+        F --> G["scripts/test_tui (PTY Simulator)"]
     end
 ```
 

@@ -32,7 +32,6 @@ import (
 	"time"
 )
 
-
 // recordScenarioDemo records the full desktop GUI scenario to a webm.
 // query is the search term typed into the picker (default "fire").
 func recordScenarioDemo(binaryPath string, spec recordSpec) error {

@@ -33,6 +33,19 @@ This document details the architectural decisions, coding standards, and safety 
 * Assume all tools you need are installed (ffmpeg, go, zig, terminal emulators).
   Do not always probe for tools with `command -v`. Just call them when needed.
 * Assume recent versions of all tools (modern Go, latest Rust, fresh OS tools, etc.)
+* **Never use `git stash`** (not even to briefly compare against HEAD): `stash pop`
+  restores everything *unstaged*, silently losing staged deletions/renames you set
+  up earlier — this has already caused a "deleted file survived the commit" bug.
+  Compare with `git diff HEAD -- <path>` / `git show HEAD:<path>` instead.
+* **Small stray uncommitted edits are OK to pick up.** If the tree has an
+  unrelated one-liner edit (e.g. a comment tweak the user made), just include it
+  in a commit and mention it — don't leave it dangling or stop to ask.
+* **Fix stale docs/tooling references on sight.** If a doc names a build step or
+  script path that no longer exists, fix the doc in the same session instead of
+  merely reporting it.
+* **Go code is auto-formatted, never format-checked**: `make preflight` runs
+  `gofmt -w scripts/`. Don't run `gofmt -l` audits or fix formatting by hand —
+  just let the build step rewrite the files and commit the result.
 
 ---
 
@@ -190,10 +203,10 @@ Implemented at query time in `src/root.zig` with **zero heap allocations**:
 
 All diagnostics, simulations, and unit tests must reside in-tree:
 * **`zig build test`**: Runs built-in test blocks verifying match scoring, search subsequence alignment, embedded binary offsets, plural/stem fallbacks, and startup state.
-* **TUI Simulation (`scripts/test_tui.go`)**:
+* **TUI Simulation (`go run ./scripts/test_tui`)**:
   * Spawns the CLI inside a programmatic Unix pseudo-terminal (PTY).
   * Writes key inputs, captures output buffers, verifies clean zero exit status, and outputs terminal frames for visual confirmation.
-* **Agent Screenshot (`zig build screenshot` or `go run scripts/screenshot.go`)**:
+* **Agent Screenshot (`go run ./scripts/screenshot`)**:
   * Runs the app in a PTY, waits ~300 ms for the initial render, captures the output, then kills the process.
   * Saves the raw ANSI frame to `/tmp/emojig_frame.ansi` and a plain-text (ANSI-stripped) version to `/tmp/emojig_frame.txt`.
   * Prints the plain-text frame to stdout, allowing a coding agent to read it directly via the Bash tool and verify layout/content without a pixel-level screenshot.

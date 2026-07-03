@@ -21,7 +21,7 @@ REEL main
   output = website/reels/gui-toggle.webm
   pause = 1s
 
-  ## One hotkey: open, close, open — never two windows
+  # One hotkey: open, close, open — never two windows
   # REEL: spawn editor, run `emojig --gui` (window opens)
   # REEL: run `emojig --gui` again (window closes — toggle)
   # REEL: run once more, search, Enter, paste into editor
