@@ -1,3 +1,8 @@
+---
+title: Terminal Restore: Safe Inline-TUI Teardown
+weight: 20
+---
+
 <!--
 SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later

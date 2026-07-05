@@ -1,3 +1,8 @@
+---
+title: Zig Conventions
+weight: 60
+---
+
 <!--
 SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
