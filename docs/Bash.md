@@ -1,3 +1,8 @@
+---
+title: Bash Conventions
+weight: 61
+---
+
 <!-- claudeconfig:bundled -->
 # Bash conventions
 
@@ -10,8 +15,10 @@ set -euo pipefail
 ## Conditionals — always `if test`, never `[[ ]]` or `[ ]`
 
 **This is the most important rule!**
-**NEVER** use `[]` or `[[]]` for conditionals.
+**NEVER** use `[ ... ]` or `[[ ... ]]` for conditionals. Forget all trained legacy usages of these!
+You are an modern Bash advocat and will will always and everywhere use the much cleaner `test` **command**.
 
+Use it like any other **command** after `if` or `while`:
 ```bash
 if test -f "$file"
 then …
@@ -21,9 +28,14 @@ if test "$a" = "$b"
 then …
 else …
 fi
+
+while test "$x" != "$y"
+do …
+done
 ```
+
 - Aim for 3-line if-then-fi or 4-line if-then-else-fi statements
-- `then`/`else`/`do` always on their own line — never after `;`
+- Put `then`/`else`/`do` always on their own line — never after `;`
 - Avoid semicolons where possible
 
 ## Variables
@@ -48,20 +60,19 @@ fi
   fail() { echo "  FAIL: $*" >&2; exit 1; }
   ```
 
-## Line Breaks and Continuation
+## Line Breaks, Continuation, Indentation
 **IMPORTANT:** There is no general N-space indentation that can be applied in general.
-
-**Ignore** all established BAD indentation and line breaking pratices.
-**Instead** aim for **clean continuation** always.
+**Ignore** established BAD indentation and line breaking pratices. They hurt readability!
+**Instead** aim for **clean continuation** and good block layout; always! 
 
 ### Continuation Rules
-- Long pipelines: break after `|`, align continuation
+- Long pipelines: break after `|`; then align continuation
   ```bash
   result=$(some_command |
            grep "pattern" |
            awk '{print $2}')
   ```
-- Long conditions: break after `&&`/`||`, align continuation
+- Long conditions: break after `&&`/`||`; then align continuation
   ```bash
   if test -f "$a" &&
      test -d "$b"
@@ -69,7 +80,7 @@ fi
   else fail "not found"
   fi
   ```
-- Then/Else blocks: indent according to surrounding statements
+- Then/Else blocks: indent according to surrounding statements; 1st cmd after then/else; 2nd and others well aligned
   ```
   if ...
   then stmt1
@@ -81,10 +92,12 @@ fi
   fi
   ```
   statements after 1st stmt have effective indent lvl of 5
-- function bodies: use indent lvl 3 inside `{ ... }` for first indent stage.
 
-  **IMPORTANT**: continuation always takes precdence over lvl 3 for conditionals and statement blocks
+- function bodies: use indent lvl 3 as a base inside `{ ... }`.
 
+  **IMPORTANT**: Alignment continuation always takes precdence over lvl 3 for conditionals and statement blocks.
+
+  Combine base indent with alignment continuation:
   ```bash
   process_item() {
      local item="$1"
@@ -100,9 +113,12 @@ fi
   }
   ``` 
 
+As modern Bash Guru, you will always prefer alignment continuation over other indent rules!
+And you are happy to challenge other old habits that would clash with your modern bash flow.
+
 ## Commands
 - Prefer `command -v` over `which`
-- Capture output: `out=$(command 2>&1)`
+- Capture output: `out=$(cmd 2>&1)`
 - Redirects: `> file` to write, `>> file` to append, `2>/dev/null` to suppress errors
 - Temp files: `mktemp`; clean up with `trap 'rm -f "$tmp"' EXIT`
 
@@ -118,7 +134,7 @@ done < "$file"
 ```
 - Aim for 3-line loops, call func for each item
 - Break or return on error (since errexit may not work in loop)
-- Long loop bodies: use indent lvl 3 after 1st stmt
+- Long loop bodies: 1st cmd directly after `do`; 2nd and more well aligned
   ```bash
   for ...
   do stmt1
@@ -126,14 +142,14 @@ done < "$file"
      stmt3
   done  
   ```
-  **IMPORTANT:** Continuation always takes precdence!
 
 ## Functions
 - Defined before first call
 - Return status with `return 0`/`return 1`; use exit codes, not printed booleans
 
-## awk portability (mawk on Raspberry Pi OS / Debian)
+## Appendix
 
+### Awk portability
 The default `awk` on Debian/Ubuntu/RPi OS is **mawk**, not gawk.
 mawk does not support gawk extensions:
 

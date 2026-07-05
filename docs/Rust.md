@@ -1,3 +1,8 @@
+---
+title: Rust Conventions
+weight: 65
+---
+
 <!-- claudeconfig:bundled -->
 # Rust Conventions
 

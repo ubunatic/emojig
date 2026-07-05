@@ -1,3 +1,8 @@
+---
+title: Make Conventions
+weight: 62
+---
+
 <!-- claudeconfig:bundled -->
 # Make conventions
 
@@ -20,6 +25,8 @@ CONFIG  := config.yaml         # default config file
 TARGET  := $(HOME)/.claude     # installation target dir
 PROJECT := .                   # project root (passed to tool as -p)
 PREFIX  ?= /usr/local          # overridable install prefix
+
+export MYAPP_SOME_FEATURE=1
 ```
 
 - Use  `:=` for immediate assignment (most vars)
@@ -40,11 +47,11 @@ character is never a real file, so the rule fires unconditionally.
 
 ```makefile
 help: ⚙️  ## show this help
-	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
-	awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*⚙.*#+' $(MAKEFILE_LIST) | \
+	awk 'BEGIN {FS = ":.*#+ "}; {printf "  %-10s %s\n", $$1, $$2}'
 ```
 
-Every target that should appear in help gets a `  ## description` comment on the
+Every target that should appear in help gets a `  # description` comment on the
 same line as the rule header.  `help` scrapes them automatically.
 
 ## Build dependency pattern
@@ -52,26 +59,29 @@ same line as the rule header.  `help` scrapes them automatically.
 Action targets depend on `build` so the binary is always fresh:
 
 ```makefile
-build: ⚙️  ## build the binary
+build: ⚙️  # build the binary
 	go build -o $(BINARY) .
 
-apply: ⚙️ build  ## apply config.yaml to the Claude Code config directory
+apply: ⚙️ build  # apply config.yaml to the Claude Code config directory
 	./$(BINARY) apply -c $(CONFIG) -t $(TARGET) -p $(PROJECT)
 ```
 
 - `build` rebuilds only when sources change (Make's normal rules apply)
 - Action targets invoke `./$(BINARY)` — the locally-built binary, not the one
-  on `$PATH`
+  on `$PATH`.
+  If needed, the user can override this rule if develoment is close to his system.
+
 
 ## Install target (Go)
 
 ```makefile
-install: ⚙️ build  ## install the binary to PREFIX/bin (default: /usr/local/bin)
+install: ⚙️ build  # install the binary to PREFIX/bin (default: /usr/local/bin)
 	go install .
 	@sudo install -m 0755 $(BINARY) $(PREFIX)/bin/$(BINARY) && \
 	  echo "✅ Installed for all users" || echo "⚠️ System install failed"
 ```
 
+Install approach is usually: do local + try global
 - `go install` puts the binary in `$(GOPATH)/bin` (user-local)
 - `sudo install -m 0755` copies to `$(PREFIX)/bin` for system-wide availability
 - `|| echo …` degrades gracefully when `sudo` is unavailable
@@ -79,9 +89,10 @@ install: ⚙️ build  ## install the binary to PREFIX/bin (default: /usr/local/
 ## Test target
 
 ```makefile
-test: ⚙️  ## run linter and tests
+test: ⚙️  # run linter and tests
 	go vet ./...
 	go test ./...
 ```
 
 Always run `go vet` before `go test`; vet catches issues tests may not exercise.
+

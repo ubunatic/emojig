@@ -1,3 +1,8 @@
+---
+title: Go Conventions
+weight: 60
+---
+
 <!-- claudeconfig:bundled -->
 # Go Conventions
 
@@ -21,15 +26,23 @@
   Use the `BINARY` variable from the Makefile as the canonical name so the
   `.gitignore` entry and the build output always match.
 
-## Spec-driven Apps (Optional)
-- Use this concept only on demand or when you see a need for it.
-  Example: We are changing strings and layout a lot, and the user wants to have finegrained control.
-- Add `spec/<feature>.json` to drive compile-time features:
-  - `spec/strings/en.yaml` defines labels, titles, messages
+## Spec-Driven Apps
+- Avoid hard-coding labels, controls, user-focussed text, icons, etc.
+- Better define such in `spec/<feature>.yaml` with a `$schema` in `spec/schemas/`.
+- Disregard this concept only if you are sure it does not apply, or the user demanded it.
+- Go `embed` the `spec/`; It **IS** part of the code!
+- Write tests and guards against the spec to make spec <-> Go interaction resilient.
+- Add `spec/<feature>.yaml` to drive compile-time features:
+  - `spec/strings.yaml` defines labels, titles, messages
+  - `spec/labels.yaml` composite lines of text
+  - `spec/controls.yaml` buttons, actions mappings, default hotkeys
   - `spec/layout.yaml` defines app layout, ordering, and more
-  - `spec/screen-help.json` home screen content
-  - `spec/screen-home.json` help screen content
+  - `spec/screen-help.yaml` home screen content
+  - `spec/screen-home.yaml` help screen content
   - add more as needed and create structs for parsing
+  - for small projects start with a single `spec/config.yaml`
+
+Again: this is not just runtime config. It is a key part of the codebase!
 
 ## CLI
 - Use Cobra; one `*cobra.Command` per verb, flags defined on that command
@@ -70,3 +83,4 @@
 - Test files in same package (`package main`)
 - Helpers: `t.Helper()`, `t.Fatalf` for setup failures, `t.Errorf` for assertion failures
 - No test frameworks — stdlib `testing` only
+
