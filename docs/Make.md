@@ -33,22 +33,26 @@ export MYAPP_SOME_FEATURE=1
 - Use  `?=` for env-overridable vars (`PREFIX`)
 - Align `=` signs for readability
 
-## Phony declaration — `⚙️` sentinel
+## Phony declaration — `⚙️ 🤖` sentinels
 
 ```makefile
-.PHONY: ⚙️  # make all commands phony
+.PHONY: ⚙️ 🤖  # ⚙️ = manual/once, 🤖 = managed
 ```
 
-Adding `⚙️` as a prerequisite on every target (e.g. `help: ⚙️  ## …`) causes Make
-to treat all targets as phony without listing each name twice. The Unicode
-character is never a real file, so the rule fires unconditionally.
+Adding one of the sentinels as a prerequisite on every target (e.g. `build: ⚙️  # ...` or `help: 🤖  # ...`) causes Make to treat all targets as phony without listing each name twice.
+
+- `🤖` represents targets actively **managed** (reconciled/updated) by `claudeconfig` (like `help`).
+- `⚙️` represents targets **manually** defined or generated once (like `build`, `test`, `release`), which `claudeconfig` will not automatically overwrite.
 
 ## Self-documenting help target
 
 ```makefile
-help: ⚙️  ## show this help
-	@grep -E '^[a-zA-Z_-]+:.*⚙.*#+' $(MAKEFILE_LIST) | \
-	awk 'BEGIN {FS = ":.*#+ "}; {printf "  %-10s %s\n", $$1, $$2}'
+_prim := \033[36m
+_rst  := \033[0m
+
+help: 🤖  # show this help
+	@grep -E '^[a-zA-Z_-]+:.*[⚙🤖].*#+' $(MAKEFILE_LIST) | \
+	awk 'BEGIN {FS = ":.*#+ "}; {printf "    $(_prim)%-15s$(_rst) %s\n", $$1, $$2}'
 ```
 
 Every target that should appear in help gets a `  # description` comment on the

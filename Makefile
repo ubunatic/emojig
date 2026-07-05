@@ -1,4 +1,7 @@
-.PHONY: ⚙️  # make all targets phony
+.PHONY: ⚙️ 🤖  # ⚙️ = manual/once, 🤖 = managed
+_prim := \033[36m
+_rst  := \033[0m
+
 
 SHELL = bash
 VERSION = $(shell grep '\.version' build.zig.zon | grep -o '[0-9][0-9.]*')
