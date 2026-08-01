@@ -52,7 +52,7 @@ signs:
 nfpms:
   - package_name: emojig
     vendor: Uwe Jugel
-    maintainer: Uwe Jugel <uwe.jugel@gmail.com>
+    maintainer: Uwe Jugel <uwe@ubunatic.com>
     homepage: https://codeberg.org/ubunatic/emojig
     description: Zero-allocation emoji picker for Wayland/X11
     license: AGPL-3.0-or-later

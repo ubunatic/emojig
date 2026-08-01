@@ -1,6 +1,6 @@
 version = 1
 SPDX-PackageName = "emojig"
-SPDX-PackageSupplier = "uwe.jugel@gmail.com"
+SPDX-PackageSupplier = "Uwe Jugel <uwe@ubunatic.com>"
 SPDX-PackageDownloadLocation = "https://codeberg.org/ubunatic/emojig"
 
 [[annotations]]
