@@ -33,4 +33,8 @@ pub fn runNativeGui(
         win.width,
         win.height,
     });
+
+    while (win.running) {
+        if (win.dispatch() < 0) break;
+    }
 }
