@@ -109,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             margin-bottom: 56px;
         }
 
-        .brand {
+        .site-brand {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -118,22 +118,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             font-size: 1.1rem;
         }
 
-        .brand:hover {
+        .site-brand:hover {
             text-decoration: none;
         }
 
-        .brand img {
+        .site-brand img {
             width: 32px;
             height: 32px;
             filter: drop-shadow(0 0 6px rgba(255, 200, 60, 0.35));
             transition: filter 0.3s ease;
         }
 
-        .brand:hover img {
+        .site-brand:hover img {
             filter: drop-shadow(0 0 12px rgba(255, 200, 60, 0.6));
         }
 
-        .brand .v2 {
+        .site-brand .v2 {
             color: var(--faint);
             font-weight: 400;
         }
@@ -153,14 +153,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             color: var(--fg);
         }
 
-        nav a.repo {
+        nav a.repo-link {
             color: var(--green);
             display: inline-flex;
             align-items: center;
             gap: 6px;
         }
 
-        nav a.repo svg {
+        nav a.repo-link svg {
             flex-shrink: 0;
         }
 
@@ -718,7 +718,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="container">
         <!-- ── header ── -->
         <header>
-            <a class="brand" href="#">
+            <a class="site-brand" href="#">
                 <img src="emojig-icon.svg" alt="emojig logo" />
                 emojig
             </a>
@@ -727,7 +727,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <a href="#search">search</a>
                 <a href="#reels">reels</a>
                 <a href="#next">what's next</a>
-                <a class="repo" href="https://codeberg.org/ubunatic/emojig" target="_blank" rel="noopener">
+                <a class="repo-link" href="https://codeberg.org/ubunatic/emojig" target="_blank" rel="noopener">
                     <!-- the "berg" -->
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="m8 3 4 8 5-5 5 15H2L8 3z"></path>
