@@ -31,6 +31,7 @@ pub const ParsedArgs = struct {
     completion_shell: ?[]const u8 = null,
     key: ?[]const u8 = null,
     borderless: ?bool = null,
+    gui_native: bool = false,
     title_size: usize = 0,
     lang: ?[]const u8 = null,
     show_switcher: ?bool = null,
@@ -56,6 +57,7 @@ pub const Runtime = struct {
     opt_completion_shell: ?[]const u8,
     opt_key: ?[]const u8,
     opt_borderless: bool,
+    opt_gui_native: bool,
     opt_title_size: usize,
     opt_lang: ?[]const u8,
     opt_show_switcher: ?bool,
@@ -137,6 +139,9 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
             parsed.list = true;
         } else if (std.mem.eql(u8, arg, "--gui")) {
             parsed.gui = true;
+        } else if (std.mem.eql(u8, arg, "--gui-native")) {
+            parsed.gui = true;
+            parsed.gui_native = true;
         } else if (std.mem.eql(u8, arg, "--wait")) {
             parsed.wait = true;
         } else if (std.mem.eql(u8, arg, "--safe")) {
@@ -246,6 +251,7 @@ pub fn parseArgs(init: std.process.Init) ParsedArgs {
                 "  --debug                      Debug mode: show terminal dimensions at bottom\n" ++
                 "  --tui                        Force local interactive TUI session\n" ++
                 "  --gui                        Force floating window (uses $EMOJIG_TERMINAL, else foot/kitty/ghostty/ptyxis/...)\n" ++
+                "  --gui-native                 Force native embedded GUI windowing engine\n" ++
                 "  --borderless[=true|false]    Spawn the GUI terminal without window decorations (default: true)\n" ++
                 "  --decorated                  Spawn the GUI terminal with its title bar/window decorations\n" ++
                 "  --window-decorations         Alias for --decorated\n" ++
@@ -501,6 +507,7 @@ pub fn resolveRuntime(init: std.process.Init, arena: std.mem.Allocator, spec: *c
         .opt_completion_shell = parsed.completion_shell,
         .opt_key = parsed.key,
         .opt_borderless = parsed.borderless orelse (if (cfg.decorated) |d| !d else true),
+        .opt_gui_native = parsed.gui_native,
         .opt_title_size = parsed.title_size,
         .opt_lang = parsed.lang,
         .opt_show_switcher = parsed.show_switcher,

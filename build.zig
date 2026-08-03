@@ -161,6 +161,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addOptions("build_options", options);
 
     exe.root_module.link_libc = true;
+
     b.installArtifact(exe);
 
     // This creates a top level step. Top level steps have a name and can be

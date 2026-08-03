@@ -23,6 +23,7 @@ const color = @import("color.zig");
 const tui_draw = @import("tui_draw.zig");
 const debug_pane = @import("debug_pane.zig");
 const settings_ctl = @import("settings_ctl.zig");
+const gui_mod = @import("gui.zig");
 const switcher = @import("switcher.zig");
 const clipboard = @import("clipboard.zig");
 const copyToClipboard = clipboard.copyToClipboard;
@@ -740,6 +741,13 @@ pub fn main(init: std.process.Init) !void {
             }
             break :blk cfg.font_size orelse g_spec.layout.gui.font_size;
         };
+
+        if (runtime.opt_gui_native) {
+            if (!gui_mod.is_gui_enabled) {
+                try writeAll(std.posix.STDERR_FILENO, "Error: emojig was compiled without GUI support (-Dgui=false). Use --tui mode.\n");
+                std.process.exit(1);
+            }
+        }
 
         host.spawnGuiWindow(
             init,
