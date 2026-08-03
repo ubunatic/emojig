@@ -21,6 +21,8 @@ pub const WaylandError = error{
     MmapFailed,
     BufferCreationFailed,
     ConfigureTimeout,
+    XdgSurfaceFailed,
+    XdgToplevelFailed,
 };
 
 /// Geometry calculation based on foot's window-size-chars algorithm.
@@ -88,11 +90,167 @@ pub const NativeGuiWindow = struct {
     registry: ?*anyopaque = null,
     compositor: ?*anyopaque = null,
     shm: ?*anyopaque = null,
+    xdg_wm_base: ?*anyopaque = null,
+    seat: ?*anyopaque = null,
+    pointer: ?*anyopaque = null,
+    surface: ?*anyopaque = null,
+    xdg_surface: ?*anyopaque = null,
+    xdg_toplevel: ?*anyopaque = null,
     geometry: GeometryConfig,
     running: bool = false,
     width: u32,
     height: u32,
     buffer: ?ShmBuffer = null,
+    btn_x: u32 = 0,
+    btn_y: u32 = 0,
+    btn_w: u32 = 100,
+    btn_h: u32 = 40,
+    pointer_x: f64 = 0,
+    pointer_y: f64 = 0,
+
+    fn registryHandleGlobal(data: ?*anyopaque, reg: ?*anyopaque, name: u32, interface_ptr: [*:0]const u8, version: u32) callconv(.c) void {
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        const iface_name = std.mem.span(interface_ptr);
+        const ver: u32 = @min(version, 4);
+        const null_ptr: ?*anyopaque = null;
+
+        if (std.mem.eql(u8, iface_name, "wl_compositor")) {
+            self.compositor = self.wl.wl_proxy_marshal_flags(reg orelse return, 0, self.wl.wl_compositor_interface, ver, 0, name, self.wl.wl_compositor_interface.name, ver, null_ptr);
+        } else if (std.mem.eql(u8, iface_name, "wl_shm")) {
+            self.shm = self.wl.wl_proxy_marshal_flags(reg orelse return, 0, self.wl.wl_shm_interface, 1, 0, name, self.wl.wl_shm_interface.name, @as(u32, 1), null_ptr);
+        } else if (std.mem.eql(u8, iface_name, "xdg_wm_base")) {
+            const xdg_ver: u32 = @min(version, 6);
+            const args = [_]wl_dyn.WlArgument{
+                .{ .u = name },
+                .{ .s = wl_dyn.xdg_wm_base_interface.name },
+                .{ .u = xdg_ver },
+                .{ .o = null },
+            };
+            self.xdg_wm_base = self.wl.wl_proxy_marshal_array_constructor_versioned(reg orelse return, 0, @ptrCast(&args), &wl_dyn.xdg_wm_base_interface, xdg_ver);
+
+            const xdg_listener = [2]*const fn () callconv(.c) void{
+                @ptrCast(&xdgWmBasePing),
+                @ptrCast(&xdgWmBasePing), // dummy for unused events if any
+            };
+            _ = self.wl.wl_proxy_add_listener(self.xdg_wm_base.?, @ptrCast(&xdg_listener[0]), self);
+        } else if (std.mem.eql(u8, iface_name, "wl_seat")) {
+            const seat_ver: u32 = @min(version, 9);
+            const args = [_]wl_dyn.WlArgument{
+                .{ .u = name },
+                .{ .s = wl_dyn.wl_seat_interface.name },
+                .{ .u = seat_ver },
+                .{ .o = null },
+            };
+            self.seat = self.wl.wl_proxy_marshal_array_constructor_versioned(reg orelse return, 0, @ptrCast(&args), &wl_dyn.wl_seat_interface, seat_ver);
+            const seat_listener = [2]*const fn () callconv(.c) void{
+                @ptrCast(&seatHandleCapabilities),
+                @ptrCast(&seatHandleCapabilities), // name unused
+            };
+            _ = self.wl.wl_proxy_add_listener(self.seat.?, @ptrCast(&seat_listener[0]), self);
+        }
+    }
+
+    fn registryHandleGlobalRemove(data: ?*anyopaque, reg: ?*anyopaque, name: u32) callconv(.c) void {
+        _ = data;
+        _ = reg;
+        _ = name;
+    }
+
+    fn xdgWmBasePing(data: ?*anyopaque, proxy: ?*anyopaque, serial: u32) callconv(.c) void {
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        const args = [_]wl_dyn.WlArgument{
+            .{ .u = serial },
+        };
+        // pong
+        _ = self.wl.wl_proxy_marshal_array_constructor_versioned(proxy orelse return, 3, @ptrCast(&args), null, 6);
+    }
+
+    fn seatHandleCapabilities(data: ?*anyopaque, proxy: ?*anyopaque, caps: u32) callconv(.c) void {
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        if (caps & 1 != 0 and self.pointer == null) {
+            const args = [_]wl_dyn.WlArgument{
+                .{ .o = null },
+            };
+            self.pointer = self.wl.wl_proxy_marshal_array_constructor_versioned(proxy orelse return, 0, @ptrCast(&args), &wl_dyn.wl_pointer_interface, 9);
+            const ptr_listener = [5]*const fn () callconv(.c) void{
+                @ptrCast(&pointerHandleEnter),
+                @ptrCast(&pointerHandleLeave),
+                @ptrCast(&pointerHandleMotion),
+                @ptrCast(&pointerHandleButton),
+                @ptrCast(&pointerHandleAxis),
+            };
+            _ = self.wl.wl_proxy_add_listener(self.pointer.?, @ptrCast(&ptr_listener[0]), self);
+        }
+    }
+
+    fn pointerHandleEnter(data: ?*anyopaque, proxy: ?*anyopaque, serial: u32, surface: ?*anyopaque, sx: i32, sy: i32) callconv(.c) void {
+        _ = proxy;
+        _ = serial;
+        _ = surface;
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        self.pointer_x = @as(f64, @floatFromInt(sx)) / 256.0;
+        self.pointer_y = @as(f64, @floatFromInt(sy)) / 256.0;
+    }
+    fn pointerHandleLeave(data: ?*anyopaque, proxy: ?*anyopaque, serial: u32, surface: ?*anyopaque) callconv(.c) void {
+        _ = data;
+        _ = proxy;
+        _ = serial;
+        _ = surface;
+    }
+    fn pointerHandleMotion(data: ?*anyopaque, proxy: ?*anyopaque, time: u32, sx: i32, sy: i32) callconv(.c) void {
+        _ = proxy;
+        _ = time;
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        self.pointer_x = @as(f64, @floatFromInt(sx)) / 256.0;
+        self.pointer_y = @as(f64, @floatFromInt(sy)) / 256.0;
+    }
+    fn pointerHandleButton(data: ?*anyopaque, proxy: ?*anyopaque, serial: u32, time: u32, button: u32, state: u32) callconv(.c) void {
+        _ = proxy;
+        _ = serial;
+        _ = time;
+        _ = button;
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        if (state == 1) { // PRESSED
+            const px: u32 = @intFromFloat(self.pointer_x);
+            const py: u32 = @intFromFloat(self.pointer_y);
+            if (px >= self.btn_x and px <= self.btn_x + self.btn_w and py >= self.btn_y and py <= self.btn_y + self.btn_h) {
+                self.running = false;
+            }
+        }
+    }
+    fn pointerHandleAxis(data: ?*anyopaque, proxy: ?*anyopaque, time: u32, axis: u32, value: i32) callconv(.c) void {
+        _ = data;
+        _ = proxy;
+        _ = time;
+        _ = axis;
+        _ = value;
+    }
+
+    fn xdgSurfaceConfigure(data: ?*anyopaque, proxy: ?*anyopaque, serial: u32) callconv(.c) void {
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        const args = [_]wl_dyn.WlArgument{
+            .{ .u = serial },
+        };
+        // ack_configure
+        _ = self.wl.wl_proxy_marshal_array_constructor_versioned(proxy orelse return, 4, @ptrCast(&args), null, 6);
+        self.renderFrame();
+    }
+
+    fn xdgToplevelConfigure(data: ?*anyopaque, proxy: ?*anyopaque, w: i32, h: i32, states: ?*anyopaque) callconv(.c) void {
+        _ = proxy;
+        _ = states;
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        if (w > 0 and h > 0) {
+            self.width = @intCast(w);
+            self.height = @intCast(h);
+        }
+    }
+
+    fn xdgToplevelClose(data: ?*anyopaque, proxy: ?*anyopaque) callconv(.c) void {
+        _ = proxy;
+        const self: *NativeGuiWindow = @ptrCast(@alignCast(data orelse return));
+        self.running = false;
+    }
 
     pub fn init(allocator: std.mem.Allocator, geom: GeometryConfig) !*NativeGuiWindow {
         var wl = try wl_dyn.WaylandLib.load();
@@ -117,7 +275,87 @@ pub const NativeGuiWindow = struct {
             .running = true,
             .width = w,
             .height = h,
+            .btn_x = w / 2 - 50,
+            .btn_y = h / 2 - 20,
+            .btn_w = 100,
+            .btn_h = 40,
         };
+
+        const registry_listener = [2]*const fn () callconv(.c) void{
+            @ptrCast(&registryHandleGlobal),
+            @ptrCast(&registryHandleGlobalRemove),
+        };
+        _ = wl.wl_proxy_add_listener(registry, @ptrCast(&registry_listener[0]), self);
+
+        _ = wl.wl_display_roundtrip(display);
+
+        if (self.compositor == null) return WaylandError.CompositorMissing;
+        if (self.shm == null) return WaylandError.ShmMissing;
+        if (self.xdg_wm_base == null) return WaylandError.XdgWmBaseMissing;
+
+        self.surface = wl.wl_proxy_marshal_flags(self.compositor.?, 0, wl.wl_surface_interface, 1, 0, null_ptr) orelse return WaylandError.SurfaceCreationFailed;
+
+        const xdg_surf_args = [_]wl_dyn.WlArgument{
+            .{ .o = null },
+            .{ .o = self.surface },
+        };
+        self.xdg_surface = wl.wl_proxy_marshal_array_constructor_versioned(self.xdg_wm_base.?, 2, @ptrCast(&xdg_surf_args), &wl_dyn.xdg_surface_interface, 1) orelse return WaylandError.XdgSurfaceFailed;
+
+        const xdg_surf_listener = [1]*const fn () callconv(.c) void{
+            @ptrCast(&xdgSurfaceConfigure),
+        };
+        _ = wl.wl_proxy_add_listener(self.xdg_surface.?, @ptrCast(&xdg_surf_listener[0]), self);
+
+        const xdg_top_args = [_]wl_dyn.WlArgument{
+            .{ .o = null },
+        };
+        self.xdg_toplevel = wl.wl_proxy_marshal_array_constructor_versioned(self.xdg_surface.?, 1, @ptrCast(&xdg_top_args), &wl_dyn.xdg_toplevel_interface, 1) orelse return WaylandError.XdgToplevelFailed;
+
+        const xdg_top_listener = [4]*const fn () callconv(.c) void{
+            @ptrCast(&xdgToplevelConfigure),
+            @ptrCast(&xdgToplevelClose),
+            @ptrCast(&xdgToplevelClose),
+            @ptrCast(&xdgToplevelClose),
+        };
+        _ = wl.wl_proxy_add_listener(self.xdg_toplevel.?, @ptrCast(&xdg_top_listener[0]), self);
+
+        // set title
+        const title_args = [_]wl_dyn.WlArgument{
+            .{ .s = @constCast("emojig") },
+        };
+        _ = wl.wl_proxy_marshal_array_constructor_versioned(self.xdg_toplevel.?, 2, @ptrCast(&title_args), null, 1);
+
+        // commit
+        _ = wl.wl_proxy_marshal_flags(self.surface.?, 6, null, 1, 0);
+        _ = wl.wl_display_roundtrip(display);
+
+        // create shm buffer
+        const stride: u32 = self.width * 4;
+        const size: usize = @intCast(stride * self.height);
+
+        const shm_name = "/emojig-gui-shm";
+        const oflags: u32 = @bitCast(posix.O{ .ACCMODE = .RDWR, .CREAT = true, .EXCL = true });
+        const fd = std.c.shm_open(shm_name, @intCast(oflags), 0o600);
+        if (fd < 0) return WaylandError.ShmFdCreationFailed;
+        _ = std.c.shm_unlink(shm_name);
+        _ = posix.system.ftruncate(fd, @intCast(size));
+
+        const prot = posix.PROT{ .READ = true, .WRITE = true };
+        const data = try posix.mmap(null, size, prot, .{ .TYPE = .SHARED }, fd, 0);
+
+        self.buffer = ShmBuffer{
+            .data = @ptrCast(@alignCast(data)),
+            .fd = fd,
+            .width = self.width,
+            .height = self.height,
+            .stride = stride,
+        };
+
+        const pool = wl.wl_proxy_marshal_flags(self.shm.?, 0, wl.wl_shm_pool_interface, 1, 0, @as(c_int, fd), @as(i32, @intCast(size)), null_ptr) orelse return WaylandError.BufferCreationFailed;
+        const buffer = wl.wl_proxy_marshal_flags(pool, 0, wl.wl_buffer_interface, 1, 0, @as(i32, 0), @as(i32, @intCast(self.width)), @as(i32, @intCast(self.height)), @as(i32, @intCast(stride)), @as(u32, 0), null_ptr) orelse return WaylandError.BufferCreationFailed;
+
+        _ = wl.wl_proxy_marshal_flags(self.surface.?, 1, null, 1, 0, buffer, @as(i32, 0), @as(i32, 0));
+        self.renderFrame();
 
         return self;
     }
@@ -131,11 +369,20 @@ pub const NativeGuiWindow = struct {
             buf.drawRect(0, 0, 1, self.height, border_col);
             buf.drawRect(self.width - 1, 0, 1, self.height, border_col);
             buf.drawRect(1, 1, self.width - 2, self.geometry.csd_header_height, 0xFF2A2A36);
+
+            buf.drawRect(self.btn_x, self.btn_y, self.btn_w, self.btn_h, 0xFF3D3D8E);
+        }
+        if (self.surface != null) {
+            _ = self.wl.wl_proxy_marshal_flags(self.surface.?, 6, null, 1, 0); // commit
+            _ = self.wl.wl_display_flush(self.display);
         }
     }
 
     pub fn dispatch(self: *NativeGuiWindow) i32 {
-        return self.wl.wl_display_dispatch(self.display);
+        if (self.running) {
+            return self.wl.wl_display_dispatch(self.display);
+        }
+        return -1;
     }
 
     pub fn deinit(self: *NativeGuiWindow) void {
