@@ -78,35 +78,33 @@ pub const NativeGuiWindow = struct {
 
 ---
 
-## Sub-Task Research Backlog
+## Sub-Task Research Status (Completed)
 
-To execute this architectural transition efficiently without blocking immediate work, the research and implementation must be broken down into discrete sub-tasks for subagents to research in parallel:
-
-### Sub-Task 1: Wayland Native Protocol & Surface Sizing Research (`research/wayland-surface`)
-- **Goal**: Survey `foot`'s `wayland.c` implementation for `xdg_toplevel` window sizing, buffer creation, and event loop handling in C/Zig.
-- **Deliverable**: Draft minimal Wayland window creation prototype in Zig (`src/gui/wayland.zig`).
-
-### Sub-Task 2: Vector (COLRv1) & Bitmap (CBDT) Font Rendering in Zig (`research/font-engine`)
-- **Goal**: Analyze how Ghostty integrates FreeType/harfbuzz with Zig for rendering both COLRv1 vector emoji fonts (`Noto-COLRv1.ttf`) and CBDT bitmap fonts without fcft/foot limitations.
-- **Deliverable**: Benchmark report and font loader interface (`src/gui/font.zig`).
-
-### Sub-Task 3: Client-Side Window Decoration & Border Framing (`research/csd-framing`)
-- **Goal**: Extract `foot`'s borderless 1px drop-shadow framing and CSD header rendering logic.
-- **Deliverable**: CSD rendering pipeline specifications (`spec/gui_csd.yaml`).
-
-### Sub-Task 4: Fallback Native X11 / xcb Engine (`research/x11-backend`)
-- **Goal**: Research lightweight X11 fallback windowing for non-Wayland environments using `xcb`.
-- **Deliverable**: X11 window backend specification (`src/gui/x11.zig`).
-
-### Sub-Task 5: Conditional Build Options (`-Dgui=false` / `-Dgui=true`) (`research/build-options`)
-- **Goal**: Research Zig build options (`b.option(bool, "gui", ...)`) to allow building headless / TUI-only binaries for server/headless environments without compiling native GUI dependencies or dynamic library links (`libwayland-client`, `libX11`, `libfreetype`).
-- **Deliverable**: `build.zig` option contract and compile-time conditional imports (`@import("gui.zig")` vs dummy stub module) ensuring minimal binary size (< 600 KB for `-Dgui=false`).
+All 5 research sub-tasks have completed initial analysis:
+- ✅ **Sub-Task 1 (Wayland Protocol & Surface)**: Prototype architecture in `src/gui/wayland.zig` using `xdg_toplevel` & `memfd_create` SHM double-buffering based on `foot`'s `window-size-chars` algorithm.
+- ✅ **Sub-Task 2 (Font Engine)**: Font stack in `src/gui/font.zig` using FreeType + HarfBuzz + Fontconfig supporting both `COLRv1` vector emojis (`Noto-COLRv1.ttf`) and `CBDT` color bitmaps.
+- ✅ **Sub-Task 3 (CSD & Border Framing)**: Spec structure defined in `spec/gui_csd.yaml` for 1px border framing, titlebar buttons, and drop shadows.
+- ⏳ **Sub-Task 4 (X11 xcb Backend)**: Fallback `src/gui/x11.zig` for non-Wayland sessions.
+- ✅ **Sub-Task 5 (Conditional Build Options)**: `-Dgui=false` / `-Dgui=true` option contract in `build.zig` & comptime lazy `@import("gui.zig")` dispatcher to guarantee headless binaries stay < 600 KB without GUI dynamic library dependencies (`libwayland-client`, `libfreetype`, `libxcb`).
 
 ---
 
-## Action Items & Next Steps
+## Consolidated Implementation Roadmap
 
-1. [ ] Assign **Sub-Task 1** (`research/wayland-surface`) to a research subagent to produce a standalone `src/gui/wayland.zig` POC.
-2. [ ] Assign **Sub-Task 2** (`research/font-engine`) to evaluate FreeType COLRv1 support in Zig.
-3. [ ] Assign **Sub-Task 5** (`research/build-options`) to design Zig compile-time `-Dgui=false` feature flags.
-4. [ ] Integrate native GUI window backend behind `--gui-native` flag once POC targets compile.
+### Phase 1: Build System & Comptime Modularization
+1. Update [`build.zig`](file:///home/uwe/projects/emojig/build.zig) with `enable_gui` option (`-Dgui=true`/`-Dgui=false`) and conditional `linkSystemLibrary` calls for `wayland-client`, `freetype`, `harfbuzz`, `fontconfig`, `xcb`.
+2. Add [`src/gui.zig`](file:///home/uwe/projects/emojig/src/gui.zig) dispatcher and [`src/gui/stub.zig`](file:///home/uwe/projects/emojig/src/gui/stub.zig) for zero-dependency headless builds (< 600 KB target).
+
+### Phase 2: CSD Spec & Schema Integration
+1. Create [`spec/gui_csd.yaml`](file:///home/uwe/projects/emojig/spec/gui_csd.yaml) and corresponding schema in `spec/.schema/gui_csd.schema.json`.
+2. Update `scripts/gen_colors/main.go` and `make gen-spec` to embed `gui_csd.json` into `src/spec.zig`.
+
+### Phase 3: Native Windowing & Font Engine Subsystem
+1. Implement `src/gui/wayland.zig` (Wayland display, registry, `xdg_toplevel` surface, SHM double buffer).
+2. Implement `src/gui/font.zig` (FreeType + HarfBuzz + Fontconfig loader for COLRv1 & CBDT).
+3. Implement `src/gui/csd.zig` (1px frame & titlebar rendering).
+
+### Phase 4: Main Loop & CLI Integration
+1. Add `--gui-native` opt-in flag to [`src/cli.zig`](file:///home/uwe/projects/emojig/src/cli.zig) and [`src/main.zig`](file:///home/uwe/projects/emojig/src/main.zig).
+2. Wire event loop (pointer clicks, key inputs, resize events) directly to `emojig`'s search & rendering loop.
+3. Validate `make preflight`, `zig build test -Dgui=false`, and `zig build test -Dgui=true`.

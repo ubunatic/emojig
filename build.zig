@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
     // ReleaseFast it still disables Debug's runtime safety checks, just without
     // LLVM's size/speed optimization passes — a middle ground for dev iteration.
     const use_llvm = b.option(bool, "llvm", "Use LLVM backend (default true); set -Dllvm=false for fast self-hosted dev builds") orelse true;
+    const enable_gui = b.option(bool, "gui", "Enable native GUI engine support (default true); set -Dgui=false for headless builds") orelse true;
 
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
@@ -126,6 +127,7 @@ pub fn build(b: *std.Build) void {
         "debug.json",
         "search.json",
         "host.json",
+        "gui_csd.json",
         "strings_es.json",
         "strings_pt.json",
         "strings_fr.json",
@@ -155,6 +157,7 @@ pub fn build(b: *std.Build) void {
     const version = b.option([]const u8, "version", "Version string (injected by GoReleaser)") orelse "dev";
     const options = b.addOptions();
     options.addOption([]const u8, "version", version);
+    options.addOption(bool, "enable_gui", enable_gui);
     exe.root_module.addOptions("build_options", options);
 
     exe.root_module.link_libc = true;

@@ -39,6 +39,7 @@ const styles_json = @embedFile("spec_styles");
 const colors_json = @embedFile("spec_colors");
 const art_generated_json = @embedFile("spec_art_generated");
 const input_generated_json = @embedFile("spec_input_generated");
+const gui_csd_json = @embedFile("spec_gui_csd");
 
 const parse_opts = std.json.ParseOptions{ .ignore_unknown_fields = true };
 

@@ -86,7 +86,7 @@ watch-input: ⚙️  # watch spec/input.yaml and regenerate the embedded input s
 # Non-Zig-app spec tiers live in subdirectories: spec/web/ (website/JS demo
 # only) and spec/reels/ (wayreel recorder only) — never loaded by src/spec.zig.
 SPEC_YAMLS = layout theme commands settings categories switcher \
-             debug styles art boxart braille synonyms search host
+             debug styles art boxart braille synonyms search host gui_csd
 
 SPEC_WEB   = jsdemo crt-theme
 SPEC_LANGS = de es fr it nl pl pt ru tr uk

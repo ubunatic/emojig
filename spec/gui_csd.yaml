@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+$schema: ./.schema/gui_csd.schema.json
+description: >-
+  Language-neutral Client-Side Decoration (CSD) and 1px border framing spec
+  for emojig's native GUI windowing engine. Defines titlebar header layout,
+  border widths, active/inactive frame colors, control button metrics, drop-shadow
+  emulation, and mouse hit-test grab zones.
+
+borderless:
+  enabled: true
+  border_width: 1
+  corner_radius: 0
+  shadow:
+    enabled: false
+    margin: 8
+    radius: 6
+    opacity: 0.35
+    offset_x: 0
+    offset_y: 2
+    color: "#000000"
+
+decorated:
+  enabled: false
+  size_fallback: 26
+  size_pt_factor: 25
+  min_height: 22
+  max_height: 48
+  title_font: "sans-serif:bold"
+  title_alignment: "left"
+  title_margin_x: 10
+  title_luminance_threshold: 140
+  
+  buttons:
+    position: "right"
+    show_close: true
+    show_minimize: false
+    show_maximize: false
+    width: 28
+    height: 22
+    spacing: 2
+    margin_right: 4
+    icon_line_width: 1
+
+colors:
+  dark:
+    border_active: "#5c5c5c"
+    border_inactive: "#383838"
+    header_bg_active: "#2c2c2c"
+    header_bg_inactive: "#1e1e1e"
+    header_fg_active: "#e0e0e0"
+    header_fg_inactive: "#808080"
+    button_hover_bg: "#3a3a3a"
+    button_press_bg: "#4a4a4a"
+    button_close_hover_bg: "#e81123"
+    button_close_hover_fg: "#ffffff"
+  light:
+    border_active: "#cccccc"
+    border_inactive: "#e0e0e0"
+    header_bg_active: "#d0d0df"
+    header_bg_inactive: "#f0f0f0"
+    header_fg_active: "#1e1e1e"
+    header_fg_inactive: "#888888"
+    button_hover_bg: "#e5e5e5"
+    button_press_bg: "#d0d0d0"
+    button_close_hover_bg: "#e81123"
+    button_close_hover_fg: "#ffffff"
+
+hit_testing:
+  resize_grab_margin: 5
+  titlebar_drag_enabled: true
+  double_click_maximize: true
