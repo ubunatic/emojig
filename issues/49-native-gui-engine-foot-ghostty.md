@@ -104,7 +104,9 @@ All 5 research sub-tasks have completed initial analysis:
 2. Implement `src/gui/font.zig` (FreeType + HarfBuzz + Fontconfig loader for COLRv1 & CBDT).
 3. Implement `src/gui/csd.zig` (1px frame & titlebar rendering).
 
-### Phase 4: Main Loop & CLI Integration
-1. Add `--gui-native` opt-in flag to [`src/cli.zig`](file:///home/uwe/projects/emojig/src/cli.zig) and [`src/main.zig`](file:///home/uwe/projects/emojig/src/main.zig).
-2. Wire event loop (pointer clicks, key inputs, resize events) directly to `emojig`'s search & rendering loop.
-3. Validate `make preflight`, `zig build test -Dgui=false`, and `zig build test -Dgui=true`.
+### Phase 4: Main Loop & Direct Native GUI Execution
+1. Add `--gui-native` flag to [`src/cli.zig`](file:///home/uwe/projects/emojig/src/cli.zig) and [`src/main.zig`](file:///home/uwe/projects/emojig/src/main.zig).
+2. Direct execution path: When `--gui-native` is passed, **bypass host terminal wrapper spawning entirely (`spawnGuiWindow`)**. Instead, initialize `gui.engine.NativeGuiWindow` directly, create a native Wayland surface with SHM double-buffering, and run the native Wayland event loop directly inside the `emojig` binary process.
+3. Wire pointer clicks, key inputs, and window resize events directly to `emojig`'s search & rendering engine.
+4. Validate `make preflight`, `zig build test -Dgui=false`, and `zig build test -Dgui=true`.
+
