@@ -85,6 +85,9 @@ pub const NativeGuiWindow = struct {
     allocator: std.mem.Allocator,
     wl: wl_dyn.WaylandLib,
     display: *anyopaque,
+    registry: ?*anyopaque = null,
+    compositor: ?*anyopaque = null,
+    shm: ?*anyopaque = null,
     geometry: GeometryConfig,
     running: bool = false,
     width: u32,
@@ -98,6 +101,9 @@ pub const NativeGuiWindow = struct {
         const display = wl.wl_display_connect(null) orelse wl.wl_display_connect("wayland-0") orelse return WaylandError.DisplayConnectFailed;
         errdefer wl.wl_display_disconnect(display);
 
+        const null_ptr: ?*anyopaque = null;
+        const registry = wl.wl_proxy_marshal_flags(display, 1, wl.wl_registry_interface, 1, 0, null_ptr) orelse return WaylandError.RegistryGetFailed;
+
         const self = try allocator.create(NativeGuiWindow);
         const w = geom.logicalWidth(false);
         const h = geom.logicalHeight();
@@ -106,6 +112,7 @@ pub const NativeGuiWindow = struct {
             .allocator = allocator,
             .wl = wl,
             .display = display,
+            .registry = registry,
             .geometry = geom,
             .running = true,
             .width = w,
