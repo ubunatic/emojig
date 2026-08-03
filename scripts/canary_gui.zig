@@ -6,10 +6,145 @@
 const std = @import("std");
 const posix = std.posix;
 
-const wl_dyn = @import("../src/gui/wl_dyn.zig");
-const WaylandLib = wl_dyn.WaylandLib;
-const WlInterface = wl_dyn.WlInterface;
-const WlArgument = wl_dyn.WlArgument;
+pub const WlArgument = extern union {
+    i: i32,
+    u: u32,
+    f: i32,
+    s: ?[*:0]const u8,
+    o: ?*anyopaque,
+    n: u32,
+    a: ?*anyopaque,
+    h: i32,
+};
+
+pub const WlMessage = extern struct {
+    name: [*:0]const u8,
+    signature: [*:0]const u8,
+    types: [*]const ?*const WlInterface,
+};
+
+pub const WlInterface = extern struct {
+    name: [*:0]const u8,
+    version: c_int,
+    method_count: c_int,
+    methods: [*]const WlMessage,
+    event_count: c_int,
+    events: [*]const WlMessage,
+};
+
+pub const WaylandLib = struct {
+    handle: *anyopaque,
+
+    wl_display_connect: *const fn (name: ?[*:0]const u8) callconv(.c) ?*anyopaque,
+    wl_display_disconnect: *const fn (display: *anyopaque) callconv(.c) void,
+    wl_display_dispatch: *const fn (display: *anyopaque) callconv(.c) c_int,
+    wl_display_roundtrip: *const fn (display: *anyopaque) callconv(.c) c_int,
+    wl_display_flush: *const fn (display: *anyopaque) callconv(.c) c_int,
+    wl_proxy_marshal_array_constructor_versioned: *const fn (proxy: *anyopaque, opcode: u32, args: [*]const WlArgument, interface: ?*const WlInterface, version: u32) callconv(.c) ?*anyopaque,
+    wl_proxy_marshal_flags: *const fn (proxy: *anyopaque, opcode: u32, interface: ?*const WlInterface, version: u32, flags: u32, ...) callconv(.c) ?*anyopaque,
+    wl_proxy_add_listener: *const fn (proxy: *anyopaque, implementation: ?*const fn () callconv(.c) void, data: ?*anyopaque) callconv(.c) c_int,
+    wl_display_interface: *const WlInterface,
+    wl_registry_interface: *const WlInterface,
+    wl_compositor_interface: *const WlInterface,
+    wl_shm_interface: *const WlInterface,
+    wl_shm_pool_interface: *const WlInterface,
+    wl_buffer_interface: *const WlInterface,
+    wl_surface_interface: *const WlInterface,
+
+    pub fn load() !WaylandLib {
+        const h = std.c.dlopen("libwayland-client.so.0", @bitCast(@as(u32, 1))) orelse return error.LibraryLoadFailed;
+        return .{
+            .handle = h,
+            .wl_display_connect = @ptrCast(std.c.dlsym(h, "wl_display_connect") orelse return error.SymbolNotFound),
+            .wl_display_disconnect = @ptrCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound),
+            .wl_display_dispatch = @ptrCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound),
+            .wl_display_roundtrip = @ptrCast(std.c.dlsym(h, "wl_display_roundtrip") orelse return error.SymbolNotFound),
+            .wl_display_flush = @ptrCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound),
+            .wl_proxy_marshal_array_constructor_versioned = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_array_constructor_versioned") orelse return error.SymbolNotFound),
+            .wl_proxy_marshal_flags = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_flags") orelse return error.SymbolNotFound),
+            .wl_proxy_add_listener = @ptrCast(std.c.dlsym(h, "wl_proxy_add_listener") orelse return error.SymbolNotFound),
+            .wl_display_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_interface") orelse return error.SymbolNotFound)),
+            .wl_registry_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_registry_interface") orelse return error.SymbolNotFound)),
+            .wl_compositor_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_compositor_interface") orelse return error.SymbolNotFound)),
+            .wl_shm_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_shm_interface") orelse return error.SymbolNotFound)),
+            .wl_shm_pool_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_shm_pool_interface") orelse return error.SymbolNotFound)),
+            .wl_buffer_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_buffer_interface") orelse return error.SymbolNotFound)),
+            .wl_surface_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_surface_interface") orelse return error.SymbolNotFound)),
+        };
+    }
+
+    pub fn unload(self: *WaylandLib) void {
+        _ = std.c.dlclose(self.handle);
+    }
+};
+
+pub const xdg_wm_base_requests = [_]WlMessage{
+    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "create_positioner", .signature = "n", .types = &[_]?*const WlInterface{null} },
+    .{ .name = "get_xdg_surface", .signature = "no", .types = &[_]?*const WlInterface{ null, null } },
+    .{ .name = "pong", .signature = "u", .types = &[_]?*const WlInterface{null} },
+};
+pub const xdg_wm_base_events = [_]WlMessage{
+    .{ .name = "ping", .signature = "u", .types = &[_]?*const WlInterface{null} },
+};
+pub const xdg_wm_base_interface = WlInterface{
+    .name = "xdg_wm_base",
+    .version = 6,
+    .method_count = 4,
+    .methods = &xdg_wm_base_requests,
+    .event_count = 1,
+    .events = &xdg_wm_base_events,
+};
+
+pub const xdg_surface_requests = [_]WlMessage{
+    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "get_toplevel", .signature = "n", .types = &[_]?*const WlInterface{ null } },
+    .{ .name = "get_popup", .signature = "n?oo", .types = &[_]?*const WlInterface{ null, null, null } },
+    .{ .name = "set_window_geometry", .signature = "iiii", .types = &[_]?*const WlInterface{ null, null, null, null } },
+    .{ .name = "ack_configure", .signature = "u", .types = &[_]?*const WlInterface{null} },
+};
+pub const xdg_surface_events = [_]WlMessage{
+    .{ .name = "configure", .signature = "u", .types = &[_]?*const WlInterface{null} },
+};
+pub const xdg_surface_interface = WlInterface{
+    .name = "xdg_surface",
+    .version = 6,
+    .method_count = 5,
+    .methods = &xdg_surface_requests,
+    .event_count = 1,
+    .events = &xdg_surface_events,
+};
+
+pub const xdg_toplevel_requests = [_]WlMessage{
+    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "set_parent", .signature = "?o", .types = &[_]?*const WlInterface{null} },
+    .{ .name = "set_title", .signature = "s", .types = &[_]?*const WlInterface{null} },
+    .{ .name = "set_app_id", .signature = "s", .types = &[_]?*const WlInterface{null} },
+    .{ .name = "show_window_menu", .signature = "ouii", .types = &[_]?*const WlInterface{ null, null, null, null } },
+    .{ .name = "move", .signature = "ou", .types = &[_]?*const WlInterface{ null, null } },
+    .{ .name = "resize", .signature = "ouu", .types = &[_]?*const WlInterface{ null, null, null } },
+    .{ .name = "set_max_size", .signature = "ii", .types = &[_]?*const WlInterface{ null, null } },
+    .{ .name = "set_min_size", .signature = "ii", .types = &[_]?*const WlInterface{ null, null } },
+    .{ .name = "set_maximized", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "unset_maximized", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "set_fullscreen", .signature = "?o", .types = &[_]?*const WlInterface{null} },
+    .{ .name = "unset_fullscreen", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "set_minimized", .signature = "", .types = &[_]?*const WlInterface{} },
+};
+pub const xdg_toplevel_events = [_]WlMessage{
+    .{ .name = "configure", .signature = "iia", .types = &[_]?*const WlInterface{ null, null, null } },
+    .{ .name = "close", .signature = "", .types = &[_]?*const WlInterface{} },
+    .{ .name = "configure_bounds", .signature = "4ii", .types = &[_]?*const WlInterface{ null, null } },
+    .{ .name = "wm_capabilities", .signature = "5a", .types = &[_]?*const WlInterface{null} },
+};
+pub const xdg_toplevel_interface = WlInterface{
+    .name = "xdg_toplevel",
+    .version = 6,
+    .method_count = 14,
+    .methods = &xdg_toplevel_requests,
+    .event_count = 4,
+    .events = &xdg_toplevel_events,
+};
 
 var compositor: ?*anyopaque = null;
 var shm: ?*anyopaque = null;
@@ -30,11 +165,11 @@ fn registryHandleGlobal(data: ?*anyopaque, reg: ?*anyopaque, name: u32, interfac
         const xdg_ver: u32 = @min(version, 6);
         const args = [_]WlArgument{
             .{ .u = name },
-            .{ .s = wl_dyn.xdg_wm_base_interface.name },
+            .{ .s = xdg_wm_base_interface.name },
             .{ .u = xdg_ver },
             .{ .o = null },
         };
-        xdg_wm_base = wl_ptr.wl_proxy_marshal_array_constructor_versioned(reg orelse return, 0, @ptrCast(&args), &wl_dyn.xdg_wm_base_interface, xdg_ver);
+        xdg_wm_base = wl_ptr.wl_proxy_marshal_array_constructor_versioned(reg orelse return, 0, @ptrCast(&args), &xdg_wm_base_interface, xdg_ver);
     }
 }
 
@@ -75,13 +210,14 @@ pub fn main() !void {
         .{ .o = null },
         .{ .o = surface },
     };
-    const xdg_surface = wl.wl_proxy_marshal_array_constructor_versioned(xdg_wm_base.?, 2, @ptrCast(&xdg_surf_args), &wl_dyn.xdg_surface_interface, 1) orelse return error.XdgSurfaceFailed;
+    const xdg_surface = wl.wl_proxy_marshal_array_constructor_versioned(xdg_wm_base.?, 2, @ptrCast(&xdg_surf_args), &xdg_surface_interface, 1) orelse return error.XdgSurfaceFailed;
 
     // Create xdg_toplevel
     const xdg_top_args = [_]WlArgument{
         .{ .o = null },
     };
-    const xdg_toplevel = wl.wl_proxy_marshal_array_constructor_versioned(xdg_surface, 1, @ptrCast(&xdg_top_args), &wl_dyn.xdg_toplevel_interface, 1) orelse return error.XdgToplevelFailed;
+    const xdg_toplevel = wl.wl_proxy_marshal_array_constructor_versioned(xdg_surface, 1, @ptrCast(&xdg_top_args), &xdg_toplevel_interface, 1) orelse return error.XdgToplevelFailed;
+    _ = xdg_toplevel;
 
     // Create 400x300 SHM buffer
     const width: i32 = 400;

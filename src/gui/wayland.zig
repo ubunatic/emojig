@@ -351,10 +351,26 @@ pub const NativeGuiWindow = struct {
             .stride = stride,
         };
 
-        const pool = wl.wl_proxy_marshal_flags(self.shm.?, 0, wl.wl_shm_pool_interface, 1, 0, @as(c_int, fd), @as(i32, @intCast(size)), null_ptr) orelse return WaylandError.BufferCreationFailed;
-        const buffer = wl.wl_proxy_marshal_flags(pool, 0, wl.wl_buffer_interface, 1, 0, @as(i32, 0), @as(i32, @intCast(self.width)), @as(i32, @intCast(self.height)), @as(i32, @intCast(stride)), @as(u32, 0), null_ptr) orelse return WaylandError.BufferCreationFailed;
+        const pool_args = [_]wl_dyn.WlArgument{
+            .{ .h = fd },
+            .{ .i = @as(i32, @intCast(size)) },
+        };
+        const pool = wl.wl_proxy_marshal_array_constructor_versioned(self.shm.?, 0, @ptrCast(&pool_args), wl.wl_shm_pool_interface, 1) orelse return WaylandError.BufferCreationFailed;
+        const buf_args = [_]wl_dyn.WlArgument{
+            .{ .i = 0 },
+            .{ .i = @as(i32, @intCast(self.width)) },
+            .{ .i = @as(i32, @intCast(self.height)) },
+            .{ .i = @as(i32, @intCast(stride)) },
+            .{ .u = 0 },
+        };
+        const buffer = wl.wl_proxy_marshal_array_constructor_versioned(pool, 0, @ptrCast(&buf_args), wl.wl_buffer_interface, 1) orelse return WaylandError.BufferCreationFailed;
 
-        _ = wl.wl_proxy_marshal_flags(self.surface.?, 1, null, 1, 0, buffer, @as(i32, 0), @as(i32, 0));
+        const attach_args = [_]wl_dyn.WlArgument{
+            .{ .o = buffer },
+            .{ .i = 0 },
+            .{ .i = 0 },
+        };
+        _ = wl.wl_proxy_marshal_array_constructor_versioned(self.surface.?, 1, @ptrCast(&attach_args), null, 1);
         self.renderFrame();
 
         return self;
