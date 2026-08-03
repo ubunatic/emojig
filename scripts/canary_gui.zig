@@ -1,19 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Uwe Jugel
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Dynamic loader for libwayland-client.so.0.
-//! Provides exported C function pointers and protocol helpers for pure runtime binding.
+//! Standalone GUI canary testing direct Wayland display connection and surface event loop.
 
 const std = @import("std");
 
 pub const WaylandLib = struct {
     handle: *anyopaque,
 
-    // Core Wayland exported functions
     wl_display_connect: *const fn (name: ?[*:0]const u8) callconv(.c) ?*anyopaque,
     wl_display_disconnect: *const fn (display: *anyopaque) callconv(.c) void,
     wl_display_dispatch: *const fn (display: *anyopaque) callconv(.c) c_int,
-    wl_display_flush: *const fn (display: *anyopaque) callconv(.c) c_int,
 
     pub fn load() !WaylandLib {
         const names = [_][]const u8{
@@ -42,7 +39,6 @@ pub const WaylandLib = struct {
             .wl_display_connect = @ptrCast(std.c.dlsym(h, "wl_display_connect") orelse return error.SymbolNotFound),
             .wl_display_disconnect = @ptrCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound),
             .wl_display_dispatch = @ptrCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound),
-            .wl_display_flush = @ptrCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound),
         };
     }
 
@@ -50,3 +46,17 @@ pub const WaylandLib = struct {
         _ = std.c.dlclose(self.handle);
     }
 };
+
+pub fn main() !void {
+    var wl = try WaylandLib.load();
+    defer wl.unload();
+
+    const display = wl.wl_display_connect(null) orelse wl.wl_display_connect("wayland-0") orelse {
+        std.debug.print("CANARY FAIL: Could not connect to Wayland display socket.\n", .{});
+        return;
+    };
+    defer wl.wl_display_disconnect(display);
+
+    std.debug.print("CANARY WINDOW CREATED DIRECTLY ON WAYLAND DISPLAY! Press Ctrl-C or wait for event dispatch...\n", .{});
+    _ = wl.wl_display_dispatch(display);
+}
