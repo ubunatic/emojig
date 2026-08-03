@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const posix = std.posix;
+pub const wl_dyn = @import("wl_dyn.zig");
 
 pub const WaylandError = error{
     LibraryLoadFailed,
@@ -58,17 +59,7 @@ pub const GeometryConfig = struct {
     }
 };
 
-/// Opaque handles for Wayland objects.
-pub const WlDisplay = opaque {};
-pub const WlRegistry = opaque {};
-pub const WlCompositor = opaque {};
-pub const WlSurface = opaque {};
-pub const WlShm = opaque {};
-pub const WlShmPool = opaque {};
-pub const WlBuffer = opaque {};
-
 pub const ShmBuffer = struct {
-    wl_buffer: *WlBuffer,
     data: []u32,
     fd: posix.fd_t,
     width: u32,
@@ -92,6 +83,8 @@ pub const ShmBuffer = struct {
 
 pub const NativeGuiWindow = struct {
     allocator: std.mem.Allocator,
+    wl: wl_dyn.WaylandLib,
+    display: *anyopaque,
     geometry: GeometryConfig,
     running: bool = false,
     width: u32,
@@ -99,12 +92,20 @@ pub const NativeGuiWindow = struct {
     buffer: ?ShmBuffer = null,
 
     pub fn init(allocator: std.mem.Allocator, geom: GeometryConfig) !*NativeGuiWindow {
+        var wl = try wl_dyn.WaylandLib.load();
+        errdefer wl.unload();
+
+        const display = wl.wl_display_connect(null) orelse wl.wl_display_connect("wayland-0") orelse return WaylandError.DisplayConnectFailed;
+        errdefer wl.wl_display_disconnect(display);
+
         const self = try allocator.create(NativeGuiWindow);
         const w = geom.logicalWidth(false);
         const h = geom.logicalHeight();
 
         self.* = .{
             .allocator = allocator,
+            .wl = wl,
+            .display = display,
             .geometry = geom,
             .running = true,
             .width = w,
@@ -116,20 +117,23 @@ pub const NativeGuiWindow = struct {
 
     pub fn renderFrame(self: *NativeGuiWindow) void {
         if (self.buffer) |*buf| {
-            // Dark window background
             buf.clear(0xFF1E1E24);
-            // 1px Border frame
             const border_col: u32 = 0xFF4A4A5A;
             buf.drawRect(0, 0, self.width, 1, border_col);
             buf.drawRect(0, self.height - 1, self.width, 1, border_col);
             buf.drawRect(0, 0, 1, self.height, border_col);
             buf.drawRect(self.width - 1, 0, 1, self.height, border_col);
-            // Header titlebar
             buf.drawRect(1, 1, self.width - 2, self.geometry.csd_header_height, 0xFF2A2A36);
         }
     }
 
+    pub fn dispatch(self: *NativeGuiWindow) i32 {
+        return self.wl.wl_display_dispatch(self.display);
+    }
+
     pub fn deinit(self: *NativeGuiWindow) void {
+        self.wl.wl_display_disconnect(self.display);
+        self.wl.unload();
         self.allocator.destroy(self);
     }
 };
