@@ -81,7 +81,7 @@
 
 /* Terminal Screen */
 .sim-screen {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', 'Noto Color Emoji', monospace;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace, 'Noto Color Emoji';
     font-size: 14.5px;
     line-height: 1.35;
     background-color: var(--term-bg, #1c1c1c);

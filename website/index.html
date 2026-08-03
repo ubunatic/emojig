@@ -37,10 +37,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             --cyan: #59c2ff;
             --magenta: #d2a6ff;
             --red: #f07178;
+            /* The emoji font must come AFTER generic monospace. Font fallback
+               is per character, and Noto Color Emoji carries #, * and 0-9 as
+               the keycap bases (#️⃣, 0️⃣). Listed earlier, it claims those
+               glyphs on any machine lacking the fonts above it, rendering
+               digits and # with emoji metrics while letters — which it does
+               not have — fall through to monospace. Placed last it still
+               serves real emoji, which no monospace font provides. */
             --mono:
                 ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code",
-                Menlo, Consolas, "DejaVu Sans Mono", "Noto Color Emoji",
-                monospace;
+                Menlo, Consolas, "DejaVu Sans Mono", monospace,
+                "Noto Color Emoji";
         }
 
         * {
