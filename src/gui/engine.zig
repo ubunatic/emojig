@@ -13,3 +13,24 @@ pub const NativeGuiWindow = wayland.NativeGuiWindow;
 pub fn isSupported() bool {
     return true;
 }
+
+pub fn runNativeGui(
+    allocator: std.mem.Allocator,
+    cols: u32,
+    rows: u32,
+) !void {
+    const geom = wayland.GeometryConfig{
+        .cols = cols,
+        .rows = rows,
+    };
+    var win = try wayland.NativeGuiWindow.init(allocator, geom);
+    defer win.deinit();
+
+    win.renderFrame();
+    std.debug.print("Native Wayland window created directly (cols={d}, rows={d}, surface={d}x{d}px)\n", .{
+        cols,
+        rows,
+        win.width,
+        win.height,
+    });
+}

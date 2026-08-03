@@ -623,7 +623,7 @@ pub fn main(init: std.process.Init) !void {
             // If we are in a GUI session and have neither XDG_ACTIVATION_TOKEN nor DESKTOP_STARTUP_ID set,
             // it means we were likely launched via a raw keybinding. Re-executing via gtk-launch or gio launch
             // uses GAppLaunchContext, generating the proper activation token so that the spawned window gets focus.
-            if (has_gui_session) {
+            if (has_gui_session and !runtime.opt_gui_native) {
                 const has_token = std.c.getenv("XDG_ACTIVATION_TOKEN") != null or std.c.getenv("DESKTOP_STARTUP_ID") != null;
                 if (!has_token) {
                     const uid = getuid();
@@ -747,6 +747,17 @@ pub fn main(init: std.process.Init) !void {
                 try writeAll(std.posix.STDERR_FILENO, "Error: emojig was compiled without GUI support (-Dgui=false). Use --tui mode.\n");
                 std.process.exit(1);
             }
+            gui_mod.engine.runNativeGui(
+                spec_arena.allocator(),
+                @intCast(gui_cols),
+                @intCast(gui_rows),
+            ) catch |err| {
+                try writeAll(std.posix.STDERR_FILENO, "Error: failed to initialize native GUI window: ");
+                try writeAll(std.posix.STDERR_FILENO, @errorName(err));
+                try writeAll(std.posix.STDERR_FILENO, "\n");
+                std.process.exit(1);
+            };
+            return;
         }
 
         host.spawnGuiWindow(

@@ -159,6 +159,7 @@ pub fn build(b: *std.Build) void {
     options.addOption([]const u8, "version", version);
     options.addOption(bool, "enable_gui", enable_gui);
     exe.root_module.addOptions("build_options", options);
+    mod.addOptions("build_options", options);
 
     exe.root_module.link_libc = true;
 

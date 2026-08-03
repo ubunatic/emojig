@@ -25,3 +25,7 @@ pub const NativeGuiWindow = struct {
 pub fn isSupported() bool {
     return false;
 }
+
+pub fn runNativeGui(_: std.mem.Allocator, _: u32, _: u32) GuiError!void {
+    return error.GuiDisabledAtBuildTime;
+}

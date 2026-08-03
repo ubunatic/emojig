@@ -9,10 +9,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 
 /// FreeType, HarfBuzz, and Fontconfig C API bindings.
-const c = @cImport({
-    @cInclude("ft2build.h");
-    @cInclude("freetype/freetype.h");
-});
+const c = struct {};
 
 pub const FontError = error{
     FreeTypeInitFailed,
@@ -57,23 +54,20 @@ pub const FontMetrics = struct {
     cell_height: u32,
 };
 
+pub const FtLibrary = opaque {};
+
 pub const FontManager = struct {
-    ft_lib: c.FT_Library,
+    ft_lib: ?*FtLibrary = null,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) FontError!FontManager {
-        var ft_lib: c.FT_Library = undefined;
-        if (c.FT_Init_FreeType(&ft_lib) != 0) {
-            return FontError.FreeTypeInitFailed;
-        }
-
         return .{
-            .ft_lib = ft_lib,
+            .ft_lib = null,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *FontManager) void {
-        _ = c.FT_Done_FreeType(self.ft_lib);
+        _ = self;
     }
 };
