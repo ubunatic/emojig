@@ -85,4 +85,59 @@ ok "To activate Ctrl+E shortcut, add this line to your shell configuration:"
 ok "  zsh:  source ~/.local/share/emojig/shell/emojig.zsh"
 ok "  bash: source ~/.local/share/emojig/shell/emojig.bash"
 ok "  fish: source ~/.local/share/emojig/shell/emojig.fish"
+# ── 6. Color Emoji Font Auto-Installation / Check ─────────────────────────────
+install_font_pkg() {
+    PKG_MGR=""
+    PKG_NAME=""
+    if command -v dnf >/dev/null 2>&1
+    then PKG_MGR="dnf"; PKG_NAME="$1"
+    elif command -v apt-get >/dev/null 2>&1
+    then PKG_MGR="apt"; PKG_NAME="$2"
+    elif command -v pacman >/dev/null 2>&1
+    then PKG_MGR="pacman"; PKG_NAME="$3"
+    elif command -v zypper >/dev/null 2>&1
+    then PKG_MGR="zypper"; PKG_NAME="$4"
+    fi
 
+    if test -n "$PKG_MGR" && test -n "$PKG_NAME"
+    then
+        info "Attempting to install missing font package '$PKG_NAME' via $PKG_MGR..."
+        case "$PKG_MGR" in
+            dnf)    sudo dnf install -y "$PKG_NAME" || true ;;
+            apt)    sudo apt-get update && sudo apt-get install -y "$PKG_NAME" || true ;;
+            pacman) sudo pacman -S --noconfirm "$PKG_NAME" || true ;;
+            zypper) sudo zypper install -y "$PKG_NAME" || true ;;
+        esac
+    fi
+}
+
+HAS_COLOR_EMOJI=0
+if command -v fc-list >/dev/null 2>&1
+then
+    if fc-list : family | grep -i -q -E "color emoji|twemoji|joypixels|openmoji|emoji"
+    then HAS_COLOR_EMOJI=1
+    fi
+fi
+
+if test "$HAS_COLOR_EMOJI" -eq 0
+then
+    warn "No color emoji font detected on system."
+    install_font_pkg "google-noto-color-emoji-fonts" "fonts-noto-color-emoji" "noto-fonts-emoji" "noto-coloremoji-fonts"
+fi
+
+# Check for potential foot terminal font rendering requirements (CBDT bitmap fonts)
+if command -v foot >/dev/null 2>&1
+then
+    if command -v fc-list >/dev/null 2>&1
+    then
+        if fc-list : file | grep -q "Noto-COLRv1"
+        then
+            if ! fc-list : file | grep -i -q -E "twemoji|joypixels|openmoji|-pb-|CBLC|CBDT"
+            then
+                warn "Foot terminal detected alongside COLRv1 vector fonts (Noto-COLRv1.ttf)."
+                warn "Foot (libfcft) does not support COLRv1 vector fonts and requires a CBDT bitmap font or a different host terminal."
+                warn "To get full color emojis in --gui mode, you can set: export EMOJIG_TERMINAL=ptyxis"
+            fi
+        fi
+    fi
+fi

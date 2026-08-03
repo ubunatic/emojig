@@ -48,9 +48,12 @@ If emojis appear as boxes, install a color emoji font:
 ```sh
 sudo apt install fonts-noto-color-emoji        # Debian / Ubuntu / Mint
 sudo pacman -S noto-fonts-emoji                # Arch / Manjaro
-sudo dnf install google-noto-emoji-color-fonts # Fedora
+sudo dnf install google-noto-color-emoji-fonts # Fedora / RHEL
 sudo zypper install noto-coloremoji-fonts      # openSUSE
 ```
+
+> [!NOTE]
+> **Foot terminal note**: `foot` (via `libfcft`) requires CBDT bitmap fonts (e.g. `google-noto-color-emoji-pb-fonts` or `twitter-color-emoji-fonts`) or SVG fonts for color rendering. If `foot` displays monochrome outline emojis on systems using COLRv1 vector fonts (`Noto-COLRv1.ttf`), set `EMOJIG_TERMINAL=ptyxis` (or `ghostty`/`kitty`), or install a CBDT emoji package.
 
 ## Quick start
 

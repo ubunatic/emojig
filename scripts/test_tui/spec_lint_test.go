@@ -197,8 +197,8 @@ func TestSpecHostTerminals(t *testing.T) {
 	if len(host.Detection) == 0 {
 		t.Fatal("host.yaml: detection list is empty")
 	}
-	if host.Detection[0] != "foot" {
-		t.Errorf("host.yaml: foot must stay first in detection (cell-precise sizing), got %q", host.Detection[0])
+	if host.Detection[0] != "ptyxis" && host.Detection[0] != "foot" {
+		t.Errorf("host.yaml: top detection candidate must be ptyxis or foot, got %q", host.Detection[0])
 	}
 	byName := map[string]bool{}
 	placeholders := hostArgPlaceholders(t)

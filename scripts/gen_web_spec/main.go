@@ -197,8 +197,10 @@ func main() {
 
 	var out bytes.Buffer
 	out.WriteString("/*\n")
+	out.WriteString(" * REUSE-IgnoreStart\n")
 	out.WriteString(" * SPDX-FileCopyrightText: 2026 Uwe Jugel\n")
 	out.WriteString(" * SPDX-License-Identifier: AGPL-3.0-or-later\n")
+	out.WriteString(" * REUSE-IgnoreEnd\n")
 	out.WriteString(" */\n\n")
 	out.WriteString("// generated from the spec YAML sources (via spec/.gen/*.json) by scripts/gen_web_spec; do not edit by hand\n")
 	out.WriteString("const EMOJIG_WEB_SPEC = ")
