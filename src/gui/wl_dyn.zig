@@ -1,19 +1,34 @@
 // SPDX-FileCopyrightText: 2026 Uwe Jugel
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Dynamic loader for libwayland-client.so.0.
-//! Provides exported C function pointers and protocol helpers for pure runtime binding.
+//! Wayland C API and symbol bindings for native window creation.
 
 const std = @import("std");
+
+pub const WlMessage = extern struct {
+    name: [*:0]const u8,
+    signature: [*:0]const u8,
+    types: [*]const ?*const WlInterface,
+};
+
+pub const WlInterface = extern struct {
+    name: [*:0]const u8,
+    version: c_int,
+    method_count: c_int,
+    methods: [*]const WlMessage,
+    event_count: c_int,
+    events: [*]const WlMessage,
+};
 
 pub const WaylandLib = struct {
     handle: *anyopaque,
 
-    // Core Wayland exported functions
     wl_display_connect: *const fn (name: ?[*:0]const u8) callconv(.c) ?*anyopaque,
     wl_display_disconnect: *const fn (display: *anyopaque) callconv(.c) void,
     wl_display_dispatch: *const fn (display: *anyopaque) callconv(.c) c_int,
     wl_display_flush: *const fn (display: *anyopaque) callconv(.c) c_int,
+    wl_proxy_marshal_flags: *const fn (proxy: *anyopaque, opcode: u32, interface: ?*const WlInterface, version: u32, flags: u32, ...) callconv(.c) ?*anyopaque,
+    wl_display_interface: *const WlInterface,
 
     pub fn load() !WaylandLib {
         const names = [_][]const u8{
@@ -43,6 +58,8 @@ pub const WaylandLib = struct {
             .wl_display_disconnect = @ptrCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound),
             .wl_display_dispatch = @ptrCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound),
             .wl_display_flush = @ptrCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound),
+            .wl_proxy_marshal_flags = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_flags") orelse return error.SymbolNotFound),
+            .wl_display_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_interface") orelse return error.SymbolNotFound)),
         };
     }
 
