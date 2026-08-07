@@ -249,6 +249,16 @@ character must use `endRowFull()`. A trailing space can safely use `endRow()` (t
 erasure is invisible), but a block graphic, bracket, or icon cannot. The
 `endRowFull` method has a comment documenting this contract.
 
+**Recurrence (issue #50, 2026-08).** The same bug resurfaced in three more rows
+(description, status bar, switcher), each filling `content_width + 1` cells (content
+plus scrollbar column) and calling plain `endRow()`. The rule generalizes: it isn't
+about hitting `content_width` exactly — it's about whether the row's *own fill loop*
+advances the cursor past the last cell before `endRow()` fires. If the last write in
+the loop lands the cursor in pending-wrap state, use `endRowFull()` regardless of
+which width the row targets. When adding a new full-width row, default to
+`endRowFull()` and only use `endRow()` if you've confirmed the last character is a
+throwaway space.
+
 ---
 
 **Remaining limitation.** The very first scroll after a cold launch (or after

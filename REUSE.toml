@@ -22,7 +22,7 @@ SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
-path = ["docs/media/*.png", "docs/media/*.mp4", "issues/*.png", "website/*.html", "website/*.js", "website/*.png", "website/*.svg", "website/*.webm", "website/reels/*.webm", "scripts/vte_canary/shots/*.png", "minisign.pub"]
+path = ["docs/media/*.png", "docs/media/*.mp4", "issues/*.png", "issues/closed/*.png", "website/*.html", "website/*.js", "website/*.png", "website/*.svg", "website/*.webm", "website/reels/*.webm", "scripts/vte_canary/shots/*.png", "minisign.pub"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

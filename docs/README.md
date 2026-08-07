@@ -14,7 +14,7 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 * [**Why & Niche**](WhyAndNiche.md): Rationale behind Emojig's existence, target audience, design philosophy, and standalone architecture constraints (no background daemon/IPC).
 * [**Search Engine**](SearchEngine.md): Inner workings of the subsequence scoring, plural/stem fallbacks, query stems, tag tradeoffs, and the box art filter.
 * [**Spec-Driven Config**](SpecDrivenConfig.md): Structure and code generation from specification files (`colors.json`, `layout.json`, `strings.json`, etc.) to control application appearance.
-* [**Terminal Integration**](TerminalIntegration.md): Detection and communication mechanisms with graphical terminals (e.g. `foot`, `kitty`, `alacritty`) and spawning configurations.
+* [**Terminal Integration**](TerminalIntegration.md): Detection and communication mechanisms with graphical terminals (e.g. `foot`, `kitty`, `alacritty`), spawning configurations, and the Twemoji CBDT color-emoji font requirement for `foot`.
 * [**Terminal State & Restoration**](TerminalRestore.md): Mechanisms for raw mode activation, mouse tracking, signal trapping, and standard termios restoration.
 
 ## 🛠️ Components & Features
@@ -42,4 +42,4 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 
 ## 🧪 Testing & Diagnostics
 
-* [**Headless Recording**](HeadlessRecording.md): Setting up headless PTY recording via `wf-recorder` or `x11grab` for visual verification and testing.
+* [**Headless Recording**](HeadlessRecording.md): Setting up headless PTY recording via `wf-recorder` or `x11grab` for visual verification and testing; wayreel `crop_colors` pixel-coverage verification; GTK3-vs-GTK4 headless isolation gotcha.

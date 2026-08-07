@@ -158,4 +158,27 @@ See `docs/SearchEngine.md §12` for the full synonym pitfall table.  Short rules
 4. **Website output is a derivative, not the source.** The canonical data flow is `spec/synonyms.yaml` → `make gen-spec` → `spec/synonyms.yaml` → `make pack` → `src/emojis.bin`. Focus on the Zig binary; `website/emojis.js` is generated last and checked last.
 5. **No debug test blocks in committed code.** Use a one-off `std.debug.print` inside an *existing* test, verify, then remove before committing. The debug block will show up in `zig build test` output even when all assertions pass, causing noise and fmt failures.
 
+---
+
+## 12. Grilling-driven feature adoption & issue-index hygiene as a recurring debt
+
+When adopting a feature from a sibling tool (e.g. wayreel's `crop_colors` screenshot
+option), a one-question-at-a-time interview (the `grilling` skill) before writing any
+code paid off: it surfaced the named-color mismatch pitfall (`reelang.ResolveColor`'s
+`"g"` is `008000`, not pure green) and the "reduce test code size" constraint *before*
+implementation, instead of after a wrong first attempt. Net effect: ~150 lines of dead
+verification code (`captureRealScreenshot`/`findLatestGnomeScreenshot`/
+`verifyScreenshotNonBlank`/`runTerminalTest`) were deleted in the same commit that
+added the new, smaller `-verify` mechanism — the interview made "what should this
+replace" an explicit question, not an afterthought.
+
+**The harness gap this exposed.** The bug-fix session that produced issue #50 was
+already committed before this recap, but the issue file was left with `status: fixed`
+sitting in `issues/` (not `issues/closed/`) and was never added to `issues/README.md`
+at all — so it was invisible to both the open and closed issue tables. Nothing enforces
+this move; it depends on a human or agent noticing. **When closing an issue in a commit,
+move the file to `issues/closed/` and add its README row in the same commit** — don't
+defer index hygiene to a later `/evergreen` pass, since by then the "why" has to be
+reconstructed from the issue body instead of being fresh in context.
+
 

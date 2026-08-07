@@ -90,6 +90,29 @@ The relaunched process reads the file within a 5-second window and restores the 
 
 ---
 
+## 1c. Color Emoji Font Requirement (Twemoji CBDT)
+
+`foot` (via `libfcft`) does not support **COLRv1** vector color-emoji fonts — the
+distro-default on Fedora/most modern distros is `Noto-COLRv1.ttf`. Without a
+**CBDT/CBLC** bitmap color font installed, foot renders emoji as blank boxes or
+monochrome outlines even though the picker itself works correctly.
+
+* **Detection**: `has_cbdt()` in `scripts/install_fonts.sh` runs `fc-list : file`
+  and greps for `twemoji|CBDT|CBLC` — checking for CBDT coverage specifically,
+  not just "any color emoji font is installed" (a COLRv1-only system would
+  otherwise false-pass).
+* **Auto-install**: `make install` runs `install-fonts` (→ `install_fonts.sh`),
+  which installs the distro Twemoji package (`twitter-twemoji-fonts` on
+  dnf/zypper, `fonts-twemoji` on apt, `font-twitter-twemoji` on apk) and runs
+  `fc-cache -f`. Arch/pacman has no repo package — the script warns and points
+  at the `ttf-twemoji` AUR package rather than installing anything.
+  `scripts/install.sh` (the `curl | sh` installer) calls the same check.
+* **Why Twemoji specifically**: it's the most widely packaged CBDT font across
+  distros; any other CBDT font would work but would need its own per-distro
+  package-name table.
+
+---
+
 ## 2. Shell Integrations (Bash, Zsh, Fish)
 
 Shell integration scripts live in `src/shell/` and are embedded in the binary.
