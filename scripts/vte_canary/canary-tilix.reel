@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+REEL main
+  mode = tui
+  terminal_startup_delay = 1s
+  env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99"]
+  build = ["go", "build", "-o", "/tmp/vte_canary_bin", "scripts/vte_canary/main.go"]
+
+  $ "tilix" focus=new
+  $ "/tmp/vte_canary_bin -s"
+  I mode=app path="scripts/vte_canary/shots/canary-tilix.png" desc=canary-tilix crop_colors=["ff0000","00ff00","0000ff","ffff00"] crop_tolerance=0 crop_pad="4,4,4,4"
+  X
+  X

@@ -245,3 +245,77 @@ The run is non-interactive; all activity occurs on the virtual display `:99`.
 See also `issues/14-gui-desktop-scenario-recording.md` for the original
 problem/decision record, and `docs/archive/DemoRecording.md` for the historical
 x11grab-only pipeline.
+
+---
+
+## 7. Wayreel-based screenshots (`make canary-shots`)
+
+`scripts/vte_canary/` uses a different, lighter capture path: wayreel's `I`
+instruction takes a PNG of the active app window without recording a video.
+
+```reel
+REEL main
+  mode = tui
+  env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99"]
+  build = ["go", "build", "-o", "/tmp/vte_canary_bin", "scripts/vte_canary/main.go"]
+
+  $ "/tmp/vte_canary_bin -s"
+  I mode=app path="scripts/vte_canary/shots/canary-foot.png" desc=canary-foot crop_colors=["ff0000","00ff00","0000ff","ffff00"] crop_tolerance=0 crop_pad="4,4,4,4"
+  X
+```
+
+Key attributes of `I`:
+- `mode=app` — crops to the focused window, not the full scene
+- `path=` — explicit output path; `$ts` and `$desc` are available as variables
+- `base=` — fixed path always overwritten (badge/README use)
+- `crop_colors=`/`crop_tolerance=`/`crop_pad=` — post-crop the capture to the
+  bounding box of pixels matching the given colors (hex or wayreel color
+  names/combo tokens like `"rgb"`), instead of a fixed geometry. Errors loudly
+  if zero pixels match — a real pass/fail gate, not just "a file got written".
+  Prefer explicit hex over combo tokens if your colors must match exactly:
+  `reelang.ResolveColor("g")` is dark green `008000`, not pure `00ff00` — see
+  `scripts/vte_canary/main.go`'s `canaryColors`/`-verify` for the pattern
+  (single RGB source of truth for both rendering and the pixel-coverage check).
+
+Run headlessly with `wayreel record --no-video <reel>` (no mirror window, no
+video output — screenshot only).
+
+---
+
+### GTK/VTE isolation — the DISPLAY pitfall (hard-won, do not relearn)
+
+GTK3 apps (tilix, gnome-terminal) default to X11 when `DISPLAY` is set. In a
+fresh Wayland session `DISPLAY` is unset, so they connect to `WAYLAND_DISPLAY`
+correctly. But on a desktop with both set, they pick up the **host** `DISPLAY`
+and open their window there instead of in wayreel's headless sway compositor.
+Wayreel then times out waiting for the window:
+
+```
+Error: focus: timed out waiting for the terminal to create a window
+```
+
+and the window appears on the real screen.
+
+**Fix:** override `DISPLAY` in every reel that launches a GTK/VTE app (either
+as the main terminal or via `$ "tilix" focus=new`):
+
+```reel
+env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99"]
+```
+
+- `DISPLAY=:99` redirects GTK3 to the Xvfb that wayreel already started.
+- `DBUS_SESSION_BUS_ADDRESS=` prevents GTK from finding and reusing an existing
+  window on the real session bus.
+
+`wayreel.json` in wayreel's own source tree carries this silently, which is why
+reels work headlessly from that directory but fail from any other project.
+Until wayreel auto-injects these (tracked in `../wayreel/issues/18`), every
+emojig reel that touches VTE apps must include the `env` line above.
+
+foot and other native Wayland terminals do not need this fix — they ignore
+`DISPLAY` entirely.
+
+**ptyxis (GTK4/libadwaita) is not covered by this fix** — the `DISPLAY`/
+`DBUS_SESSION_BUS_ADDRESS` env line above is confirmed for GTK3 apps only.
+`canary-ptyxis.reel` currently captures a blank frame (just the sway
+background) even at long startup delays; see `issues/52-ptyxis-headless-blank-capture.md`.

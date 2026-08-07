@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+REEL main
+  mode = tui
+  env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99"]
+
+  $ "tilix" focus=new
+  I mode=app path="scripts/vte_canary/shots/canary-tilix-minimal.png" desc=canary-tilix-minimal
+  X
+  X

@@ -190,6 +190,13 @@ record-gui: ⚙️ wayreel-install gen-spec  # record GUI desktop scenario
 	$(WAYREEL) record spec/.gen/reels/gui.json
 	open website/emojig-gui-light.webm
 
+canary-shots: ⚙️ wayreel-install  # capture and verify VTE canary color-grid screenshots for foot, tilix (ptyxis: see issue 51, blank headless capture)
+	@go build -o /tmp/vte_canary_bin scripts/vte_canary/main.go
+	$(WAYREEL) record --no-video scripts/vte_canary/canary-foot.reel
+	$(WAYREEL) record --no-video scripts/vte_canary/canary-tilix.reel
+	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-foot.png
+	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-tilix.png
+
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \
