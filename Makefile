@@ -294,13 +294,18 @@ install-debug: ⚙️  # install with a debug build (slowest binary, safety chec
 install-small: ⚙️  # install the smallest possible binary (LLVM ReleaseSmall, slow build) — use before releases
 	@$(MAKE) install OPTIMIZE=ReleaseSmall LLVM=true
 
-install: ⚙️  # install binary, shell integrations, and desktop launcher (fast build, default)
+install-fonts: ⚙️  # install Twemoji CBDT bitmap font for foot terminal color emoji rendering
+	@scripts/install_fonts.sh
+
+install: ⚙️  # install binary, shell integrations, desktop launcher, and bitmap emoji font (fast build, default)
 	@$(MAKE) gen-spec >/dev/null
 	@zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) >/dev/null || (zig build shell-install -Doptimize=$(OPTIMIZE) -Dllvm=$(LLVM) && exit 1)
+	@$(MAKE) install-fonts
 	@echo "✅ Emojig installed successfully!"
 	@echo "   - Binary:    ~/.local/bin/emojig"
 	@echo "   - Shells:    ~/.local/share/emojig/shell/emojig.{bash,zsh,fish}"
 	@echo "   - Launcher:  ~/.local/share/applications/emojig-picker.desktop"
+	@echo "   - Font:      Twemoji CBDT (color emoji in foot)"
 
 SSH_ARCH ?= aarch64-linux-musl
 

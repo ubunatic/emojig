@@ -85,7 +85,11 @@ ok "To activate Ctrl+E shortcut, add this line to your shell configuration:"
 ok "  zsh:  source ~/.local/share/emojig/shell/emojig.zsh"
 ok "  bash: source ~/.local/share/emojig/shell/emojig.bash"
 ok "  fish: source ~/.local/share/emojig/shell/emojig.fish"
-# ── 6. Color Emoji Font Auto-Installation / Check ─────────────────────────────
+# ── 6. Emoji Font Check & Installation ───────────────────────────────────────
+# foot (libfcft) requires CBDT bitmap fonts for color emoji — COLRv1 vector
+# fonts (e.g. Noto-COLRv1.ttf shipped by modern distros) are not supported.
+# Twemoji (twitter-twemoji-fonts / fonts-twemoji) is a CBDT font that works.
+
 install_font_pkg() {
     PKG_MGR=""
     PKG_NAME=""
@@ -101,10 +105,10 @@ install_font_pkg() {
 
     if test -n "$PKG_MGR" && test -n "$PKG_NAME"
     then
-        info "Attempting to install missing font package '$PKG_NAME' via $PKG_MGR..."
+        info "Installing font package '$PKG_NAME' via $PKG_MGR..."
         case "$PKG_MGR" in
             dnf)    sudo dnf install -y "$PKG_NAME" || true ;;
-            apt)    sudo apt-get update && sudo apt-get install -y "$PKG_NAME" || true ;;
+            apt)    sudo apt-get install -y "$PKG_NAME" || true ;;
             pacman) sudo pacman -S --noconfirm "$PKG_NAME" || true ;;
             zypper) sudo zypper install -y "$PKG_NAME" || true ;;
         esac
@@ -112,32 +116,40 @@ install_font_pkg() {
 }
 
 HAS_COLOR_EMOJI=0
+HAS_CBDT_FONT=0
+
 if command -v fc-list >/dev/null 2>&1
 then
     if fc-list : family | grep -i -q -E "color emoji|twemoji|joypixels|openmoji|emoji"
     then HAS_COLOR_EMOJI=1
     fi
+    if fc-list : file | grep -i -q -E "twemoji|joypixels|openmoji|-pb-|CBLC|CBDT"
+    then HAS_CBDT_FONT=1
+    fi
 fi
 
 if test "$HAS_COLOR_EMOJI" -eq 0
 then
-    warn "No color emoji font detected on system."
-    install_font_pkg "google-noto-color-emoji-fonts" "fonts-noto-color-emoji" "noto-fonts-emoji" "noto-coloremoji-fonts"
+    warn "No color emoji font detected."
+    install_font_pkg "twitter-twemoji-fonts" "fonts-twemoji" "ttf-twemoji" "twemoji-color-fonts"
 fi
 
-# Check for potential foot terminal font rendering requirements (CBDT bitmap fonts)
-if command -v foot >/dev/null 2>&1
+# foot needs a CBDT bitmap font — install Twemoji proactively when foot is present
+if command -v foot >/dev/null 2>&1 && test "$HAS_CBDT_FONT" -eq 0
 then
-    if command -v fc-list >/dev/null 2>&1
-    then
-        if fc-list : file | grep -q "Noto-COLRv1"
-        then
-            if ! fc-list : file | grep -i -q -E "twemoji|joypixels|openmoji|-pb-|CBLC|CBDT"
-            then
-                warn "Foot terminal detected alongside COLRv1 vector fonts (Noto-COLRv1.ttf)."
-                warn "Foot (libfcft) does not support COLRv1 vector fonts and requires a CBDT bitmap font or a different host terminal."
-                warn "To get full color emojis in --gui mode, you can set: export EMOJIG_TERMINAL=ptyxis"
-            fi
-        fi
+    info "Foot terminal detected: installing Twemoji CBDT bitmap font for color emoji support..."
+    install_font_pkg "twitter-twemoji-fonts" "fonts-twemoji" "ttf-twemoji" "twemoji-color-fonts"
+    fc-cache -f 2>/dev/null || true
+    if command -v fc-list >/dev/null 2>&1 &&
+       fc-list : file | grep -i -q -E "twemoji|joypixels|openmoji|-pb-|CBLC|CBDT"
+    then HAS_CBDT_FONT=1
     fi
+fi
+
+# Warn if foot is still left without a CBDT font after install attempt
+if command -v foot >/dev/null 2>&1 && test "$HAS_CBDT_FONT" -eq 0
+then
+    warn "No CBDT bitmap emoji font found. Foot may not render color emoji correctly."
+    warn "Install 'twitter-twemoji-fonts' (Fedora) or 'fonts-twemoji' (Ubuntu/Debian)."
+    warn "Alternative: export EMOJIG_TERMINAL=ptyxis  (supports COLRv1 vector fonts)"
 fi
