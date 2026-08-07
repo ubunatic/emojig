@@ -21,8 +21,8 @@ description: >-
   EMOJIG_TERMINAL/$TERMINAL.
 
 detection:
-  - ptyxis
   - foot
+  - ptyxis
   - kitty
   - alacritty
   - wezterm

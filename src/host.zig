@@ -520,7 +520,7 @@ pub fn spawnGuiWindow(
     var font_buf: [256]u8 = undefined;
     const font_arg = try std.fmt.bufPrint(
         &font_buf,
-        "--override=font=monospace:size={d}, Noto Color Emoji:size={d}, Twitter Color Emoji:size={d}, Twemoji:size={d}, OpenMoji:size={d}, JoyPixels:size={d}",
+        "--override=font=monospace:size={d}, Twitter Color Emoji:size={d}, Twemoji:size={d}, Noto Color Emoji:size={d}, OpenMoji:size={d}, JoyPixels:size={d}",
         .{ font_size, font_size, font_size, font_size, font_size, font_size },
     );
 
@@ -732,7 +732,7 @@ test "buildGuiArgv: generic argv uses -e" {
 test "host spec: detection list and all referenced terminals exist" {
     const hspec = getGlobalHostSpec();
     try std.testing.expect(hspec.detection.len > 0);
-    try std.testing.expectEqualStrings("ptyxis", hspec.detection[0]);
+    try std.testing.expectEqualStrings("foot", hspec.detection[0]);
     for (hspec.detection) |name| {
         // Every detection candidate must have a dedicated template (never
         // silently fall through to generic).

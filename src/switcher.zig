@@ -337,8 +337,8 @@ pub fn renderRow(
         try term.writeAll(fd, "\x1b[0m");
         try term.writeAll(fd, fill_bg);
         try term.writeAll(fd, fill_prefix);
-        // Remaining fill in categories_bg.
-        const rem = content_width - slots_used - fill_prefix.len;
+        // Remaining fill in categories_bg — extend by 1 to cover the scrollbar column.
+        const rem = content_width + 1 - slots_used - fill_prefix.len;
         if (rem > 0) {
             try term.writeAll(fd, "\x1b[0m");
             try term.writeAll(fd, palette.categories_bg);
@@ -351,7 +351,7 @@ pub fn renderRow(
         try term.writeAll(fd, palette.app_bg);
         try term.writeAll(fd, sw.row_pad_right);
     }
-    try rw.endRow();
+    try rw.endRowFull();
 }
 
 // --- tests ------------------------------------------------------------------
@@ -523,7 +523,7 @@ test "renderRow: slots, active brackets, fill, and row terminator" {
     try std.testing.expect(lb < smiley and smiley < rb and rb < food);
     // select_pattern="none" → active icon keeps categories_bg, no <SB> anywhere.
     try std.testing.expect(std.mem.indexOf(u8, out, "<SB>") == null);
-    // Row ends via rw.endRow(): reset + clear-to-eol, exactly one row printed.
-    try std.testing.expect(std.mem.endsWith(u8, out, "\x1b[0m\x1b[K"));
+    // Row ends via rw.endRowFull(): reset only (no erase), exactly one row printed.
+    try std.testing.expect(std.mem.endsWith(u8, out, "\x1b[0m"));
     try std.testing.expectEqual(@as(usize, 1), printed);
 }

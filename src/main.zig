@@ -2354,6 +2354,7 @@ pub fn main(init: std.process.Init) !void {
 
                         // Description row.
                         try writeAll(stdout_fd, term_lib.CLEAR_LINE_CR);
+                        try writeAll(stdout_fd, palette.info_bg);
                         const max_len = if (content_width > 1) content_width - 1 else 0;
                         const is_hovering_sw = switcher.isHovering(&swst, &g_spec);
                         if (theme_hovered and !is_too_small) {
@@ -2535,7 +2536,7 @@ pub fn main(init: std.process.Init) !void {
                             const name_line = try std.fmt.bufPrint(&line_buf, " {s}{s}", .{ palette.info_bg, spaces[0..@min(pad_len_desc, spaces.len)] });
                             try writeAll(stdout_fd, name_line);
                         }
-                        try rw.endRow();
+                        try rw.endRowFull();
                     }
 
                     // Status bar row.
@@ -2559,7 +2560,7 @@ pub fn main(init: std.process.Init) !void {
                             try writeAll(stdout_fd, spaces[0..@min(max_w, spaces.len)]);
                         }
                     } else {
-                        try writeAll(stdout_fd, palette.app_bg);
+                        try writeAll(stdout_fd, palette.status_bg);
                         try writeAll(stdout_fd, " ");
                         try writeAll(stdout_fd, palette.status_bg);
 
@@ -2648,7 +2649,7 @@ pub fn main(init: std.process.Init) !void {
                         const pad_len_status = if (content_width > text_cols) content_width - text_cols else 0;
                         try writeAll(stdout_fd, spaces[0..@min(pad_len_status, spaces.len)]);
                     }
-                    try rw.endRow();
+                    try rw.endRowFull();
 
                     // Optional bottom border row.
                     if (show_bottom_border) {

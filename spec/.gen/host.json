@@ -1,8 +1,8 @@
 {
   "description": "Host terminal selection and launch argv templates for --gui mode. Consumed by src/host.zig. `detection` is the precedence-ordered candidate list used when neither EMOJIG_TERMINAL nor $TERMINAL picks a terminal — the first name found on PATH wins (foot is preferred because it supports cell-precise --window-size-chars sizing; all others adapt via altscreen mode). Each `terminals` entry describes how to assemble the launch argv. Entries in `args` (always), `borderless_args`/`decorated_args` (by --borderless mode) and `post_args` (always, after the mode args) may contain {placeholders} substituted at launch; an entry whose placeholder resolves to an empty value is dropped entirely. Known placeholders — title (window title from spec/strings gui_title), size (--window-size-chars=…, foot only), font, bg, fg, border_color, csd_size, csd_color, csd_title_font (fully formatted foot --override arguments). `tail_separator` is inserted before the terminal-independent command tail (env VARS… emojig --tui); an empty string means the tail is passed as plain positional arguments (foot). The `generic` entry is the fallback for unknown terminals named via EMOJIG_TERMINAL/$TERMINAL.",
   "detection": [
-    "ptyxis",
     "foot",
+    "ptyxis",
     "kitty",
     "alacritty",
     "wezterm",
