@@ -4,15 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-title: "Width side of height_guard resilience is still missing (cosmetic gap in gui.json recording)"
+title: "Prove GUI character-grid geometry independent of legacy font-size assumptions"
 status: open
-priority: p3
+priority: p2
 ---
 
-# 41 - Width side of height_guard resilience is still missing
+# 41 - Prove GUI character-grid geometry independent of legacy font-size assumptions
 
 **Status:** Open
-**Priority:** P3
+**Priority:** P2
 
 ## Background
 
@@ -35,25 +35,27 @@ grid it was launched to draw:
 
 ## Problem
 
-This only covers the **height** axis. After the fix, the `gui.json` recording
-still shows extra unused columns on the right of the emojig window — the
-window is **wider** than the grid needs at the configured `cols`/font size.
-`is_too_small` already has a pure width check (`current_w < content_width + 1`)
-that triggers the "too small" fallback when the terminal is *narrower* than
-needed, but there's no equivalent "shrink to fit" behavior for a terminal that
-is *wider* than needed — extra width is just left as blank padding.
+The historical recording path converted an assumed font size into fixed pixel
+dimensions and then forced those dimensions through the compositor. That is not
+a measurement of the terminal's actual glyph-cell metrics. Depending on the
+font, scaling, decorations, and compositor, the real terminal could expose a
+different row/column count than Emojig requested. Too few rows caused clipping
+and misplaced cursors; excess columns caused unused padding. Hand-tuned
+`app_width`/`app_height` values only hide the mismatch for one environment.
 
-This is purely cosmetic (no cursor/functional bug), but it means reel authors
-(or anyone whose GUI host doesn't grant an exact-fit window) still have to
-hand-tune pixel sizes to avoid a visibly padded window, same as the height
-problem did before this round of fixes.
+`height_guard=fit` is a valuable runtime mitigation, and absolute cursor
+addressing removes one failure mode, but neither proves that GUI launch sizing
+is correct. The issue is therefore not merely cosmetic: we need measured proof
+that the requested character grid, the real terminal geometry, and the rendered
+row positions agree without relying on legacy font-size assessment.
 
-## Possible directions
+## Historical solution directions
 
-1. **Do nothing / accept it.** Extra width is harmless and cheap to work
-   around per-reel (adjust `app_width` down). Given `height_guard=fit` already
-   solves the *functional* bug class (misplaced cursor), this may not be worth
-   more app-side complexity.
+These remain implementation options, not substitutes for the proof below:
+
+1. **Accept extra width after proving geometry safety.** Extra columns may be an
+   intentional policy, but only after the verifier distinguishes them from an
+   accidental font-metric mismatch and confirms row/cursor correctness.
 2. **Mirror `height_guard` for width**: an analogous `width_guard` (or fold
    both into one `size_guard` covering both axes) that shrinks `cols` when the
    terminal is wider than configured... but shrinking cols doesn't help with
@@ -65,14 +67,41 @@ problem did before this round of fixes.
 3. **Recorder-side**: teach wayreel to auto-size the sub-app window from the
    target grid's actual font metrics (Option B in
    `../wayreel/issues/01-gui-window-scaling.md`) rather than fixing anything
-   in emojig. Probably the better home for a purely cosmetic recording-pipeline
-   gap.
+   in emojig. The proof must still measure the resulting TTY rather than trust
+   the calculation.
+
+## Required proof for closure
+
+- Launch the real `emojig --gui` path and obtain the child terminal's actual
+  rows and columns from the PTY/TTY after the compositor has applied the window
+  geometry. Do not infer them solely from pixels or configured font size.
+- Assert that the effective grid and chrome row budget match those measured
+  dimensions, including top padding, search, grid, description/info, switcher,
+  status/footer, optional border, and any active pane rows.
+- Correlate the measured TTY geometry with a captured GUI frame so a correct
+  ioctl value cannot mask clipped, duplicated, shifted, or padded physical rows.
+- Exercise at least two materially different GUI font sizes and both light and
+  dark themes. The test must not use per-case hand-tuned pixel dimensions as its
+  oracle.
+- Include an undersized case that proves `height_guard=fit` selects the expected
+  effective row count, plus an exact-fit case that proves no guard adjustment is
+  needed.
+- Fail on missing/extra physical rows, unexpected columns, wrapping, clipping,
+  cursor displacement, or unexplained right/bottom padding.
+- Store the reel/fixture, geometry capture, and assertions in the repository and
+  expose one non-interactive command with a non-zero failure exit.
+- Demonstrate that the proof fails when the legacy fixed-pixel/font-size
+  assumption is deliberately restored, or against a preserved failing fixture.
+- Document terminal, font, font size, scale factor, requested grid, measured TTY
+  geometry, captured pixel dimensions, effective grid, and result.
+
+The pixel checks required by issue 50 may share the same capture, but geometry
+and background-color assertions must remain separately reported so one cannot
+accidentally stand in for the other.
 
 ## Recommendation
 
-Leans toward option 3 (recorder-side) or just accepting the cosmetic gap
-(option 1) — emojig growing/shrinking its *own* rendered grid to opportunistically
-fill extra terminal width doesn't have an obvious "correct" behavior (unlike
-the height case, where "shrink to what fits" is unambiguous), and the actual
-bug class (misplaced cursor) is already fixed. Revisit if this keeps costing
-reel-authoring time.
+Build the proof harness before choosing further app-side or recorder-side
+resizing behavior. The measurements should show whether the durable correction
+belongs in Emojig, Wayreel, or both. Until that evidence exists, fixed pixel
+sizes are test setup rather than a correctness oracle.

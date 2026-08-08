@@ -4,19 +4,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-status: fixed
+status: open
 ---
 
 # BG color leaking in GUI grid and category bar
 
 **Priority: P2** (visual artifact in primary GUI mode)
 
+**Status: Reopened 2026-08-08.** The known implementation defects were fixed,
+but the issue was closed without an automated proof over the real rendered GUI.
+
 ## Summary
 
 In `--gui` mode (foot + Twemoji CBDT), the host terminal background color bleeds
 through in several areas instead of the configured `bg`/`search_bg` palette colors.
 
-Screenshot saved to `issues/50-bg-color-leaking-in-gui.png` — annotations pending from user.
+The original annotated failure capture is saved at
+`issues/50-bg-color-leaking-in-gui.png`.
 
 ## Annotated screenshot
 
@@ -70,3 +74,43 @@ Three distinct bugs, all in row termination:
 - `src/switcher.zig` — fill extended +1, `endRowFull`
 - `src/switcher.zig` — test updated to expect `endRowFull` terminator
 - `src/host.zig` — detection-order test updated (`foot` now first per spec/host.yaml fix)
+
+## Why this is reopened
+
+The existing regression coverage establishes useful internal facts: rows use
+`endRowFull`, the switcher emits the expected terminator, and PTY tests check
+painted character widths. It does **not** establish the user-visible claim that
+the host background never leaks through. `scripts/vte_canary` verifies a
+separate four-color test pattern, not an Emojig frame, so it cannot close this
+issue.
+
+Manual inspection and a screenshot that merely exists are supporting evidence,
+not proof. This issue remains open until the real picker output is checked by a
+repeatable pass/fail verifier.
+
+## Required proof for closure
+
+- Capture the real `emojig --gui` window in a deterministic headless session;
+  do not substitute the generic VTE color canary.
+- Exercise at least the search screen, status/help pane, settings pane, and
+  category switcher so the description/info, status, switcher, pane-body, and
+  pane-footer rows are represented.
+- Verify both the leftmost and rightmost physical cell regions of every
+  full-width row against the expected resolved palette background. Include the
+  three original leak sites explicitly.
+- Run the proof for both bundled light and dark themes. Use a deliberately
+  contrasting host-terminal background so an unpainted cell is detectable.
+- Derive expected colors from the effective generated theme/spec or from a
+  verifier-owned mapping tied to it; do not approve pixels by eye.
+- Fail on any unexpected host-background pixel region, missing edge cell,
+  clipped row, or row shifted into the wrong physical position. Allow only a
+  documented tolerance for glyph antialiasing, never for solid cell interiors.
+- Store the fixture/reel and verifier in the repository and expose one
+  non-interactive command that returns non-zero on failure.
+- Record the tested terminal(s), font, font size, grid dimensions, screenshot
+  dimensions, and verifier result. Foot is mandatory; additional hosts extend
+  confidence but do not replace the foot proof.
+- Add a regression test that is capable of failing against the pre-fix behavior
+  from commit `1c716d9` (or an equivalent deliberately reintroduced fault).
+
+Only after all of these checks pass may this issue return to `closed/`.
