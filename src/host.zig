@@ -218,6 +218,7 @@ pub const ArgValues = struct {
     csd_size: []const u8 = "",
     csd_color: []const u8 = "",
     csd_title_font: []const u8 = "",
+    color_theme: []const u8 = "",
 };
 
 fn argValueFor(values: ArgValues, name: []const u8) ?[]const u8 {
@@ -361,6 +362,67 @@ fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u
     return @constCast(trimmed);
 }
 
+/// foot 1.26.0 renamed [colors]/[colors2] to [colors-dark]/[colors-light]
+/// (+ initial-color-theme), deprecating (not removing) the old names — the
+/// old section still works on every version but logs a "deprecated" warning
+/// on 1.26+, visible briefly on window close once --alt-screen ends and
+/// reveals the primary screen buffer underneath. Systems/CI images pin
+/// varying foot versions, so this is version-*probed*, not
+/// version-*numbered*: foot has already moved this section-name boundary
+/// once, so hardcoding either a version number or a name would drift out of
+/// sync the moment it moves again (see wayreel's own
+/// `detectFootColorThemeSupport`/`FootColorsIni`, ../wayreel/reelang/types.go,
+/// and ../conreel/issues/05-foot-colors-dark-workaround.md for the two wrong
+/// attempts that preceded this fix upstream — mirrored here rather than
+/// re-derived). Writes a throwaway `[colors-dark]` config and runs
+/// `foot --check-config` against it. Returns false (legacy [colors] section,
+/// matching pre-existing behavior) on any probe/parse failure or when the
+/// probe config is rejected — [colors] remains valid on every foot version,
+/// the safe universal fallback, unlike guessing the new dialect wrong.
+fn footSupportsColorThemeSections(io: anytype) bool {
+    var path_buf: [64]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&path_buf, "/tmp/emojig-foot-probe-{d}.ini", .{std.c.getpid()}) catch return false;
+
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o600) catch return false;
+    const probe_ini = "[colors-dark]\n";
+    _ = std.posix.system.write(fd, probe_ini.ptr, probe_ini.len);
+    _ = std.posix.system.close(fd);
+    defer _ = std.posix.system.unlink(path);
+
+    var config_arg_buf: [96]u8 = undefined;
+    const config_arg = std.fmt.bufPrint(&config_arg_buf, "--config={s}", .{path}) catch return false;
+
+    var pipe_fds: [2]std.posix.fd_t = undefined;
+    const pipe_rc = std.os.linux.pipe2(&pipe_fds, .{});
+    if (std.posix.errno(pipe_rc) != .SUCCESS) return false;
+
+    const argv = [_][]const u8{ "foot", "--check-config", config_arg };
+    var child = std.process.spawn(io, .{
+        .argv = &argv,
+        .stdin = .ignore,
+        .stdout = .{ .file = .{ .handle = pipe_fds[1], .flags = .{ .nonblocking = false } } },
+        .stderr = .{ .file = .{ .handle = pipe_fds[1], .flags = .{ .nonblocking = false } } },
+    }) catch {
+        _ = std.posix.system.close(pipe_fds[1]);
+        _ = std.posix.system.close(pipe_fds[0]);
+        return false;
+    };
+    _ = std.posix.system.close(pipe_fds[1]);
+
+    var out_buf: [256]u8 = undefined;
+    var total: usize = 0;
+    while (total < out_buf.len) {
+        const n = std.posix.read(pipe_fds[0], out_buf[total..]) catch break;
+        if (n == 0) break;
+        total += n;
+    }
+    _ = std.posix.system.close(pipe_fds[0]);
+    _ = child.wait(io) catch {};
+
+    return std.mem.indexOf(u8, out_buf[0..total], "invalid section name") == null;
+}
+
 /// Query GNOME's UI font size and text scaling factor from gsettings, then
 /// return a comfortable CSD title bar height in pixels (ratio 2.5×).
 /// Falls back to `fallback` if gsettings is unavailable or unparseable.
@@ -472,16 +534,30 @@ pub fn spawnGuiWindow(
     const csd_fg_dark = expandHex(csd.title_fg_on_dark, &csd_fg_dark_exp);
     const csd_fg_light = expandHex(csd.title_fg_on_light, &csd_fg_light_exp);
     const csd_threshold: u32 = csd.title_luminance_threshold;
+    // foot 1.26+ deprecated the theme-agnostic [colors] section in favor of
+    // [colors-dark]/[colors-light] (config.c warns "deprecated; use
+    // [colors-dark] instead", printed onto the spawned window's primary
+    // screen buffer before the --alt-screen child starts — it then flashes
+    // briefly on exit once alt-screen mode ends and reveals what's
+    // underneath). Probe rather than guess a version number — see
+    // footSupportsColorThemeSections's docs for why. On older foot, keep
+    // emitting the legacy [colors] section (accepting the pre-existing
+    // warning on old installs only — not a regression; on newer foot with
+    // colors-light we must also set initial-color-theme=light, since foot
+    // defaults to colors-dark otherwise regardless of which section exists).
+    const use_color_themes = footSupportsColorThemeSections(io);
+    const colors_section = if (!use_color_themes) "colors" else if (is_dark) "colors-dark" else "colors-light";
+    const color_theme_arg: []const u8 = if (use_color_themes and !is_dark) "--override=initial-color-theme=light" else "";
     const bg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
-        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{csdTitleFgHex(title_hex_early, csd_fg_dark, csd_fg_light, csd_threshold)})
+        try std.fmt.bufPrint(&bg_buf, "--override={s}.background={s}", .{ colors_section, csdTitleFgHex(title_hex_early, csd_fg_dark, csd_fg_light, csd_threshold) })
     else if (foot_bg.len > 0)
-        try std.fmt.bufPrint(&bg_buf, "--override=colors.background={s}", .{foot_bg})
+        try std.fmt.bufPrint(&bg_buf, "--override={s}.background={s}", .{ colors_section, foot_bg })
     else
         "";
 
     var fg_buf: [64]u8 = undefined;
     const fg_arg: []const u8 = if (foot_fg.len > 0)
-        try std.fmt.bufPrint(&fg_buf, "--override=colors.foreground={s}", .{foot_fg})
+        try std.fmt.bufPrint(&fg_buf, "--override={s}.foreground={s}", .{ colors_section, foot_fg })
     else
         "";
 
@@ -605,6 +681,7 @@ pub fn spawnGuiWindow(
         .csd_size = csd_size_arg,
         .csd_color = csd_color_arg,
         .csd_title_font = csd_title_font_arg,
+        .color_theme = color_theme_arg,
     }, &tail);
 
     var child = try std.process.spawn(io, .{

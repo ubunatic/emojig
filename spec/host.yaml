@@ -41,6 +41,7 @@ terminals:
       - "--override=cursor.blink=yes"
       - "--override=scrollback.lines=0"
       - "--override=pad=0x4"
+      - "--override=tweak.grapheme-width-method=double-width"
     # Borderless: CSD with zero-height title bar + 1px border for drop shadow.
     borderless_args:
       - "--override=csd.preferred=client"
@@ -57,6 +58,7 @@ terminals:
     post_args:
       - "{bg}"
       - "{fg}"
+      - "{color_theme}"
     # foot runs the command as plain positional args (no -e).
     tail_separator: ""
   - name: kitty

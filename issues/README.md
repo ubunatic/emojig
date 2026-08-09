@@ -46,6 +46,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**53**](53-foot-grapheme-width-tweak.md) | [foot may need `tweak.grapheme-width-method=double-width` set explicitly](53-foot-grapheme-width-tweak.md) | **P2** | `spec/host.yaml`'s foot args never set this tweak, so `--gui` VS16 emoji width silently depends on the user's own `foot.ini` instead of emojig's own width assumptions. |
 | [**54**](54-width-correction-beyond-vte.md) | [Extend per-terminal ZWJ width correction beyond VTE](54-width-correction-beyond-vte.md) | **P2** | Research shows Alacritty/kitty/tmux/xterm are also in the non-clustering "per-codepoint width" camp, same as VTE, but `disable_zwj` only checks `TILIX_ID`/`VTE_VERSION`; needs reproduction before extending. |
 | [**55**](55-cursor-query-width-measurement.md) | [Cursor-position-query width measurement fallback](55-cursor-query-width-measurement.md) | **P3** | "Measure, don't compute" fallback (`CSI 6n`) for width-uncertain glyphs not covered by any static detection table; scoped as one-time startup calibration, not per-render, to respect the zero-allocation hot path. |
+| [**56**](56-cache-foot-color-theme-probe.md) | [Cache the foot color-theme dialect probe result in config](56-cache-foot-color-theme-probe.md) | **P3** | Move issue 53's `foot --check-config` probe (~5-7ms) off the launch-blocking path: use the cached `(version, bool)` pair from config immediately, refresh it in the background after the window is already spawned. |
 
 ---
 

@@ -21,7 +21,8 @@
         "{font}",
         "--override=cursor.blink=yes",
         "--override=scrollback.lines=0",
-        "--override=pad=0x4"
+        "--override=pad=0x4",
+        "--override=tweak.grapheme-width-method=double-width"
       ],
       "borderless_args": [
         "--override=csd.preferred=client",
@@ -37,7 +38,8 @@
       ],
       "post_args": [
         "{bg}",
-        "{fg}"
+        "{fg}",
+        "{color_theme}"
       ],
       "tail_separator": ""
     },

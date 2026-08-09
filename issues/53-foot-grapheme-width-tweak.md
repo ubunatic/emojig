@@ -144,5 +144,9 @@ consistency and would need to keep passing.
 - Issue [55](55-cursor-query-width-measurement.md) — the general
   measure-don't-guess fallback, for whatever a static config/detection
   fix like this one doesn't cover.
+- Issue [56](56-cache-foot-color-theme-probe.md) — caches/defers the
+  `foot --check-config` color-theme dialect probe added while fixing this
+  issue's close-time warning-flash bug, so it stops running synchronously
+  on every `--gui` launch.
 - foot issues [#1258](https://codeberg.org/dnkl/foot/issues/1258) and
   [#782](https://codeberg.org/dnkl/foot/issues/782).
