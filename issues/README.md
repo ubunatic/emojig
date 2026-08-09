@@ -43,6 +43,7 @@ This directory serves as the centralized backlog for bugs, features, and platfor
 | [**50**](50-bg-color-leaking-in-gui.md) | [Prove no BG color leaks in GUI rows and panes](50-bg-color-leaking-in-gui.md) | **P2** | Reopened: known ANSI bugs were fixed, but closure requires automated pixel proof over the real picker, both themes, contrasting host background, and all full-width pane edges. |
 | [**51**](51-vte-canary.md) | [VTE canary: headless color-grid screenshots per terminal](51-vte-canary.md) | **P3** | `scripts/vte_canary/` renders a truecolor 4×4 grid and captures headless screenshots via `make canary-shots` (wayreel `I mode=app`), hardened with `crop_colors` + a `-verify` pixel-coverage check for foot/tilix. Open: gnome-terminal, st (wayreel broken), ptyxis blocked on issue 52. |
 | [**52**](52-ptyxis-headless-blank-capture.md) | [ptyxis renders blank in headless wayreel capture](52-ptyxis-headless-blank-capture.md) | **P3** | `canary-ptyxis.reel` captures only the sway background, no window content, at 2s/5s/8s startup delay — GTK4/libadwaita may need different headless isolation than the documented GTK3 fix. |
+| [**53**](53-foot-grapheme-width-tweak.md) | [foot may need `tweak.grapheme-width-method=double-width` set explicitly](53-foot-grapheme-width-tweak.md) | **P2** | `spec/host.yaml`'s foot args never set this tweak, so `--gui` VS16 emoji width silently depends on the user's own `foot.ini` instead of emojig's own width assumptions. |
 
 ---
 
