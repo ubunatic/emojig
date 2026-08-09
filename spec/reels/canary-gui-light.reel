@@ -5,7 +5,10 @@ REEL main
   mode = tui
   terminal = ["foot", "--app-id=emojig-picker", "--override=colors.background=ff00ff", "--override=colors-dark.background=ff00ff", "-W", "49x16"]
   terminal_startup_delay = 500ms
-  env = ["EMOJIG_TERMINAL=foot", "EMOJIG_COLS=12", "EMOJIG_ROWS=10"]
+  # Clear VTE_VERSION/TILIX_ID/TERMINAL so a developer's own VTE-based host
+  # terminal can't leak through os.Environ() and flip emojig's own
+  # disable_zwj VTE self-detection (src/root.zig) inside this headless capture.
+  env = ["EMOJIG_TERMINAL=foot", "EMOJIG_COLS=12", "EMOJIG_ROWS=10", "VTE_VERSION=", "TILIX_ID=", "TERMINAL="]
   build = ["zig", "build", "-Doptimize=ReleaseSmall"]
 
   $ "exec zig-out/bin/emojig --tui --alt-screen --theme light"

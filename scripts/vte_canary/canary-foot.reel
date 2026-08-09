@@ -5,7 +5,11 @@ REEL main
   mode = tui
   terminal = ["foot"]
   terminal_startup_delay = 1s
-  env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99"]
+  # Clear VTE_VERSION/TILIX_ID/TERMINAL so a developer's own VTE-based host
+  # terminal (e.g. Tilix) can't leak through os.Environ() into this foot
+  # capture and cause vte_canary's isVteTerminal() to falsely self-detect as
+  # VTE, silently enabling unwanted weather-symbol auto-compensation.
+  env = ["DBUS_SESSION_BUS_ADDRESS=", "DISPLAY=:99", "VTE_VERSION=", "TILIX_ID=", "TERMINAL="]
   build = ["go", "build", "-o", "/tmp/vte_canary_bin", "scripts/vte_canary/main.go"]
 
   $ "/tmp/vte_canary_bin -s"

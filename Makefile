@@ -196,6 +196,8 @@ canary-shots: ⚙️ wayreel-install  # capture and verify VTE canary color-grid
 	$(WAYREEL) record --no-video scripts/vte_canary/canary-tilix.reel
 	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-foot.png
 	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-tilix.png
+	/tmp/vte_canary_bin -verify-rows scripts/vte_canary/shots/canary-foot.png
+	/tmp/vte_canary_bin -verify-rows scripts/vte_canary/shots/canary-tilix.png
 
 # Recorded-good pixel size for spec/reels/canary-gui-{dark,light}.reel at
 # their pinned grid (EMOJIG_COLS=12 EMOJIG_ROWS=10) and --hidpi (2x output

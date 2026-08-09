@@ -196,6 +196,72 @@ func verifyCrop(path string) (bool, string) {
 	return true, fmt.Sprintf("PASSED: all %d colors present (%d px sampled)", len(canaryColors), total)
 }
 
+// maxRowEdgeSkew is the max allowed difference, in pixels, between the
+// rightmost extent of any two canary color rows before it counts as a real
+// row-length mismatch rather than antialiasing/glyph-edge noise.
+const maxRowEdgeSkew = 1
+
+// verifyRowLengths decodes the PNG at path (cropped via wayreel crop_colors
+// to the bounding box of the 4 canary colors only, not the grey scrollbar)
+// and checks that every color row's own rightmost matching pixel reaches the
+// same x as the others. A terminal that renders an ambiguous-width glyph
+// (e.g. a ☔-class weather symbol) as single-width when the app assumed
+// double-width leaves that row's color band short of the image's right edge
+// — a real, visible row-length mismatch like the one in issue vte_canary
+// weather-symbol compensation.
+func verifyRowLengths(path string) (bool, string) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Sprintf("cannot open %s: %v", path, err)
+	}
+	defer f.Close()
+
+	img, _, err := image.Decode(f)
+	if err != nil {
+		return false, fmt.Sprintf("cannot decode %s: %v", path, err)
+	}
+
+	bounds := img.Bounds()
+	rightEdge := make([]int, len(canaryColors))
+	for i := range rightEdge {
+		rightEdge[i] = -1
+	}
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			r8, g8, b8 := uint8(r>>8), uint8(g>>8), uint8(b>>8)
+			for i, cc := range canaryColors {
+				if r8 == cc.R && g8 == cc.G && b8 == cc.B && x > rightEdge[i] {
+					rightEdge[i] = x
+				}
+			}
+		}
+	}
+
+	maxEdge := 0
+	for _, e := range rightEdge {
+		if e > maxEdge {
+			maxEdge = e
+		}
+	}
+
+	var short []string
+	for i, cc := range canaryColors {
+		if rightEdge[i] < 0 {
+			short = append(short, fmt.Sprintf("%s (not found)", cc.Name))
+			continue
+		}
+		if maxEdge-rightEdge[i] > maxRowEdgeSkew {
+			short = append(short, fmt.Sprintf("%s (right edge x=%d, %dpx short of x=%d)", cc.Name, rightEdge[i], maxEdge-rightEdge[i], maxEdge))
+		}
+	}
+	if len(short) > 0 {
+		return false, fmt.Sprintf("FAILED: row length mismatch — %s", strings.Join(short, ", "))
+	}
+	return true, fmt.Sprintf("PASSED: all %d rows reach the same right edge (x=%d)", len(canaryColors), maxEdge)
+}
+
 func main() {
 	var (
 		autoMode   bool
@@ -204,11 +270,13 @@ func main() {
 		both       bool
 		silent     bool
 		verifyPath string
+		verifyRows string
 		cols       int
 		rows       int
 	)
 
 	flag.StringVar(&verifyPath, "verify", "", "Verify a wayreel crop_colors-cropped canary screenshot PNG contains all 4 test pattern colors")
+	flag.StringVar(&verifyRows, "verify-rows", "", "Verify a wayreel crop_colors-cropped canary screenshot PNG has all 4 rows reaching the same right edge (no ambiguous-width row-length mismatch)")
 
 	flag.BoolVar(&autoMode, "auto", false, "Auto-detect terminal environment (VTE vs Modern foot/ghostty)")
 	flag.BoolVar(&autoMode, "a", false, "Alias for -auto")
@@ -233,10 +301,23 @@ func main() {
 
 	flag.Parse()
 
-	if verifyPath != "" {
-		ok, msg := verifyCrop(verifyPath)
-		fmt.Fprintln(os.Stderr, msg)
-		if !ok {
+	if verifyPath != "" || verifyRows != "" {
+		passed := true
+		if verifyPath != "" {
+			ok, msg := verifyCrop(verifyPath)
+			fmt.Fprintln(os.Stderr, msg)
+			if !ok {
+				passed = false
+			}
+		}
+		if verifyRows != "" {
+			ok, msg := verifyRowLengths(verifyRows)
+			fmt.Fprintln(os.Stderr, msg)
+			if !ok {
+				passed = false
+			}
+		}
+		if !passed {
 			os.Exit(1)
 		}
 		return
