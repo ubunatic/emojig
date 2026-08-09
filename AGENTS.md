@@ -230,6 +230,8 @@ All diagnostics, simulations, and unit tests must reside in-tree:
 
 ## 9. Execution & Launch Modes
 
+> **Before touching mode/theme/terminal auto-detection:** read [`docs/EnvironmentDetection.md`](docs/EnvironmentDetection.md) — documents exactly what environment is present in the two real launch paths (raw desktop-shell spawn vs. run inside an already-open terminal) versus what the source actually reads at each decision point, source-line by source-line.
+
 To ensure seamless operation across CLI environments, graphical desktops, and custom keybind triggers, `emojig` supports three distinct launch modes:
 
 1. **Auto-Mode (`emojig` without arguments)**:
