@@ -13,8 +13,8 @@ description: >-
   substituted at launch; an entry whose placeholder resolves to an empty
   value is dropped entirely. Known placeholders — title (window title from
   spec/strings gui_title), size (--window-size-chars=…, foot only), font,
-  bg, fg, border_color, csd_size, csd_color, csd_title_font (fully formatted
-  foot --override arguments). `tail_separator` is inserted before the
+  bg, fg, border_color, csd_size, csd_color, csd_title_font, color_theme
+  (fully formatted foot --override arguments). `tail_separator` is inserted before the
   terminal-independent command tail (env VARS… emojig --tui); an empty
   string means the tail is passed as plain positional arguments (foot). The
   `generic` entry is the fallback for unknown terminals named via
@@ -41,6 +41,7 @@ terminals:
       - "--override=cursor.blink=yes"
       - "--override=scrollback.lines=0"
       - "--override=pad=0x4"
+      - "--override=tweak.grapheme-shaping=yes"
       - "--override=tweak.grapheme-width-method=double-width"
     # Borderless: CSD with zero-height title bar + 1px border for drop shadow.
     borderless_args:

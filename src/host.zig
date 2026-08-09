@@ -375,20 +375,39 @@ fn gsettingsGet(io: anytype, schema: []const u8, key: []const u8, buf: []u8) []u
 /// and ../conreel/issues/05-foot-colors-dark-workaround.md for the two wrong
 /// attempts that preceded this fix upstream — mirrored here rather than
 /// re-derived). Writes a throwaway `[colors-dark]` config and runs
-/// `foot --check-config` against it. Returns false (legacy [colors] section,
-/// matching pre-existing behavior) on any probe/parse failure or when the
-/// probe config is rejected — [colors] remains valid on every foot version,
-/// the safe universal fallback, unlike guessing the new dialect wrong.
+/// `foot --check-config` against it (with a hard 2s deadline — this runs on
+/// the --gui launch-blocking path, so a hung/wrapper `foot` on PATH must not
+/// hang the picker forever). Returns false (legacy [colors] section, matching
+/// pre-existing behavior) on any probe/parse/write/timeout failure or when
+/// the probe config is rejected — [colors] remains valid on every foot
+/// version, the safe universal fallback. Reporting "unsupported" when foot
+/// actually supports colors-dark just keeps the harmless warning flash;
+/// reporting "supported" when it doesn't makes the real launch emit
+/// `--override=colors-dark.*`, which foot treats as a fatal "invalid section
+/// name" and exits with **no window at all** — so every failure path here
+/// must resolve to `false`, never guess `true`.
 fn footSupportsColorThemeSections(io: anytype) bool {
     var path_buf: [64]u8 = undefined;
     const path = std.fmt.bufPrintZ(&path_buf, "/tmp/emojig-foot-probe-{d}.ini", .{std.c.getpid()}) catch return false;
 
-    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true };
+    // EXCL+NOFOLLOW: this is a predictable /tmp path (pid-based), so refuse
+    // to write through a pre-existing file or a planted symlink rather than
+    // truncating whatever it points to.
+    const wf = std.posix.O{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true };
     const fd = std.posix.openat(std.posix.AT.FDCWD, path, wf, 0o600) catch return false;
-    const probe_ini = "[colors-dark]\n";
-    _ = std.posix.system.write(fd, probe_ini.ptr, probe_ini.len);
-    _ = std.posix.system.close(fd);
     defer _ = std.posix.system.unlink(path);
+    const probe_ini = "[colors-dark]\n";
+    const written = std.posix.system.write(fd, probe_ini.ptr, probe_ini.len);
+    _ = std.posix.system.close(fd);
+    // A short/failed write means the probe file doesn't actually contain the
+    // section we're testing for — treat that as "couldn't verify", not as
+    // license to guess "supported". Guessing wrong here is not symmetric:
+    // reporting false when foot actually supports colors-dark just keeps the
+    // (harmless, pre-existing) deprecation-warning flash; reporting true when
+    // it doesn't makes the real launch below emit --override=colors-dark.*,
+    // which foot treats as a fatal "invalid section name" and exits with no
+    // window at all.
+    if (written != probe_ini.len) return false;
 
     var config_arg_buf: [96]u8 = undefined;
     const config_arg = std.fmt.bufPrint(&config_arg_buf, "--config={s}", .{path}) catch return false;
@@ -410,14 +429,31 @@ fn footSupportsColorThemeSections(io: anytype) bool {
     };
     _ = std.posix.system.close(pipe_fds[1]);
 
+    // Bounded wait: this runs on the --gui launch-blocking path, so a `foot`
+    // on PATH that hangs (e.g. a wrapper script) must not hang the picker
+    // window forever. Poll with a hard deadline; on timeout, kill the child
+    // and fall back to the safe legacy [colors] path rather than block.
+    const probe_timeout_ms = 2000;
     var out_buf: [256]u8 = undefined;
     var total: usize = 0;
-    while (total < out_buf.len) {
+    var timed_out = false;
+    var pfd = [_]std.posix.pollfd{.{ .fd = pipe_fds[0], .events = std.posix.POLL.IN, .revents = 0 }};
+    outer: while (total < out_buf.len) {
+        const n_ready = std.posix.poll(&pfd, probe_timeout_ms) catch break;
+        if (n_ready == 0) {
+            timed_out = true;
+            break :outer;
+        }
         const n = std.posix.read(pipe_fds[0], out_buf[total..]) catch break;
         if (n == 0) break;
         total += n;
     }
     _ = std.posix.system.close(pipe_fds[0]);
+    if (timed_out) {
+        child.kill(io);
+        _ = child.wait(io) catch {};
+        return false;
+    }
     _ = child.wait(io) catch {};
 
     return std.mem.indexOf(u8, out_buf[0..total], "invalid section name") == null;
@@ -478,6 +514,14 @@ pub fn spawnGuiWindow(
 ) !void {
     const io = init.io;
 
+    // Select terminal host early: use_color_themes (below) needs to know
+    // whether foot is actually the host before deciding whether to fork the
+    // colors-dark probe at all — other terminals never consume it.
+    const sel = selectTerminalHost(init.environ_map) orelse {
+        try writeAll(std.posix.STDERR_FILENO, "Error: no terminal emulator found. Set EMOJIG_TERMINAL to your terminal executable.\n");
+        std.process.exit(1);
+    };
+
     // GUI window colors come from spec/theme.yaml (foot wants bare hex, so we
     // strip the leading '#'). Resolve `system` from GNOME before spawning so
     // the host window starts with the same effective palette as the child TUI.
@@ -517,16 +561,17 @@ pub fn spawnGuiWindow(
     const size_arg = try std.fmt.bufPrint(&size_buf, "--window-size-chars={d}x{d}", .{ width_val + 1, final_h });
 
     // Resolve the title bar hex early — needed for both csd.color and the
-    // colors.background contrast override below.
+    // colors_section.background contrast override below.
     var title_hex_buf_early: [6]u8 = undefined;
     const title_hex_early = resolveTitleBgHex(title_bg_choice, app_hex, is_dark, &title_hex_buf_early);
 
-    // In decorated mode foot renders the CSD title text using colors.background
-    // (confirmed by testing — foot has no csd.foreground option).  Override it
+    // In decorated mode foot renders the CSD title text using the active
+    // colors section's `background` key (confirmed by testing — foot has no
+    // csd.foreground option). Override it
     // with a luminance-computed contrast color so the title text is legible on
     // any title-bar preset.  The TUI is unaffected: emojig paints every cell
-    // with explicit ANSI escape codes so colors.background is never visible
-    // inside the terminal content area.
+    // with explicit ANSI escape codes so the colors section's background is
+    // never visible inside the terminal content area.
     const csd = spec.theme.csd;
     var bg_buf: [64]u8 = undefined;
     var csd_fg_dark_exp: [8]u8 = undefined;
@@ -542,12 +587,24 @@ pub fn spawnGuiWindow(
     // underneath). Probe rather than guess a version number — see
     // footSupportsColorThemeSections's docs for why. On older foot, keep
     // emitting the legacy [colors] section (accepting the pre-existing
-    // warning on old installs only — not a regression; on newer foot with
-    // colors-light we must also set initial-color-theme=light, since foot
-    // defaults to colors-dark otherwise regardless of which section exists).
-    const use_color_themes = footSupportsColorThemeSections(io);
+    // warning on old installs only — not a regression). On newer foot we
+    // must *always* pin initial-color-theme (dark or light, not light-only):
+    // per `man 5 foot.ini`, foot defaults to colors-dark regardless of which
+    // section exists in the config, so a user's own foot.ini setting
+    // initial-color-theme=light would silently make our colors-dark override
+    // inert (foot renders colors-light instead) — the exact host-config
+    // dependence this fix exists to remove. The probe only runs for a foot
+    // host (selectTerminalHost, above) — other terminals never use
+    // colors_section/color_theme_arg (see spec/host.yaml's foot-only
+    // {bg}/{fg}/{color_theme} placeholders), so skip the ~8ms fork entirely
+    // when foot isn't the selected terminal.
+    const use_color_themes = std.mem.eql(u8, sel.tspec.name, "foot") and footSupportsColorThemeSections(io);
     const colors_section = if (!use_color_themes) "colors" else if (is_dark) "colors-dark" else "colors-light";
-    const color_theme_arg: []const u8 = if (use_color_themes and !is_dark) "--override=initial-color-theme=light" else "";
+    var color_theme_buf: [40]u8 = undefined;
+    const color_theme_arg: []const u8 = if (use_color_themes)
+        std.fmt.bufPrint(&color_theme_buf, "--override=initial-color-theme={s}", .{if (is_dark) "dark" else "light"}) catch ""
+    else
+        "";
     const bg_arg: []const u8 = if (!borderless and title_hex_early.len == 6)
         try std.fmt.bufPrint(&bg_buf, "--override={s}.background={s}", .{ colors_section, csdTitleFgHex(title_hex_early, csd_fg_dark, csd_fg_light, csd_threshold) })
     else if (foot_bg.len > 0)
@@ -663,12 +720,6 @@ pub fn spawnGuiWindow(
         "--tui",
     };
 
-    // Select terminal host
-    const sel = selectTerminalHost(init.environ_map) orelse {
-        try writeAll(std.posix.STDERR_FILENO, "Error: no terminal emulator found. Set EMOJIG_TERMINAL to your terminal executable.\n");
-        std.process.exit(1);
-    };
-
     var argv_out: [MAX_ARGV][]const u8 = undefined;
     var arg_bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
     const argv = buildGuiArgv(&argv_out, &arg_bufs, sel.tspec, sel.exe, borderless, .{
@@ -750,6 +801,49 @@ test "buildGuiArgv: foot non-borderless uses csd client with explicit size" {
     try std.testing.expect(argvContains(argv, "--override=csd.preferred=client"));
     try std.testing.expect(argvContains(argv, "--override=csd.size=40"));
     try std.testing.expect(argvContains(argv, "--override=csd.font=monospace:bold"));
+}
+
+test "buildGuiArgv: foot colors-dark/colors-light dialect + color_theme placeholder" {
+    var out: [MAX_ARGV][]const u8 = undefined;
+    var bufs: [MAX_ARGV][MAX_ARG_LEN]u8 = undefined;
+    const tail = [_][]const u8{ "env", "/usr/bin/emojig", "--tui" };
+
+    // Dark: colors-dark.* overrides plus an explicit initial-color-theme=dark
+    // pin (issue 53 follow-up — must always be pinned, not just for light,
+    // or a user's own foot.ini can silently defeat the colors-dark override).
+    const dark_argv = buildGuiArgv(&out, &bufs, terminalSpecFor("foot"), "foot", true, .{
+        .title = "Emojig",
+        .bg = "--override=colors-dark.background=1c1c1c",
+        .fg = "--override=colors-dark.foreground=a8a8a8",
+        .color_theme = "--override=initial-color-theme=dark",
+    }, &tail);
+    try std.testing.expect(argvContains(dark_argv, "--override=colors-dark.background=1c1c1c"));
+    try std.testing.expect(argvContains(dark_argv, "--override=colors-dark.foreground=a8a8a8"));
+    try std.testing.expect(argvContains(dark_argv, "--override=initial-color-theme=dark"));
+    try std.testing.expect(!argvContains(dark_argv, "--override=colors.background=1c1c1c"));
+
+    // Light: colors-light.* overrides plus initial-color-theme=light.
+    const light_argv = buildGuiArgv(&out, &bufs, terminalSpecFor("foot"), "foot", true, .{
+        .title = "Emojig",
+        .bg = "--override=colors-light.background=ffffff",
+        .fg = "--override=colors-light.foreground=000000",
+        .color_theme = "--override=initial-color-theme=light",
+    }, &tail);
+    try std.testing.expect(argvContains(light_argv, "--override=colors-light.background=ffffff"));
+    try std.testing.expect(argvContains(light_argv, "--override=initial-color-theme=light"));
+
+    // Legacy fallback (old foot): no color_theme placeholder value at all —
+    // renderArg must drop the {color_theme} template entry entirely, not
+    // emit a stray/empty --override= arg.
+    const legacy_argv = buildGuiArgv(&out, &bufs, terminalSpecFor("foot"), "foot", true, .{
+        .title = "Emojig",
+        .bg = "--override=colors.background=1c1c1c",
+        .fg = "--override=colors.foreground=a8a8a8",
+    }, &tail);
+    try std.testing.expect(argvContains(legacy_argv, "--override=colors.background=1c1c1c"));
+    try std.testing.expect(!argvContains(legacy_argv, "--override=initial-color-theme=dark"));
+    try std.testing.expect(!argvContains(legacy_argv, "--override=initial-color-theme=light"));
+    for (legacy_argv) |a| try std.testing.expect(!std.mem.eql(u8, a, ""));
 }
 
 test "buildGuiArgv: kitty borderless toggles hide_window_decorations" {

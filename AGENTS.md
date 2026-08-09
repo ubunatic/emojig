@@ -6,7 +6,7 @@ This document details the architectural decisions, coding standards, and safety 
 
 ## Quickstart
 * See `make help` for common build tasks (and use/extend these targets as needed)
-* Always run `make install` after making changes to compile and update the installed binary, shell integrations, and desktop launcher.
+* **Always run `make install`** after making changes and again when finishing a unit of work (even if already run mid-session), so the installed binary/shell integrations/desktop launcher are always current and the user never has to ask.
 * **`spec/` is the primary developer surface — the YAML specs ARE the code.**
   `spec/*.yaml` (plus `spec/strings/*.yaml`) are the only hand-edited sources;
   `make gen-spec` compiles them to JSON artifacts in

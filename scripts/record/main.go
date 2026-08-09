@@ -193,7 +193,13 @@ func recordTUIDemo(binaryPath string, spec recordSpec) error {
 	}
 
 	bg, fg := spec.tuiColors()
-	footIni := fmt.Sprintf("[colors]\nbackground=%s\nforeground=%s\n", bg, fg)
+	// [colors] (not [colors-dark]/[colors-light]) is deliberate here: unlike
+	// src/host.zig's --gui path, this recorder has no foot-version probe, and
+	// [colors] stays valid (if deprecated on foot >=1.26) on every version —
+	// the safe universal choice for a dev-only demo recorder. The grapheme
+	// tweak is added purely so recorded emoji width matches what --gui now
+	// pins in spec/host.yaml (issue 53).
+	footIni := fmt.Sprintf("[colors]\nbackground=%s\nforeground=%s\n\n[tweak]\ngrapheme-shaping=yes\ngrapheme-width-method=double-width\n", bg, fg)
 	footIniPath := filepath.Join(os.TempDir(), "emojig-foot.ini")
 	if err := os.WriteFile(footIniPath, []byte(footIni), 0644); err != nil {
 		return fmt.Errorf("failed to write foot.ini: %v", err)
