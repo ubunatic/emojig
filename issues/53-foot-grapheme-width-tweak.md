@@ -73,6 +73,36 @@ foot is using and adjusting emojig's own width assumptions to match
 "Mode 2027" / cursor-position-query approaches for how other terminals'
 ecosystems handle this without static assumptions).
 
+## Implementation plan (2026-08-09)
+
+`spec/host.yaml`'s foot `args:` list (`terminals: - name: foot`) currently
+ends with `--override=pad=0x4`. Add one line:
+
+```yaml
+    args:
+      - "--app-id=emojig-picker"
+      - "--override=title={title}"
+      - "{size}"
+      - "{font}"
+      - "--override=cursor.blink=yes"
+      - "--override=scrollback.lines=0"
+      - "--override=pad=0x4"
+      - "--override=tweak.grapheme-width-method=double-width"
+```
+
+No Zig changes needed — `src/host.zig` reads `args:` generically, no
+placeholder substitution required for this literal flag. Same line to be
+added to the `terminal = [...]` array in
+`spec/reels/canary-gui-dark.reel`, `spec/reels/canary-gui-light.reel`, and
+`scripts/vte_canary/canary-foot.reel` so canary captures reflect the fixed
+`--gui` behavior rather than the machine's ambient `foot.ini`.
+
+Verification: re-run `make canary-gui` and `make canary-shots`, visually
+compare the `I mode=app` PNG output (grid alignment of any VS16 emoji cell)
+before/after the flag is added — no new automated pixel check is strictly
+required since issue 51's `-verify-rows` already measures row-length
+consistency and would need to keep passing.
+
 ## Next steps
 
 - [ ] Confirm via a headless canary capture (extend `scripts/canary_gui`
@@ -108,5 +138,11 @@ ecosystems handle this without static assumptions).
 - Issue 50 (`50-bg-color-leaking-in-gui.md`), 41
   (`41-width-fit-and-cosmetic-recorder-gap.md`) — the PNG-pixel-measurement
   proof pattern this issue's verification step should follow.
+- Issue [54](54-width-correction-beyond-vte.md) — do this issue first, then
+  reassess whether the same VS16 gap or a ZWJ-clustering gap shows up on
+  other `--gui` host terminals.
+- Issue [55](55-cursor-query-width-measurement.md) — the general
+  measure-don't-guess fallback, for whatever a static config/detection
+  fix like this one doesn't cover.
 - foot issues [#1258](https://codeberg.org/dnkl/foot/issues/1258) and
   [#782](https://codeberg.org/dnkl/foot/issues/782).
