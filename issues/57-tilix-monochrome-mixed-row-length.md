@@ -96,20 +96,87 @@ third:
      that's already proven correct.
    The second option is likely the pragmatic starting point.
 
+## Confirmed reproduction (2026-08-09)
+
+The default-view screenshot's grid ordering is influenced by MRU/recency and
+isn't a stable canary input on its own — but the glyph itself is:
+**🫥 "dotted line face" (U+1FAE5)**, `data/emoji.json` description "dotted
+line face" — a Unicode 14.0 (2021) emoji, one of the newest in the database,
+and *intentionally* rendered pale/faded by design (it's meant to look
+"invisible"), which is exactly why it stood out as "monochrome" in the
+screenshot. New-Unicode-version glyphs are a known gap for terminal width
+tables that haven't been updated (`docs/EmojiWidthResearch.md`'s
+correction-table findings) — consistent with this being a VTE/tilix
+per-codepoint width miscalculation rather than a rendering fluke.
+
+**Deterministic query**: typing `dotted` (confirmed via
+`go run ./scripts/screenshot zig-out/bin/emojig dotted`) reliably ranks 🫥
+as the #1 result, occupying the grid's first cell every time — this is the
+query the canary in "Proposed canary" step 3 should use, instead of relying
+on the (MRU-dependent) default view.
+
+## Canary added, but does NOT reproduce (2026-08-09)
+
+Added 🫥 directly into `scripts/vte_canary`'s row-color sentinel grid
+(`sampleEmojis` row 4, alongside ✨/❌/🚀 — real color emoji, mixed with the
+real glyph, per the user's request to combine regular + text-based glyphs
+under the existing sentinel-color/`-verify-rows` machinery rather than
+inventing new infra) and ran it through the already-proven
+`canary-foot.reel`/`canary-tilix.reel` pipeline (`make canary-shots`).
+
+**Result: both foot and tilix PASS `-verify-rows` — all 4 rows reach the
+same right edge, including the 🫥 row.** Visual inspection of
+`scripts/vte_canary/shots/canary-tilix.png` confirms 🫥 renders at the
+correct double-width cell with no length defect in this headless capture.
+
+This is a real negative result, not a shrug: it means the row-shortening
+the user saw is **not** a universal raw-ANSI-sequence width defect that
+reproduces from 🫥's bytes alone in *any* tilix. Plausible explanations,
+untested:
+- **Font/version-specific on the reporting machine** — the headless capture
+  environment's tilix version and installed emoji font may differ from the
+  user's desktop tilix, and 🫥 (Unicode 14.0, 2021) is new enough that font
+  coverage varies more than for older emoji.
+- **Real-app-specific rendering context** — the bare `vte_canary` tool
+  prints raw emoji with plain background padding, not the real app's cell
+  bracket/highlight box-drawing (`⌜…⌟`) or its own cursor/selection ANSI
+  sequences; the defect might only appear in that specific byte sequence,
+  which only `emojig --tui` itself emits. The "Proposed canary" section's
+  original real-app-in-tilix plan (steps 1-2, not yet done) would still be
+  needed to rule this in or out.
+- **Misidentified glyph** — 🫥 was the strongest visual candidate from the
+  screenshot but was not pixel-confirmed against the original report; it
+  could be a different codepoint in that row.
+
+The canary addition itself is kept regardless (`scripts/vte_canary/main.go`
+`sampleEmojis`) — it's now a permanent regression guard mixing a real,
+recent-Unicode monochrome-appearing glyph with color emoji in one sentinel
+row, which is worth having even though it didn't reproduce this specific
+report.
+
+**Next**: get the user's tilix version/font details, or a fresh screenshot
+with the `dotted` query typed (isolating 🫥 to the grid's first cell) taken
+on the *actual* reporting machine, to narrow down which of the three
+explanations above is correct before building the real-app-in-tilix reel.
+
 ## Next steps
 
-- [ ] Identify the exact codepoint under the cursor cell in the reported
-      screenshot (grep `data/emoji.json`) and confirm it's genuinely
-      rendered monochrome/width-1 by tilix's font fallback, not an
-      unrelated rendering artifact.
-- [ ] Find or construct a query whose result grid deterministically places
-      that glyph beside color emoji on the same row, for a stable canary.
-- [ ] Add a `canary-gui-tilix.reel` (or extend `scripts/vte_canary/`) that
-      runs the real `emojig --tui` inside headless tilix and captures
-      `I mode=app`.
-- [ ] Decide leak-detection vs. row-length-measurement verification (see
-      "Proposed canary" above) and implement whichever is simpler once the
-      reel exists and a first raw screenshot can be inspected.
+- [x] Identify the exact codepoint under the cursor cell — 🫥 U+1FAE5
+      "dotted line face" (see "Confirmed reproduction" above).
+- [x] Find a deterministic query — `dotted` (see "Confirmed reproduction").
+- [x] Added 🫥 to `scripts/vte_canary`'s sentinel-color row grid and ran it
+      through `make canary-shots` — **did not reproduce** on either foot or
+      tilix in headless capture (see "Canary added, but does NOT reproduce").
+      Kept as a permanent regression guard regardless.
+- [ ] Get the reporting machine's tilix version + font details, or a fresh
+      `dotted`-query screenshot taken there, to distinguish
+      font/version-specific vs. real-app-rendering-specific vs.
+      misidentified-glyph (see the three explanations above).
+- [ ] If font/version-specific or real-app-specific: build the originally
+      proposed `canary-gui-tilix.reel` running the real `emojig --tui`
+      inside headless tilix with the `dotted` query, per "Proposed canary"
+      steps 1-2 (not yet done — the canary added so far is the standalone
+      `vte_canary` tool, not the real app).
 - [ ] Once reproduced and proven via canary, decide the actual fix's home:
       issue [54](54-width-correction-beyond-vte.md)'s per-terminal
       detection table, issue [55](55-cursor-query-width-measurement.md)'s

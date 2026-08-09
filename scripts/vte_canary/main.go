@@ -14,11 +14,18 @@ import (
 )
 
 // List of 4x4 test emojis containing standard emojis and BMP symbols.
+// Row 4 mixes color emoji with 🫥 "dotted line face" (U+1FAE5, Unicode 14.0,
+// 2021) — a real emoji-database entry (data/emoji.json) reported (issue 57,
+// 2026-08-09) to render pale/monochrome and mis-measure width in tilix,
+// producing a row shorter than the others. It's included directly in the
+// row-color sentinel grid (not the standalone synthetic set only) so
+// -verify-rows below can catch a real-glyph-triggered row-length mismatch,
+// not just the already-covered weather-symbol (U+1F324-1F329) class.
 var sampleEmojis = []string{
 	"🌧️", "🌦️", "🌈", "☔", // Row 1 (contains ☔ U+2614)
 	"☕", "⚡", "⚓", "⚽", // Row 2 (contains ☕ U+2615, ⚡ U+26A1, ⚓ U+2693, ⚽ U+26BD)
 	"⛄", "⛵", "⛺", "⛽", // Row 3 (contains ⛄ U+26C4, ⛵ U+26F5, ⛺ U+26FA, ⛽ U+26FD)
-	"✨", "❌", "❓", "🚀", // Row 4 (contains ✨ U+2728, ❌ U+274C, ❓ U+2753, 🚀 U+1F680)
+	"✨", "❌", "🫥", "🚀", // Row 4 (issue 57: 🫥 U+1FAE5 "dotted line face")
 }
 
 // canaryColors is the single source of truth for the row pattern colors:
