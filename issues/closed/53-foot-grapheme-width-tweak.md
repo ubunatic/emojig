@@ -4,24 +4,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 # 53 — foot may need `tweak.grapheme-width-method=double-width` set explicitly
 
-**Status: Reopened (2026-08-09)** — was briefly "Closed (Fixed)" earlier the
-same day after `--override=tweak.grapheme-width-method=double-width` was
-added to `spec/host.yaml`'s foot `args:` and all foot-based canary reels,
-verified via `make canary-gui` (leak + geometry PASS, both themes) and a
-manual GUI/TUI check. **Reopened** because issue
-[57](57-tilix-monochrome-mixed-row-length.md)'s canary work the same day
-found a concrete counter-example: `☺️` (U+263A + VS16, "smiling face")
-still renders width-1 (row-length short) on the installed foot 1.27.0 even
-with this tweak **and** its required companion
-`tweak.grapheme-shaping=yes` both set — see
-`scripts/vte_canary/canary-foot.reel` and its `-verify-rows` FAILED output
-in issue 57. The original fix and its verification only happened to
-exercise glyphs the tweak *does* cover; the true scope of what
-`grapheme-width-method` promotes on this foot version is not yet
-understood. The close-time `[colors]` deprecation-warning fix
-(`footSupportsColorThemeSections` in `src/host.zig`) is unaffected by this
-reopening and remains in place; issue
-[56](56-cache-foot-color-theme-probe.md) (probe caching) is also unaffected.
+**Status: Closed (Fixed)** — `--override=tweak.grapheme-width-method=double-width`
+(+ the required companion `tweak.grapheme-shaping=yes`) added to
+`spec/host.yaml`'s foot `args:` and all foot-based canary reels; verified via
+`make canary-gui` (leak + geometry PASS, both themes). The close-time
+`[colors]` deprecation-warning fix (`footSupportsColorThemeSections` in
+`src/host.zig`) is unaffected; issue
+[56](../56-cache-foot-color-theme-probe.md) (probe caching) is also
+unaffected.
+
+**Was briefly reopened, then re-closed, same day (2026-08-09)** — issue
+[57](../57-tilix-monochrome-mixed-row-length.md)'s headless canary (nested
+sway + Xvfb, `scripts/vte_canary`) showed `☺️` (U+263A + VS16, "smiling
+face") rendering width-1 (row-length short) even with both tweaks set, which
+looked like a counter-example to this fix. The user then directly checked
+the exact same query (`smili`) in their **real** `--gui` foot window and
+confirmed — with a screenshot, and explicit "I do not overlook such things
+visually" — that the row is correctly aligned there. Follow-up experiments
+(swapping the trailing glyph, removing the Twemoji font override) still
+showed the headless canary failing in exactly the same way regardless, which
+means the discrepancy is very likely a property of the **headless
+nested-sway/Xvfb capture harness itself** — not of foot's real width
+handling — matching the class of headless-rendering gotcha already
+documented in `../wayreel`/`../conreel`'s own research (nested sway forcing
+`WLR_RENDERER=pixman` software rendering, and separately, wayreel forcing
+windows to fixed pixel geometries independent of the terminal's own
+character-grid sizing — see `../wayreel/issues/01-gui-window-scaling.md`).
+**This fix stands as correct and verified on the real desktop.** The
+canary-environment discrepancy itself is tracked as a narrowed, re-scoped
+issue 57 — likely a wayreel/nested-sway problem, not an emojig one.
 
 ## Summary
 
@@ -142,16 +153,16 @@ consistency and would need to keep passing.
 - `docs/EnvironmentDetection.md §2`, "Grid size / GUI font" — the existing
   precedent for decoupling a spawned foot child from ambient
   config/env so behavior doesn't depend on the launching machine's state.
-- Issue 50 (`50-bg-color-leaking-in-gui.md`), 41
-  (`41-width-fit-and-cosmetic-recorder-gap.md`) — the PNG-pixel-measurement
+- Issue 50 (`../50-bg-color-leaking-in-gui.md`), 41
+  (`../41-width-fit-and-cosmetic-recorder-gap.md`) — the PNG-pixel-measurement
   proof pattern this issue's verification step followed.
-- Issue [54](54-width-correction-beyond-vte.md) — next up: reassess
+- Issue [54](../54-width-correction-beyond-vte.md) — next up: reassess
   whether the same VS16 gap or a ZWJ-clustering gap shows up on other
   `--gui` host terminals.
-- Issue [55](55-cursor-query-width-measurement.md) — the general
+- Issue [55](../55-cursor-query-width-measurement.md) — the general
   measure-don't-guess fallback, for whatever a static config/detection
   fix like this one doesn't cover.
-- Issue [56](56-cache-foot-color-theme-probe.md) — caches/defers the
+- Issue [56](../56-cache-foot-color-theme-probe.md) — caches/defers the
   `foot --check-config` color-theme dialect probe added while fixing this
   issue's close-time warning-flash bug, so it stops running synchronously
   on every `--gui` launch.

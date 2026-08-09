@@ -95,7 +95,7 @@ terminals that actually handle it fine.
 - `docs/EmojiWidthResearch.md` — full research this issue is derived from.
 - `docs/EnvironmentDetection.md §2` — current VTE/Tilix ZWJ workaround
   description.
-- Issue [53](53-foot-grapheme-width-tweak.md) — the narrower, already-
+- Issue [53](closed/53-foot-grapheme-width-tweak.md) — the narrower, already-
   actionable foot-specific config fix; do that one first.
 - Issue [55](55-cursor-query-width-measurement.md) — the more general
   "measure, don't guess" alternative to a per-terminal detection table.

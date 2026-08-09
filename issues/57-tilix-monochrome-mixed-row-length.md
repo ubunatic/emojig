@@ -2,15 +2,24 @@
 SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
-# 57 — VS16 promotion doesn't hold for every base codepoint: confirmed on foot AND tilix, not tilix-only
+# 57 — headless nested-sway canary shows a VS16 row-length defect that does NOT reproduce on the real desktop
 
-**Priority: P1** (upgraded 2026-08-09 — confirmed to reproduce on **foot
-too**, contradicting issue 53's "Closed (Fixed)" status; this is a general
-`getEmojiWidth()`-vs-real-terminal-rendering gap, not a tilix-only quirk)
+**Priority: P3** (downgraded 2026-08-09, final — the underlying bug this
+issue chased does not exist in real usage; what remains is a headless
+canary-environment reliability question, not a user-facing emojig bug)
 
-**Original title**: "tilix TUI: a grid row mixing color emoji and a
-monochrome glyph renders shorter than the others" — kept below for history;
-superseded by "Root cause confirmed" further down.
+**History of this issue's title/priority, most recent first** (kept for
+context — the investigation genuinely changed conclusions twice in one day,
+which is itself useful to a future reader):
+1. **Final**: headless-canary-only artifact (this revision).
+2. **P1, "VS16 promotion doesn't hold for every base codepoint: confirmed on
+   foot AND tilix, not tilix-only"** — believed real and general, based on a
+   headless canary that failed reproducibly across multiple confound tests.
+   **Retracted** after the user directly checked the real `--gui` foot
+   window with a screenshot and confirmed correct alignment.
+3. **Original**: "tilix TUI: a grid row mixing color emoji and a monochrome
+   glyph renders shorter than the others" — based on a screenshot and the
+   (later falsified) 🫥 hypothesis.
 
 ## Summary
 
@@ -242,57 +251,110 @@ override promotes ☺️ to width 2 on the installed foot 1.27.0. This means:
   (pre-🫥-hypothesis); it's not yet confirmed whether that observation
   extends to this specific pair.
 
+## Retracted — real desktop confirms correct alignment (2026-08-09, final)
+
+The user checked the exact pending question above directly: typed `smili`
+into their real `--gui` foot window (not headless), screenshotted all 3
+rows, and confirmed correct alignment — explicitly: *"If I say that 'all is
+well aligned in my GUI' you can trust me. I do not overlook such things
+visually."* That screenshot's row 1 contains `☺️` (position 6) among seven
+other emoji, all visibly evenly spaced, no shift.
+
+Before accepting that at face value I tried to find a measurement artifact
+that could reconcile it with the headless canary's repeated FAILED result,
+since a naive read would suggest the pixel measurement itself was wrong:
+
+- **Hypothesis: the trailing glyph's bitmap art covers background pixels
+  near the edge, making the row look short when it isn't.** Tested by
+  swapping the row's trailing `🚀` for a plain ASCII `8`. The deficit did
+  not shrink or disappear — it changed from 6px to 22px, but proportionally
+  stayed at **exactly one character cell** in both cases (image geometry
+  also shifted between the two runs, so raw pixel counts aren't directly
+  comparable — the *proportion* is what matters). **Ruled out.**
+- **Hypothesis: bitmap (Twemoji CBDT) vs. vector font selection changes the
+  outcome** (the user's own suggestion, pointing at `../wayreel`/`../conreel`
+  research). Tested by adding the real `--gui` launch's exact font fallback
+  chain (`monospace, Twitter Color Emoji, Twemoji, Noto Color Emoji,
+  OpenMoji, JoyPixels`) to the canary reel, vs. no font override at all
+  (foot's bare default resolution). The deficit persisted, unchanged in
+  proportion, in both cases. **Ruled out as a simple font-selection switch**
+  — though see below, this doesn't rule out headless rendering in general.
+
+Both attempts to find a measurement artifact failed — the headless
+capture's pixel measurement is internally consistent and repeatable. That
+means the discrepancy is real, but it lives in the **capture environment**,
+not in `getEmojiWidth()` or in foot's real width handling. The most likely
+explanation, per the user's pointer to today's `../wayreel`/`../conreel`
+research: nested sway (used by `wayreel record` for all headless captures in
+this project) forces `WLR_RENDERER=pixman` (CPU software rendering) and, per
+`../wayreel/issues/01-gui-window-scaling.md`, has a documented history of
+resizing spawned windows to fixed pixel geometries that don't necessarily
+match what the terminal itself would compute from its own character grid —
+a plausible mechanism for foot's *actual pixel-level glyph placement* to
+diverge from its *logical column accounting* specifically under this
+headless harness, without any bug in emojig or in foot's real-world
+behavior. **This has not been proven** — it's the most likely remaining
+explanation after two other hypotheses were directly tested and ruled out,
+not a confirmed root cause.
+
+**Bottom line**: issue 53's fix is correct and stays closed. `getEmojiWidth()`'s
+VS16-promotion assumption is not proven wrong — the evidence that seemed to
+show it wrong doesn't hold up against the real desktop. What's left open is
+a narrower, lower-stakes question: *why does `scripts/vte_canary`'s headless
+nested-sway capture show a row-length defect that doesn't exist on a real
+desktop?* That's a canary-reliability question (possibly worth reporting
+upstream to `../wayreel` if confirmed), not an emojig bug.
+
 ## Next steps
 
 - [x] ~~Identify the exact codepoint — 🫥~~ superseded: user's pasted text
-      pinned the real pair to ☺️/☺︎ (U+263A + VS16/VS15).
-- [x] ~~Canary with 🫥~~ superseded: dropped (≥U+1F000, always width-2
-      everywhere, never going to reproduce anything); replaced with ☺️/☺︎.
-- [x] Reproduced via canary — **FAILS on both foot and tilix**
+      pinned the pair to ☺️/☺︎ (U+263A + VS16/VS15) — this identification
+      still stands even though the row-length conclusion drawn from it
+      didn't.
+- [x] Reproduced a row-length defect via headless canary
       (`scripts/vte_canary/main.go` `knownIssueEmojis`, `-known-issue-57`
-      flag; see "Root cause confirmed" above). Not wired into the default
-      `make canary-shots`/`canary` gate to avoid a permanently red build —
-      promote it to `sampleEmojis` once fixed, to turn it into a real
-      regression guard.
-- [x] Root-caused in code: `src/search.zig` `getEmojiWidth()`'s
-      unconditional "VS16 present ⇒ width 2" rule doesn't check whether the
-      base codepoint is East-Asian-Wide; U+263A isn't, so per-codepoint
-      terminals (and, empirically, foot even with issue 53's tweaks) render
-      it as width 1.
-- [ ] Ask the user to confirm this exact `☺️`/`☺︎` row in their real foot
-      session (not just tilix) — canary evidence says it should also be
-      short there; needs human confirmation to close the loop.
-- [ ] Reopen or annotate issue [53](53-foot-grapheme-width-tweak.md)
-      — its "Closed (Fixed)" status is contradicted by this evidence for at
-      least this codepoint.
-- [ ] Root-cause *why* foot's `grapheme-width-method=double-width` +
-      `grapheme-shaping=yes` doesn't promote ☺️ specifically (foot source/
-      changelog reading, or systematic per-glyph probing across more VS16
-      pairs to find the actual boundary of what foot's tweak covers) — out
-      of scope for this pass.
-- [ ] Decide the actual fix's home once foot's behavior is understood:
-      a `getEmojiWidth()` correction (only assume width 2 for VS16 when the
-      base codepoint is already Wide-eligible, otherwise fall back to
-      issue [55](55-cursor-query-width-measurement.md)'s measure-don't-guess
-      approach), issue [54](54-width-correction-beyond-vte.md)'s
-      per-terminal table, or something foot-specific if the tweak turns out
-      to have a narrower scope than assumed.
+      flag) — **but retracted**: does not reproduce on the real desktop
+      (user-confirmed screenshot). Kept flag-gated (not in default
+      `sampleEmojis`/`make canary-shots`) as a live reproduction of the
+      canary-environment question below, not as a regression guard for a
+      real bug.
+- [x] Tested and ruled out two measurement-artifact hypotheses (trailing
+      glyph bitmap coverage; bitmap-vs-vector font selection) — see
+      "Retracted" above. Neither explains the canary/real-desktop gap.
+- [x] Confirmed issue [53](closed/53-foot-grapheme-width-tweak.md)'s fix is
+      correct and real; **not** reopening it.
+- [ ] Root-cause *why* `scripts/vte_canary`'s headless nested-sway/Xvfb
+      capture shows this defect when the real desktop doesn't. Leading
+      candidate per the user's pointer to today's `../wayreel`/`../conreel`
+      research: nested sway's forced `WLR_RENDERER=pixman` software
+      rendering, or wayreel's documented history of forcing spawned windows
+      to fixed pixel geometries independent of the terminal's own character
+      grid (`../wayreel/issues/01-gui-window-scaling.md`) — unconfirmed,
+      needs investigation in `../wayreel` itself, likely out of emojig's
+      scope.
+- [ ] If confirmed as a wayreel/nested-sway rendering issue: file it in
+      `../wayreel/issues/` instead, since it isn't emojig-specific — any
+      headless canary measuring real pixel geometry for VS16/grapheme
+      content could be equally affected.
+- [ ] Decide whether `scripts/vte_canary`'s pixel-based `-verify-rows`
+      technique should be trusted for *any* headless VS16/grapheme-width
+      check going forward, given it produced a confident, repeatable,
+      confound-tested false positive here.
 
 ## Related
 
 - Issue [51](51-vte-canary.md) — the existing VTE canary infra
-  (`scripts/vte_canary`, `-verify-rows`) this issue's canary should mirror
-  for the real app instead of the synthetic test pattern.
-- Issue [53](53-foot-grapheme-width-tweak.md) — its "Closed (Fixed)"
-  status is contradicted by this issue's canary evidence for ☺️/☺︎; needs
-  reopening or an annotation once foot's actual promotion scope is
-  understood.
-- Issue [54](54-width-correction-beyond-vte.md) — the general "extend
-  width correction beyond VTE" tracking issue; this confirmed root cause
-  (a `getEmojiWidth()` gap, not a tilix-specific quirk) may belong there
-  instead, or may need its own fix in `src/search.zig` directly.
-- Issue [55](55-cursor-query-width-measurement.md) — measure-don't-compute
-  fallback; relevant if this turns out to be a per-glyph font-fallback gap
-  rather than a systematic terminal-class quirk.
-- `docs/EmojiWidthResearch.md` — background research on VTE's width model.
-- `docs/HeadlessRecording.md §7` — tilix/GTK3 headless isolation pattern.
+  (`scripts/vte_canary`, `-verify-rows`) this issue exercised; its pixel
+  measurement technique produced a false positive here, worth keeping in
+  mind for future headless width canaries.
+- Issue [53](closed/53-foot-grapheme-width-tweak.md) — closed and confirmed
+  correct; this issue's investigation initially looked like a
+  counter-example but the counter-example didn't hold up against the real
+  desktop.
+- `../wayreel/issues/01-gui-window-scaling.md` — documented history of
+  wayreel forcing spawned terminal windows to fixed pixel geometries
+  independent of the terminal's own character-grid sizing; the leading
+  unconfirmed candidate explanation for this issue's canary/real-desktop
+  discrepancy.
+- `docs/EmojiWidthResearch.md` — background research on VTE's width model
+  (still valid background reading, independent of this issue's retraction).

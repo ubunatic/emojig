@@ -3,7 +3,7 @@
 
 REEL main
   mode = tui
-  terminal = ["foot", "--override=tweak.grapheme-shaping=yes", "--override=tweak.grapheme-width-method=double-width"]
+  terminal = ["foot", "--override=tweak.grapheme-shaping=yes", "--override=tweak.grapheme-width-method=double-width", "--override=font=monospace:size=14, Twitter Color Emoji:size=14, Twemoji:size=14, Noto Color Emoji:size=14, OpenMoji:size=14, JoyPixels:size=14"]
   terminal_startup_delay = 1s
   # Clear VTE_VERSION/TILIX_ID/TERMINAL so a developer's own VTE-based host
   # terminal (e.g. Tilix) can't leak through os.Environ() into this foot
