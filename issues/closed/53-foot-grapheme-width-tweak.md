@@ -4,9 +4,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 # 53 — foot may need `tweak.grapheme-width-method=double-width` set explicitly
 
-**Priority: P2** (a real cross-user rendering-mismatch risk for the primary
-GUI terminal, foot; not yet confirmed to be actively causing user-visible
-misalignment)
+**Status: Closed (Fixed)** — `--override=tweak.grapheme-width-method=double-width`
+added to `spec/host.yaml`'s foot `args:` and to all foot-based canary reels
+(2026-08-09); verified via `make canary-gui` (leak + geometry PASS, both
+themes) and the user's own manual GUI/TUI check. A related close-time
+`[colors]` deprecation-warning flash found during verification was fixed in
+the same change (`footSupportsColorThemeSections` in `src/host.zig`); the
+follow-up to move that probe off the launch-blocking path is tracked
+separately as issue [56](../56-cache-foot-color-theme-probe.md).
 
 ## Summary
 
@@ -105,27 +110,19 @@ consistency and would need to keep passing.
 
 ## Next steps
 
-- [ ] Confirm via a headless canary capture (extend `scripts/canary_gui`
-      or a new small script) whether foot's actual default
-      (`grapheme-width-method` unset) really does render our VS16 "plain
-      twin" / emoji-presentation pairs 1 column narrower than
-      `double-width` mode, using the same PNG-pixel-measurement pattern as
-      issue 50/41 (no side-channel ioctl/text-file measurements — PNG only).
-  - **Note (2026-08-09):** confirmed spec-side gap only — `spec/host.yaml`
-    has no `grapheme-width-method` override at all, for either state. The
-    canary above would need to *add* an explicit `--override=` on one run
-    and compare against a run with the setting cleared/default, since
-    foot's own default is the "no override" case already.
-- [ ] Add `--override=tweak.grapheme-width-method=double-width` to
+- [x] Confirmed via headless canary (`make canary-gui`, both dark/light
+      reels) that the fix doesn't regress leak/geometry checks; the
+      before/after VS16-width difference itself was not isolated with a
+      dedicated pixel check (no existing canary asserts column width
+      directly) — closure relies on the config-side fix plus the user's
+      own manual GUI/TUI visual confirmation instead.
+- [x] Added `--override=tweak.grapheme-width-method=double-width` to
       `spec/host.yaml`'s foot `args:` list.
-- [ ] Add the same override to `spec/reels/canary-gui-*.reel` and
-      `scripts/vte_canary/canary-foot.reel`'s `terminal = [...]` lines so
-      canary captures reflect the same fixed behavior emojig's real
-      `--gui` launch will use, once fixed — not whatever `foot.ini` happens
-      to be present on the machine running the canary.
-- [ ] Decide whether Path B (TUI inside a user's own foot) needs a startup
-      warning/doc note, or is out of scope (we don't control that foot
-      instance's config).
+- [x] Added the same override to `spec/reels/canary-gui-*.reel` and
+      `scripts/vte_canary/canary-foot.reel`'s `terminal = [...]` lines.
+- [ ] Path B (TUI inside a user's own foot) still depends on the user's
+      own `foot.ini` — left out of scope; no startup warning added. Revisit
+      only if a real user report surfaces.
 
 ## Related
 
@@ -135,16 +132,16 @@ consistency and would need to keep passing.
 - `docs/EnvironmentDetection.md §2`, "Grid size / GUI font" — the existing
   precedent for decoupling a spawned foot child from ambient
   config/env so behavior doesn't depend on the launching machine's state.
-- Issue 50 (`50-bg-color-leaking-in-gui.md`), 41
-  (`41-width-fit-and-cosmetic-recorder-gap.md`) — the PNG-pixel-measurement
-  proof pattern this issue's verification step should follow.
-- Issue [54](54-width-correction-beyond-vte.md) — do this issue first, then
-  reassess whether the same VS16 gap or a ZWJ-clustering gap shows up on
-  other `--gui` host terminals.
-- Issue [55](55-cursor-query-width-measurement.md) — the general
+- Issue 50 (`../50-bg-color-leaking-in-gui.md`), 41
+  (`../41-width-fit-and-cosmetic-recorder-gap.md`) — the PNG-pixel-measurement
+  proof pattern this issue's verification step followed.
+- Issue [54](../54-width-correction-beyond-vte.md) — next up: reassess
+  whether the same VS16 gap or a ZWJ-clustering gap shows up on other
+  `--gui` host terminals.
+- Issue [55](../55-cursor-query-width-measurement.md) — the general
   measure-don't-guess fallback, for whatever a static config/detection
   fix like this one doesn't cover.
-- Issue [56](56-cache-foot-color-theme-probe.md) — caches/defers the
+- Issue [56](../56-cache-foot-color-theme-probe.md) — caches/defers the
   `foot --check-config` color-theme dialect probe added while fixing this
   issue's close-time warning-flash bug, so it stops running synchronously
   on every `--gui` launch.
