@@ -13,19 +13,35 @@ import (
 	"unicode/utf8"
 )
 
-// List of 4x4 test emojis containing standard emojis and BMP symbols.
-// Row 4 mixes color emoji with 🫥 "dotted line face" (U+1FAE5, Unicode 14.0,
-// 2021) — a real emoji-database entry (data/emoji.json) reported (issue 57,
-// 2026-08-09) to render pale/monochrome and mis-measure width in tilix,
-// producing a row shorter than the others. It's included directly in the
-// row-color sentinel grid (not the standalone synthetic set only) so
-// -verify-rows below can catch a real-glyph-triggered row-length mismatch,
-// not just the already-covered weather-symbol (U+1F324-1F329) class.
+// List of 4x4 test emojis containing standard emojis and BMP symbols. Kept
+// as an all-passing baseline (see knownIssueEmojis below for the currently
+// broken case) so `make canary-shots`/`make canary` stay green as a build
+// gate — a canary that's permanently red for a known, not-yet-fixed issue
+// blocks unrelated work, same reasoning as issue 52 excluding ptyxis from
+// this target while keeping its reel file runnable standalone.
 var sampleEmojis = []string{
 	"🌧️", "🌦️", "🌈", "☔", // Row 1 (contains ☔ U+2614)
 	"☕", "⚡", "⚓", "⚽", // Row 2 (contains ☕ U+2615, ⚡ U+26A1, ⚓ U+2693, ⚽ U+26BD)
 	"⛄", "⛵", "⛺", "⛽", // Row 3 (contains ⛄ U+26C4, ⛵ U+26F5, ⛺ U+26FA, ⛽ U+26FD)
-	"✨", "❌", "🫥", "🚀", // Row 4 (issue 57: 🫥 U+1FAE5 "dotted line face")
+	"✨", "❌", "❓", "🚀", // Row 4 (contains ✨ U+2728, ❌ U+274C, ❓ U+2753, 🚀 U+1F680)
+}
+
+// knownIssueEmojis reproduces issue 57's confirmed root cause: ☺️
+// (U+263A + VS16, "smiling face") next to its ☺︎ VS15 "plain twin".
+// src/search.zig's getEmojiWidth() assumes any VS16 glyph is width 2
+// regardless of whether the base codepoint is East-Asian-Wide; U+263A
+// isn't, so per-codepoint-summation terminals (and, confirmed via this
+// exact grid, foot 1.27.0 even with issue 53's tweaks set) render it as
+// width 1 — one column short. Not wired into `-s`/`make canary-shots` (see
+// sampleEmojis above); run manually with `-known-issue-57` to reproduce,
+// or swap it into sampleEmojis and re-add it to the make target once
+// issue 53/57's underlying fix lands, to turn this into a real regression
+// guard.
+var knownIssueEmojis = []string{
+	"🌧️", "🌦️", "🌈", "☔",
+	"☕", "⚡", "⚓", "⚽",
+	"⛄", "⛵", "⛺", "⛽",
+	"✨", "☺️", "☺︎", "🚀", // issue 57: ☺️ U+263A+VS16 vs. its ☺︎ VS15 twin
 }
 
 // canaryColors is the single source of truth for the row pattern colors:
@@ -271,15 +287,16 @@ func verifyRowLengths(path string) (bool, string) {
 
 func main() {
 	var (
-		autoMode   bool
-		compensate bool
-		vs16Mode   bool
-		both       bool
-		silent     bool
-		verifyPath string
-		verifyRows string
-		cols       int
-		rows       int
+		autoMode     bool
+		compensate   bool
+		vs16Mode     bool
+		both         bool
+		silent       bool
+		verifyPath   string
+		verifyRows   string
+		cols         int
+		rows         int
+		knownIssue57 bool
 	)
 
 	flag.StringVar(&verifyPath, "verify", "", "Verify a wayreel crop_colors-cropped canary screenshot PNG contains all 4 test pattern colors")
@@ -306,7 +323,13 @@ func main() {
 	flag.IntVar(&rows, "rows", 4, "Number of grid rows")
 	flag.IntVar(&rows, "r", 4, "Alias for -rows")
 
+	flag.BoolVar(&knownIssue57, "known-issue-57", false, "Reproduce issue 57's confirmed row-length regression (swaps in knownIssueEmojis) instead of the passing default grid")
+
 	flag.Parse()
+
+	if knownIssue57 {
+		sampleEmojis = knownIssueEmojis
+	}
 
 	if verifyPath != "" || verifyRows != "" {
 		passed := true

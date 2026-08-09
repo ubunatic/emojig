@@ -121,7 +121,7 @@ already behave (e.g. `EMOJIG_COLS`/`EMOJIG_ROWS` resolution order in
 
 ## Related
 
-- Issue [53](closed/53-foot-grapheme-width-tweak.md) — where
+- Issue [53](53-foot-grapheme-width-tweak.md) — where
   `footSupportsColorThemeSections` was introduced (as a synchronous
   pre-spawn probe) to fix the close-time deprecation-warning flash.
 - `docs/EmojiWidthResearch.md` — the broader research thread this and

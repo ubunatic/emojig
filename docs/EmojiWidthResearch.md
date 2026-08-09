@@ -10,7 +10,7 @@ grid across `foot`, VTE-based terminals, and bare Linux VT consoles. Kept
 here to re-read before touching width/grapheme logic, alongside
 [`SearchEngine.md`](SearchEngine.md) (box-art/braille width classes) and
 [`EnvironmentDetection.md`](EnvironmentDetection.md) (terminal
-self-detection). Filed as issue [53](../issues/closed/53-foot-grapheme-width-tweak.md)
+self-detection). Filed as issue [53](../issues/53-foot-grapheme-width-tweak.md)
 for the one directly actionable finding (foot's `grapheme-width-method`).
 
 ## TL;DR
@@ -99,7 +99,7 @@ with the wider per-codepoint-summation camp.
   `--gui`, this is a config *we* control via `spec/host.yaml`'s foot `args:`
   list — currently unset there, meaning behavior silently depends on
   whatever the launching user's own `foot.ini` happens to contain. Filed as
-  [issue 53](../issues/closed/53-foot-grapheme-width-tweak.md).
+  [issue 53](../issues/53-foot-grapheme-width-tweak.md).
 - Links: [foot #1258](https://codeberg.org/dnkl/foot/issues/1258),
   [foot #782](https://codeberg.org/dnkl/foot/issues/782)
 
@@ -231,7 +231,7 @@ width-handling documentation to extract anything from.
   (not `double-width` unless the user's `foot.ini` opts in) means emojig's
   VS16-width assumptions may currently depend on the *user's* config for
   the `--gui` foot window we spawn ourselves — filed as
-  [issue 53](../issues/closed/53-foot-grapheme-width-tweak.md).
+  [issue 53](../issues/53-foot-grapheme-width-tweak.md).
 - **Longer-term idea, not urgent**: Mode 2027 (Ghostty/Contour/foot/WezTerm)
   and kitty/VTM's "declare geometry explicitly" family point toward
   terminal-queried or app-declared width instead of static heuristics —

@@ -2,11 +2,15 @@
 SPDX-FileCopyrightText: 2026 Uwe Jugel
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
-# 57 — tilix TUI: a grid row mixing color emoji and a monochrome glyph renders shorter than the others
+# 57 — VS16 promotion doesn't hold for every base codepoint: confirmed on foot AND tilix, not tilix-only
 
-**Priority: P2** (a real visible misalignment in a supported "Path B" host
-terminal — TUI run directly inside the user's own already-open terminal,
-per `docs/EnvironmentDetection.md §1.B` — not yet covered by any canary)
+**Priority: P1** (upgraded 2026-08-09 — confirmed to reproduce on **foot
+too**, contradicting issue 53's "Closed (Fixed)" status; this is a general
+`getEmojiWidth()`-vs-real-terminal-rendering gap, not a tilix-only quirk)
+
+**Original title**: "tilix TUI: a grid row mixing color emoji and a
+monochrome glyph renders shorter than the others" — kept below for history;
+superseded by "Root cause confirmed" further down.
 
 ## Summary
 
@@ -148,52 +152,145 @@ untested:
   screenshot but was not pixel-confirmed against the original report; it
   could be a different codepoint in that row.
 
-The canary addition itself is kept regardless (`scripts/vte_canary/main.go`
-`sampleEmojis`) — it's now a permanent regression guard mixing a real,
-recent-Unicode monochrome-appearing glyph with color emoji in one sentinel
-row, which is worth having even though it didn't reproduce this specific
-report.
+**Superseded** — see "Root cause confirmed" below: the actual glyph was
+pinned down from the user's own pasted terminal text, and the 🫥 canary
+addition described here was subsequently replaced (`knownIssueEmojis`, not
+`sampleEmojis` — 🫥 never reproduced anything, so it wasn't kept).
 
-**Next**: get the user's tilix version/font details, or a fresh screenshot
+**Next (superseded)**: get the user's tilix version/font details, or a fresh screenshot
 with the `dotted` query typed (isolating 🫥 to the grid's first cell) taken
 on the *actual* reporting machine, to narrow down which of the three
 explanations above is correct before building the real-app-in-tilix reel.
 
+## Root cause confirmed (2026-08-09, corrected) — reproduces on foot too
+
+The user posted the *actual* short row directly (pasted terminal text, not a
+screenshot): `😗  ☺️  ☺︎   😚  😙  🥲  😋  😛` — "one cell short". This is
+a different, more specific and testable pair than the 🫥 hypothesis above:
+**☺️ (U+263A + VS16, "smiling face") next to its ☺︎ VS15 "plain twin"**
+(the plain-twin derivation is documented in `AGENTS.md §5`).
+
+Reading `src/search.zig`'s `getEmojiWidth()`:
+```zig
+if (std.mem.indexOf(u8, emoji, "\xef\xb8\x8e") != null) return 1; // VS15
+if (std.mem.indexOf(u8, emoji, "\xef\xb8\x8f") != null) return 2; // VS16
+```
+**Any** glyph containing VS16 is assumed width 2, unconditionally — there is
+no check on whether the *base* codepoint is itself Unicode East-Asian-Wide.
+U+263A ("smiling face") is Neutral-width, not Wide. A per-codepoint-
+summation terminal (the whole VTE/Alacritty/kitty/tmux/xterm camp documented
+in `docs/EmojiWidthResearch.md`) computes width as
+`wcwidth(U+263A)=1 + wcwidth(VS16)=0 (zero-width formatting char) = 1`
+total — **not** the 2 emojig assumes. One column short, exactly matching the
+report. `☺︎` (the VS15 twin) is *not* expected to misbehave the same way:
+`getEmojiWidth` already returns 1 for it, and `src/main.zig`'s per-cell `w1`
+branch pads it with an extra space to fill the 4-column cell — correct as
+long as the terminal also treats VS15 as zero-width, which per-codepoint
+terminals generally do.
+
+**Canary proof — reproduced via `scripts/vte_canary`'s sentinel row grid**
+(the 🫥 experiment is dropped: U+1FAE5 is ≥U+1F000 and therefore
+unconditionally width-2 in `getEmojiWidth`'s first check, and apparently
+always-Wide in every terminal tested, so it was never going to reproduce
+anything). Reproduce with:
+
+```
+go build -o /tmp/vte_canary_bin scripts/vte_canary/main.go
+wayreel record --no-video scripts/vte_canary/canary-foot.reel    # or canary-tilix.reel
+/tmp/vte_canary_bin -known-issue-57 -verify-rows scripts/vte_canary/shots/canary-foot.png
+```
+
+```
+FAILED: row length mismatch — yellow (right edge x=97, 6px short of x=103)   [foot]
+FAILED: row length mismatch — yellow (right edge x=135, 18px short of x=153) [tilix]
+```
+
+The `☺️`/`☺︎` pair lives in `knownIssueEmojis` (`scripts/vte_canary/main.go`),
+gated behind the `-known-issue-57` flag rather than the default
+`sampleEmojis` grid `-s`/`make canary-shots` uses — a canary that's
+permanently red for a known, unfixed issue blocks unrelated build/CI work,
+so it's kept runnable on demand instead (same reasoning as issue 52
+excluding ptyxis from the `canary-shots` make target while keeping its
+`.reel` file). Swap `knownIssueEmojis` into `sampleEmojis` (and re-add the
+row to whatever verifies by default) once the underlying fix lands, turning
+this into a permanent regression guard.
+
+**Both foot and tilix fail** — including foot, with `scripts/vte_canary/canary-foot.reel`
+already carrying issue 53's `tweak.grapheme-width-method=double-width`
+**and** the companion `tweak.grapheme-shaping=yes` (added during this same
+investigation — foot's tweak only takes effect when shaping is on). Neither
+override promotes ☺️ to width 2 on the installed foot 1.27.0. This means:
+
+- **Issue 53's "Closed (Fixed)" status is too broad.** Its fix and
+  verification (headless canary + user's own manual check) both happened to
+  exercise only the picker's actual top-ranked default results, which never
+  included a VS16 pair on a Neutral-width BMP base codepoint. The tweak does
+  fix *some* presentation-selector emoji (confirmed by issue 53's own
+  research, e.g. 🖐️/🖥️-class glyphs), but not this one — foot's own
+  promotion heuristic apparently doesn't treat every VS16 pair the same way
+  `getEmojiWidth` does. **Not yet root-caused why** — needs either foot
+  source/changelog reading or systematic per-glyph probing, out of scope for
+  this pass.
+- **This is not tilix-specific at all.** The original issue title/framing
+  (tilix-only bug) was wrong. It's a mismatch between `getEmojiWidth()`'s
+  blanket "VS16 present ⇒ width 2" rule and what real terminals (including
+  the one issue 53 specifically patched) actually render for at least this
+  codepoint.
+- **Awaiting user confirmation**: does this exact `☺️`/`☺︎` row also render
+  short in the user's real **foot** session (not just tilix)? The user's
+  original "looks fine in foot" comment was about a *different* row/glyph
+  (pre-🫥-hypothesis); it's not yet confirmed whether that observation
+  extends to this specific pair.
+
 ## Next steps
 
-- [x] Identify the exact codepoint under the cursor cell — 🫥 U+1FAE5
-      "dotted line face" (see "Confirmed reproduction" above).
-- [x] Find a deterministic query — `dotted` (see "Confirmed reproduction").
-- [x] Added 🫥 to `scripts/vte_canary`'s sentinel-color row grid and ran it
-      through `make canary-shots` — **did not reproduce** on either foot or
-      tilix in headless capture (see "Canary added, but does NOT reproduce").
-      Kept as a permanent regression guard regardless.
-- [ ] Get the reporting machine's tilix version + font details, or a fresh
-      `dotted`-query screenshot taken there, to distinguish
-      font/version-specific vs. real-app-rendering-specific vs.
-      misidentified-glyph (see the three explanations above).
-- [ ] If font/version-specific or real-app-specific: build the originally
-      proposed `canary-gui-tilix.reel` running the real `emojig --tui`
-      inside headless tilix with the `dotted` query, per "Proposed canary"
-      steps 1-2 (not yet done — the canary added so far is the standalone
-      `vte_canary` tool, not the real app).
-- [ ] Once reproduced and proven via canary, decide the actual fix's home:
-      issue [54](54-width-correction-beyond-vte.md)'s per-terminal
-      detection table, issue [55](55-cursor-query-width-measurement.md)'s
-      measurement fallback, or a new font-fallback-aware width class.
+- [x] ~~Identify the exact codepoint — 🫥~~ superseded: user's pasted text
+      pinned the real pair to ☺️/☺︎ (U+263A + VS16/VS15).
+- [x] ~~Canary with 🫥~~ superseded: dropped (≥U+1F000, always width-2
+      everywhere, never going to reproduce anything); replaced with ☺️/☺︎.
+- [x] Reproduced via canary — **FAILS on both foot and tilix**
+      (`scripts/vte_canary/main.go` `knownIssueEmojis`, `-known-issue-57`
+      flag; see "Root cause confirmed" above). Not wired into the default
+      `make canary-shots`/`canary` gate to avoid a permanently red build —
+      promote it to `sampleEmojis` once fixed, to turn it into a real
+      regression guard.
+- [x] Root-caused in code: `src/search.zig` `getEmojiWidth()`'s
+      unconditional "VS16 present ⇒ width 2" rule doesn't check whether the
+      base codepoint is East-Asian-Wide; U+263A isn't, so per-codepoint
+      terminals (and, empirically, foot even with issue 53's tweaks) render
+      it as width 1.
+- [ ] Ask the user to confirm this exact `☺️`/`☺︎` row in their real foot
+      session (not just tilix) — canary evidence says it should also be
+      short there; needs human confirmation to close the loop.
+- [ ] Reopen or annotate issue [53](53-foot-grapheme-width-tweak.md)
+      — its "Closed (Fixed)" status is contradicted by this evidence for at
+      least this codepoint.
+- [ ] Root-cause *why* foot's `grapheme-width-method=double-width` +
+      `grapheme-shaping=yes` doesn't promote ☺️ specifically (foot source/
+      changelog reading, or systematic per-glyph probing across more VS16
+      pairs to find the actual boundary of what foot's tweak covers) — out
+      of scope for this pass.
+- [ ] Decide the actual fix's home once foot's behavior is understood:
+      a `getEmojiWidth()` correction (only assume width 2 for VS16 when the
+      base codepoint is already Wide-eligible, otherwise fall back to
+      issue [55](55-cursor-query-width-measurement.md)'s measure-don't-guess
+      approach), issue [54](54-width-correction-beyond-vte.md)'s
+      per-terminal table, or something foot-specific if the tweak turns out
+      to have a narrower scope than assumed.
 
 ## Related
 
 - Issue [51](51-vte-canary.md) — the existing VTE canary infra
   (`scripts/vte_canary`, `-verify-rows`) this issue's canary should mirror
   for the real app instead of the synthetic test pattern.
-- Issue [53](closed/53-foot-grapheme-width-tweak.md) — fixed the equivalent
-  width-assumption gap for foot; this issue is the same class of bug for
-  tilix, where there's no equivalent config override to pin.
+- Issue [53](53-foot-grapheme-width-tweak.md) — its "Closed (Fixed)"
+  status is contradicted by this issue's canary evidence for ☺️/☺︎; needs
+  reopening or an annotation once foot's actual promotion scope is
+  understood.
 - Issue [54](54-width-correction-beyond-vte.md) — the general "extend
-  width correction beyond VTE" tracking issue; this bug may end up as a
-  concrete reproduction case for it, or may turn out to be font-coverage
-  specific rather than a systematic VTE per-codepoint-summation issue.
+  width correction beyond VTE" tracking issue; this confirmed root cause
+  (a `getEmojiWidth()` gap, not a tilix-specific quirk) may belong there
+  instead, or may need its own fix in `src/search.zig` directly.
 - Issue [55](55-cursor-query-width-measurement.md) — measure-don't-compute
   fallback; relevant if this turns out to be a per-glyph font-fallback gap
   rather than a systematic terminal-class quirk.

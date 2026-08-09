@@ -89,6 +89,6 @@ predict, it observes.
   sections; full research this issue is derived from.
 - `src/term.zig` `detectSystemTheme` — existing OSC-query precedent to
   reuse for timeout/parsing/fallback structure.
-- Issue [53](closed/53-foot-grapheme-width-tweak.md), [54](54-width-correction-beyond-vte.md) —
+- Issue [53](53-foot-grapheme-width-tweak.md), [54](54-width-correction-beyond-vte.md) —
   smaller, more targeted fixes to do first; this issue is the fallback for
   whatever they don't cover.
