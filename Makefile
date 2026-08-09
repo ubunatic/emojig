@@ -197,6 +197,33 @@ canary-shots: ⚙️ wayreel-install  # capture and verify VTE canary color-grid
 	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-foot.png
 	/tmp/vte_canary_bin -verify scripts/vte_canary/shots/canary-tilix.png
 
+# Recorded-good pixel size for spec/reels/canary-gui-{dark,light}.reel at
+# their pinned grid (EMOJIG_COLS=12 EMOJIG_ROWS=10) and --hidpi (2x output
+# scale, for a legible proof frame — a raw font-size override was tried and
+# rejected: fontconfig substitution in the nested sway/Xvfb session made cell
+# pixel size barely track the requested point size, sometimes shrinking it):
+# the ground truth from an inspected-good capture, not an assumed font-metric
+# formula (docs/Canary.md). Re-measure and update both if the reel's grid or
+# --hidpi setting intentionally changes.
+CANARY_GUI_WIDTH := 892
+CANARY_GUI_HEIGHT := 604
+
+canary-gui: ⚙️ wayreel-install gen-spec build  # capture and verify emojig --gui visual background leak and geometry proofs (Issues 50 & 41), all PNG-based
+	@go build -o /tmp/canary_gui_bin scripts/canary_gui/main.go
+	/tmp/canary_gui_bin -self-test
+	timeout 30s $(WAYREEL) record --no-video --hidpi spec/reels/canary-gui-dark.reel < /dev/null
+	timeout 30s $(WAYREEL) record --no-video --hidpi spec/reels/canary-gui-light.reel < /dev/null
+	/tmp/canary_gui_bin -verify-leak scripts/vte_canary/shots/canary-gui-dark.png
+	/tmp/canary_gui_bin -verify-leak scripts/vte_canary/shots/canary-gui-light.png
+	/tmp/canary_gui_bin -verify-geom scripts/vte_canary/shots/canary-gui-dark.png -expect-width $(CANARY_GUI_WIDTH) -expect-height $(CANARY_GUI_HEIGHT)
+	/tmp/canary_gui_bin -verify-geom scripts/vte_canary/shots/canary-gui-light.png -expect-width $(CANARY_GUI_WIDTH) -expect-height $(CANARY_GUI_HEIGHT)
+	@echo "--- Proof Frame Preview (Dark Theme) ---"
+	@cati -w 60 scripts/vte_canary/shots/canary-gui-dark.png
+	@echo "--- Proof Frame Preview (Light Theme) ---"
+	@cati -w 60 scripts/vte_canary/shots/canary-gui-light.png
+
+canary: ⚙️ canary-shots canary-gui  # run all headless canary checks (VTE grid + GUI proof)
+
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \

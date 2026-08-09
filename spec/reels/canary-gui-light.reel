@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+REEL main
+  mode = tui
+  terminal = ["foot", "--app-id=emojig-picker", "--override=colors.background=ff00ff", "--override=colors-dark.background=ff00ff", "-W", "49x16"]
+  terminal_startup_delay = 500ms
+  env = ["EMOJIG_TERMINAL=foot", "EMOJIG_COLS=12", "EMOJIG_ROWS=10"]
+  build = ["zig", "build", "-Doptimize=ReleaseSmall"]
+
+  $ "exec zig-out/bin/emojig --tui --alt-screen --theme light"
+  P 500ms
+  T compu desc="search query" speed=0.4
+  P 500ms
+  I mode=app path="scripts/vte_canary/shots/canary-gui-light.png" desc=canary-gui-light
+  X
