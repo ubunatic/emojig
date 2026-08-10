@@ -242,7 +242,7 @@ width-handling documentation to extract anything from.
   rendering, font/width mismatches) was found; no evidence our
   `VTE_VERSION`/`TILIX_ID` signal is stale or needs replacing.
 
-## `scripts/canary_font.zig` — isolating font *alignment* from everything else
+## `scripts/canary_font.zig` / `scripts/canary_font/` — isolating font *alignment* from everything else
 
 Issue 57's investigation (see the "Retracted" section in
 [`../issues/57-tilix-monochrome-mixed-row-length.md`](../issues/57-tilix-monochrome-mixed-row-length.md))
@@ -274,12 +274,75 @@ everything else:
 - Bakes a small metadata label into every rendered image itself (detected
   terminal emulator, `$TERM`, session type/desktop — e.g. `term=tilix
   TERM=xterm-256color session=wayland/GNOME`), and writes a companion
-  `<out>.env.txt` with a fuller env-var dump (`WAYLAND_DISPLAY`,
-  `XDG_SESSION_TYPE`, `VTE_VERSION`/`TILIX_ID`/`KONSOLE_VERSION`/etc.) —
-  so a PNG saved or shared elsewhere still carries which host and
-  terminal it came from, which matters once you're comparing renders
-  across machines.
+  `<out>.env.txt` with a fuller env-var dump — so a PNG saved or shared
+  elsewhere still carries which host and terminal it came from, which
+  matters once you're comparing renders across machines.
+- `-unset=A,B,C` unsets specific env vars (via libc `unsetenv`) *before*
+  rendering, so a run can isolate whether one specific font-stack var is
+  actually responsible for a difference, rather than just noting its
+  presence in the dump. Both canaries share the same env-var list, chosen
+  by websearching fontconfig/FreeType/Pango's own docs for vars that can
+  change glyph metrics or font selection (not just debug/logging vars like
+  `FC_DEBUG`, which don't affect rendering and were left out):
+  `FREETYPE_PROPERTIES` (hinting/interpreter-version/warping — directly
+  changes advance widths, see the FreeType properties reference),
+  `FONTCONFIG_PATH`/`FONTCONFIG_FILE`/`FONTCONFIG_SYSROOT` (override which
+  config/fonts are matched at all), `FC_LANG` (overrides the language used
+  for font matching, can pick a different fallback font), and
+  `PANGOCAIRO_BACKEND` (`fc`/`win32`/`coretext` — switches Pango's font
+  backend entirely). `LC_ALL`/`LANG` were already tracked.
 
-Usage: `make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"` (or
-`zig run scripts/canary_font.zig -lc -- -help` for the full flag list).
-Manual/on-demand only — not part of `make canary`.
+There are **two independent implementations**, deliberately built with
+different tech stacks so a rendering discrepancy can be attributed to one
+implementation's binding code rather than to the font stack itself:
+
+- `scripts/canary_font.zig` — Zig, dlopens `libcairo`/`libpango-1.0`/
+  `libpangocairo-1.0` directly via hand-written `extern fn` pointers (the
+  same low-level approach `scripts/canary_gui.zig` uses for Wayland).
+- `scripts/canary_font/main.go` — Go, same dlopen approach via cgo (`go
+  run ./scripts/canary_font`), chosen over a normal `pkg-config`/`-lpango`
+  cgo link because this host only has the runtime `.so.0` libraries
+  installed, not the `-dev` packages' unversioned symlinks/headers that
+  linking would need — dlopen-by-SONAME needs neither.
+
+In testing here, both produced visually identical output for the same
+`-font`/`-text` (as expected — both ultimately call the same Cairo/Pango
+libraries), which is itself a useful negative result: it means Zig's
+manual dlopen binding isn't introducing its own alignment artifacts
+relative to Go's cgo-mediated calls.
+
+Building `-unset` surfaced a real tech-stack difference, though — not in
+rendering, but in each runtime's own env-var handling:
+
+- **Zig 0.16**: calling libc's `unsetenv()` directly desyncs Zig's own
+  cached `environ` view (`std.Io.Threaded.environ`) from libc's. The
+  *next* `std.process.spawn` (this canary's `mkdir -p`) then segfaults
+  building the child's env block from dangling pointers into memory glibc
+  already freed when it reallocated `environ`. Separately, `std.debug.print`
+  lazily scans `environ` on its first call to locate self debug-info
+  search paths, and panics if a var like `LANG` is missing — which then
+  *deadlocks* trying to print that very panic (the handler recurses into
+  the same lazy-init path and re-locks its own mutex). Both are worked
+  around by doing the one `std.process.spawn` and one warm-up
+  `std.debug.print` *before* any `-unset` unsetenv call, while `environ`
+  is still what Zig's runtime expects it to be.
+- **Go**: `os.Unsetenv` had no such issue — Go tracks its own environment
+  copy consistently and never hands a raw pointer into it to child
+  processes the way the segfault above required.
+
+This isn't a font-rendering finding, but it's exactly the kind of
+tech-stack-specific fragility this comparison was meant to surface, and
+it's a real correctness gotcha for any Zig 0.16 program that both spawns
+children and mutates its own environment at runtime — worth remembering
+independent of this canary.
+
+Usage: `make canary-font FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES`
+(Zig) or `make canary-font-go FONT=... TEXT=... UNSET=...` (Go) — or run
+either `-help` flag for the full list. Manual/on-demand only — not part of
+`make canary`.
+
+Sources for the env-var research above:
+- [FreeType driver properties reference](http://freetype.org/freetype2/docs/reference/ft2-properties.html)
+- [fontconfig-user.txt (servo/libfontconfig mirror)](https://github.com/servo/libfontconfig/blob/master/doc/fontconfig-user.txt)
+- [fonts.conf(5) manpage](https://manpages.debian.org/unstable/fontconfig-config/fonts-conf.5.en.html)
+- [PangoCairo.FontMap docs (PANGOCAIRO_BACKEND)](https://lazka.github.io/pgi-docs/PangoCairo-1.0/classes/FontMap.html)

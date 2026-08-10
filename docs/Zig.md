@@ -138,3 +138,37 @@ const scale10 = int_part * 10 + frac; // e.g. 11 for 1.1
 ```
 
 Reference: `src/host.zig:detectCsdSize`.
+
+---
+
+## 8. Calling libc `unsetenv()` desyncs `std.process.spawn`'s own `environ` cache
+
+`std.Io.Threaded` (the default `Io` implementation) keeps its own cached
+view of `environ` for building a spawned child's env block. Calling libc's
+`unsetenv()` directly (e.g. via `extern "c" fn unsetenv(...)`) mutates
+libc's copy only — glibc's `unsetenv` can reallocate/free its backing
+array — and Zig's cache is left holding dangling pointers into memory
+that's now been freed. The **next** `std.process.spawn` call then
+segfaults inside `Environ.createPosixBlock` reading a freed pointer.
+
+Separately, `std.debug.print`'s *first* call in a process lazily scans
+`environ` to locate self debug-info search paths (for pretty stack
+traces), and that scan can **panic** if a var like `LANG` is absent —
+which then **deadlocks**, because the panic handler's own attempt to
+print the panic message recurses into the same lazy-init path and
+re-locks a mutex it's already holding.
+
+Both are avoided by doing every `std.process.spawn` call and one warm-up
+`std.debug.print("", .{})` **before** any `unsetenv()` call, while
+`environ` still matches what Zig's runtime cached at startup:
+
+```zig
+runIgnoring(io, &[_][]const u8{ "mkdir", "-p", dir }); // spawn, before unsetenv
+std.debug.print("", .{}); // force the lazy environ scan, before unsetenv
+applyUnset(alloc, args.unset); // now safe to call libc unsetenv()
+```
+
+Reference: `scripts/canary_font.zig` (`-unset=` flag); Go's `os.Unsetenv`
+has no equivalent issue since Go maintains its own environment
+consistently — see docs/EmojiWidthResearch.md's canary_font section for
+the full repro.

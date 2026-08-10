@@ -228,8 +228,12 @@ canary: ⚙️ canary-shots canary-gui  # run all headless canary checks (VTE gr
 
 FONT ?= monospace
 TEXT ?= abc ABC 123 ☺️ ☺︎ 😀 🚀
-canary-font: ⚙️  # manual font-alignment research: renders TEXT with FONT offscreen via Cairo/Pango and saves a PNG + env dump — NOT part of `make canary`; usage: make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"
-	zig run scripts/canary_font.zig -lc -- -font="$(FONT)" -text="$(TEXT)"
+UNSET ?=
+canary-font: ⚙️  # manual font-alignment research (Zig+dlopen): renders TEXT with FONT offscreen via Cairo/Pango and saves a PNG + env dump — NOT part of `make canary`; usage: make canary-font FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
+	zig run scripts/canary_font.zig -lc -- -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
+
+canary-font-go: ⚙️  # same as canary-font but Go+cgo/dlopen instead of Zig+dlopen, for cross-tech-stack comparison — usage: make canary-font-go FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
+	go run ./scripts/canary_font -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."

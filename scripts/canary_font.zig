@@ -21,11 +21,18 @@
 //! (detected terminal emulator, $TERM, session type/desktop) so a PNG
 //! saved or shared elsewhere still carries which host/terminal it came
 //! from, and writes a companion `<out>.env.txt` with the fuller env dump.
+//! `-unset=A,B,C` unsets specific env vars before rendering, to isolate
+//! whether one of them (see the font-stack vars in the dump list) is
+//! actually responsible for a difference.
 //!
 //! This isolates one variable at a time: is a font-alignment discrepancy
 //! (e.g. issue 57's headless-canary-only VS16 width defect) a property of
 //! foot, of the headless nested-sway/Xvfb capture harness, or of the font
 //! stack itself? Run this on any host and compare.
+//!
+//! See also `scripts/canary_font/main.go` — same behavior, built with Go+cgo
+//! instead of Zig+dlopen, so a discrepancy can be attributed to one
+//! implementation's binding code rather than to the font stack itself.
 //!
 //! Usage: zig run scripts/canary_font.zig -lc -- [-font=NAME] [-text=STR] ...
 //! Run `zig run scripts/canary_font.zig -lc -- -help` for the full flag list.
@@ -112,8 +119,29 @@ const Args = struct {
     bg: [3]f64 = .{ 0.12, 0.12, 0.14 },
     fg: [3]f64 = .{ 0.92, 0.92, 0.90 },
     out: ?[]const u8 = null,
+    unset: []const u8 = "",
     help: bool = false,
 };
+
+// Not declared in std.c — call the libc symbol directly (same dlopen-free
+// approach as any other libc function this file uses through std.c).
+extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+
+/// Unsets each comma-separated name in `-unset=...` before any rendering
+/// happens, so a run can isolate whether a specific font-stack env var
+/// (fontconfig/FreeType/Pango — see docs/EmojiWidthResearch.md) is actually
+/// responsible for an alignment difference, rather than guessing from
+/// presence/absence alone.
+fn applyUnset(alloc: std.mem.Allocator, spec: []const u8) void {
+    var it = std.mem.splitScalar(u8, spec, ',');
+    while (it.next()) |raw| {
+        const name = std.mem.trim(u8, raw, " \t");
+        if (name.len == 0) continue;
+        const name_z = alloc.dupeZ(u8, name) catch continue;
+        _ = unsetenv(name_z);
+        std.debug.print("canary_font: unset {s}\n", .{name});
+    }
+}
 
 fn hexToUnit(hex: []const u8) f64 {
     const v = std.fmt.parseInt(u16, hex, 16) catch return 0;
@@ -146,6 +174,8 @@ fn parseArgs(init: std.process.Init) Args {
             a.fg = parseColor(arg["-fg=".len..]);
         } else if (std.mem.startsWith(u8, arg, "-out=")) {
             a.out = arg["-out=".len..];
+        } else if (std.mem.startsWith(u8, arg, "-unset=")) {
+            a.unset = arg["-unset=".len..];
         }
     }
     return a;
@@ -172,6 +202,9 @@ fn printHelp() void {
         \\  -bg=RRGGBB     background hex color (default: 1e1e24)
         \\  -fg=RRGGBB     text hex color (default: eaeae6)
         \\  -out=PATH      output PNG path (default: scripts/canary_font/shots/<font>.png)
+        \\  -unset=A,B,C   unset these env vars before rendering (e.g. to test
+        \\                 whether FREETYPE_PROPERTIES/FONTCONFIG_FILE/etc. is
+        \\                 responsible for an alignment difference)
         \\
         \\Manual/on-demand only — not part of `make canary`. See
         \\docs/EmojiWidthResearch.md.
@@ -257,6 +290,13 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
         \\GDK_BACKEND={s}
         \\QT_QPA_PLATFORM={s}
         \\LANG={s}
+        \\LC_ALL={s}
+        \\FREETYPE_PROPERTIES={s}
+        \\FONTCONFIG_PATH={s}
+        \\FONTCONFIG_FILE={s}
+        \\FONTCONFIG_SYSROOT={s}
+        \\FC_LANG={s}
+        \\PANGOCAIRO_BACKEND={s}
         \\VTE_VERSION={s}
         \\TILIX_ID={s}
         \\KONSOLE_VERSION={s}
@@ -282,6 +322,13 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
         envOr("GDK_BACKEND"),
         envOr("QT_QPA_PLATFORM"),
         envOr("LANG"),
+        envOr("LC_ALL"),
+        envOr("FREETYPE_PROPERTIES"),
+        envOr("FONTCONFIG_PATH"),
+        envOr("FONTCONFIG_FILE"),
+        envOr("FONTCONFIG_SYSROOT"),
+        envOr("FC_LANG"),
+        envOr("PANGOCAIRO_BACKEND"),
         envOr("VTE_VERSION"),
         envOr("TILIX_ID"),
         envOr("KONSOLE_VERSION"),
@@ -313,7 +360,22 @@ pub fn main(init: std.process.Init) !void {
         const safe_font = try sanitizeForFilename(alloc, args.font);
         break :blk try std.fmt.allocPrint(alloc, "scripts/canary_font/shots/{s}.png", .{safe_font});
     };
+    // The one and only std.process.spawn in this program must run *before*
+    // -unset: Zig 0.16's spawn path builds the child's env block from its
+    // own cached view of `environ` (`Io.Threaded.environ`), which is a
+    // separate copy from libc's — calling libc's `unsetenv()` (below)
+    // mutates libc's copy only, desyncing the two, and a later spawn then
+    // segfaults reading dangling pointers into memory glibc already freed.
     runIgnoring(io, &[_][]const u8{ "mkdir", "-p", std.fs.path.dirname(out_path) orelse "." });
+
+    // Also run before -unset for a related reason: std.debug.print lazily
+    // scans `environ` on its *first* call, to locate self debug-info
+    // search paths for pretty stack traces — and that scan panics if
+    // certain env vars are absent (e.g. LANG), which then deadlocks trying
+    // to print the panic itself (the panic handler recurses into the same
+    // lazy-init path and self-deadlocks on its own mutex).
+    std.debug.print("", .{});
+    applyUnset(alloc, args.unset);
 
     // Baked into the image itself (not just the filename) so a PNG
     // saved/renamed/shared elsewhere still carries which terminal emulator
