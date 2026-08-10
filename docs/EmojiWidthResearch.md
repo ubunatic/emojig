@@ -268,10 +268,26 @@ or capture-harness artifact":
   `org.gnome.Shell.Screenshot.ScreenshotWindow` over D-Bus on GNOME/Mutter
   (grim has no `wlr-screencopy` to talk to there) — and saves a pre-cropped
   PNG to `scripts/canary_font/shots/`.
-- Falls back to dumping its own pre-composite SHM buffer, clearly labeled
-  `OFFLINE RENDER ONLY`, if neither capture path is available (e.g. run
-  from a sandboxed/CI shell instead of the real logged-in session — GNOME
-  Shell's D-Bus screenshot methods return `AccessDenied` there).
+- Always *additionally* saves its own pre-composite SHM buffer as
+  `<out>.rendered.png` — this half is fully deterministic (Cairo/Pango/
+  fontconfig/FreeType finish rendering before Wayland ever sees the
+  buffer, and presentation doesn't re-rasterize it), so it's safe to trust
+  for pure font-rendering comparisons even without a working screenshot
+  path. Diffing it against the real screenshot isolates compositor-level
+  presentation effects (fractional-scale upscaling, colour management)
+  specifically. If neither real capture path is available, that same
+  buffer is written to `<out>` too, clearly labeled `OFFLINE RENDER ONLY`
+  at runtime (e.g. run from a sandboxed/CI shell instead of the real
+  logged-in session — GNOME Shell's D-Bus screenshot methods return
+  `AccessDenied` there).
+- Bakes a small metadata label into every rendered image itself (detected
+  terminal emulator, `$TERM`, session type/desktop — e.g. `term=tilix
+  TERM=xterm-256color session=wayland/GNOME`), and writes a companion
+  `<out>.env.txt` with a fuller env-var dump (`WAYLAND_DISPLAY`,
+  `XDG_SESSION_TYPE`, `VTE_VERSION`/`TILIX_ID`/`KONSOLE_VERSION`/etc.) —
+  so a screenshot saved or shared elsewhere still carries which host and
+  terminal it came from, which matters once you're comparing renders
+  across machines.
 
 Usage: `make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"` (or
 `zig run scripts/canary_font.zig -lc -- -help` for the full flag list).

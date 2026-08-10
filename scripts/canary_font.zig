@@ -20,9 +20,19 @@
 //!     logged-in session — a sandboxed/CI D-Bus connection gets
 //!     AccessDenied, which is fine, since this canary is manual/on-host use
 //!     only.
-//! If neither works, it falls back to dumping its own pre-composite SHM
-//! buffer, clearly labeled — that dump proves nothing about compositor-
-//! level rendering, only about the Cairo/Pango/fontconfig stack itself.
+//! Its own pre-composite SHM buffer is *always* additionally saved as
+//! `<out>.rendered.png` — that half is fully deterministic (Cairo/Pango/
+//! fontconfig/FreeType finish before Wayland ever sees it) so it's safe to
+//! rely on for pure font-rendering comparisons; diffing it against the real
+//! screenshot isolates compositor-level presentation effects specifically.
+//! If no real screenshot path is available, that same buffer is written to
+//! `<out>` too (clearly labeled at runtime) so a bare invocation still
+//! produces *a* PNG, just not a validated on-screen capture.
+//!
+//! Every render bakes a small metadata label into the image itself
+//! (detected terminal emulator, $TERM, session type/desktop) so a PNG
+//! saved or shared elsewhere still carries which host/terminal it came
+//! from, and writes a companion `<out>.env.txt` with the fuller env dump.
 //!
 //! This isolates one variable at a time: is a font-rendering discrepancy
 //! (e.g. issue 57's headless-canary-only VS16 width defect) a property of
@@ -384,7 +394,11 @@ fn printHelp() void {
         \\bitmap switch) into a real on-screen Wayland window on the current
         \\desktop session, screenshots only that window (sway: swaymsg+grim;
         \\GNOME/Mutter: org.gnome.Shell.Screenshot D-Bus), and saves a
-        \\pre-cropped PNG.
+        \\pre-cropped PNG. The pre-composite buffer is always additionally
+        \\saved as <out>.rendered.png (safe to trust for font-rendering-only
+        \\comparisons, since it never round-trips through the compositor).
+        \\Every render bakes a terminal/session label into the image and
+        \\writes a companion <out>.env.txt env-var dump.
         \\
         \\  -font=NAME     Pango font family (default: monospace)
         \\  -text=STR      text/emoji to render (default: ASCII + smiling-face pair)
@@ -491,6 +505,113 @@ fn findWindowRect(value: std.json.Value, target: []const u8) ?Rect {
     return null;
 }
 
+/// Returns an env var's value, or "(unset)" — used for both the companion
+/// dump and terminal-name detection, so a missing var is always visible
+/// rather than silently absent from the record.
+fn envOr(name: [*:0]const u8) []const u8 {
+    return if (std.c.getenv(name)) |v| std.mem.span(v) else "(unset)";
+}
+
+/// Best-effort terminal-emulator label from the env vars each emulator is
+/// known to set (checked in roughly "most specific first" order so e.g.
+/// TILIX_ID wins over the generic VTE_VERSION every VTE-based terminal
+/// sets). Falls back to $TERM, then "unknown" — this is a research label
+/// for comparing screenshots across hosts/terminals, not a detection
+/// mechanism anything else in emojig depends on.
+fn detectTerminalName() []const u8 {
+    if (std.c.getenv("TILIX_ID") != null) return "tilix";
+    if (std.c.getenv("KONSOLE_VERSION") != null) return "konsole";
+    if (std.c.getenv("GNOME_TERMINAL_SCREEN") != null or std.c.getenv("GNOME_TERMINAL_SERVICE") != null) return "gnome-terminal";
+    if (std.c.getenv("WEZTERM_EXECUTABLE") != null or std.c.getenv("WEZTERM_PANE") != null) return "wezterm";
+    if (std.c.getenv("KITTY_WINDOW_ID") != null) return "kitty";
+    if (std.c.getenv("ALACRITTY_SOCKET") != null or std.c.getenv("ALACRITTY_LOG") != null) return "alacritty";
+    if (std.c.getenv("GHOSTTY_RESOURCES_DIR") != null) return "ghostty";
+    if (std.c.getenv("VTE_VERSION") != null) return "vte-based";
+    if (std.c.getenv("TERM_PROGRAM")) |tp| return std.mem.span(tp);
+    if (std.c.getenv("TERM")) |t| return std.mem.span(t);
+    return "unknown";
+}
+
+/// Writes a companion text file next to the PNG recording the env vars
+/// most likely to matter when comparing screenshots across hosts/terminals
+/// later — the whole point of this canary is host-to-host comparison, and
+/// a bare PNG filename doesn't carry that context on its own.
+fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args: Args, terminal_name: []const u8) !void {
+    const dump_path = if (std.mem.endsWith(u8, out_path, ".png"))
+        try std.fmt.allocPrint(alloc, "{s}.env.txt", .{out_path[0 .. out_path.len - 4]})
+    else
+        try std.fmt.allocPrint(alloc, "{s}.env.txt", .{out_path});
+
+    const body = try std.fmt.allocPrint(alloc,
+        \\# canary_font companion env dump
+        \\terminal={s}
+        \\font={s}
+        \\text={s}
+        \\size_px={d}
+        \\app_id={s}
+        \\TERM={s}
+        \\TERM_PROGRAM={s}
+        \\WAYLAND_DISPLAY={s}
+        \\DISPLAY={s}
+        \\XDG_SESSION_TYPE={s}
+        \\XDG_CURRENT_DESKTOP={s}
+        \\DESKTOP_SESSION={s}
+        \\SWAYSOCK={s}
+        \\GDK_BACKEND={s}
+        \\QT_QPA_PLATFORM={s}
+        \\LANG={s}
+        \\VTE_VERSION={s}
+        \\TILIX_ID={s}
+        \\KONSOLE_VERSION={s}
+        \\WEZTERM_EXECUTABLE={s}
+        \\KITTY_WINDOW_ID={s}
+        \\ALACRITTY_SOCKET={s}
+        \\GHOSTTY_RESOURCES_DIR={s}
+        \\GNOME_TERMINAL_SCREEN={s}
+        \\
+    , .{
+        terminal_name,
+        args.font,
+        args.text,
+        args.size_px,
+        args.app_id,
+        envOr("TERM"),
+        envOr("TERM_PROGRAM"),
+        envOr("WAYLAND_DISPLAY"),
+        envOr("DISPLAY"),
+        envOr("XDG_SESSION_TYPE"),
+        envOr("XDG_CURRENT_DESKTOP"),
+        envOr("DESKTOP_SESSION"),
+        envOr("SWAYSOCK"),
+        envOr("GDK_BACKEND"),
+        envOr("QT_QPA_PLATFORM"),
+        envOr("LANG"),
+        envOr("VTE_VERSION"),
+        envOr("TILIX_ID"),
+        envOr("KONSOLE_VERSION"),
+        envOr("WEZTERM_EXECUTABLE"),
+        envOr("KITTY_WINDOW_ID"),
+        envOr("ALACRITTY_SOCKET"),
+        envOr("GHOSTTY_RESOURCES_DIR"),
+        envOr("GNOME_TERMINAL_SCREEN"),
+    });
+    const f = try std.Io.Dir.cwd().createFile(io, dump_path, .{});
+    _ = try f.writePositionalAll(io, body, 0);
+    f.close(io);
+    std.debug.print("canary_font: saved {s}\n", .{dump_path});
+}
+
+/// Writes `data` (an already-rendered ARGB32 buffer) to `path` as a PNG,
+/// wrapping it in a throwaway Cairo surface (cairo_image_surface_create_for_data
+/// doesn't copy — this reads back the exact bytes Cairo/Pango already wrote).
+fn dumpBufferToPng(cairo: *const CairoLib, data: [*]u8, width: i32, height: i32, stride: i32, path: []const u8) void {
+    var path_buf: [512]u8 = undefined;
+    const path_z = std.fmt.bufPrintZ(&path_buf, "{s}", .{path}) catch return;
+    const surface = cairo.image_surface_create_for_data(data, CAIRO_FORMAT_ARGB32, width, height, stride) orelse return;
+    _ = cairo.surface_write_to_png(surface, path_z);
+    cairo.surface_destroy(surface);
+}
+
 fn intOf(v: ?std.json.Value) i64 {
     const val = v orelse return 0;
     return switch (val) {
@@ -518,11 +639,22 @@ pub fn main(init: std.process.Init) !void {
     };
     runIgnoring(io, &[_][]const u8{ "mkdir", "-p", std.fs.path.dirname(out_path) orelse "." });
 
+    // Baked into the image itself (not just the filename) so a screenshot
+    // saved/renamed/shared elsewhere still carries which terminal emulator
+    // and desktop session it came from — the whole point of this canary is
+    // comparing renders across hosts, and a bare PNG carries none of that
+    // context on its own.
+    const terminal_name = detectTerminalName();
+    const label_text = try std.fmt.allocPrint(alloc, "term={s}  TERM={s}  session={s}/{s}", .{
+        terminal_name, envOr("TERM"), envOr("XDG_SESSION_TYPE"), envOr("XDG_CURRENT_DESKTOP"),
+    });
+    try writeEnvDump(io, alloc, out_path, args, terminal_name);
+
     var cairo = try CairoLib.load();
 
-    // Measure the text first (against a tiny scratch surface) so the real
-    // window is sized exactly to its content plus padding — a pre-cropped
-    // capture rather than a fixed pane with stray blank margins.
+    // Measure the text and the label (against a tiny scratch surface) so
+    // the real window is sized exactly to its content plus padding — a
+    // pre-cropped capture rather than a fixed pane with stray blank margins.
     var scratch_pixels: [4]u8 = undefined;
     const scratch_surface = cairo.image_surface_create_for_data(&scratch_pixels, CAIRO_FORMAT_ARGB32, 1, 1, 4) orelse return error.CairoSurfaceFailed;
     const scratch_cr = cairo.create(scratch_surface) orelse return error.CairoContextFailed;
@@ -536,12 +668,28 @@ pub fn main(init: std.process.Init) !void {
     var text_w: c_int = 0;
     var text_h: c_int = 0;
     cairo.layout_get_pixel_size(scratch_layout, &text_w, &text_h);
+
+    // Label uses a plain system font (not -font) at a small fixed size —
+    // it's metadata chrome, not part of the thing being measured.
+    const label_size_px = 13.0;
+    const label_desc = cairo.font_description_new() orelse return error.PangoFontDescFailed;
+    cairo.font_description_set_family(label_desc, "sans-serif");
+    cairo.font_description_set_absolute_size(label_desc, label_size_px * 1024.0);
+    const scratch_label_layout = cairo.cairo_create_layout(scratch_cr) orelse return error.PangoLayoutFailed;
+    cairo.layout_set_font_description(scratch_label_layout, label_desc);
+    cairo.layout_set_text(scratch_label_layout, label_text.ptr, @intCast(label_text.len));
+    var label_w: c_int = 0;
+    var label_h: c_int = 0;
+    cairo.layout_get_pixel_size(scratch_label_layout, &label_w, &label_h);
+
     cairo.destroy(scratch_cr);
     cairo.surface_destroy(scratch_surface);
 
-    const width: i32 = text_w + @as(i32, @intFromFloat(args.pad * 2));
-    const height: i32 = text_h + @as(i32, @intFromFloat(args.pad * 2));
-    std.debug.print("canary_font: measured text {d}x{d}px, window {d}x{d}px, font={s}\n", .{ text_w, text_h, width, height, args.font });
+    const label_gap: i32 = 6;
+    const pad_i: i32 = @intFromFloat(args.pad);
+    const width: i32 = @max(text_w, label_w) + pad_i * 2;
+    const height: i32 = text_h + label_gap + label_h + pad_i * 2;
+    std.debug.print("canary_font: measured text {d}x{d}px, label {d}x{d}px, window {d}x{d}px, font={s}, terminal={s}\n", .{ text_w, text_h, label_w, label_h, width, height, args.font, terminal_name });
 
     // Ensure our window gets no sway-drawn border/titlebar, so the swaymsg
     // "rect" below is exactly our own client-surface pixel content.
@@ -614,10 +762,20 @@ pub fn main(init: std.process.Init) !void {
     cairo.layout_set_font_description(real_layout, font_desc);
     cairo.layout_set_text(real_layout, args.text.ptr, @intCast(args.text.len));
     cairo.cairo_show_layout(real_cr, real_layout);
+
+    // Dimmer than the main text so it reads as metadata, not content.
+    cairo.set_source_rgb(real_cr, args.fg[0] * 0.55, args.fg[1] * 0.55, args.fg[2] * 0.55);
+    cairo.move_to(real_cr, args.pad, args.pad + @as(f64, @floatFromInt(text_h)) + @as(f64, @floatFromInt(label_gap)));
+    const real_label_layout = cairo.cairo_create_layout(real_cr) orelse return error.PangoLayoutFailed;
+    cairo.layout_set_font_description(real_label_layout, label_desc);
+    cairo.layout_set_text(real_label_layout, label_text.ptr, @intCast(label_text.len));
+    cairo.cairo_show_layout(real_cr, real_label_layout);
+
     cairo.surface_flush(real_surface);
     cairo.destroy(real_cr);
     cairo.surface_destroy(real_surface);
     cairo.font_description_free(font_desc);
+    cairo.font_description_free(label_desc);
 
     // Passed via an explicit WlArgument array (not the variadic
     // wl_proxy_marshal_flags(...) form) because the 'h' (fd) argument's
@@ -655,10 +813,28 @@ pub fn main(init: std.process.Init) !void {
         if (n > 0) _ = wl.wl_display_dispatch(display);
     }
 
+    // Always dump the pre-composite SHM buffer to a `.rendered.png`
+    // companion, regardless of whether a real screenshot succeeds below.
+    // This half is fully deterministic and safe to rely on: Cairo/Pango/
+    // fontconfig/FreeType have already finished rendering by this point,
+    // and Wayland presents these exact pixels verbatim (no re-rasterizing
+    // on the compositor's side) — the only thing it *can't* show you is a
+    // compositor-level transform applied after presentation (fractional-
+    // scale upscaling, colour management LUTs). Diffing this against the
+    // real screenshot below isolates exactly that: identical → the
+    // compositor changed nothing; different → the discrepancy is in
+    // presentation, not in font rendering.
+    const rendered_path = if (std.mem.endsWith(u8, out_path, ".png"))
+        try std.fmt.allocPrint(alloc, "{s}.rendered.png", .{out_path[0 .. out_path.len - 4]})
+    else
+        try std.fmt.allocPrint(alloc, "{s}.rendered.png", .{out_path});
+    dumpBufferToPng(&cairo, data.ptr, width, height, stride, rendered_path);
+    std.debug.print("canary_font: saved {s} (our own pre-composite buffer, always written)\n", .{rendered_path});
+
     // Compositor-specific real-screenshot tiers, in order of preference —
     // both actually rasterize the *presented* frame through the real
-    // compositor (the whole point of this canary), unlike the final
-    // fallback which just dumps our own SHM buffer back out:
+    // compositor (the whole point of this canary), unlike the buffer dump
+    // above which never round-trips through the compositor at all:
     //   1. sway/wlroots: swaymsg locates our window by app_id, grim -g
     //      shoots exactly that rect (pre-cropped, no host chrome).
     //   2. GNOME/Mutter: grim has no wlr-screencopy to talk to, so use
@@ -679,16 +855,13 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print(
         "warn: no working real-compositor screenshot path found (not sway, and\n" ++
-            "GNOME Shell's ScreenshotWindow was denied or unavailable) — dumping our\n" ++
-            "own pre-composite SHM buffer instead. This is NOT a real on-screen\n" ++
-            "capture and proves nothing about compositor-level rendering; re-run this\n" ++
-            "from your actual logged-in desktop session, not a sandboxed/CI shell.\n",
-        .{},
+            "GNOME Shell's ScreenshotWindow was denied or unavailable) — {s} is only\n" ++
+            "the pre-composite buffer dump, saved again as {s} for convenience. That\n" ++
+            "proves nothing about compositor-level rendering; re-run this from your\n" ++
+            "actual logged-in desktop session, not a sandboxed/CI shell.\n",
+        .{ rendered_path, out_path },
     );
-    const png_path_z = try alloc.dupeZ(u8, out_path);
-    const dump_surface = cairo.image_surface_create_for_data(data.ptr, CAIRO_FORMAT_ARGB32, width, height, stride) orelse return error.CairoSurfaceFailed;
-    _ = cairo.surface_write_to_png(dump_surface, png_path_z);
-    cairo.surface_destroy(dump_surface);
+    dumpBufferToPng(&cairo, data.ptr, width, height, stride, out_path);
     std.debug.print("canary_font: saved (OFFLINE RENDER ONLY) {s}\n", .{out_path});
 }
 
