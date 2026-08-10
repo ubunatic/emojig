@@ -368,12 +368,18 @@ pub fn main(init: std.process.Init) !void {
     // segfaults reading dangling pointers into memory glibc already freed.
     runIgnoring(io, &[_][]const u8{ "mkdir", "-p", std.fs.path.dirname(out_path) orelse "." });
 
-    // Also run before -unset for a related reason: std.debug.print lazily
-    // scans `environ` on its *first* call, to locate self debug-info
-    // search paths for pretty stack traces — and that scan panics if
-    // certain env vars are absent (e.g. LANG), which then deadlocks trying
-    // to print the panic itself (the panic handler recurses into the same
-    // lazy-init path and self-deadlocks on its own mutex).
+    // Also run before -unset for a related but separate reason:
+    // std.debug.print lazily scans `environ` on its *first* call, to
+    // locate self debug-info search paths for pretty stack traces — and
+    // that scan panics if certain env vars are absent (e.g. LANG), which
+    // then deadlocks trying to print the panic itself (the panic handler
+    // recurses into the same lazy-init path and self-deadlocks on its own
+    // mutex). Unlike the spawn issue above, this one warm-up call *does*
+    // make every later debug.print call safe too — see
+    // issues/58-zig-unsetenv-environ-desync.md and
+    // scripts/zig_unsetenv_bug_repro.zig for both failure modes isolated
+    // with zero application code, and proof neither has a priming
+    // workaround for spawn specifically.
     std.debug.print("", .{});
     applyUnset(alloc, args.unset);
 

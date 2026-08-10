@@ -158,17 +158,31 @@ which then **deadlocks**, because the panic handler's own attempt to
 print the panic message recurses into the same lazy-init path and
 re-locks a mutex it's already holding.
 
-Both are avoided by doing every `std.process.spawn` call and one warm-up
-`std.debug.print("", .{})` **before** any `unsetenv()` call, while
-`environ` still matches what Zig's runtime cached at startup:
+The `std.debug.print` panic+deadlock is avoided by one warm-up
+`std.debug.print("", .{})` call **before** any `unsetenv()` — that
+one-time call is enough to make every *later* `debug.print` call safe too
+(verified: a second `debug.print` after `unsetenv`, following the
+warm-up, does not panic).
+
+The `std.process.spawn` segfault is **not** fixable this way — there is
+no priming call that makes a *later* spawn safe. A spawn issued before
+`unsetenv` does not protect a spawn issued after it; both still segfault
+identically. The only way to avoid it is to never call
+`std.process.spawn` after any `unsetenv()` call anywhere in the process's
+lifetime — i.e. do all of a program's spawns first, then treat
+`unsetenv()` as one-way:
 
 ```zig
-runIgnoring(io, &[_][]const u8{ "mkdir", "-p", dir }); // spawn, before unsetenv
-std.debug.print("", .{}); // force the lazy environ scan, before unsetenv
-applyUnset(alloc, args.unset); // now safe to call libc unsetenv()
+runIgnoring(io, &[_][]const u8{ "mkdir", "-p", dir }); // every spawn, before unsetenv
+std.debug.print("", .{}); // one warm-up call, before unsetenv — makes later debug.print calls safe
+applyUnset(alloc, args.unset); // now safe to call libc unsetenv() — but no more spawns after this
 ```
 
-Reference: `scripts/canary_font.zig` (`-unset=` flag); Go's `os.Unsetenv`
-has no equivalent issue since Go maintains its own environment
-consistently — see docs/EmojiWidthResearch.md's canary_font section for
-the full repro.
+Reference: `scripts/canary_font.zig` (`-unset=` flag, and note it never
+spawns again after `applyUnset`); `scripts/zig_unsetenv_bug_repro.zig` is
+a minimal, no-application-code reproduction of both failure modes plus the
+two experiments above (`print-workaround` succeeds,
+`spawn-still-broken-after-print-warmup` and a pre-unset warm-up spawn both
+still segfault) — see issues/58-zig-unsetenv-environ-desync.md for the
+full writeup. Go's `os.Unsetenv` has no equivalent issue since Go
+maintains its own environment consistently.
