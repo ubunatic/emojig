@@ -158,6 +158,18 @@ func disableFallback(layout *C.PangoLayout) {
 	C.pango_layout_set_attributes(layout, attrs) // layout takes its own ref
 }
 
+// absPath returns path as an absolute path (unchanged if already absolute)
+// — printed paths must be absolute for a terminal's own ctrl+click-to-open
+// file-link detection to reliably find them; a relative path only resolves
+// if the terminal you're reading it in happens to share this process's CWD.
+// Falls back to the original path on error (best-effort for a log line).
+func absPath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
 // writeEnvDump writes a companion text file next to the PNG recording the
 // env vars most likely to matter when comparing renders across hosts/
 // terminals later — a bare PNG filename doesn't carry that context on its
@@ -176,7 +188,7 @@ func writeEnvDump(outPath, font, text string, sizePx float64, terminalName strin
 	if err := os.WriteFile(dumpPath, []byte(b.String()), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("canary_font: saved %s\n", dumpPath)
+	fmt.Printf("canary_font: saved %s\n", absPath(dumpPath))
 	return nil
 }
 
@@ -334,5 +346,5 @@ canary cannot speak to foot's or a terminal grid's behavior specifically.
 	C.pango_font_description_free(fontDesc)
 	C.pango_font_description_free(labelDesc)
 
-	fmt.Printf("canary_font: saved %s\n", outPath)
+	fmt.Printf("canary_font: saved %s\n", absPath(outPath))
 }

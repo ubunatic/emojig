@@ -282,6 +282,18 @@ fn sanitizeForFilename(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     return out;
 }
 
+/// Returns `path` unchanged if already absolute, otherwise joins it onto
+/// the current working directory. Printed paths must be absolute for a
+/// terminal's own ctrl+click-to-open file-link detection to reliably find
+/// them — a relative "scripts/canary_font/shots/x.png" only resolves if
+/// the terminal you're reading it in happens to share this process's CWD.
+fn absolutePath(io: std.Io, alloc: std.mem.Allocator, path: []const u8) ![]const u8 {
+    if (std.fs.path.isAbsolute(path)) return path;
+    var cwd_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const cwd_len = try std.process.currentPath(io, &cwd_buf);
+    return std.fs.path.join(alloc, &.{ cwd_buf[0..cwd_len], path });
+}
+
 /// Runs `argv`, discarding stdout/stderr, and waits for exit. Best-effort:
 /// only used for `mkdir -p`, so a failure just means the later file write
 /// fails with its own clear error.
@@ -403,7 +415,7 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
     const f = try std.Io.Dir.cwd().createFile(io, dump_path, .{});
     _ = try f.writePositionalAll(io, body, 0);
     f.close(io);
-    std.debug.print("canary_font: saved {s}\n", .{dump_path});
+    std.debug.print("canary_font: saved {s}\n", .{try absolutePath(io, alloc, dump_path)});
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -531,5 +543,5 @@ pub fn main(init: std.process.Init) !void {
     cairo.font_description_free(font_desc);
     cairo.font_description_free(label_desc);
 
-    std.debug.print("canary_font: saved {s}\n", .{out_path});
+    std.debug.print("canary_font: saved {s}\n", .{try absolutePath(io, alloc, out_path)});
 }
