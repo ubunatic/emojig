@@ -226,6 +226,11 @@ canary-gui: ⚙️ wayreel-install gen-spec build  # capture and verify emojig -
 
 canary: ⚙️ canary-shots canary-gui  # run all headless canary checks (VTE grid + GUI proof)
 
+FONT ?= monospace
+TEXT ?= abc ABC 123 ☺️ ☺︎ 😀 🚀
+canary-font: ⚙️  # MANUAL/host-only font-rendering research: renders TEXT with FONT in a real on-screen window on YOUR desktop (sway+grim or GNOME D-Bus) and saves a PNG — NOT part of `make canary`, must be run from your own logged-in session (not CI/sandboxed shells); usage: make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"
+	zig run scripts/canary_font.zig -lc -- -font="$(FONT)" -text="$(TEXT)"
+
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \

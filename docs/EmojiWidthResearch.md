@@ -241,3 +241,43 @@ width-handling documentation to extract anything from.
 - No new VTE-specific bug beyond what's already suspected (flag-pair
   rendering, font/width mismatches) was found; no evidence our
   `VTE_VERSION`/`TILIX_ID` signal is stale or needs replacing.
+
+## `scripts/canary_font.zig` — isolating real-desktop font rendering
+
+Issue 57's investigation (see the "Retracted" section in
+[`../issues/57-tilix-monochrome-mixed-row-length.md`](../issues/57-tilix-monochrome-mixed-row-length.md))
+found a VS16 row-length defect that reproduced reliably in wayreel's headless
+nested-sway/Xvfb capture harness but did **not** reproduce on the real
+desktop, once the user checked directly. That gap — headless capture
+environment vs. real compositor — is exactly the variable
+`scripts/canary_font.zig` isolates, and it does so **without spawning
+foot at all**, to separate "is this a foot bug" from "is this a font-stack
+or capture-harness artifact":
+
+- Opens a real Wayland surface directly on whatever compositor is actually
+  running (dlopen'd `libwayland-client`, same low-level approach as
+  `scripts/canary_gui.zig`) — no nested sway, no Xvfb, no `WLR_RENDERER=
+  pixman` forced software rendering.
+- Renders text/emoji into that surface via Cairo+Pango (dlopen'd
+  `libcairo`/`libpango-1.0`/`libpangocairo-1.0`), which resolves the
+  `-font` flag through real fontconfig+FreeType — so pointing it at a
+  CBDT bitmap family (`Twemoji`) vs. a COLR vector family (`Noto Color
+  Emoji`, confirmed to be the `Noto-COLRv1.ttf` variant on this host) is a
+  genuine vector-vs-bitmap glyph-technology switch, not a simulation of one.
+- Screenshots *only its own window* — `swaymsg`+`grim` on sway/wlroots, or
+  `org.gnome.Shell.Screenshot.ScreenshotWindow` over D-Bus on GNOME/Mutter
+  (grim has no `wlr-screencopy` to talk to there) — and saves a pre-cropped
+  PNG to `scripts/canary_font/shots/`.
+- Falls back to dumping its own pre-composite SHM buffer, clearly labeled
+  `OFFLINE RENDER ONLY`, if neither capture path is available (e.g. run
+  from a sandboxed/CI shell instead of the real logged-in session — GNOME
+  Shell's D-Bus screenshot methods return `AccessDenied` there).
+
+Usage: `make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"` (or
+`zig run scripts/canary_font.zig -lc -- -help` for the full flag list).
+Manual/on-demand only — not part of `make canary`, and it must be run from
+your own desktop session, not this harness's sandboxed shell (confirmed:
+`org.gnome.Shell.Screenshot.ScreenshotWindow` is denied here, on this
+host's GNOME/Mutter session, likely because gnome-shell checks the
+caller's systemd/cgroup identity and a sandboxed tool shell doesn't match
+the interactive login session).
