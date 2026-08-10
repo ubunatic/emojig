@@ -239,7 +239,7 @@ canary-font-go: ⚙️ canary-font-go-deps  # same as canary-font but Go+cgo/pkg
 	go run ./scripts/canary_font -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
 
 WIDTH_TEXT ?= abc☺️ ☺︎🚀def
-canary-width: ⚙️  # manual: feeds WIDTH_TEXT to Pango shaping, naive per-codepoint summation, and raw hb-shape, printing per-cluster width breakdowns side by side — NOT part of `make canary`; usage: make canary-width WIDTH_TEXT="..." FONT="Twemoji"
+canary-width: ⚙️  # manual: feeds WIDTH_TEXT to Pango shaping, naive per-codepoint summation, raw hb-shape, and foot's own libfcft, printing per-cluster width breakdowns side by side — NOT part of `make canary`; usage: make canary-width WIDTH_TEXT="..." FONT="Twemoji"
 	zig run scripts/canary_width_compare.zig -lc -- -font="$(FONT)" -text="$(WIDTH_TEXT)"
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory

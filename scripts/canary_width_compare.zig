@@ -8,9 +8,7 @@
 //! like "abc☺️ ☺︎🚀def" come out the same across models, or does a VS16/
 //! ZWJ/keycap sequence throw off the sum?
 //!
-//! Three columns today (a fourth, real-terminal-pixel measurement via
-//! scripts/vte_canary, is tracked separately — see issues/59 and
-//! docs/EmojiWidthResearch.md):
+//! Four columns:
 //!
 //!   1. Pango/HarfBuzz shaping (dlopen'd libpango/libcairo, same as
 //!      canary_font.zig) — cluster-aware, what GTK apps and VTE-based
@@ -25,11 +23,31 @@
 //!   3. Raw HarfBuzz only, via the `hb-shape` CLI against the actual
 //!      resolved font file (no Pango layout/itemization involved) — closer
 //!      to what a lower-level renderer (e.g. foot's libfcft) does.
+//!   4. foot's own library, libfcft, dlopen'd directly and called with
+//!      fcft_rasterize_text_run_utf32 — foot's actual glyph-shaping code,
+//!      not an inference from a screenshot. No terminal, no compositor, no
+//!      wayreel: same offscreen-pixbuffer approach as columns 1-3, just
+//!      calling foot's own library instead of Pango. Each returned glyph
+//!      carries both `.cols` (fcft's own wcwidth()-equivalent decision)
+//!      and `.advance.x` (the actual pixel advance) — this column reports
+//!      both.
 //!
-//! Per-cluster/per-codepoint breakdowns are printed for all three, plus a
+//!      IMPORTANT CAVEAT, found immediately on first use: this measures
+//!      *fcft's own default* `.cols` decision, which is NOT the same as
+//!      foot's full width behavior. foot's `[tweak]
+//!      grapheme-width-method=double-width` (issue 53) is applied by
+//!      foot's *own* source on top of fcft's raw per-grapheme result —
+//!      it does not exist in fcft.h's public API at all (grep confirms
+//!      no "grapheme_width" symbol). Observed directly: fcft alone
+//!      reports `cols=1` for `☺️` (VS16) with Twemoji — the *opposite* of
+//!      what issue 53's fix assumes foot ends up doing end-to-end. This
+//!      column is a real, direct measurement of one real layer foot
+//!      depends on, not a full substitute for foot's own behavior.
+//!
+//! Per-cluster/per-codepoint breakdowns are printed for all four, plus a
 //! naive-column-count-to-pixels estimate (using the advance of a plain
-//! "0" in the same font as one reference "cell") so all three end up in
-//! comparable pixel units.
+//! "0" in the same font as one reference "cell") so columns 1/3/4 end up
+//! in comparable pixel units alongside column 4's own `.cols` figure.
 //!
 //! Usage: zig run scripts/canary_width_compare.zig -lc -- [-text=STR] ...
 //! Run `zig run scripts/canary_width_compare.zig -lc -- -help` for flags.
@@ -292,12 +310,128 @@ fn harfbuzzMeasure(io: anytype, alloc: std.mem.Allocator, font: []const u8, text
 }
 
 // ---------------------------------------------------------------------------
+// Column 4: foot's own library, libfcft, dlopen'd directly — no terminal,
+// no compositor, no wayreel. Struct layouts below are transcribed directly
+// from /usr/include/fcft/fcft.h (fcft-devel), not guessed: fcft's structs
+// expose public fields (unlike Cairo/Pango's opaque pointers), so getting
+// them wrong would silently misread real data rather than fail loudly.
+// ---------------------------------------------------------------------------
+
+const FcftGlyph = extern struct {
+    cp: u32,
+    cols: c_int, // wcwidth(cp) — foot's actual terminal-column decision
+    font_name: ?[*:0]const u8,
+    pix: ?*anyopaque, // pixman_image_t* — unused here, we only read metrics
+    x: c_int,
+    y: c_int,
+    width: c_int,
+    height: c_int,
+    advance: extern struct { x: c_int, y: c_int },
+    is_color_glyph: bool,
+};
+
+const FcftTextRun = extern struct {
+    glyphs: [*]?*const FcftGlyph,
+    cluster: [*]c_int, // per-glyph index into the INPUT CODEPOINT array
+    count: usize,
+};
+
+const FcftLib = struct {
+    handle: *anyopaque,
+    init: *const fn (colorize: c_int, do_syslog: bool, log_level: c_int) callconv(.c) bool,
+    from_name: *const fn (count: usize, names: [*]const [*:0]const u8, attributes: ?[*:0]const u8) callconv(.c) ?*anyopaque,
+    destroy: *const fn (font: ?*anyopaque) callconv(.c) void,
+    rasterize_text_run_utf32: *const fn (font: ?*anyopaque, len: usize, text: [*]const u32, subpixel: c_int) callconv(.c) ?*FcftTextRun,
+    text_run_destroy: *const fn (run: ?*FcftTextRun) callconv(.c) void,
+
+    fn sym(h: *anyopaque, name: [*:0]const u8) !*anyopaque {
+        return std.c.dlsym(h, name) orelse return error.SymbolNotFound;
+    }
+
+    pub fn load() !FcftLib {
+        const h = std.c.dlopen("libfcft.so.4", @bitCast(@as(u32, 1))) orelse return error.LibraryLoadFailed;
+        return .{
+            .handle = h,
+            .init = @ptrCast(try sym(h, "fcft_init")),
+            .from_name = @ptrCast(try sym(h, "fcft_from_name")),
+            .destroy = @ptrCast(try sym(h, "fcft_destroy")),
+            .rasterize_text_run_utf32 = @ptrCast(try sym(h, "fcft_rasterize_text_run_utf32")),
+            .text_run_destroy = @ptrCast(try sym(h, "fcft_text_run_destroy")),
+        };
+    }
+};
+
+const FcftCluster = struct { cp_index: usize, cols: i64, advance_px: f64 };
+
+fn fcftMeasure(alloc: std.mem.Allocator, font: []const u8, text: []const u8, size_px: f64) !struct { total_cols: i64, total_advance_px: f64, clusters: []FcftCluster, cp_byte_offsets: []usize } {
+    const fcft = try FcftLib.load();
+    // FCFT_LOG_COLORIZE_NEVER=0, FCFT_LOG_CLASS_NONE=0 — quiet by default.
+    if (!fcft.init(0, false, 0)) return error.FcftInitFailed;
+
+    // `names` holds plain family names (fcft's own fallback-list concept);
+    // `attributes` is a *separate* fontconfig-format string. Concatenating
+    // "FAMILY:size=N" into one name entry — the mistake this comment
+    // replaces — fails outright for any family containing a space.
+    const name_z = try alloc.dupeZ(u8, font);
+    var names = [_][*:0]const u8{name_z.ptr};
+    const attrs_str = try std.fmt.allocPrintSentinel(alloc, "size={d}", .{size_px}, 0);
+    const fcft_font = fcft.from_name(1, &names, attrs_str.ptr) orelse return error.FcftFromNameFailed;
+    defer fcft.destroy(fcft_font);
+
+    // Decode UTF-8 -> UTF-32 codepoints (fcft's API takes uint32_t text),
+    // recording each codepoint's starting byte offset so cluster indices
+    // (which fcft reports as codepoint indices, like hb-shape without
+    // --utf8-clusters) can be mapped back to byte ranges for display.
+    var codepoints = std.array_list.Managed(u32).init(alloc);
+    var cp_byte_offsets = std.array_list.Managed(usize).init(alloc);
+    const view = try std.unicode.Utf8View.init(text);
+    var it = view.iterator();
+    while (it.nextCodepointSlice()) |slice| {
+        const cp = std.unicode.utf8Decode(slice) catch continue;
+        try codepoints.append(cp);
+        try cp_byte_offsets.append(@intFromPtr(slice.ptr) - @intFromPtr(text.ptr));
+    }
+    try cp_byte_offsets.append(text.len); // sentinel for the last cluster's end
+
+    const run = fcft.rasterize_text_run_utf32(fcft_font, codepoints.items.len, codepoints.items.ptr, 0) orelse return error.FcftRasterizeFailed;
+    defer fcft.text_run_destroy(run);
+
+    var clusters = std.array_list.Managed(FcftCluster).init(alloc);
+    var total_cols: i64 = 0;
+    var total_advance: f64 = 0;
+    var gi: usize = 0;
+    while (gi < run.count) {
+        const cp_index: usize = @intCast(run.cluster[gi]);
+        var cluster_cols: i64 = 0;
+        var cluster_advance: f64 = 0;
+        while (gi < run.count and @as(usize, @intCast(run.cluster[gi])) == cp_index) {
+            const glyph = run.glyphs[gi] orelse {
+                gi += 1;
+                continue;
+            };
+            cluster_cols += glyph.cols;
+            cluster_advance += @floatFromInt(glyph.advance.x);
+            gi += 1;
+        }
+        try clusters.append(.{ .cp_index = cp_index, .cols = cluster_cols, .advance_px = cluster_advance });
+        total_cols += cluster_cols;
+        total_advance += cluster_advance;
+    }
+
+    return .{ .total_cols = total_cols, .total_advance_px = total_advance, .clusters = try clusters.toOwnedSlice(), .cp_byte_offsets = try cp_byte_offsets.toOwnedSlice() };
+}
+
+// ---------------------------------------------------------------------------
 // CLI + main
 // ---------------------------------------------------------------------------
 
 const Args = struct {
     text: []const u8 = "abc\u{263a}\u{fe0f} \u{263a}\u{fe0e}\u{1f680}def",
-    font: []const u8 = "Noto Color Emoji",
+    // Twemoji (CBDT) by default, not a COLRv1 font like unpatched "Noto
+    // Color Emoji" — fcft (column 4, foot's own library) cannot load
+    // COLRv1 at all ("COLRv1 not supported", confirmed directly), so a
+    // COLRv1 default would silently break column 4 out of the box.
+    font: []const u8 = "Twemoji",
     size_px: f64 = 48.0,
     allow_fallback: bool = true,
     help: bool = false,
@@ -327,23 +461,30 @@ fn printHelp() void {
     std.debug.print(
         \\Usage: zig run scripts/canary_width_compare.zig -lc -- [flags]
         \\
-        \\Feeds -text to three independent width-computation models and prints
+        \\Feeds -text to four independent width-computation models and prints
         \\each one's total + per-cluster/per-codepoint breakdown side by side:
-        \\  1. Pango/HarfBuzz shaping (cluster-aware)
+        \\  1. Pango/HarfBuzz shaping (cluster-aware, full fallback chain)
         \\  2. Naive per-codepoint summation (no clustering — the "per-codepoint
         \\     width" camp of terminals: VTE, Alacritty, kitty, tmux, xterm)
         \\  3. Raw HarfBuzz (hb-shape CLI) against the resolved font file
+        \\  4. libfcft — foot's own library, dlopen'd directly, no terminal/
+        \\     compositor/wayreel involved. NOTE: this is fcft's own default
+        \\     .cols decision, NOT foot's full behavior — foot's own [tweak]
+        \\     grapheme-width-method (issue 53) is applied by foot's *own*
+        \\     source on top of this, not inside fcft. Also: fcft cannot load
+        \\     COLRv1 fonts at all ("COLRv1 not supported") — use a CBDT font
+        \\     like Twemoji (the default) for this column to work.
         \\
         \\  -text=STR      text/emoji to measure (default: "abc☺️ ☺︎🚀def")
-        \\  -font=NAME     Pango font family for columns 1 & 3 (default: Noto Color Emoji)
+        \\  -font=NAME     font family for columns 1/3/4 (default: Twemoji —
+        \\                 a COLRv1 font like unpatched "Noto Color Emoji"
+        \\                 will fail column 4 outright)
         \\  -size=PX       pixel font size (default: 48)
         \\  -no-fallback   disable Pango/fontconfig font substitution (default:
         \\                 fallback ALLOWED here — unlike canary_font, this tool
         \\                 wants realistic mixed-text width, not single-font
         \\                 isolation; see docs/EmojiWidthResearch.md)
         \\
-        \\A fourth column (real terminal pixel measurement, via
-        \\scripts/vte_canary) is tracked separately — see issues/59.
         \\Manual/on-demand only — not part of `make canary`.
         \\
     , .{});
@@ -365,6 +506,15 @@ fn printClustersHb(text: []const u8, clusters: []const HbCluster) void {
     for (clusters, 0..) |c, i| {
         const end = if (i + 1 < clusters.len) clusters[i + 1].start else text.len;
         std.debug.print("    [{d:>3}:{d:<3}] {s:<12} {d:.1}px\n", .{ c.start, end, text[c.start..end], c.width_px });
+    }
+}
+
+fn printClustersFcft(text: []const u8, clusters: []const FcftCluster, cp_byte_offsets: []const usize) void {
+    for (clusters, 0..) |c, i| {
+        const start = cp_byte_offsets[c.cp_index];
+        const end_cp_index = if (i + 1 < clusters.len) clusters[i + 1].cp_index else cp_byte_offsets.len - 1;
+        const end = cp_byte_offsets[end_cp_index];
+        std.debug.print("    [{d:>3}:{d:<3}] {s:<12} cols={d} {d:.1}px\n", .{ start, end, text[start..end], c.cols, c.advance_px });
     }
 }
 
@@ -398,11 +548,21 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("\n3. Raw HarfBuzz (hb-shape, font={s}) — total {d:.1}px\n", .{ hb_result.font_file, hb_result.total_px });
     printClustersHb(args.text, hb_result.clusters);
 
+    const fcft_result = fcftMeasure(alloc, args.font, args.text, args.size_px) catch |err| {
+        std.debug.print("\n4. libfcft (foot's own library) — FAILED: {t}\n", .{err});
+        return;
+    };
+    std.debug.print("\n4. libfcft (foot's own library) — total {d} cols, {d:.1}px\n", .{ fcft_result.total_cols, fcft_result.total_advance_px });
+    printClustersFcft(args.text, fcft_result.clusters, fcft_result.cp_byte_offsets);
+
     // Reference "cell" width for converting the naive column count into a
-    // comparable pixel estimate: the advance of a plain "0" in the same
+    // comparable pixel estimate: the advance of a plain "M" in the same
     // font (fallback allowed, since we just need a stable narrow reference
-    // glyph, not to test this font's own coverage).
-    const cell_result = try pangoMeasure(alloc, &pango, args.font, "0", args.size_px, true);
+    // glyph, not to test this font's own coverage). NOT "0" — Twemoji's
+    // bare digit glyphs are intentionally zero-width (they're keycap-
+    // sequence bases, see issue 59), which silently zeroed this estimate
+    // for the tool's own default font until caught here.
+    const cell_result = try pangoMeasure(alloc, &pango, args.font, "M", args.size_px, true);
     const cell_px = cell_result.total_px;
     const naive_px_estimate = @as(f64, @floatFromInt(naive_result.total_cols)) * cell_px;
 
@@ -410,17 +570,24 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("  Pango/HarfBuzz shaping : {d:.1}px\n", .{pango_result.total_px});
     std.debug.print("  Naive per-codepoint sum: {d} cols (~{d:.1}px)\n", .{ naive_result.total_cols, naive_px_estimate });
     std.debug.print("  Raw HarfBuzz (hb-shape): {d:.1}px\n", .{hb_result.total_px});
+    std.debug.print("  libfcft (foot's library): {d} cols, {d:.1}px\n", .{ fcft_result.total_cols, fcft_result.total_advance_px });
     std.debug.print(
         \\
         \\Note: column 1 (Pango) uses fontconfig's *fallback chain* — a
         \\missing glyph in -font is silently substituted from a whole set of
-        \\fonts, same as a real GTK app. Column 3 (raw hb-shape) shapes
-        \\against exactly one font file with no fallback chain at all (that
-        \\concept doesn't exist below Pango) — a missing glyph there becomes
-        \\.notdef at that font's own default advance. The two totals
-        \\disagreeing is therefore not itself a bug; it reflects a genuine
-        \\difference in what each layer is capable of, which is exactly the
-        \\kind of tech-stack difference this tool exists to surface.
+        \\fonts, same as a real GTK app. Columns 3/4 (raw hb-shape, libfcft)
+        \\each shape against exactly one font file with no fallback chain at
+        \\all (that concept doesn't exist below Pango) — a missing glyph
+        \\there becomes .notdef at that font's own default advance. The
+        \\totals disagreeing is therefore not itself a bug; it reflects a
+        \\genuine difference in what each layer is capable of, which is
+        \\exactly the kind of tech-stack difference this tool exists to
+        \\surface. Column 4's "cols" figure is fcft's own wcwidth()-
+        \\equivalent decision — real, but NOT the same as foot's full
+        \\behavior: foot's own [tweak] grapheme-width-method=double-width
+        \\(issue 53) is applied by foot's *own* source on top of this, not
+        \\inside fcft. Treat column 4 as one real layer foot depends on,
+        \\not a full stand-in for foot end-to-end.
         \\
     , .{});
 }

@@ -394,7 +394,7 @@ question was about **placing emoji next to plain text**: does the
 *combined* width of a run like `abc☺️ ☺︎🚀def` come out the same across
 different ways of computing it, or does a VS16/VS15/ZWJ/keycap sequence
 throw off the sum. `canary_width_compare.zig` feeds one `-text` string to
-three independent width models and prints each one's total plus a
+four independent width models and prints each one's total plus a
 per-cluster/per-codepoint breakdown side by side:
 
 1. **Pango/HarfBuzz shaping** (same dlopen'd libcairo/libpango as
@@ -410,30 +410,69 @@ per-cluster/per-codepoint breakdown side by side:
    authoritative implementation.
 3. **Raw HarfBuzz only**, via the `hb-shape` CLI against the *one*
    resolved font file (no Pango layout, no fallback chain — that concept
-   doesn't exist below Pango) — closer to what a lower-level renderer like
-   foot's `libfcft` does. Needed `--utf8-clusters`: `hb-shape`'s `cl`
+   doesn't exist below Pango). Needed `--utf8-clusters`: `hb-shape`'s `cl`
    field defaults to a *codepoint index*, not a byte offset — without the
    flag, cluster text-slices silently misalign on any multi-byte
    character, discovered the hard way while building this.
+4. **`libfcft` — foot's own library**, dlopen'd directly and called with
+   `fcft_rasterize_text_run_utf32`. No terminal, no compositor, no
+   wayreel: same offscreen-pixbuffer approach as the other three columns,
+   just calling foot's own library instead of Pango — chosen specifically
+   to avoid wayreel's moving parts (nested sway, screenshot capture) for
+   this measurement. `fcft`'s structs expose public fields (unlike
+   Cairo/Pango's opaque pointers), so the layouts were transcribed
+   directly from `fcft.h` (`fcft-devel`, installed via
+   `scripts/install_fcft_dev.sh` purely as a one-time reference for
+   maintainers — the tool itself only dlopens the runtime `.so.4`, already
+   present as foot's own dependency, and needs no header at build or run
+   time). Each returned glyph carries both `.cols` (fcft's own
+   `wcwidth()`-equivalent decision) and `.advance.x` (pixel advance).
+
+   **Two real findings surfaced immediately just building this column**:
+   - `fcft_from_name`'s `name`/`attributes` parameters are *separate*
+     fontconfig strings — concatenating `"FAMILY:size=N"` into one name
+     entry (the natural first attempt) fails outright for any family
+     containing a space.
+   - `libfcft` cannot load COLRv1 vector color fonts at all
+     (`"COLRv1 not supported"`, confirmed directly) — this is *exactly*
+     why the project's own `scripts/install_fonts.sh` had to install
+     Twemoji (CBDT) specifically for foot; this column now confirms that
+     fact from the library level rather than by inference. Because of
+     this, the tool's default `-font` is `Twemoji`, not a COLRv1 font.
+   - **Important caveat, not a bug**: column 4 measures `fcft`'s own
+     *default* `.cols` decision, which is **not** the same as foot's full
+     width behavior. foot's `[tweak] grapheme-width-method=double-width`
+     (issue 53) is applied by **foot's own source**, on top of fcft's raw
+     per-grapheme result — that tweak does not exist anywhere in fcft.h's
+     public API. Observed directly: fcft alone reports `cols=1` for `☺️`
+     (VS16) with Twemoji — the *opposite* of what issue 53's fix assumes
+     foot ends up doing end-to-end. Treat this column as a real
+     measurement of one real layer foot depends on, not a full stand-in
+     for foot itself.
 
 The naive column-count is converted to a comparable pixel figure using the
-advance of a plain `"0"` in the same font as one reference "cell," so all
-three end up in the same units. A fourth column — real terminal pixel
-measurement, reusing `scripts/vte_canary`'s proven headless-capture
-approach (issues 51/57) rather than inventing a new mechanism — is tracked
-in `issues/59-canary-font-research-gaps.md` but not yet built.
+advance of a plain `"M"` in the same font as one reference "cell" (not
+`"0"` — Twemoji's bare digit glyphs are intentionally zero-width, see
+issue 59, which silently zeroed this estimate for the tool's own default
+font until caught here), so columns 1/3/4 end up in the same pixel units
+alongside column 4's own `.cols` figure.
 
-Sample run (`-text="abc☺️ ☺︎🚀def" -font="Noto Color Emoji"`): Pango
-totals 383px (real Latin fallback font used for `abc`/`def`, ~25-27px per
-letter); raw `hb-shape` against Noto Color Emoji alone totals 600px (no
-fallback, every glyph — including the Latin letters Noto Color Emoji
-doesn't cover — falls to `.notdef` at that font's flat 60px default
-advance); naive summation estimates 660px (11 columns × 60px reference
-cell). The three disagreeing is not itself a bug — it reflects a genuine
-difference in what each layer is capable of (fallback chain or not,
-clustering or not), which is exactly the kind of tech-stack difference
-this tool exists to surface.
+Sample run (`-text="abc☺️ ☺︎🚀def" -font=Twemoji`): Pango totals 395px
+(real Latin fallback font used for `abc`/`def`); raw `hb-shape` against
+Twemoji alone totals 597px (no fallback, every glyph advances ~59-60px
+flat); `fcft` totals 12 cols / 392px; naive summation estimates 484px (11
+columns × 44px reference cell). The four disagreeing is not itself a bug —
+it reflects a genuine difference in what each layer is capable of
+(fallback chain or not, clustering or not, terminal-specific override
+logic or not), which is exactly the kind of tech-stack difference this
+tool exists to surface.
 
 Usage: `make canary-width WIDTH_TEXT="abc☺️ ☺︎🚀def" FONT="Twemoji"` or
 `zig run scripts/canary_width_compare.zig -lc -- -help` for the full flag
 list. Manual/on-demand only — not part of `make canary`.
+
+**IDEA, not yet actioned**: wayreel's own pixel/row-color-detection logic
+(used by `scripts/vte_canary` for headless proofs) could be extracted into
+a reusable library, making a future real-terminal-pixel column cheaper to
+add without wayreel's full nested-compositor machinery. Belongs in
+`../wayreel`'s own issue tracker, not this project's, if pursued.
