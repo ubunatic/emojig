@@ -67,6 +67,25 @@ first:
    just what was requested) and flag any run whose family doesn't match
    `-font`.
 
+   **Concrete case found (2026-08-10), not a bug — a silent, correct-but-
+   surprising result of this class**: `-font=Twemoji -text="123"` renders
+   *nothing at all*, with a measured width of `0x95px` — not tofu, not a
+   missing-glyph box, genuinely zero advance width. Confirmed directly at
+   the font level with `hb-shape /usr/share/fonts/twemoji/Twemoji.ttf
+   --unicodes=0031` → `{"g":"gid7","ax":0}`: Twemoji.ttf deliberately maps
+   bare ASCII digits to a real (non-`.notdef`) but zero-width placeholder
+   glyph, intended only as the *base* of a keycap emoji sequence. The full
+   sequence `1️⃣` (`U+0031 U+FE0F U+20E3`) shapes to a completely different,
+   real-width glyph (`hb-shape --unicodes=0031,FE0F,20E3` → `{"g":"gid1452",
+   "ax":2533}`) and renders the expected blue keycap square. Neither
+   fallback-disabling (fixed above) nor anything else in this canary can
+   or should "fix" this — it's correct behavior once you know Twemoji's
+   digit glyphs are combining-sequence bases, not standalone glyphs — but
+   it's exactly the kind of silent, correct-yet-surprising result this
+   gap's fix (report the actually-used font *and* a zero/notdef-advance
+   flag per run) would have surfaced immediately instead of needing manual
+   `hb-shape` investigation to explain.
+
 4. **The baked metadata label contaminates the artifact being compared.**
    The label is drawn into the same PNG and participates in the image's
    measured width (`max(text_w, label_w) + 2*pad`), so an env/host

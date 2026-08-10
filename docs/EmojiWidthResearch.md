@@ -385,3 +385,55 @@ Sources for the env-var research above:
 - [fontconfig-user.txt (servo/libfontconfig mirror)](https://github.com/servo/libfontconfig/blob/master/doc/fontconfig-user.txt)
 - [fonts.conf(5) manpage](https://manpages.debian.org/unstable/fontconfig-config/fonts-conf.5.en.html)
 - [PangoCairo.FontMap docs (PANGOCAIRO_BACKEND)](https://lazka.github.io/pgi-docs/PangoCairo-1.0/classes/FontMap.html)
+
+## `scripts/canary_width_compare.zig` — the actual issue-57 question: does a *mixed* run add up right
+
+`canary_font` (above) answers "does this one font render this glyph
+correctly" — necessary, but not what issue 57 actually asked. That
+question was about **placing emoji next to plain text**: does the
+*combined* width of a run like `abc☺️ ☺︎🚀def` come out the same across
+different ways of computing it, or does a VS16/VS15/ZWJ/keycap sequence
+throw off the sum. `canary_width_compare.zig` feeds one `-text` string to
+three independent width models and prints each one's total plus a
+per-cluster/per-codepoint breakdown side by side:
+
+1. **Pango/HarfBuzz shaping** (same dlopen'd libcairo/libpango as
+   `canary_font.zig`) — cluster-aware, uses fontconfig's full *fallback
+   chain* so a glyph missing from `-font` is silently substituted from a
+   whole font set, same as a real GTK app.
+2. **Naive per-codepoint summation** — a deliberately dumb `wcwidth()`-
+   style model: every codepoint gets an independent width (0/1/2) with
+   *no* clustering, approximating the "per-codepoint width" camp of
+   terminals (VTE, Alacritty, kitty, tmux, xterm — see above) that don't
+   collapse a VS16/ZWJ sequence into one cell. This is explicitly a
+   simplified stand-in for Unicode's East Asian Width data, not an
+   authoritative implementation.
+3. **Raw HarfBuzz only**, via the `hb-shape` CLI against the *one*
+   resolved font file (no Pango layout, no fallback chain — that concept
+   doesn't exist below Pango) — closer to what a lower-level renderer like
+   foot's `libfcft` does. Needed `--utf8-clusters`: `hb-shape`'s `cl`
+   field defaults to a *codepoint index*, not a byte offset — without the
+   flag, cluster text-slices silently misalign on any multi-byte
+   character, discovered the hard way while building this.
+
+The naive column-count is converted to a comparable pixel figure using the
+advance of a plain `"0"` in the same font as one reference "cell," so all
+three end up in the same units. A fourth column — real terminal pixel
+measurement, reusing `scripts/vte_canary`'s proven headless-capture
+approach (issues 51/57) rather than inventing a new mechanism — is tracked
+in `issues/59-canary-font-research-gaps.md` but not yet built.
+
+Sample run (`-text="abc☺️ ☺︎🚀def" -font="Noto Color Emoji"`): Pango
+totals 383px (real Latin fallback font used for `abc`/`def`, ~25-27px per
+letter); raw `hb-shape` against Noto Color Emoji alone totals 600px (no
+fallback, every glyph — including the Latin letters Noto Color Emoji
+doesn't cover — falls to `.notdef` at that font's flat 60px default
+advance); naive summation estimates 660px (11 columns × 60px reference
+cell). The three disagreeing is not itself a bug — it reflects a genuine
+difference in what each layer is capable of (fallback chain or not,
+clustering or not), which is exactly the kind of tech-stack difference
+this tool exists to surface.
+
+Usage: `make canary-width WIDTH_TEXT="abc☺️ ☺︎🚀def" FONT="Twemoji"` or
+`zig run scripts/canary_width_compare.zig -lc -- -help` for the full flag
+list. Manual/on-demand only — not part of `make canary`.
