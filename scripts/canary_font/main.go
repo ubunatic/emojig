@@ -4,118 +4,23 @@
 // canary_font is the Go counterpart of scripts/canary_font.zig — same
 // minimal behavior (render -text with -font via Cairo+Pango into an
 // offscreen image, save a PNG with a baked terminal/session label, write a
-// companion env dump), built with a different tech stack (cgo + dlopen
-// instead of Zig's dlopen'd extern-fn-pointer struct) so the two can be
+// companion env dump), built with a different tech stack (cgo linked
+// straight against the real cairo/pango/pangocairo headers via pkg-config,
+// vs. Zig's manually dlopen'd extern-fn-pointer struct) so the two can be
 // compared directly. See docs/EmojiWidthResearch.md.
+//
+// Requires cairo/pango/pangocairo -dev packages: `make canary-font-go-deps`
+// (or `scripts/install_cairo_pango_dev.sh`) installs them.
 //
 // Run: go run ./scripts/canary_font -- -help
 // Manual/on-demand only — not part of `make canary`.
 package main
 
 /*
-#cgo LDFLAGS: -ldl
-#include <dlfcn.h>
-#include <stdlib.h>
-#include <string.h>
-
-typedef void* (*create_for_data_fn)(unsigned char*, int, int, int, int);
-typedef void* (*create_fn)(void*);
-typedef void  (*destroy_fn)(void*);
-typedef void  (*surface_flush_fn)(void*);
-typedef int   (*write_png_fn)(void*, const char*);
-typedef void  (*set_source_rgb_fn)(void*, double, double, double);
-typedef void  (*paint_fn)(void*);
-typedef void  (*move_to_fn)(void*, double, double);
-typedef void* (*font_desc_new_fn)(void);
-typedef void  (*font_desc_set_family_fn)(void*, const char*);
-typedef void  (*font_desc_set_size_fn)(void*, double);
-typedef void  (*font_desc_free_fn)(void*);
-typedef void* (*create_layout_fn)(void*);
-typedef void  (*layout_set_font_desc_fn)(void*, void*);
-typedef void  (*layout_set_text_fn)(void*, const char*, int);
-typedef void  (*layout_get_pixel_size_fn)(void*, int*, int*);
-typedef void  (*show_layout_fn)(void*, void*);
-
-static create_for_data_fn      p_image_surface_create_for_data;
-static create_fn               p_create;
-static destroy_fn               p_destroy;
-static destroy_fn               p_surface_destroy;
-static surface_flush_fn         p_surface_flush;
-static write_png_fn             p_surface_write_to_png;
-static set_source_rgb_fn        p_set_source_rgb;
-static paint_fn                 p_paint;
-static move_to_fn               p_move_to;
-static font_desc_new_fn         p_font_description_new;
-static font_desc_set_family_fn  p_font_description_set_family;
-static font_desc_set_size_fn    p_font_description_set_absolute_size;
-static font_desc_free_fn        p_font_description_free;
-static create_layout_fn         p_cairo_create_layout;
-static layout_set_font_desc_fn  p_layout_set_font_description;
-static layout_set_text_fn       p_layout_set_text;
-static layout_get_pixel_size_fn p_layout_get_pixel_size;
-static show_layout_fn           p_cairo_show_layout;
-
-// loadCairoPango dlopens libcairo/libpango/libpangocairo by their runtime
-// SONAMEs (not the unversioned -dev symlinks pkg-config/-lcairo would need)
-// and resolves every symbol used below. Returns NULL on success, or a
-// static message naming what failed.
-static const char* loadCairoPango(void) {
-	void *cairo_h = dlopen("libcairo.so.2", RTLD_LAZY);
-	if (!cairo_h) return "dlopen libcairo.so.2 failed";
-	void *pango_h = dlopen("libpango-1.0.so.0", RTLD_LAZY);
-	if (!pango_h) return "dlopen libpango-1.0.so.0 failed";
-	void *pangocairo_h = dlopen("libpangocairo-1.0.so.0", RTLD_LAZY);
-	if (!pangocairo_h) return "dlopen libpangocairo-1.0.so.0 failed";
-
-	p_image_surface_create_for_data      = (create_for_data_fn)dlsym(cairo_h, "cairo_image_surface_create_for_data");
-	p_create                             = (create_fn)dlsym(cairo_h, "cairo_create");
-	p_destroy                            = (destroy_fn)dlsym(cairo_h, "cairo_destroy");
-	p_surface_destroy                    = (destroy_fn)dlsym(cairo_h, "cairo_surface_destroy");
-	p_surface_flush                      = (surface_flush_fn)dlsym(cairo_h, "cairo_surface_flush");
-	p_surface_write_to_png               = (write_png_fn)dlsym(cairo_h, "cairo_surface_write_to_png");
-	p_set_source_rgb                     = (set_source_rgb_fn)dlsym(cairo_h, "cairo_set_source_rgb");
-	p_paint                              = (paint_fn)dlsym(cairo_h, "cairo_paint");
-	p_move_to                            = (move_to_fn)dlsym(cairo_h, "cairo_move_to");
-	p_font_description_new               = (font_desc_new_fn)dlsym(pango_h, "pango_font_description_new");
-	p_font_description_set_family        = (font_desc_set_family_fn)dlsym(pango_h, "pango_font_description_set_family");
-	p_font_description_set_absolute_size = (font_desc_set_size_fn)dlsym(pango_h, "pango_font_description_set_absolute_size");
-	p_font_description_free              = (font_desc_free_fn)dlsym(pango_h, "pango_font_description_free");
-	p_cairo_create_layout                = (create_layout_fn)dlsym(pangocairo_h, "pango_cairo_create_layout");
-	p_layout_set_font_description        = (layout_set_font_desc_fn)dlsym(pango_h, "pango_layout_set_font_description");
-	p_layout_set_text                    = (layout_set_text_fn)dlsym(pango_h, "pango_layout_set_text");
-	p_layout_get_pixel_size              = (layout_get_pixel_size_fn)dlsym(pango_h, "pango_layout_get_pixel_size");
-	p_cairo_show_layout                  = (show_layout_fn)dlsym(pangocairo_h, "pango_cairo_show_layout");
-
-	if (!p_image_surface_create_for_data || !p_create || !p_destroy || !p_surface_destroy ||
-	    !p_surface_flush || !p_surface_write_to_png || !p_set_source_rgb || !p_paint || !p_move_to ||
-	    !p_font_description_new || !p_font_description_set_family || !p_font_description_set_absolute_size ||
-	    !p_font_description_free || !p_cairo_create_layout || !p_layout_set_font_description ||
-	    !p_layout_set_text || !p_layout_get_pixel_size || !p_cairo_show_layout) {
-		return "dlsym failed for one or more cairo/pango symbols";
-	}
-	return NULL;
-}
-
-static void* cf_image_surface_create_for_data(unsigned char *data, int format, int width, int height, int stride) {
-	return p_image_surface_create_for_data(data, format, width, height, stride);
-}
-static void* cf_create(void *surface) { return p_create(surface); }
-static void  cf_destroy(void *cr) { p_destroy(cr); }
-static void  cf_surface_destroy(void *surface) { p_surface_destroy(surface); }
-static void  cf_surface_flush(void *surface) { p_surface_flush(surface); }
-static int   cf_surface_write_to_png(void *surface, const char *filename) { return p_surface_write_to_png(surface, filename); }
-static void  cf_set_source_rgb(void *cr, double r, double g, double b) { p_set_source_rgb(cr, r, g, b); }
-static void  cf_paint(void *cr) { p_paint(cr); }
-static void  cf_move_to(void *cr, double x, double y) { p_move_to(cr, x, y); }
-static void* cf_font_description_new(void) { return p_font_description_new(); }
-static void  cf_font_description_set_family(void *desc, const char *family) { p_font_description_set_family(desc, family); }
-static void  cf_font_description_set_absolute_size(void *desc, double size) { p_font_description_set_absolute_size(desc, size); }
-static void  cf_font_description_free(void *desc) { p_font_description_free(desc); }
-static void* cf_cairo_create_layout(void *cr) { return p_cairo_create_layout(cr); }
-static void  cf_layout_set_font_description(void *layout, void *desc) { p_layout_set_font_description(layout, desc); }
-static void  cf_layout_set_text(void *layout, const char *text, int length) { p_layout_set_text(layout, text, length); }
-static void  cf_layout_get_pixel_size(void *layout, int *w, int *h) { p_layout_get_pixel_size(layout, w, h); }
-static void  cf_cairo_show_layout(void *cr, void *layout) { p_cairo_show_layout(cr, layout); }
+#cgo pkg-config: cairo pango pangocairo
+#include <cairo/cairo.h>
+#include <pango/pango.h>
+#include <pango/pangocairo.h>
 */
 import "C"
 
@@ -128,8 +33,6 @@ import (
 	"strings"
 	"unsafe"
 )
-
-const cairoFormatARGB32 = 0
 
 func hexToUnit(hex string) float64 {
 	v, err := strconv.ParseUint(hex, 16, 16)
@@ -266,7 +169,9 @@ FreeType before presentation. Every render bakes a terminal/session label
 into the image and writes a companion <out>.env.txt env-var dump.
 
 This is the Go counterpart of scripts/canary_font.zig — same behavior, a
-different tech stack (cgo+dlopen instead of Zig's dlopen), for comparison.
+different tech stack (cgo+pkg-config instead of Zig's dlopen), for
+comparison. Requires cairo/pango/pangocairo -dev packages — run
+'make canary-font-go-deps' first if the build fails to find them.
 
 `)
 		flag.PrintDefaults()
@@ -302,11 +207,6 @@ different tech stack (cgo+dlopen instead of Zig's dlopen), for comparison.
 		os.Exit(1)
 	}
 
-	if errMsg := C.loadCairoPango(); errMsg != nil {
-		fmt.Fprintf(os.Stderr, "canary_font: %s\n", C.GoString(errMsg))
-		os.Exit(1)
-	}
-
 	fontFamilyC := C.CString(*font)
 	defer C.free(unsafe.Pointer(fontFamilyC))
 	textC := C.CString(*text)
@@ -318,33 +218,33 @@ different tech stack (cgo+dlopen instead of Zig's dlopen), for comparison.
 	// the real image is sized exactly to its content plus padding — a
 	// pre-cropped PNG rather than a fixed canvas with stray blank margins.
 	scratchPixels := make([]byte, 4)
-	scratchSurface := C.cf_image_surface_create_for_data((*C.uchar)(unsafe.Pointer(&scratchPixels[0])), cairoFormatARGB32, 1, 1, 4)
-	scratchCr := C.cf_create(scratchSurface)
-	fontDesc := C.cf_font_description_new()
-	C.cf_font_description_set_family(fontDesc, fontFamilyC)
-	C.cf_font_description_set_absolute_size(fontDesc, C.double(*sizePx*1024.0))
-	scratchLayout := C.cf_cairo_create_layout(scratchCr)
-	C.cf_layout_set_font_description(scratchLayout, fontDesc)
-	C.cf_layout_set_text(scratchLayout, textC, C.int(len(*text)))
+	scratchSurface := C.cairo_image_surface_create_for_data((*C.uchar)(unsafe.Pointer(&scratchPixels[0])), C.CAIRO_FORMAT_ARGB32, 1, 1, 4)
+	scratchCr := C.cairo_create(scratchSurface)
+	fontDesc := C.pango_font_description_new()
+	C.pango_font_description_set_family(fontDesc, fontFamilyC)
+	C.pango_font_description_set_absolute_size(fontDesc, C.double(*sizePx*1024.0))
+	scratchLayout := C.pango_cairo_create_layout(scratchCr)
+	C.pango_layout_set_font_description(scratchLayout, fontDesc)
+	C.pango_layout_set_text(scratchLayout, textC, C.int(len(*text)))
 	var textW, textH C.int
-	C.cf_layout_get_pixel_size(scratchLayout, &textW, &textH)
+	C.pango_layout_get_pixel_size(scratchLayout, &textW, &textH)
 
 	// Label uses a plain system font (not -font) at a small fixed size —
 	// it's metadata chrome, not part of the thing being measured.
 	const labelSizePx = 13.0
 	labelFamilyC := C.CString("sans-serif")
 	defer C.free(unsafe.Pointer(labelFamilyC))
-	labelDesc := C.cf_font_description_new()
-	C.cf_font_description_set_family(labelDesc, labelFamilyC)
-	C.cf_font_description_set_absolute_size(labelDesc, C.double(labelSizePx*1024.0))
-	scratchLabelLayout := C.cf_cairo_create_layout(scratchCr)
-	C.cf_layout_set_font_description(scratchLabelLayout, labelDesc)
-	C.cf_layout_set_text(scratchLabelLayout, labelTextC, C.int(len(labelText)))
+	labelDesc := C.pango_font_description_new()
+	C.pango_font_description_set_family(labelDesc, labelFamilyC)
+	C.pango_font_description_set_absolute_size(labelDesc, C.double(labelSizePx*1024.0))
+	scratchLabelLayout := C.pango_cairo_create_layout(scratchCr)
+	C.pango_layout_set_font_description(scratchLabelLayout, labelDesc)
+	C.pango_layout_set_text(scratchLabelLayout, labelTextC, C.int(len(labelText)))
 	var labelW, labelH C.int
-	C.cf_layout_get_pixel_size(scratchLabelLayout, &labelW, &labelH)
+	C.pango_layout_get_pixel_size(scratchLabelLayout, &labelW, &labelH)
 
-	C.cf_destroy(scratchCr)
-	C.cf_surface_destroy(scratchSurface)
+	C.cairo_destroy(scratchCr)
+	C.cairo_surface_destroy(scratchSurface)
 
 	const labelGap = 16
 	padI := int(*pad)
@@ -356,34 +256,34 @@ different tech stack (cgo+dlopen instead of Zig's dlopen), for comparison.
 	stride := width * 4
 	pixels := make([]byte, stride*height)
 
-	realSurface := C.cf_image_surface_create_for_data((*C.uchar)(unsafe.Pointer(&pixels[0])), cairoFormatARGB32, C.int(width), C.int(height), C.int(stride))
-	realCr := C.cf_create(realSurface)
-	C.cf_set_source_rgb(realCr, C.double(bg[0]), C.double(bg[1]), C.double(bg[2]))
-	C.cf_paint(realCr)
-	C.cf_set_source_rgb(realCr, C.double(fg[0]), C.double(fg[1]), C.double(fg[2]))
-	C.cf_move_to(realCr, C.double(*pad), C.double(*pad))
-	realLayout := C.cf_cairo_create_layout(realCr)
-	C.cf_layout_set_font_description(realLayout, fontDesc)
-	C.cf_layout_set_text(realLayout, textC, C.int(len(*text)))
-	C.cf_cairo_show_layout(realCr, realLayout)
+	realSurface := C.cairo_image_surface_create_for_data((*C.uchar)(unsafe.Pointer(&pixels[0])), C.CAIRO_FORMAT_ARGB32, C.int(width), C.int(height), C.int(stride))
+	realCr := C.cairo_create(realSurface)
+	C.cairo_set_source_rgb(realCr, C.double(bg[0]), C.double(bg[1]), C.double(bg[2]))
+	C.cairo_paint(realCr)
+	C.cairo_set_source_rgb(realCr, C.double(fg[0]), C.double(fg[1]), C.double(fg[2]))
+	C.cairo_move_to(realCr, C.double(*pad), C.double(*pad))
+	realLayout := C.pango_cairo_create_layout(realCr)
+	C.pango_layout_set_font_description(realLayout, fontDesc)
+	C.pango_layout_set_text(realLayout, textC, C.int(len(*text)))
+	C.pango_cairo_show_layout(realCr, realLayout)
 
 	// Dimmer than the main text so it reads as metadata, not content.
-	C.cf_set_source_rgb(realCr, C.double(fg[0]*0.55), C.double(fg[1]*0.55), C.double(fg[2]*0.55))
-	C.cf_move_to(realCr, C.double(*pad), C.double(*pad+float64(textH)+labelGap))
-	realLabelLayout := C.cf_cairo_create_layout(realCr)
-	C.cf_layout_set_font_description(realLabelLayout, labelDesc)
-	C.cf_layout_set_text(realLabelLayout, labelTextC, C.int(len(labelText)))
-	C.cf_cairo_show_layout(realCr, realLabelLayout)
+	C.cairo_set_source_rgb(realCr, C.double(fg[0]*0.55), C.double(fg[1]*0.55), C.double(fg[2]*0.55))
+	C.cairo_move_to(realCr, C.double(*pad), C.double(*pad+float64(textH)+labelGap))
+	realLabelLayout := C.pango_cairo_create_layout(realCr)
+	C.pango_layout_set_font_description(realLabelLayout, labelDesc)
+	C.pango_layout_set_text(realLabelLayout, labelTextC, C.int(len(labelText)))
+	C.pango_cairo_show_layout(realCr, realLabelLayout)
 
-	C.cf_surface_flush(realSurface)
-	C.cf_destroy(realCr)
+	C.cairo_surface_flush(realSurface)
+	C.cairo_destroy(realCr)
 
 	outPathC := C.CString(outPath)
 	defer C.free(unsafe.Pointer(outPathC))
-	C.cf_surface_write_to_png(realSurface, outPathC)
-	C.cf_surface_destroy(realSurface)
-	C.cf_font_description_free(fontDesc)
-	C.cf_font_description_free(labelDesc)
+	C.cairo_surface_write_to_png(realSurface, outPathC)
+	C.cairo_surface_destroy(realSurface)
+	C.pango_font_description_free(fontDesc)
+	C.pango_font_description_free(labelDesc)
 
 	fmt.Printf("canary_font: saved %s\n", outPath)
 }

@@ -232,7 +232,10 @@ UNSET ?=
 canary-font: ⚙️  # manual font-alignment research (Zig+dlopen): renders TEXT with FONT offscreen via Cairo/Pango and saves a PNG + env dump — NOT part of `make canary`; usage: make canary-font FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
 	zig run scripts/canary_font.zig -lc -- -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
 
-canary-font-go: ⚙️  # same as canary-font but Go+cgo/dlopen instead of Zig+dlopen, for cross-tech-stack comparison — usage: make canary-font-go FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
+canary-font-go-deps: ⚙️  # install cairo/pango/pangocairo -dev packages (headers + pkg-config) needed to build scripts/canary_font/main.go
+	@scripts/install_cairo_pango_dev.sh
+
+canary-font-go: ⚙️ canary-font-go-deps  # same as canary-font but Go+cgo/pkg-config instead of Zig+dlopen, for cross-tech-stack comparison — usage: make canary-font-go FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
 	go run ./scripts/canary_font -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
 
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory

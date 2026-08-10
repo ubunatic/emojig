@@ -298,12 +298,20 @@ implementation's binding code rather than to the font stack itself:
 
 - `scripts/canary_font.zig` — Zig, dlopens `libcairo`/`libpango-1.0`/
   `libpangocairo-1.0` directly via hand-written `extern fn` pointers (the
-  same low-level approach `scripts/canary_gui.zig` uses for Wayland).
-- `scripts/canary_font/main.go` — Go, same dlopen approach via cgo (`go
-  run ./scripts/canary_font`), chosen over a normal `pkg-config`/`-lpango`
-  cgo link because this host only has the runtime `.so.0` libraries
-  installed, not the `-dev` packages' unversioned symlinks/headers that
-  linking would need — dlopen-by-SONAME needs neither.
+  same low-level approach `scripts/canary_gui.zig` uses for Wayland). No
+  `-dev` packages needed — this is Zig's normal way of talking to a C
+  library in this codebase.
+- `scripts/canary_font/main.go` — Go, a normal `#cgo pkg-config: cairo
+  pango pangocairo` link against the real headers (`go run
+  ./scripts/canary_font`). This needs the `-dev` packages (headers +
+  `.pc` files + unversioned `.so` symlinks) installed — `make
+  canary-font-go-deps` (→ `scripts/install_cairo_pango_dev.sh`,
+  dnf/apt/zypper/apk/pacman branches) installs them, and `canary-font-go`
+  depends on it so it's ensured automatically. An earlier version
+  dlopened the runtime `.so.N` libraries directly (like the Zig canary)
+  specifically to avoid needing `-dev` packages, but a plain
+  pkg-config/header link is simpler and more idiomatic Go/cgo — worth the
+  one-time `-dev` install for a manual research tool.
 
 In testing here, both produced visually identical output for the same
 `-font`/`-text` (as expected — both ultimately call the same Cairo/Pango
