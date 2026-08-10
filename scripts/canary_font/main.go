@@ -12,6 +12,20 @@
 // Requires cairo/pango/pangocairo -dev packages: `make canary-font-go-deps`
 // (or `scripts/install_cairo_pango_dev.sh`) installs them.
 //
+// Font-fallback is disabled by default (-allow-fallback to re-enable):
+// Pango's default fallback silently substitutes a different family for
+// emoji-presentation codepoints regardless of -font, even when the
+// requested font covers the glyph — verified with hb-shape that
+// Twemoji.ttf has a real glyph for U+1F680 that unmodified Pango ignored
+// in favor of Noto Color Emoji. Without this, -font was a no-op for
+// emoji. See docs/EmojiWidthResearch.md and
+// issues/59-canary-font-research-gaps.md.
+//
+// Scope: only the Pango/Cairo/FreeType/fontconfig stack. foot links no
+// Pango at all (libfcft+FreeType+HarfBuzz directly) and no terminal lays
+// out its grid via pango_layout, so this canary cannot speak to foot's
+// behavior or terminal grid alignment specifically.
+//
 // Run: go run ./scripts/canary_font -- -help
 // Manual/on-demand only — not part of `make canary`.
 package main
@@ -125,6 +139,25 @@ var envDumpVars = []string{
 	"GHOSTTY_RESOURCES_DIR", "GNOME_TERMINAL_SCREEN",
 }
 
+// disableFallback forces every glyph in layout to actually come from its
+// PangoFontDescription's requested family — Pango's default per-run
+// fallback silently substitutes a *different* family for codepoints
+// tagged Emoji_Presentation (e.g. rocket 🚀), regardless of what -font
+// asked for and regardless of whether the requested font also covers
+// that glyph (verified: HarfBuzz reports a real, non-.notdef glyph for
+// U+1F680 in Twemoji.ttf, yet Pango picked Noto Color Emoji anyway).
+// Confirmed empirically that -font was otherwise a no-op for emoji glyphs
+// specifically — see docs/EmojiWidthResearch.md and issue 59. With
+// fallback disabled, a font that genuinely lacks a glyph shows a tofu/
+// notdef box instead of silently substituting — the honest result this
+// research tool needs.
+func disableFallback(layout *C.PangoLayout) {
+	attrs := C.pango_attr_list_new()
+	attr := C.pango_attr_fallback_new(C.FALSE)
+	C.pango_attr_list_insert(attrs, attr)        // list takes ownership of attr
+	C.pango_layout_set_attributes(layout, attrs) // layout takes its own ref
+}
+
 // writeEnvDump writes a companion text file next to the PNG recording the
 // env vars most likely to matter when comparing renders across hosts/
 // terminals later — a bare PNG filename doesn't carry that context on its
@@ -156,22 +189,32 @@ func main() {
 	fgHex := flag.String("fg", "eaeae6", "text hex color")
 	out := flag.String("out", "", "output PNG path (default: scripts/canary_font/shots/<font>.png)")
 	unset := flag.String("unset", "", "comma-separated env vars to unset before rendering")
+	allowFallback := flag.Bool("allow-fallback", false, "let Pango substitute a different font when the requested one is missing/incomplete for a glyph (default: off)")
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, `Usage: go run ./scripts/canary_font -- [flags]
 
 Renders -text with -font (a Pango family name — fontconfig resolves it to a
 real installed font; vector families like "DejaVu Sans Mono" or "Noto Color
 Emoji" and bitmap/CBDT families like "Twemoji" both go through the same
-Cairo/Pango path, so the flag *is* the vector-vs-bitmap switch) into an
-offscreen image and saves it as a PNG — no window, no compositor, no
-screenshot tool, since alignment is decided entirely by Pango/Cairo/
-FreeType before presentation. Every render bakes a terminal/session label
-into the image and writes a companion <out>.env.txt env-var dump.
+Cairo/Pango path) into an offscreen image and saves it as a PNG — no
+window, no compositor, no screenshot tool, since alignment is decided
+entirely by Pango/Cairo/FreeType before presentation. Font-fallback is
+disabled by default (see -allow-fallback below) so -font is a real,
+honest switch: Pango's default fallback silently substitutes a different
+family for emoji-presentation codepoints regardless of what you asked
+for, even when the requested font covers the glyph. Every render bakes a
+terminal/session label into the image and writes a companion
+<out>.env.txt env-var dump.
 
 This is the Go counterpart of scripts/canary_font.zig — same behavior, a
 different tech stack (cgo+pkg-config instead of Zig's dlopen), for
 comparison. Requires cairo/pango/pangocairo -dev packages — run
 'make canary-font-go-deps' first if the build fails to find them.
+
+Only covers the Pango/Cairo/FreeType/fontconfig stack (GTK, VTE-based
+terminals, etc.) — foot links no Pango at all (libfcft+FreeType+HarfBuzz
+directly) and no terminal lays out a grid via pango_layout, so this
+canary cannot speak to foot's or a terminal grid's behavior specifically.
 
 `)
 		flag.PrintDefaults()
@@ -225,6 +268,9 @@ comparison. Requires cairo/pango/pangocairo -dev packages — run
 	C.pango_font_description_set_absolute_size(fontDesc, C.double(*sizePx*1024.0))
 	scratchLayout := C.pango_cairo_create_layout(scratchCr)
 	C.pango_layout_set_font_description(scratchLayout, fontDesc)
+	if !*allowFallback {
+		disableFallback(scratchLayout)
+	}
 	C.pango_layout_set_text(scratchLayout, textC, C.int(len(*text)))
 	var textW, textH C.int
 	C.pango_layout_get_pixel_size(scratchLayout, &textW, &textH)
@@ -264,6 +310,9 @@ comparison. Requires cairo/pango/pangocairo -dev packages — run
 	C.cairo_move_to(realCr, C.double(*pad), C.double(*pad))
 	realLayout := C.pango_cairo_create_layout(realCr)
 	C.pango_layout_set_font_description(realLayout, fontDesc)
+	if !*allowFallback {
+		disableFallback(realLayout)
+	}
 	C.pango_layout_set_text(realLayout, textC, C.int(len(*text)))
 	C.pango_cairo_show_layout(realCr, realLayout)
 

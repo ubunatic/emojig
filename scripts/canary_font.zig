@@ -17,6 +17,21 @@
 //! docs/EmojiWidthResearch.md) is irrelevant to the question this canary
 //! answers and was dropped as unneeded complexity.
 //!
+//! Font-fallback is disabled by default (pango_attr_fallback_new(FALSE),
+//! -allow-fallback to re-enable): Pango's default fallback silently
+//! substitutes a *different* family for emoji-presentation codepoints
+//! regardless of -font, even when the requested font covers the glyph —
+//! verified with hb-shape that Twemoji.ttf has a real glyph for U+1F680
+//! that unmodified Pango ignored in favor of Noto Color Emoji. Without
+//! this, -font was a no-op for emoji and every vector-vs-bitmap
+//! comparison below was vacuous. See docs/EmojiWidthResearch.md and
+//! issues/59-canary-font-research-gaps.md.
+//!
+//! Scope: only the Pango/Cairo/FreeType/fontconfig stack. foot links no
+//! Pango at all (libfcft+FreeType+HarfBuzz directly) and no terminal lays
+//! out its grid via pango_layout, so this canary cannot speak to foot's
+//! behavior or terminal grid alignment specifically.
+//!
 //! Every render bakes a small metadata label into the image itself
 //! (detected terminal emulator, $TERM, session type/desktop) so a PNG
 //! saved or shared elsewhere still carries which host/terminal it came
@@ -69,7 +84,13 @@ const CairoLib = struct {
     layout_set_font_description: *const fn (layout: ?*anyopaque, desc: ?*anyopaque) callconv(.c) void,
     layout_set_text: *const fn (layout: ?*anyopaque, text: [*]const u8, length: c_int) callconv(.c) void,
     layout_get_pixel_size: *const fn (layout: ?*anyopaque, width: *c_int, height: *c_int) callconv(.c) void,
+    layout_set_attributes: *const fn (layout: ?*anyopaque, attrs: ?*anyopaque) callconv(.c) void,
     cairo_show_layout: *const fn (cr: ?*anyopaque, layout: ?*anyopaque) callconv(.c) void,
+
+    attr_list_new: *const fn () callconv(.c) ?*anyopaque,
+    attr_list_insert: *const fn (list: ?*anyopaque, attr: ?*anyopaque) callconv(.c) void,
+    attr_list_unref: *const fn (list: ?*anyopaque) callconv(.c) void,
+    attr_fallback_new: *const fn (enable_fallback: c_int) callconv(.c) ?*anyopaque,
 
     fn sym(h: *anyopaque, name: [*:0]const u8) !*anyopaque {
         return std.c.dlsym(h, name) orelse return error.SymbolNotFound;
@@ -100,12 +121,37 @@ const CairoLib = struct {
             .layout_set_font_description = @ptrCast(try sym(pango_h, "pango_layout_set_font_description")),
             .layout_set_text = @ptrCast(try sym(pango_h, "pango_layout_set_text")),
             .layout_get_pixel_size = @ptrCast(try sym(pango_h, "pango_layout_get_pixel_size")),
+            .layout_set_attributes = @ptrCast(try sym(pango_h, "pango_layout_set_attributes")),
             .cairo_show_layout = @ptrCast(try sym(pangocairo_h, "pango_cairo_show_layout")),
+            .attr_list_new = @ptrCast(try sym(pango_h, "pango_attr_list_new")),
+            .attr_list_insert = @ptrCast(try sym(pango_h, "pango_attr_list_insert")),
+            .attr_list_unref = @ptrCast(try sym(pango_h, "pango_attr_list_unref")),
+            .attr_fallback_new = @ptrCast(try sym(pango_h, "pango_attr_fallback_new")),
         };
     }
 };
 
 const CAIRO_FORMAT_ARGB32: c_int = 0;
+const PANGO_FALLBACK_DISABLE: c_int = 0; // gboolean FALSE
+
+/// Forces every glyph in `layout` to actually come from its
+/// PangoFontDescription's requested family — Pango's default per-run
+/// fallback silently substitutes a *different* family for codepoints
+/// tagged Emoji_Presentation (e.g. rocket 🚀), regardless of what -font
+/// asked for and regardless of whether the requested font also covers
+/// that glyph (verified: HarfBuzz reports a real, non-.notdef glyph for
+/// U+1F680 in Twemoji.ttf, yet Pango picked Noto Color Emoji anyway).
+/// Confirmed empirically that -font was otherwise a no-op for emoji glyphs
+/// specifically — see docs/EmojiWidthResearch.md and issue 59. With
+/// fallback disabled, a font that genuinely lacks a glyph shows a tofu/
+/// notdef box instead of silently substituting — the honest result this
+/// research tool needs.
+fn disableFallback(cairo: *const CairoLib, layout: ?*anyopaque) void {
+    const attrs = cairo.attr_list_new() orelse return;
+    const attr = cairo.attr_fallback_new(PANGO_FALLBACK_DISABLE) orelse return;
+    cairo.attr_list_insert(attrs, attr); // list takes ownership of attr
+    cairo.layout_set_attributes(layout, attrs); // layout takes its own ref
+}
 
 // ---------------------------------------------------------------------------
 // CLI + main
@@ -120,6 +166,7 @@ const Args = struct {
     fg: [3]f64 = .{ 0.92, 0.92, 0.90 },
     out: ?[]const u8 = null,
     unset: []const u8 = "",
+    allow_fallback: bool = false,
     help: bool = false,
 };
 
@@ -176,6 +223,8 @@ fn parseArgs(init: std.process.Init) Args {
             a.out = arg["-out=".len..];
         } else if (std.mem.startsWith(u8, arg, "-unset=")) {
             a.unset = arg["-unset=".len..];
+        } else if (std.mem.eql(u8, arg, "-allow-fallback")) {
+            a.allow_fallback = true;
         }
     }
     return a;
@@ -188,12 +237,16 @@ fn printHelp() void {
         \\Renders -text with -font (a Pango family name — fontconfig resolves it
         \\to a real installed font; vector families like "DejaVu Sans Mono" or
         \\"Noto Color Emoji" and bitmap/CBDT families like "Twemoji" both go
-        \\through the same Cairo/Pango path, so the flag *is* the vector-vs-
-        \\bitmap switch) into an offscreen image and saves it as a PNG — no
-        \\Wayland window, no compositor, no screenshot tool, since alignment is
-        \\decided entirely by Pango/Cairo/FreeType before presentation.
-        \\Every render bakes a terminal/session label into the image and
-        \\writes a companion <out>.env.txt env-var dump.
+        \\through the same Cairo/Pango path) into an offscreen image and saves
+        \\it as a PNG — no Wayland window, no compositor, no screenshot tool,
+        \\since alignment is decided entirely by Pango/Cairo/FreeType before
+        \\presentation. Font-fallback is disabled by default (see
+        \\-allow-fallback below) so -font is a real, honest switch: Pango's
+        \\default fallback silently substitutes a *different* family for
+        \\emoji-presentation codepoints regardless of what you asked for, even
+        \\when the requested font covers the glyph. Every render bakes a
+        \\terminal/session label into the image and writes a companion
+        \\<out>.env.txt env-var dump.
         \\
         \\  -font=NAME     Pango font family (default: monospace)
         \\  -text=STR      text/emoji to render (default: ASCII + smiling-face pair)
@@ -205,9 +258,18 @@ fn printHelp() void {
         \\  -unset=A,B,C   unset these env vars before rendering (e.g. to test
         \\                 whether FREETYPE_PROPERTIES/FONTCONFIG_FILE/etc. is
         \\                 responsible for an alignment difference)
+        \\  -allow-fallback  let Pango substitute a different font when the
+        \\                   requested one is missing/incomplete for a glyph
+        \\                   (default: off — missing glyphs render as tofu/
+        \\                   notdef boxes instead of silently substituting)
         \\
-        \\Manual/on-demand only — not part of `make canary`. See
-        \\docs/EmojiWidthResearch.md.
+        \\Only covers the Pango/Cairo/FreeType/fontconfig stack (GTK, VTE-
+        \\based terminals, etc.) — foot links no Pango at all (libfcft+
+        \\FreeType+HarfBuzz directly) and no terminal lays out a grid via
+        \\pango_layout, so this canary cannot speak to foot's or a terminal
+        \\grid's behavior specifically. See docs/EmojiWidthResearch.md.
+        \\
+        \\Manual/on-demand only — not part of `make canary`.
         \\
     , .{});
 }
@@ -408,6 +470,7 @@ pub fn main(init: std.process.Init) !void {
     cairo.font_description_set_absolute_size(font_desc, args.size_px * 1024.0);
     const scratch_layout = cairo.cairo_create_layout(scratch_cr) orelse return error.PangoLayoutFailed;
     cairo.layout_set_font_description(scratch_layout, font_desc);
+    if (!args.allow_fallback) disableFallback(&cairo, scratch_layout);
     cairo.layout_set_text(scratch_layout, args.text.ptr, @intCast(args.text.len));
     var text_w: c_int = 0;
     var text_h: c_int = 0;
@@ -447,6 +510,7 @@ pub fn main(init: std.process.Init) !void {
     cairo.move_to(real_cr, args.pad, args.pad);
     const real_layout = cairo.cairo_create_layout(real_cr) orelse return error.PangoLayoutFailed;
     cairo.layout_set_font_description(real_layout, font_desc);
+    if (!args.allow_fallback) disableFallback(&cairo, real_layout);
     cairo.layout_set_text(real_layout, args.text.ptr, @intCast(args.text.len));
     cairo.cairo_show_layout(real_cr, real_layout);
 

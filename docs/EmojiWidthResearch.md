@@ -258,7 +258,32 @@ everything else:
   `-font` flag through real fontconfig+FreeType — so pointing it at a
   CBDT bitmap family (`Twemoji`) vs. a COLR vector family (`Noto Color
   Emoji`, confirmed to be the `Noto-COLRv1.ttf` variant on this host) is a
-  genuine vector-vs-bitmap glyph-technology switch, not a simulation of one.
+  genuine vector-vs-bitmap glyph-technology switch, not a simulation of
+  one — **but only since fallback was explicitly disabled (below); this
+  was false for the first several days this canary existed.** Pango's
+  *default* per-run font fallback silently substitutes a different family
+  for any codepoint tagged `Emoji_Presentation` (e.g. 🚀), regardless of
+  `-font`, and regardless of whether the requested font covers the glyph:
+  verified directly with `hb-shape` that Twemoji.ttf has a real,
+  non-`.notdef` glyph for U+1F680, yet unmodified Pango silently rendered
+  it with Noto Color Emoji anyway. Every `-font=Twemoji`-vs-`-font="Noto
+  Color Emoji"` comparison made with this canary before the fix was
+  comparing *the exact same rendering* regardless of the flag — a
+  vacuous negative result, not a real one. Fixed by disabling fallback
+  (`pango_attr_fallback_new(FALSE)`, applied to the layout's attribute
+  list) by default in both implementations; `-allow-fallback` restores
+  the old permissive behavior for comparison. With fallback off, a font
+  that genuinely lacks a glyph now renders it as a tofu/notdef box
+  instead of silently substituting — see `issues/59-canary-font-research-gaps.md`.
+- **Scope limitation, stated explicitly because it wasn't before**: this
+  only covers the Pango/Cairo/FreeType/fontconfig stack (GTK apps,
+  VTE-based terminals like gnome-terminal/tilix). `foot` links no Pango
+  at all — it uses `libfcft`+FreeType+HarfBuzz directly (`ldd
+  $(command -v foot)` shows no libpango) — and no terminal lays out its
+  grid via `pango_layout` in the first place (that's exactly what issue
+  57's row-length question was about). This canary cannot speak to
+  foot's behavior or to terminal grid alignment specifically; it only
+  answers "how does the Pango/Cairo stack itself handle this font/text."
 - Renders straight into an **offscreen** Cairo image surface and saves it
   as a PNG — no Wayland window, no compositor, no screenshot tool. An
   earlier version of this canary opened a real on-screen window and shot
@@ -313,10 +338,16 @@ implementation's binding code rather than to the font stack itself:
   pkg-config/header link is simpler and more idiomatic Go/cgo — worth the
   one-time `-dev` install for a manual research tool.
 
-In testing here, both produced visually identical output for the same
-`-font`/`-text` (as expected — both ultimately call the same Cairo/Pango
-libraries), which is itself a useful negative result: it means Zig's
-manual dlopen binding isn't introducing its own alignment artifacts
+Both produced visually identical output for the same `-font`/`-text`
+**after the fallback fix above** (verified again post-fix: `-font=Twemoji`
+now measures a genuinely different width from `-font="Noto Color Emoji"`
+in both implementations, and produces the font's own distinct rocket
+artwork). Before the fix, "identical output" was a vacuous result — any
+two `-font` values would have produced identical output regardless of
+whether the implementations agreed on anything, since neither was
+actually switching the emoji font. Re-verified with fallback correctly
+disabled, this cross-implementation agreement is a real result: it means
+Zig's manual dlopen binding isn't introducing its own alignment artifacts
 relative to Go's cgo-mediated calls.
 
 Building `-unset` surfaced a real tech-stack difference, though — not in
