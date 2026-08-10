@@ -1,43 +1,31 @@
 // SPDX-FileCopyrightText: 2026 Uwe Jugel
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Manual, on-demand canary for researching font rendering on the *real*
-//! desktop compositor — no wayreel, no nested sway, no Xvfb.
+//! Manual, on-demand canary for researching font *alignment* — glyph shape,
+//! metrics, and subsequence positioning — independent of any terminal
+//! emulator or compositor.
 //!
-//! It opens a native Wayland surface directly on the developer's own real
-//! compositor session (dlopen'd libwayland-client, same pattern as
-//! canary_gui.zig), renders a line of text into it via Cairo+Pango
-//! (dlopen'd libcairo / libpango-1.0 / libpangocairo-1.0 — fontconfig+
-//! FreeType underneath, so whichever font family is named decides vector
-//! (COLR/outline) vs bitmap (CBDT) glyph rendering, transparently, exactly
-//! like a real desktop app), then shoots *only its own window* and saves a
-//! pre-cropped PNG. Two capture tiers, chosen automatically:
-//!   - sway/wlroots (SWAYSOCK set): `swaymsg -t get_tree` locates the
-//!     window by app-id, `grim -g` shoots exactly that rect.
-//!   - GNOME/Mutter (no wlr-screencopy, so grim can't talk to it):
-//!     `org.gnome.Shell.Screenshot.ScreenshotWindow` over D-Bus shoots
-//!     whichever window currently has focus. Must be run from the real
-//!     logged-in session — a sandboxed/CI D-Bus connection gets
-//!     AccessDenied, which is fine, since this canary is manual/on-host use
-//!     only.
-//! Its own pre-composite SHM buffer is *always* additionally saved as
-//! `<out>.rendered.png` — that half is fully deterministic (Cairo/Pango/
-//! fontconfig/FreeType finish before Wayland ever sees it) so it's safe to
-//! rely on for pure font-rendering comparisons; diffing it against the real
-//! screenshot isolates compositor-level presentation effects specifically.
-//! If no real screenshot path is available, that same buffer is written to
-//! `<out>` too (clearly labeled at runtime) so a bare invocation still
-//! produces *a* PNG, just not a validated on-screen capture.
+//! Renders -text with -font via Cairo+Pango (dlopen'd libcairo /
+//! libpango-1.0 / libpangocairo-1.0 — fontconfig+FreeType underneath, so
+//! whichever font family is named decides vector (COLR/outline) vs bitmap
+//! (CBDT) glyph rendering, transparently, exactly like a real desktop app)
+//! straight into an offscreen image surface, and saves it as a PNG. No
+//! Wayland window, no compositor, no screenshot tool: alignment is decided
+//! entirely by Pango/Cairo/FreeType before anything is ever presented on
+//! screen, so a compositor-level round trip (which only adds presentation
+//! effects like fractional-scale upscaling or colour management — see
+//! docs/EmojiWidthResearch.md) is irrelevant to the question this canary
+//! answers and was dropped as unneeded complexity.
 //!
 //! Every render bakes a small metadata label into the image itself
 //! (detected terminal emulator, $TERM, session type/desktop) so a PNG
 //! saved or shared elsewhere still carries which host/terminal it came
 //! from, and writes a companion `<out>.env.txt` with the fuller env dump.
 //!
-//! This isolates one variable at a time: is a font-rendering discrepancy
+//! This isolates one variable at a time: is a font-alignment discrepancy
 //! (e.g. issue 57's headless-canary-only VS16 width defect) a property of
-//! foot, of the headless nested-sway/Xvfb capture harness, or of the real
-//! desktop's font stack? Run this against the real compositor and compare.
+//! foot, of the headless nested-sway/Xvfb capture harness, or of the font
+//! stack itself? Run this on any host and compare.
 //!
 //! Usage: zig run scripts/canary_font.zig -lc -- [-font=NAME] [-text=STR] ...
 //! Run `zig run scripts/canary_font.zig -lc -- -help` for the full flag list.
@@ -45,223 +33,6 @@
 //! docs/EmojiWidthResearch.md.
 
 const std = @import("std");
-const posix = std.posix;
-
-// ---------------------------------------------------------------------------
-// Wayland client bindings (subset; mirrors scripts/canary_gui.zig)
-// ---------------------------------------------------------------------------
-
-pub const WlArgument = extern union {
-    i: i32,
-    u: u32,
-    f: i32,
-    s: ?[*:0]const u8,
-    o: ?*anyopaque,
-    n: u32,
-    a: ?*anyopaque,
-    h: i32,
-};
-
-pub const WlMessage = extern struct {
-    name: [*:0]const u8,
-    signature: [*:0]const u8,
-    types: [*]const ?*const WlInterface,
-};
-
-pub const WlInterface = extern struct {
-    name: [*:0]const u8,
-    version: c_int,
-    method_count: c_int,
-    methods: [*]const WlMessage,
-    event_count: c_int,
-    events: [*]const WlMessage,
-};
-
-pub const WaylandLib = struct {
-    handle: *anyopaque,
-
-    wl_display_connect: *const fn (name: ?[*:0]const u8) callconv(.c) ?*anyopaque,
-    wl_display_disconnect: *const fn (display: *anyopaque) callconv(.c) void,
-    wl_display_dispatch: *const fn (display: *anyopaque) callconv(.c) c_int,
-    wl_display_roundtrip: *const fn (display: *anyopaque) callconv(.c) c_int,
-    wl_display_flush: *const fn (display: *anyopaque) callconv(.c) c_int,
-    wl_display_get_fd: *const fn (display: *anyopaque) callconv(.c) c_int,
-    wl_proxy_marshal_array_constructor_versioned: *const fn (proxy: *anyopaque, opcode: u32, args: [*]const WlArgument, interface: ?*const WlInterface, version: u32) callconv(.c) ?*anyopaque,
-    wl_proxy_marshal_flags: *const fn (proxy: *anyopaque, opcode: u32, interface: ?*const WlInterface, version: u32, flags: u32, ...) callconv(.c) ?*anyopaque,
-    wl_proxy_add_listener: *const fn (proxy: *anyopaque, implementation: ?*const fn () callconv(.c) void, data: ?*anyopaque) callconv(.c) c_int,
-    wl_display_interface: *const WlInterface,
-    wl_registry_interface: *const WlInterface,
-    wl_compositor_interface: *const WlInterface,
-    wl_shm_interface: *const WlInterface,
-    wl_shm_pool_interface: *const WlInterface,
-    wl_buffer_interface: *const WlInterface,
-    wl_surface_interface: *const WlInterface,
-
-    pub fn load() !WaylandLib {
-        const h = std.c.dlopen("libwayland-client.so.0", @bitCast(@as(u32, 1))) orelse return error.LibraryLoadFailed;
-        return .{
-            .handle = h,
-            .wl_display_connect = @ptrCast(std.c.dlsym(h, "wl_display_connect") orelse return error.SymbolNotFound),
-            .wl_display_disconnect = @ptrCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound),
-            .wl_display_dispatch = @ptrCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound),
-            .wl_display_roundtrip = @ptrCast(std.c.dlsym(h, "wl_display_roundtrip") orelse return error.SymbolNotFound),
-            .wl_display_flush = @ptrCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound),
-            .wl_display_get_fd = @ptrCast(std.c.dlsym(h, "wl_display_get_fd") orelse return error.SymbolNotFound),
-            .wl_proxy_marshal_array_constructor_versioned = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_array_constructor_versioned") orelse return error.SymbolNotFound),
-            .wl_proxy_marshal_flags = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_flags") orelse return error.SymbolNotFound),
-            .wl_proxy_add_listener = @ptrCast(std.c.dlsym(h, "wl_proxy_add_listener") orelse return error.SymbolNotFound),
-            .wl_display_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_interface") orelse return error.SymbolNotFound)),
-            .wl_registry_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_registry_interface") orelse return error.SymbolNotFound)),
-            .wl_compositor_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_compositor_interface") orelse return error.SymbolNotFound)),
-            .wl_shm_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_shm_interface") orelse return error.SymbolNotFound)),
-            .wl_shm_pool_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_shm_pool_interface") orelse return error.SymbolNotFound)),
-            .wl_buffer_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_buffer_interface") orelse return error.SymbolNotFound)),
-            .wl_surface_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_surface_interface") orelse return error.SymbolNotFound)),
-        };
-    }
-
-    pub fn unload(self: *WaylandLib) void {
-        _ = std.c.dlclose(self.handle);
-    }
-};
-
-pub const xdg_wm_base_requests = [_]WlMessage{
-    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "create_positioner", .signature = "n", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "get_xdg_surface", .signature = "no", .types = &[_]?*const WlInterface{ null, null } },
-    .{ .name = "pong", .signature = "u", .types = &[_]?*const WlInterface{null} },
-};
-pub const xdg_wm_base_events = [_]WlMessage{
-    .{ .name = "ping", .signature = "u", .types = &[_]?*const WlInterface{null} },
-};
-pub const xdg_wm_base_interface = WlInterface{
-    .name = "xdg_wm_base",
-    .version = 6,
-    .method_count = 4,
-    .methods = &xdg_wm_base_requests,
-    .event_count = 1,
-    .events = &xdg_wm_base_events,
-};
-
-pub const xdg_surface_requests = [_]WlMessage{
-    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "get_toplevel", .signature = "n", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "get_popup", .signature = "n?oo", .types = &[_]?*const WlInterface{ null, null, null } },
-    .{ .name = "set_window_geometry", .signature = "iiii", .types = &[_]?*const WlInterface{ null, null, null, null } },
-    .{ .name = "ack_configure", .signature = "u", .types = &[_]?*const WlInterface{null} },
-};
-pub const xdg_surface_events = [_]WlMessage{
-    .{ .name = "configure", .signature = "u", .types = &[_]?*const WlInterface{null} },
-};
-pub const xdg_surface_interface = WlInterface{
-    .name = "xdg_surface",
-    .version = 6,
-    .method_count = 5,
-    .methods = &xdg_surface_requests,
-    .event_count = 1,
-    .events = &xdg_surface_events,
-};
-
-pub const xdg_toplevel_requests = [_]WlMessage{
-    .{ .name = "destroy", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "set_parent", .signature = "?o", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "set_title", .signature = "s", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "set_app_id", .signature = "s", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "show_window_menu", .signature = "ouii", .types = &[_]?*const WlInterface{ null, null, null, null } },
-    .{ .name = "move", .signature = "ou", .types = &[_]?*const WlInterface{ null, null } },
-    .{ .name = "resize", .signature = "ouu", .types = &[_]?*const WlInterface{ null, null, null } },
-    .{ .name = "set_max_size", .signature = "ii", .types = &[_]?*const WlInterface{ null, null } },
-    .{ .name = "set_min_size", .signature = "ii", .types = &[_]?*const WlInterface{ null, null } },
-    .{ .name = "set_maximized", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "unset_maximized", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "set_fullscreen", .signature = "?o", .types = &[_]?*const WlInterface{null} },
-    .{ .name = "unset_fullscreen", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "set_minimized", .signature = "", .types = &[_]?*const WlInterface{} },
-};
-pub const xdg_toplevel_events = [_]WlMessage{
-    .{ .name = "configure", .signature = "iia", .types = &[_]?*const WlInterface{ null, null, null } },
-    .{ .name = "close", .signature = "", .types = &[_]?*const WlInterface{} },
-    .{ .name = "configure_bounds", .signature = "4ii", .types = &[_]?*const WlInterface{ null, null } },
-    .{ .name = "wm_capabilities", .signature = "5a", .types = &[_]?*const WlInterface{null} },
-};
-pub const xdg_toplevel_interface = WlInterface{
-    .name = "xdg_toplevel",
-    .version = 6,
-    .method_count = 14,
-    .methods = &xdg_toplevel_requests,
-    .event_count = 4,
-    .events = &xdg_toplevel_events,
-};
-
-var g_compositor: ?*anyopaque = null;
-var g_shm: ?*anyopaque = null;
-var g_xdg_wm_base: ?*anyopaque = null;
-
-fn registryHandleGlobal(data: ?*anyopaque, reg: ?*anyopaque, name: u32, interface_ptr: [*:0]const u8, version: u32) callconv(.c) void {
-    const wl_ptr: *WaylandLib = @ptrCast(@alignCast(data orelse return));
-    const iface_name = std.mem.span(interface_ptr);
-    const ver: u32 = @min(version, 4);
-    const null_ptr: ?*anyopaque = null;
-
-    if (std.mem.eql(u8, iface_name, "wl_compositor")) {
-        g_compositor = wl_ptr.wl_proxy_marshal_flags(reg orelse return, 0, wl_ptr.wl_compositor_interface, ver, 0, name, wl_ptr.wl_compositor_interface.name, ver, null_ptr);
-    } else if (std.mem.eql(u8, iface_name, "wl_shm")) {
-        g_shm = wl_ptr.wl_proxy_marshal_flags(reg orelse return, 0, wl_ptr.wl_shm_interface, 1, 0, name, wl_ptr.wl_shm_interface.name, @as(u32, 1), null_ptr);
-    } else if (std.mem.eql(u8, iface_name, "xdg_wm_base")) {
-        const xdg_ver: u32 = @min(version, 6);
-        const args = [_]WlArgument{
-            .{ .u = name },
-            .{ .s = xdg_wm_base_interface.name },
-            .{ .u = xdg_ver },
-            .{ .o = null },
-        };
-        g_xdg_wm_base = wl_ptr.wl_proxy_marshal_array_constructor_versioned(reg orelse return, 0, @ptrCast(&args), &xdg_wm_base_interface, xdg_ver);
-    }
-}
-
-fn registryHandleGlobalRemove(data: ?*anyopaque, reg: ?*anyopaque, name: u32) callconv(.c) void {
-    _ = data;
-    _ = reg;
-    _ = name;
-}
-
-const registry_listener = [2]*const fn () callconv(.c) void{
-    @ptrCast(&registryHandleGlobal),
-    @ptrCast(&registryHandleGlobalRemove),
-};
-
-// xdg_surface only has one event (configure); ack it and, on the *first*
-// occurrence, attach+commit the pre-rendered buffer (xdg-shell forbids
-// attaching a buffer before the surface has been configured at least once).
-var g_wl: *WaylandLib = undefined;
-var g_display: *anyopaque = undefined;
-var g_surface: *anyopaque = undefined;
-var g_buffer: *anyopaque = undefined;
-var g_committed_content = false;
-
-fn xdgSurfaceHandleConfigure(data: ?*anyopaque, xdg_surface: ?*anyopaque, serial: u32) callconv(.c) void {
-    _ = data;
-    const xs = xdg_surface orelse return;
-    _ = g_wl.wl_proxy_marshal_flags(xs, 4, null, 1, 0, serial); // ack_configure
-    if (!g_committed_content) {
-        _ = g_wl.wl_proxy_marshal_flags(g_surface, 1, null, 1, 0, g_buffer, @as(i32, 0), @as(i32, 0)); // attach
-        _ = g_wl.wl_proxy_marshal_flags(g_surface, 6, null, 1, 0); // commit
-        _ = g_wl.wl_display_flush(g_display);
-        g_committed_content = true;
-    }
-}
-
-const xdg_surface_listener = [1]*const fn () callconv(.c) void{
-    @ptrCast(&xdgSurfaceHandleConfigure),
-};
-
-fn toplevelNoop0() callconv(.c) void {}
-const xdg_toplevel_listener = [4]*const fn () callconv(.c) void{
-    @ptrCast(&toplevelNoop0),
-    @ptrCast(&toplevelNoop0),
-    @ptrCast(&toplevelNoop0),
-    @ptrCast(&toplevelNoop0),
-};
 
 // ---------------------------------------------------------------------------
 // Cairo + Pango bindings (opaque-pointer C APIs — no struct-layout guessing)
@@ -340,7 +111,6 @@ const Args = struct {
     pad: f64 = 16.0,
     bg: [3]f64 = .{ 0.12, 0.12, 0.14 },
     fg: [3]f64 = .{ 0.92, 0.92, 0.90 },
-    app_id: []const u8 = "emojig-font-canary",
     out: ?[]const u8 = null,
     help: bool = false,
 };
@@ -374,8 +144,6 @@ fn parseArgs(init: std.process.Init) Args {
             a.bg = parseColor(arg["-bg=".len..]);
         } else if (std.mem.startsWith(u8, arg, "-fg=")) {
             a.fg = parseColor(arg["-fg=".len..]);
-        } else if (std.mem.startsWith(u8, arg, "-app-id=")) {
-            a.app_id = arg["-app-id=".len..];
         } else if (std.mem.startsWith(u8, arg, "-out=")) {
             a.out = arg["-out=".len..];
         }
@@ -391,12 +159,9 @@ fn printHelp() void {
         \\to a real installed font; vector families like "DejaVu Sans Mono" or
         \\"Noto Color Emoji" and bitmap/CBDT families like "Twemoji" both go
         \\through the same Cairo/Pango path, so the flag *is* the vector-vs-
-        \\bitmap switch) into a real on-screen Wayland window on the current
-        \\desktop session, screenshots only that window (sway: swaymsg+grim;
-        \\GNOME/Mutter: org.gnome.Shell.Screenshot D-Bus), and saves a
-        \\pre-cropped PNG. The pre-composite buffer is always additionally
-        \\saved as <out>.rendered.png (safe to trust for font-rendering-only
-        \\comparisons, since it never round-trips through the compositor).
+        \\bitmap switch) into an offscreen image and saves it as a PNG — no
+        \\Wayland window, no compositor, no screenshot tool, since alignment is
+        \\decided entirely by Pango/Cairo/FreeType before presentation.
         \\Every render bakes a terminal/session label into the image and
         \\writes a companion <out>.env.txt env-var dump.
         \\
@@ -406,12 +171,10 @@ fn printHelp() void {
         \\  -pad=PX        padding around the text (default: 16)
         \\  -bg=RRGGBB     background hex color (default: 1e1e24)
         \\  -fg=RRGGBB     text hex color (default: eaeae6)
-        \\  -app-id=ID     sway app_id for the window (default: emojig-font-canary)
         \\  -out=PATH      output PNG path (default: scripts/canary_font/shots/<font>.png)
         \\
-        \\Manual/on-demand only — not part of `make canary`. Must be run from
-        \\your real logged-in desktop session (sandboxed/CI shells can't reach
-        \\the compositor's screenshot mechanism). See docs/EmojiWidthResearch.md.
+        \\Manual/on-demand only — not part of `make canary`. See
+        \\docs/EmojiWidthResearch.md.
         \\
     , .{});
 }
@@ -425,8 +188,8 @@ fn sanitizeForFilename(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 /// Runs `argv`, discarding stdout/stderr, and waits for exit. Best-effort:
-/// errors are reported but never abort the canary (sway/swaymsg absence is
-/// reported once, clearly, by the caller instead).
+/// only used for `mkdir -p`, so a failure just means the later file write
+/// fails with its own clear error.
 fn runIgnoring(io: anytype, argv: []const []const u8) void {
     var child = std.process.spawn(io, .{
         .argv = argv,
@@ -440,71 +203,6 @@ fn runIgnoring(io: anytype, argv: []const []const u8) void {
     _ = child.wait(io) catch {};
 }
 
-/// Runs `argv` and returns its captured stdout (arena-allocated).
-fn runCapturing(io: anytype, alloc: std.mem.Allocator, argv: []const []const u8) ![]u8 {
-    var pipe_fds: [2]std.posix.fd_t = undefined;
-    const pipe_rc = std.os.linux.pipe2(&pipe_fds, .{});
-    if (std.posix.errno(pipe_rc) != .SUCCESS) return error.PipeFailed;
-
-    var child = try std.process.spawn(io, .{
-        .argv = argv,
-        .stdin = .ignore,
-        .stdout = .{ .file = .{ .handle = pipe_fds[1], .flags = .{ .nonblocking = false } } },
-        .stderr = .ignore,
-    });
-    _ = std.posix.system.close(pipe_fds[1]);
-
-    var list = std.array_list.Managed(u8).init(alloc);
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.posix.read(pipe_fds[0], &buf) catch break;
-        if (n == 0) break;
-        try list.appendSlice(buf[0..n]);
-    }
-    _ = std.posix.system.close(pipe_fds[0]);
-    _ = child.wait(io) catch {};
-    return try list.toOwnedSlice();
-}
-
-const Rect = struct { x: i64, y: i64, w: i64, h: i64 };
-
-/// Recursively walks a sway `get_tree` JSON value looking for the node whose
-/// "app_id" equals `target`, returning its "rect" ({x,y,width,height}).
-fn findWindowRect(value: std.json.Value, target: []const u8) ?Rect {
-    switch (value) {
-        .object => |obj| {
-            if (obj.get("app_id")) |app_id_val| {
-                if (app_id_val == .string and std.mem.eql(u8, app_id_val.string, target)) {
-                    if (obj.get("rect")) |rect_val| {
-                        if (rect_val == .object) {
-                            const r = rect_val.object;
-                            return Rect{
-                                .x = intOf(r.get("x")),
-                                .y = intOf(r.get("y")),
-                                .w = intOf(r.get("width")),
-                                .h = intOf(r.get("height")),
-                            };
-                        }
-                    }
-                }
-            }
-            if (obj.get("nodes")) |nodes| {
-                if (findWindowRect(nodes, target)) |r| return r;
-            }
-            if (obj.get("floating_nodes")) |nodes| {
-                if (findWindowRect(nodes, target)) |r| return r;
-            }
-        },
-        .array => |arr| {
-            for (arr.items) |item| {
-                if (findWindowRect(item, target)) |r| return r;
-            }
-        },
-        else => {},
-    }
-    return null;
-}
-
 /// Returns an env var's value, or "(unset)" — used for both the companion
 /// dump and terminal-name detection, so a missing var is always visible
 /// rather than silently absent from the record.
@@ -516,8 +214,8 @@ fn envOr(name: [*:0]const u8) []const u8 {
 /// known to set (checked in roughly "most specific first" order so e.g.
 /// TILIX_ID wins over the generic VTE_VERSION every VTE-based terminal
 /// sets). Falls back to $TERM, then "unknown" — this is a research label
-/// for comparing screenshots across hosts/terminals, not a detection
-/// mechanism anything else in emojig depends on.
+/// for comparing renders across hosts/terminals, not a detection mechanism
+/// anything else in emojig depends on.
 fn detectTerminalName() []const u8 {
     if (std.c.getenv("TILIX_ID") != null) return "tilix";
     if (std.c.getenv("KONSOLE_VERSION") != null) return "konsole";
@@ -533,7 +231,7 @@ fn detectTerminalName() []const u8 {
 }
 
 /// Writes a companion text file next to the PNG recording the env vars
-/// most likely to matter when comparing screenshots across hosts/terminals
+/// most likely to matter when comparing renders across hosts/terminals
 /// later — the whole point of this canary is host-to-host comparison, and
 /// a bare PNG filename doesn't carry that context on its own.
 fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args: Args, terminal_name: []const u8) !void {
@@ -548,7 +246,6 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
         \\font={s}
         \\text={s}
         \\size_px={d}
-        \\app_id={s}
         \\TERM={s}
         \\TERM_PROGRAM={s}
         \\WAYLAND_DISPLAY={s}
@@ -574,7 +271,6 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
         args.font,
         args.text,
         args.size_px,
-        args.app_id,
         envOr("TERM"),
         envOr("TERM_PROGRAM"),
         envOr("WAYLAND_DISPLAY"),
@@ -601,26 +297,6 @@ fn writeEnvDump(io: std.Io, alloc: std.mem.Allocator, out_path: []const u8, args
     std.debug.print("canary_font: saved {s}\n", .{dump_path});
 }
 
-/// Writes `data` (an already-rendered ARGB32 buffer) to `path` as a PNG,
-/// wrapping it in a throwaway Cairo surface (cairo_image_surface_create_for_data
-/// doesn't copy — this reads back the exact bytes Cairo/Pango already wrote).
-fn dumpBufferToPng(cairo: *const CairoLib, data: [*]u8, width: i32, height: i32, stride: i32, path: []const u8) void {
-    var path_buf: [512]u8 = undefined;
-    const path_z = std.fmt.bufPrintZ(&path_buf, "{s}", .{path}) catch return;
-    const surface = cairo.image_surface_create_for_data(data, CAIRO_FORMAT_ARGB32, width, height, stride) orelse return;
-    _ = cairo.surface_write_to_png(surface, path_z);
-    cairo.surface_destroy(surface);
-}
-
-fn intOf(v: ?std.json.Value) i64 {
-    const val = v orelse return 0;
-    return switch (val) {
-        .integer => val.integer,
-        .float => @intFromFloat(val.float),
-        else => 0,
-    };
-}
-
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -639,7 +315,7 @@ pub fn main(init: std.process.Init) !void {
     };
     runIgnoring(io, &[_][]const u8{ "mkdir", "-p", std.fs.path.dirname(out_path) orelse "." });
 
-    // Baked into the image itself (not just the filename) so a screenshot
+    // Baked into the image itself (not just the filename) so a PNG
     // saved/renamed/shared elsewhere still carries which terminal emulator
     // and desktop session it came from — the whole point of this canary is
     // comparing renders across hosts, and a bare PNG carries none of that
@@ -653,8 +329,8 @@ pub fn main(init: std.process.Init) !void {
     var cairo = try CairoLib.load();
 
     // Measure the text and the label (against a tiny scratch surface) so
-    // the real window is sized exactly to its content plus padding — a
-    // pre-cropped capture rather than a fixed pane with stray blank margins.
+    // the real image is sized exactly to its content plus padding — a
+    // pre-cropped PNG rather than a fixed canvas with stray blank margins.
     var scratch_pixels: [4]u8 = undefined;
     const scratch_surface = cairo.image_surface_create_for_data(&scratch_pixels, CAIRO_FORMAT_ARGB32, 1, 1, 4) orelse return error.CairoSurfaceFailed;
     const scratch_cr = cairo.create(scratch_surface) orelse return error.CairoContextFailed;
@@ -689,70 +365,13 @@ pub fn main(init: std.process.Init) !void {
     const pad_i: i32 = @intFromFloat(args.pad);
     const width: i32 = @max(text_w, label_w) + pad_i * 2;
     const height: i32 = text_h + label_gap + label_h + pad_i * 2;
-    std.debug.print("canary_font: measured text {d}x{d}px, label {d}x{d}px, window {d}x{d}px, font={s}, terminal={s}\n", .{ text_w, text_h, label_w, label_h, width, height, args.font, terminal_name });
+    std.debug.print("canary_font: measured text {d}x{d}px, label {d}x{d}px, image {d}x{d}px, font={s}, terminal={s}\n", .{ text_w, text_h, label_w, label_h, width, height, args.font, terminal_name });
 
-    // Ensure our window gets no sway-drawn border/titlebar, so the swaymsg
-    // "rect" below is exactly our own client-surface pixel content.
-    const criteria = try std.fmt.allocPrint(alloc, "for_window [app_id=\"^{s}$\"] border none, floating enable", .{args.app_id});
-    runIgnoring(io, &[_][]const u8{ "swaymsg", criteria });
-
-    var wl = try WaylandLib.load();
-    defer wl.unload();
-    g_wl = &wl;
-
-    const display = wl.wl_display_connect(null) orelse return error.DisplayConnectFailed;
-    defer wl.wl_display_disconnect(display);
-    g_display = display;
-
-    const null_ptr: ?*anyopaque = null;
-    const registry = wl.wl_proxy_marshal_flags(display, 1, wl.wl_registry_interface, 1, 0, null_ptr) orelse return error.RegistryFailed;
-    _ = wl.wl_proxy_add_listener(registry, @ptrCast(&registry_listener[0]), &wl);
-    _ = wl.wl_display_roundtrip(display);
-
-    if (g_compositor == null or g_shm == null or g_xdg_wm_base == null) {
-        return error.RequiredGlobalsMissing;
-    }
-
-    const surface = wl.wl_proxy_marshal_flags(g_compositor.?, 0, wl.wl_surface_interface, 1, 0, null_ptr) orelse return error.SurfaceFailed;
-    g_surface = surface;
-
-    const xdg_surf_args = [_]WlArgument{ .{ .o = null }, .{ .o = surface } };
-    const xdg_surface = wl.wl_proxy_marshal_array_constructor_versioned(g_xdg_wm_base.?, 2, @ptrCast(&xdg_surf_args), &xdg_surface_interface, 1) orelse return error.XdgSurfaceFailed;
-    _ = wl.wl_proxy_add_listener(xdg_surface, @ptrCast(&xdg_surface_listener[0]), null);
-
-    const xdg_top_args = [_]WlArgument{.{ .o = null }};
-    const xdg_toplevel = wl.wl_proxy_marshal_array_constructor_versioned(xdg_surface, 1, @ptrCast(&xdg_top_args), &xdg_toplevel_interface, 1) orelse return error.XdgToplevelFailed;
-    _ = wl.wl_proxy_add_listener(xdg_toplevel, @ptrCast(&xdg_toplevel_listener[0]), null);
-
-    const app_id_z = try alloc.dupeZ(u8, args.app_id);
-    _ = wl.wl_proxy_marshal_flags(xdg_toplevel, 3, null, 1, 0, @as([*:0]const u8, app_id_z)); // set_app_id
-    const title_z = try alloc.dupeZ(u8, "emojig font canary");
-    _ = wl.wl_proxy_marshal_flags(xdg_toplevel, 2, null, 1, 0, @as([*:0]const u8, title_z)); // set_title
-
-    // Null commit — required before the compositor will send the first
-    // xdg_surface.configure event (xdg-shell forbids an initial buffer).
-    _ = wl.wl_proxy_marshal_flags(surface, 6, null, 1, 0);
-    _ = wl.wl_display_flush(display);
-
-    // Allocate + render the SHM buffer *before* the configure round-trip so
-    // the callback can attach it the instant it's safe to.
     const stride: i32 = width * 4;
     const size: usize = @intCast(stride * height);
-    const shm_name = "/emojig-font-canary-shm";
-    const oflags: u32 = @bitCast(posix.O{ .ACCMODE = .RDWR, .CREAT = true, .EXCL = true });
-    const fd = std.c.shm_open(shm_name, @intCast(oflags), 0o600);
-    if (fd < 0) return error.ShmOpenFailed;
-    _ = std.c.shm_unlink(shm_name);
-    defer _ = posix.system.close(fd);
-    _ = posix.system.ftruncate(fd, @intCast(size));
+    const pixels = try alloc.alloc(u8, size);
 
-    const prot = posix.PROT{ .READ = true, .WRITE = true };
-    const data = try posix.mmap(null, size, prot, .{ .TYPE = .SHARED }, fd, 0);
-    defer posix.munmap(data);
-
-    // Cairo draws directly into the mmap'd SHM buffer — no extra copy, and
-    // exactly what gets presented is exactly what we asked Pango to render.
-    const real_surface = cairo.image_surface_create_for_data(data.ptr, CAIRO_FORMAT_ARGB32, width, height, stride) orelse return error.CairoSurfaceFailed;
+    const real_surface = cairo.image_surface_create_for_data(pixels.ptr, CAIRO_FORMAT_ARGB32, width, height, stride) orelse return error.CairoSurfaceFailed;
     const real_cr = cairo.create(real_surface) orelse return error.CairoContextFailed;
     cairo.set_source_rgb(real_cr, args.bg[0], args.bg[1], args.bg[2]);
     cairo.paint(real_cr);
@@ -773,132 +392,12 @@ pub fn main(init: std.process.Init) !void {
 
     cairo.surface_flush(real_surface);
     cairo.destroy(real_cr);
+
+    const out_path_z = try alloc.dupeZ(u8, out_path);
+    _ = cairo.surface_write_to_png(real_surface, out_path_z);
     cairo.surface_destroy(real_surface);
     cairo.font_description_free(font_desc);
     cairo.font_description_free(label_desc);
 
-    // Passed via an explicit WlArgument array (not the variadic
-    // wl_proxy_marshal_flags(...) form) because the 'h' (fd) argument's
-    // value must land exactly where libwayland's marshaller dup()s it from
-    // — a plain struct field is unambiguous, whereas routing an fd through
-    // Zig's C-variadic-call ABI reliably corrupted it here (observed as
-    // "dup failed: Bad file descriptor" even for a freshly opened, valid fd).
-    const pool_args = [_]WlArgument{ .{ .o = null }, .{ .h = fd }, .{ .i = @intCast(size) } };
-    const pool = wl.wl_proxy_marshal_array_constructor_versioned(g_shm.?, 0, @ptrCast(&pool_args), wl.wl_shm_pool_interface, 1) orelse return error.PoolFailed;
-    const buffer_args = [_]WlArgument{ .{ .o = null }, .{ .i = 0 }, .{ .i = width }, .{ .i = height }, .{ .i = stride }, .{ .u = 0 } };
-    const buffer = wl.wl_proxy_marshal_array_constructor_versioned(pool, 0, @ptrCast(&buffer_args), wl.wl_buffer_interface, 1) orelse return error.BufferFailed;
-    g_buffer = buffer;
-
-    // wl_display_dispatch() blocks on a socket read when nothing is queued,
-    // so bound every wait with poll() on the display fd (2s deadline) —
-    // a compositor that never sends our configure event must not hang this
-    // canary forever (see docs/Zig.md's "bounded probe" pattern).
-    const wl_fd = wl.wl_display_get_fd(display);
-    var pfd = [_]posix.pollfd{.{ .fd = wl_fd, .events = posix.POLL.IN, .revents = 0 }};
-    var waited_ms: i32 = 0;
-    while (!g_committed_content and waited_ms < 2000) {
-        const n = posix.poll(&pfd, 50) catch break;
-        if (n > 0) _ = wl.wl_display_dispatch(display);
-        waited_ms += 50;
-    }
-    if (!g_committed_content) return error.NeverConfigured;
-
-    // Give sway a moment to actually map + present the surface before we
-    // ask swaymsg/grim to find and shoot it (matches the ~300ms warm-up
-    // already used by scripts/screenshot per AGENTS.md).
-    var settled_ms: i32 = 0;
-    while (settled_ms < 300) : (settled_ms += 50) {
-        _ = wl.wl_display_flush(display);
-        const n = posix.poll(&pfd, 50) catch break;
-        if (n > 0) _ = wl.wl_display_dispatch(display);
-    }
-
-    // Always dump the pre-composite SHM buffer to a `.rendered.png`
-    // companion, regardless of whether a real screenshot succeeds below.
-    // This half is fully deterministic and safe to rely on: Cairo/Pango/
-    // fontconfig/FreeType have already finished rendering by this point,
-    // and Wayland presents these exact pixels verbatim (no re-rasterizing
-    // on the compositor's side) — the only thing it *can't* show you is a
-    // compositor-level transform applied after presentation (fractional-
-    // scale upscaling, colour management LUTs). Diffing this against the
-    // real screenshot below isolates exactly that: identical → the
-    // compositor changed nothing; different → the discrepancy is in
-    // presentation, not in font rendering.
-    const rendered_path = if (std.mem.endsWith(u8, out_path, ".png"))
-        try std.fmt.allocPrint(alloc, "{s}.rendered.png", .{out_path[0 .. out_path.len - 4]})
-    else
-        try std.fmt.allocPrint(alloc, "{s}.rendered.png", .{out_path});
-    dumpBufferToPng(&cairo, data.ptr, width, height, stride, rendered_path);
-    std.debug.print("canary_font: saved {s} (our own pre-composite buffer, always written)\n", .{rendered_path});
-
-    // Compositor-specific real-screenshot tiers, in order of preference —
-    // both actually rasterize the *presented* frame through the real
-    // compositor (the whole point of this canary), unlike the buffer dump
-    // above which never round-trips through the compositor at all:
-    //   1. sway/wlroots: swaymsg locates our window by app_id, grim -g
-    //      shoots exactly that rect (pre-cropped, no host chrome).
-    //   2. GNOME/Mutter: grim has no wlr-screencopy to talk to, so use
-    //      GNOME Shell's own ScreenshotWindow D-Bus method, which shoots
-    //      whichever window currently has focus (must be run from the
-    //      real logged-in session — a sandboxed/CI D-Bus connection gets
-    //      AccessDenied here, which is fine: this canary is manual/on-host
-    //      only, see docs/EmojiWidthResearch.md).
-    if (std.c.getenv("SWAYSOCK") != null) {
-        if (try captureViaSway(io, alloc, args.app_id, out_path)) return;
-        std.debug.print("warn: sway app_id lookup failed; falling back to full-screen grim capture\n", .{});
-        runIgnoring(io, &[_][]const u8{ "grim", out_path });
-        std.debug.print("canary_font: saved (uncropped) {s}\n", .{out_path});
-        return;
-    }
-
-    if (captureViaGnomeShell(io, alloc, out_path)) return;
-
-    std.debug.print(
-        "warn: no working real-compositor screenshot path found (not sway, and\n" ++
-            "GNOME Shell's ScreenshotWindow was denied or unavailable) — {s} is only\n" ++
-            "the pre-composite buffer dump, saved again as {s} for convenience. That\n" ++
-            "proves nothing about compositor-level rendering; re-run this from your\n" ++
-            "actual logged-in desktop session, not a sandboxed/CI shell.\n",
-        .{ rendered_path, out_path },
-    );
-    dumpBufferToPng(&cairo, data.ptr, width, height, stride, out_path);
-    std.debug.print("canary_font: saved (OFFLINE RENDER ONLY) {s}\n", .{out_path});
-}
-
-/// Locates our window by app_id via `swaymsg -t get_tree` and shoots exactly
-/// its rect with `grim -g`. Returns false (not an error) if sway's tree
-/// doesn't contain our app_id, so the caller can fall back cleanly.
-fn captureViaSway(io: anytype, alloc: std.mem.Allocator, app_id: []const u8, out_path: []const u8) !bool {
-    const tree_json = try runCapturing(io, alloc, &[_][]const u8{ "swaymsg", "-t", "get_tree" });
-    const parsed = std.json.parseFromSlice(std.json.Value, alloc, tree_json, .{}) catch return false;
-    defer parsed.deinit();
-
-    const rect = findWindowRect(parsed.value, app_id) orelse return false;
-    const geom = try std.fmt.allocPrint(alloc, "{d},{d} {d}x{d}", .{ rect.x, rect.y, rect.w, rect.h });
-    runIgnoring(io, &[_][]const u8{ "grim", "-g", geom, out_path });
-    std.debug.print("canary_font: saved {s} (grim -g \"{s}\")\n", .{ out_path, geom });
-    return true;
-}
-
-/// Shoots the currently focused window via GNOME Shell's own D-Bus
-/// screenshot method (grim has nothing to talk to on Mutter — no
-/// wlr-screencopy). Returns true only once we've confirmed `gdbus` itself
-/// reported success (its own stdout line starts with "(true,").
-fn captureViaGnomeShell(io: anytype, alloc: std.mem.Allocator, out_path: []const u8) bool {
-    const abs_out = std.fs.path.resolve(alloc, &[_][]const u8{out_path}) catch return false;
-    const argv = [_][]const u8{
-        "gdbus",                                       "call",
-        "--session",                                   "--dest",
-        "org.gnome.Shell",                             "--object-path",
-        "/org/gnome/Shell/Screenshot",                 "--method",
-        "org.gnome.Shell.Screenshot.ScreenshotWindow", "true",
-        "true",                                        "false",
-        abs_out,
-    };
-    const out = runCapturing(io, alloc, &argv) catch return false;
-    if (std.mem.startsWith(u8, out, "(true,")) {
-        std.debug.print("canary_font: saved {s} (org.gnome.Shell.Screenshot.ScreenshotWindow)\n", .{out_path});
-        return true;
-    }
-    return false;
+    std.debug.print("canary_font: saved {s}\n", .{out_path});
 }

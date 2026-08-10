@@ -242,58 +242,44 @@ width-handling documentation to extract anything from.
   rendering, font/width mismatches) was found; no evidence our
   `VTE_VERSION`/`TILIX_ID` signal is stale or needs replacing.
 
-## `scripts/canary_font.zig` — isolating real-desktop font rendering
+## `scripts/canary_font.zig` — isolating font *alignment* from everything else
 
 Issue 57's investigation (see the "Retracted" section in
 [`../issues/57-tilix-monochrome-mixed-row-length.md`](../issues/57-tilix-monochrome-mixed-row-length.md))
 found a VS16 row-length defect that reproduced reliably in wayreel's headless
 nested-sway/Xvfb capture harness but did **not** reproduce on the real
-desktop, once the user checked directly. That gap — headless capture
-environment vs. real compositor — is exactly the variable
-`scripts/canary_font.zig` isolates, and it does so **without spawning
-foot at all**, to separate "is this a foot bug" from "is this a font-stack
-or capture-harness artifact":
+desktop, once the user checked directly. `scripts/canary_font.zig` isolates
+the variable that actually matters for that class of question — font
+*alignment*: glyph shape, metrics, subsequence positioning — from
+everything else:
 
-- Opens a real Wayland surface directly on whatever compositor is actually
-  running (dlopen'd `libwayland-client`, same low-level approach as
-  `scripts/canary_gui.zig`) — no nested sway, no Xvfb, no `WLR_RENDERER=
-  pixman` forced software rendering.
-- Renders text/emoji into that surface via Cairo+Pango (dlopen'd
+- Renders `-text` with `-font` via Cairo+Pango (dlopen'd
   `libcairo`/`libpango-1.0`/`libpangocairo-1.0`), which resolves the
   `-font` flag through real fontconfig+FreeType — so pointing it at a
   CBDT bitmap family (`Twemoji`) vs. a COLR vector family (`Noto Color
   Emoji`, confirmed to be the `Noto-COLRv1.ttf` variant on this host) is a
   genuine vector-vs-bitmap glyph-technology switch, not a simulation of one.
-- Screenshots *only its own window* — `swaymsg`+`grim` on sway/wlroots, or
-  `org.gnome.Shell.Screenshot.ScreenshotWindow` over D-Bus on GNOME/Mutter
-  (grim has no `wlr-screencopy` to talk to there) — and saves a pre-cropped
-  PNG to `scripts/canary_font/shots/`.
-- Always *additionally* saves its own pre-composite SHM buffer as
-  `<out>.rendered.png` — this half is fully deterministic (Cairo/Pango/
-  fontconfig/FreeType finish rendering before Wayland ever sees the
-  buffer, and presentation doesn't re-rasterize it), so it's safe to trust
-  for pure font-rendering comparisons even without a working screenshot
-  path. Diffing it against the real screenshot isolates compositor-level
-  presentation effects (fractional-scale upscaling, colour management)
-  specifically. If neither real capture path is available, that same
-  buffer is written to `<out>` too, clearly labeled `OFFLINE RENDER ONLY`
-  at runtime (e.g. run from a sandboxed/CI shell instead of the real
-  logged-in session — GNOME Shell's D-Bus screenshot methods return
-  `AccessDenied` there).
+- Renders straight into an **offscreen** Cairo image surface and saves it
+  as a PNG — no Wayland window, no compositor, no screenshot tool. An
+  earlier version of this canary opened a real on-screen window and shot
+  it via `swaymsg`+`grim` (sway) or GNOME Shell's D-Bus `ScreenshotWindow`
+  (Mutter), specifically to compare against a compositor round trip. That
+  was dropped: alignment is decided entirely by Pango/Cairo/FreeType
+  *before* anything is ever presented, so a compositor round trip only
+  adds presentation effects (fractional-scale upscaling, colour
+  management) that don't bear on alignment and would need controlling for
+  rather than helping — and, as a side effect, this version runs
+  identically anywhere (this harness's sandboxed shell included — no
+  desktop session, no D-Bus permission, no `SWAYSOCK` needed).
 - Bakes a small metadata label into every rendered image itself (detected
   terminal emulator, `$TERM`, session type/desktop — e.g. `term=tilix
   TERM=xterm-256color session=wayland/GNOME`), and writes a companion
   `<out>.env.txt` with a fuller env-var dump (`WAYLAND_DISPLAY`,
   `XDG_SESSION_TYPE`, `VTE_VERSION`/`TILIX_ID`/`KONSOLE_VERSION`/etc.) —
-  so a screenshot saved or shared elsewhere still carries which host and
+  so a PNG saved or shared elsewhere still carries which host and
   terminal it came from, which matters once you're comparing renders
   across machines.
 
 Usage: `make canary-font FONT="Twemoji" TEXT="☺️ ☺︎"` (or
 `zig run scripts/canary_font.zig -lc -- -help` for the full flag list).
-Manual/on-demand only — not part of `make canary`, and it must be run from
-your own desktop session, not this harness's sandboxed shell (confirmed:
-`org.gnome.Shell.Screenshot.ScreenshotWindow` is denied here, on this
-host's GNOME/Mutter session, likely because gnome-shell checks the
-caller's systemd/cgroup identity and a sandboxed tool shell doesn't match
-the interactive login session).
+Manual/on-demand only — not part of `make canary`.
