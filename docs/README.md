@@ -16,6 +16,8 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 * [**Spec-Driven Config**](SpecDrivenConfig.md): Structure and code generation from specification files (`colors.json`, `layout.json`, `strings.json`, etc.) to control application appearance.
 * [**Terminal Integration**](TerminalIntegration.md): Detection and communication mechanisms with graphical terminals (e.g. `foot`, `kitty`, `alacritty`), spawning configurations, and the Twemoji CBDT color-emoji font requirement for `foot`.
 * [**Terminal State & Restoration**](TerminalRestore.md): Mechanisms for raw mode activation, mouse tracking, signal trapping, and standard termios restoration.
+* [**Environment Detection**](EnvironmentDetection.md): What environment is actually present in the two real launch paths (raw desktop-shell spawn vs. run inside an already-open terminal) vs. what the source reads at each decision point, source-line by source-line. Read before touching mode/theme/terminal auto-detection.
+* [**Spec System**](Spec.md): Why `spec/*.yaml` is the single source of truth for application behavior, generated into `spec/.gen/` — the general convention `Spec-Driven Config` below applies specifically to colors/layout.
 
 ## 🛠️ Components & Features
 
@@ -36,10 +38,15 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 * [**Go Scripts**](GoScripts.md) & [**Go Language**](Go.md): Standalone script style, standard library constraints, and Go environment conventions.
 * [**Rust Guide**](Rust.md): Standards for Rust-based system utilities.
 * [**Make Guide**](Make.md): Custom build tasks and target specifications in the `Makefile`.
+* [**Git Conventions**](Git.md): Conventional commits, default-branch workflow, and push-on-request policy.
+* [**Markdown Style**](Markdown.md): PascalCase for evergreen docs, kebab-case for ephemeral ones, and general formatting conventions.
 * [**Worktrees**](Worktrees.md): Using git worktrees for isolated parallel task workspaces.
 * [**Web Sandbox**](WebSandbox.md): Sandbox configurations and security restrictions for browser-based components.
 * [**Website**](Website.md): Structure, static assets, and build setup for Emojig's website.
 
 ## 🧪 Testing & Diagnostics
 
+* [**Canary-First Development**](Canary.md): The isolate-observe-document-then-build pattern for validating an external mechanism before writing feature code on top of it.
 * [**Headless Recording**](HeadlessRecording.md): Setting up headless PTY recording via `wf-recorder` or `x11grab` for visual verification and testing; wayreel `crop_colors` pixel-coverage verification; GTK3-vs-GTK4 headless isolation gotcha.
+* [**Emoji Width Research**](EmojiWidthResearch.md): Survey of how other terminals/TUIs/width libraries handle emoji-width determinism, the `disable_zwj` VTE workaround, and the font-rendering canaries' own findings (env vars, terminal camps, Pango/fcft quirks).
+* [**Canary Tooling Design**](CanaryToolingDesign.md): Retrospective on the font-width canaries' iterative build (why it felt like circling) and a proposed declarative pixel/measurement-spec redesign.

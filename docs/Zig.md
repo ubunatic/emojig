@@ -146,10 +146,22 @@ Reference: `src/host.zig:detectCsdSize`.
 `std.Io.Threaded` (the default `Io` implementation) keeps its own cached
 view of `environ` for building a spawned child's env block. Calling libc's
 `unsetenv()` directly (e.g. via `extern "c" fn unsetenv(...)`) mutates
-libc's copy only — glibc's `unsetenv` can reallocate/free its backing
-array — and Zig's cache is left holding dangling pointers into memory
-that's now been freed. The **next** `std.process.spawn` call then
-segfaults inside `Environ.createPosixBlock` reading a freed pointer.
+libc's copy — and Zig's cache goes stale as a result. The **next**
+`std.process.spawn` call then segfaults inside `Environ.createPosixBlock`.
+
+**Corrected mechanism** (an independent review caught the original theory
+here was wrong — see "Independent review" in
+`issues/58-zig-unsetenv-environ-desync.md` for the full derivation):
+`std/start.zig` measures `environ`'s length **once at process startup**
+into a fixed-length slice and never re-reads `std.c.environ` afterwards.
+glibc's `unsetenv()` does **not** reallocate or free anything here — it
+shifts the remaining entries down one slot in place and writes `NULL` one
+slot earlier (confirmed directly: the `environ` array's address is
+byte-identical before/after). Zig's stale cached *length* then walks one
+slot past the real terminator, reading the `NULL` glibc just wrote.
+`Environ.PosixBlock.view()` `@ptrCast`s that slot from `?[*:0]const u8` to
+`[*:0]const u8`, silently discarding the null-check — which is why the
+segfault reports `address 0x0` specifically, not a garbage address.
 
 Separately, `std.debug.print`'s *first* call in a process lazily scans
 `environ` to locate self debug-info search paths (for pretty stack
@@ -186,3 +198,30 @@ two experiments above (`print-workaround` succeeds,
 still segfault) — see issues/58-zig-unsetenv-environ-desync.md for the
 full writeup. Go's `os.Unsetenv` has no equivalent issue since Go
 maintains its own environment consistently.
+
+---
+
+## 9. dlopen'd C libraries with *public* struct fields need the real header — opaque-pointer APIs don't
+
+Cairo/Pango's C API is entirely opaque-pointer-based (every function takes
+and returns `void*`-equivalent handles), so `scripts/canary_font.zig`
+could safely declare every binding as `?*anyopaque` and never risk a
+struct-layout mismatch. `libfcft` (foot's own font-shaping library,
+`scripts/canary_width_compare.zig`'s column 4) is different: its structs
+(`fcft_glyph`, `fcft_text_run`, `fcft_font`) expose **public fields**
+(`.cols`, `.advance.x`, `.count`, …) that calling code reads directly —
+guessing that layout instead of transcribing it from the real header
+would silently misread real memory rather than fail loudly.
+
+Rule of thumb: before writing `extern struct` bindings for a C library,
+check whether its public API is opaque-pointer-only (safe to guess/treat
+as `?*anyopaque` throughout) or exposes readable struct fields (get the
+real header — install the `-devel`/`-dev` package if needed, e.g. via
+`scripts/install_fcft_dev.sh`'s pattern — and transcribe field order,
+types, and nested anonymous structs exactly). The dlopen'd runtime `.so`
+itself never requires the header at build or run time either way; the
+header is purely for getting the Zig-side struct declaration right.
+
+Reference: `scripts/canary_width_compare.zig`'s `FcftGlyph`/`FcftTextRun`
+(transcribed from `/usr/include/fcft/fcft.h`, `fcft-devel` package) vs.
+`PangoLib`'s all-opaque-pointer function table in the same file.
