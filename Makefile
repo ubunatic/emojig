@@ -226,22 +226,6 @@ canary-gui: ⚙️ wayreel-install gen-spec build  # capture and verify emojig -
 
 canary: ⚙️ canary-shots canary-gui  # run all headless canary checks (VTE grid + GUI proof)
 
-FONT ?= monospace
-TEXT ?= abc ABC 123 ☺️ ☺︎ 😀 🚀
-UNSET ?=
-canary-font: ⚙️  # manual font-alignment research (Zig+dlopen): renders TEXT with FONT offscreen via Cairo/Pango and saves a PNG + env dump — NOT part of `make canary`; usage: make canary-font FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
-	zig run scripts/canary_font.zig -lc -- -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
-
-canary-font-go-deps: ⚙️  # install cairo/pango/pangocairo -dev packages (headers + pkg-config) needed to build scripts/canary_font/main.go
-	@scripts/install_cairo_pango_dev.sh
-
-canary-font-go: ⚙️ canary-font-go-deps  # same as canary-font but Go+cgo/pkg-config instead of Zig+dlopen, for cross-tech-stack comparison — usage: make canary-font-go FONT="Twemoji" TEXT="☺️ ☺︎" UNSET=FREETYPE_PROPERTIES
-	go run ./scripts/canary_font -font="$(FONT)" -text="$(TEXT)" -unset="$(UNSET)"
-
-WIDTH_TEXT ?= abc☺️ ☺︎🚀def
-canary-width: ⚙️  # manual: feeds WIDTH_TEXT to Pango shaping, naive per-codepoint summation, raw hb-shape, and foot's own libfcft, printing per-cluster width breakdowns side by side — NOT part of `make canary`; usage: make canary-width WIDTH_TEXT="..." FONT="Twemoji"
-	zig run scripts/canary_width_compare.zig -lc -- -font="$(FONT)" -text="$(WIDTH_TEXT)"
-
 ttylaunch: ⚙️ build  # launch kitty/ghostty/gnome-terminal/alacritty/ptyxis/xfce4-terminal/tilix with emojig TUI and benchmark memory
 	@echo "Launching 8 terminal emulators with emojig TUI..."
 	@kitty -d $$HOME \

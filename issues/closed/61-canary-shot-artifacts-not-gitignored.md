@@ -4,6 +4,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 # 61 — canary shot artifacts land untracked in `git status` with no ignore rule or commit policy
 
+**Status: Closed (moot) — 2026-08-11.** `scripts/canary_font/` (the
+directory this issue is about) moved to `../fontwidth` per
+[issue 62](62-move-font-width-experiments-to-fontwidth.md); it no longer
+exists in this repo, so there is nothing here to gitignore. The underlying
+question (should a canary's output artifacts be tracked, throwaway, or
+redirected to `/tmp`?) may still be worth deciding in `../fontwidth` if its
+own `results/` directory develops the same tension — not tracked as an
+emojig issue anymore.
+
 **Priority: P3** (hygiene; no user-facing impact, but it produces steady
 `git status` noise and interacts badly with `AGENTS.md §10`'s "stage commits
 by explicit path" rule)

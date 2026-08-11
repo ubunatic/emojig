@@ -6,8 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 **Priority: P3** (research-tool correctness, not shipped emojig behavior).
 
-**Status: two critical items already fixed** (see below); the rest is
-tracked here for later, not blocking current use of the canaries.
+**Status: Closed (moved) — 2026-08-11.** The two critical gaps below were
+fixed here first. The tools themselves (`canary_font.zig`/`.go`,
+`canary_width_compare.zig`) have since moved to `../fontwidth` per
+[issue 62](62-move-font-width-experiments-to-fontwidth.md); the remaining
+"not yet fixed" gaps (3-10) travel with them and are now tracked in
+`../fontwidth/issues/002-ported-emojig-font-canaries.md` rather than here.
+Kept closed (not deleted) for the historical record of what was found and
+fixed while the tools still lived in this repo.
 
 ## Summary
 

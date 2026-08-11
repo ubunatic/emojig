@@ -5,13 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 58 — Zig 0.16 stdlib bug: `unsetenv()` desyncs `std.Io.Threaded`'s own `environ` cache
 
 **Priority: P3** (found while building a manual research canary, not on
-any emojig code path used at runtime — `-unset=` in `scripts/canary_font.zig`
-is a developer-only diagnostic flag; no shipped emojig behavior is affected.
+any emojig code path used at runtime — `-unset=` in `canary_font.zig`
+(now moved to `../fontwidth/canaries/`, see
+[issue 62](closed/62-move-font-width-experiments-to-fontwidth.md)) is a
+developer-only diagnostic flag; no shipped emojig behavior is affected.
 Tracked here mainly so the fix/workaround isn't re-derived later, and as a
 candidate to report upstream to ziglang/zig.)
 
 **Status: workaround shipped for one of the two symptoms** (see
-`scripts/canary_font.zig`'s `-unset=` flag and `docs/Zig.md` §8). Filing
+`canary_font.zig`'s `-unset=` flag — now in `../fontwidth/canaries/` —
+and `docs/Zig.md` §8). Filing
 this as an issue rather than closing outright because (a) the second
 symptom (`std.process.spawn` after `unsetenv()`) has **no known
 workaround**, only avoidance, and (b) this looks like a genuine upstream
@@ -204,9 +207,13 @@ of the process's life.
 
 ## Workaround shipped in this codebase
 
-`scripts/canary_font.zig`'s `-unset=` flag (a manual, on-demand canary —
-see `docs/EmojiWidthResearch.md`) is the only place in this codebase that
-calls `unsetenv()`. It:
+`canary_font.zig`'s `-unset=` flag (a manual, on-demand canary — see
+`docs/EmojiWidthResearch.md`; the file itself now lives in
+`../fontwidth/canaries/canary_font.zig`, see
+[issue 62](closed/62-move-font-width-experiments-to-fontwidth.md)) was the only
+place in this codebase that called `unsetenv()`; the standalone repro
+below (which stayed in emojig) is now the only `unsetenv()` call left
+here. It:
 
 1. Runs its one and only `std.process.spawn` call (`mkdir -p`) **before**
    `applyUnset`.
@@ -241,9 +248,13 @@ call instead of mutating the process's real environment).
 
 ## Related
 
-- `scripts/canary_font.zig` — where this was found (`-unset=` flag).
+- `../fontwidth/canaries/canary_font.zig` — where this was originally
+  found (`-unset=` flag); moved from `scripts/canary_font.zig` per
+  [issue 62](closed/62-move-font-width-experiments-to-fontwidth.md).
 - `scripts/zig_unsetenv_bug_repro.zig` — the minimal, standalone
-  reproduction referenced throughout this issue.
+  reproduction referenced throughout this issue; stays in this repo
+  (Group C of issue 62) since it's an emojig-relevant stdlib finding, not
+  general font research.
 - `docs/Zig.md` §8 — the developer-facing "read before you write
   subprocess/environ code in Zig" version of this finding.
 - `docs/EmojiWidthResearch.md` — the broader font-rendering research

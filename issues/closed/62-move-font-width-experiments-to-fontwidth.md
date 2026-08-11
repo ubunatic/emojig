@@ -9,9 +9,13 @@ these files currently sit in `emojig`'s own `scripts/`/`docs/`, which is
 exactly the "spinning in circles" surface `docs/CanaryToolingDesign.md`
 already flagged as needing a different home)
 
-**Status: plan only — nothing moved yet.** This issue exists to record the
-decision and get an explicit stay-or-move call per group before touching
-anything (see "Open decision" below).
+**Status: decided and executed (2026-08-11).** Group A (`canary_font.zig`/
+`.go`) → moved to `../fontwidth/canaries/`. Group B
+(`canary_width_compare.zig`) → moved to `../fontwidth/canaries/`. Group C
+(`zig_unsetenv_bug_repro.zig`, `docs/Zig.md` §8, issue 58) → stayed in
+emojig. See "Mechanics" below for what was actually done (the numbered
+steps there are now a completed record, not a plan); `../fontwidth/issues/002-ported-emojig-font-canaries.md`
+covers the porting-side details.
 
 ## Summary
 
@@ -94,15 +98,15 @@ or exclude it, and the answer likely differs from Groups A/B.
 - `scripts/canary_gui/` — unrelated (GUI background-leak/geometry, issues
   50/41), not a font-width experiment, not touched by this issue.
 
-## Open decision — ask before moving anything
+## Decision (resolved 2026-08-11)
 
-For **each of Groups A, B, and C**: stay in `emojig`, or move to
-`../fontwidth`? These can have different answers — e.g. Group C (a Zig
-compiler/stdlib bug) might be better homed somewhere Zig-bug-specific
-rather than `fontwidth` at all, while Groups A/B are the more obvious
-`fontwidth` candidates given that project's own stated scope.
+Asked per-group: Group A → move, Group B → move, Group C → stay. Matches
+the reasoning sketched above (Groups A/B are general font-rendering
+research now homed in `../fontwidth`; Group C is an emojig-development
+finding that stays here regardless of where the tool that surfaced it
+lives).
 
-## If any group moves — mechanics (not yet executed)
+## Mechanics — as executed
 
 1. Port the script(s) into `../fontwidth` under whatever structure that
    project's own conventions expect (it already has `canaries/hello.go` /
@@ -146,7 +150,8 @@ rather than `fontwidth` at all, while Groups A/B are the more obvious
   contrast with what's proposed to move.
 - `issues/57-tilix-monochrome-mixed-row-length.md`,
   `issues/58-zig-unsetenv-environ-desync.md`,
-  `issues/59-canary-font-research-gaps.md` — issues whose cross-references
-  would need updating depending on the answer.
+  `issues/closed/59-canary-font-research-gaps.md` — issues whose
+  cross-references were updated to point at the new `../fontwidth`
+  location.
 - `../fontwidth/issues/001-web-runner-setup.md` — the sibling project's own
   plan, which this migration would feed.

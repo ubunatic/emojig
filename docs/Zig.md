@@ -190,8 +190,9 @@ std.debug.print("", .{}); // one warm-up call, before unsetenv — makes later d
 applyUnset(alloc, args.unset); // now safe to call libc unsetenv() — but no more spawns after this
 ```
 
-Reference: `scripts/canary_font.zig` (`-unset=` flag, and note it never
-spawns again after `applyUnset`); `scripts/zig_unsetenv_bug_repro.zig` is
+Reference: `../fontwidth/canaries/canary_font.zig` (`-unset=` flag, moved
+there per [issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md);
+note it never spawns again after `applyUnset`); `scripts/zig_unsetenv_bug_repro.zig` is
 a minimal, no-application-code reproduction of both failure modes plus the
 two experiments above (`print-workaround` succeeds,
 `spawn-still-broken-after-print-warmup` and a pre-unset warm-up spawn both
@@ -204,10 +205,12 @@ maintains its own environment consistently.
 ## 9. dlopen'd C libraries with *public* struct fields need the real header — opaque-pointer APIs don't
 
 Cairo/Pango's C API is entirely opaque-pointer-based (every function takes
-and returns `void*`-equivalent handles), so `scripts/canary_font.zig`
+and returns `void*`-equivalent handles), so `canary_font.zig` (now in
+`../fontwidth/canaries/`, see
+[issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md))
 could safely declare every binding as `?*anyopaque` and never risk a
 struct-layout mismatch. `libfcft` (foot's own font-shaping library,
-`scripts/canary_width_compare.zig`'s column 4) is different: its structs
+`canary_width_compare.zig`'s column 4, same new location) is different: its structs
 (`fcft_glyph`, `fcft_text_run`, `fcft_font`) expose **public fields**
 (`.cols`, `.advance.x`, `.count`, …) that calling code reads directly —
 guessing that layout instead of transcribing it from the real header
@@ -217,11 +220,12 @@ Rule of thumb: before writing `extern struct` bindings for a C library,
 check whether its public API is opaque-pointer-only (safe to guess/treat
 as `?*anyopaque` throughout) or exposes readable struct fields (get the
 real header — install the `-devel`/`-dev` package if needed, e.g. via
-`scripts/install_fcft_dev.sh`'s pattern — and transcribe field order,
-types, and nested anonymous structs exactly). The dlopen'd runtime `.so`
-itself never requires the header at build or run time either way; the
-header is purely for getting the Zig-side struct declaration right.
+`../fontwidth/scripts/install_fcft_dev.sh`'s pattern — and transcribe field
+order, types, and nested anonymous structs exactly). The dlopen'd runtime
+`.so` itself never requires the header at build or run time either way;
+the header is purely for getting the Zig-side struct declaration right.
 
-Reference: `scripts/canary_width_compare.zig`'s `FcftGlyph`/`FcftTextRun`
+Reference: `canary_width_compare.zig`'s `FcftGlyph`/`FcftTextRun`
 (transcribed from `/usr/include/fcft/fcft.h`, `fcft-devel` package) vs.
-`PangoLib`'s all-opaque-pointer function table in the same file.
+`PangoLib`'s all-opaque-pointer function table in the same file (both now
+in `../fontwidth/canaries/`).

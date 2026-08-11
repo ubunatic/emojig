@@ -84,6 +84,18 @@ proposes a different shape for this kind of tool going forward.
 
 ## Proposal: a declarative pixel/measurement spec, not more columns
 
+> **Superseded (2026-08-11).** The tools this section proposed extending
+> (`canary_font.zig`/`.go`, `canary_width_compare.zig`) moved to the
+> dedicated sibling project `../fontwidth`
+> (see [issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md)),
+> which already has a superset of this idea in its own
+> `issues/001-web-runner-setup.md` (a web UI running these canaries with
+> env-var toggles and result visualization — a "spec" in the form of
+> configurable runs rather than a YAML assertion file, but the same
+> underlying motivation: stop re-deriving expectations by eye every time).
+> The sketch below is kept for the historical reasoning, not as a live
+> plan to build inside emojig.
+
 This project already has a strong, established answer to "how do we stop
 guessing and start asserting": `spec/*.yaml` is the single source of truth
 for application behavior (`docs/Spec.md`), and `docs/Canary.md` already
@@ -132,13 +144,10 @@ discrepancy above was found in the first place. The spec file is for
 
 ## If this proposal is accepted
 
-Suggested next issue (numbered by whoever runs the issues audit alongside
-this doc, to avoid a numbering collision): "Add a declarative pixel/width-
-check spec, verified by `canary_width_compare` or a new sibling tool,"
-scoped as: define the YAML shape, add a `-spec=FILE` flag that runs cases
-and prints PASS/FAIL, and migrate the `☺️`/`☺︎` VS16 case (issue 53's
-original motivating example) into it as the first real case — proving the
-mechanism on the exact discrepancy that started this whole thread.
+Moot in emojig now that the tools it would have extended live in
+`../fontwidth` — see that project's own `issues/002-ported-emojig-font-canaries.md`
+and `issues/001-web-runner-setup.md` for the equivalent forward-looking
+plan there instead.
 
 ## Session-level agentic-workflow observations
 

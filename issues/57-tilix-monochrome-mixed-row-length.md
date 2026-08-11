@@ -346,8 +346,9 @@ upstream to `../wayreel` if confirmed), not an emojig bug.
 The one open checkbox above ("root-cause why the headless capture shows a
 defect the real desktop doesn't") now has a **pixel-free** instrument that
 did not exist when this issue was written:
-**`scripts/canary_width_compare.zig`** (`make canary-width
-WIDTH_TEXT="😗  ☺️  ☺︎   😚"`, commits `b81763e` / `483dcf5`). It reports the
+**`canary_width_compare.zig`** (moved to `../fontwidth/canaries/` — see
+[issue 62](closed/62-move-font-width-experiments-to-fontwidth.md); run there via
+`zig run canaries/canary_width_compare.zig -lc -- -help`). It reports the
 width of a mixed text+emoji run under four models — Pango/HarfBuzz shaping,
 naive per-codepoint `wcwidth()` summation, raw `hb-shape` on the resolved
 font, and **foot's own `libfcft`** via `fcft_rasterize_text_run_utf32`
@@ -389,9 +390,12 @@ capture for grid-level questions.
 
 ## Related
 
-- Issue [59](59-canary-font-research-gaps.md) — the font-canary research
-  gaps thread; its "gap 2" (these canaries can't speak to foot at all) is
-  what `canary_width_compare`'s libfcft column above addresses.
+- Issue [59](closed/59-canary-font-research-gaps.md) — the font-canary
+  research gaps thread; its "gap 2" (these canaries can't speak to foot at
+  all) is what `canary_width_compare`'s libfcft column above addresses.
+- Issue [62](closed/62-move-font-width-experiments-to-fontwidth.md) — `canary_width_compare.zig`
+  moved to `../fontwidth/canaries/`; this issue's reasoning above still
+  applies, just run the tool from its new location.
 - Issue [51](51-vte-canary.md) — the existing VTE canary infra
   (`scripts/vte_canary`, `-verify-rows`) this issue exercised; its pixel
   measurement technique produced a false positive here, worth keeping in
