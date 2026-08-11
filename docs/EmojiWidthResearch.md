@@ -38,6 +38,12 @@ takes this seriously ends up building.
    Used by: Alacritty, kitty, tmux, xterm, **VTE** (gnome-terminal, tilix,
    ptyxis, xfce4-terminal); Python's `uwcwidth`.
 
+> **Stale for kitty** — see
+> [fontwidth follow-on findings](#fontwidth-follow-on-findings-2026-08-11):
+> kitty's current `wcswidth_step()` does UAX #29 segmentation and dynamic
+> VS15/VS16 correction, i.e. it belongs in camp 1 now. This camp table is a
+> dated snapshot of black-box measurements, not a standing fact.
+
 Mitchell Hashimoto's cross-terminal test of 🧑‍🌾 (wcwidth-sum = 4) found:
 iTerm2/Contour/WezTerm render it as width 2 (full clustering); **Alacritty,
 Kitty, tmux, xterm render it as width 4** (no clustering); Terminal.app 6,
@@ -263,6 +269,128 @@ for what changed in the port).
 proves emojig's own `--gui`/`--tui` rendering has no background-leak or
 row-length regression, which is an emojig correctness check, not general
 font research.
+
+## fontwidth follow-on findings (2026-08-11)
+
+Since the canaries moved, `../fontwidth` grew a docs tier this survey did not
+have: per-terminal **source-inspection** deep-dives
+(`../fontwidth/docs/related/{Alacritty,Kitty,Ghostty,WezTerm,VTE,XtermJS,Zed}.md`)
+plus two cross-terminal synthesis docs
+(`../fontwidth/docs/TerminalWidthArchitecture.md`,
+`../fontwidth/docs/TerminalTechStacks.md`). Where this survey is a websearch
+of *reported bugs*, those are readings of the *width engines themselves* —
+which corrects one claim above and changes the shape of the robustness plan.
+
+### Correction to "the two competing width models"
+
+The camp assignment above (from Hashimoto's cross-terminal test) is stale for
+**kitty**. `related/Kitty.md §5.3` shows kitty's current `wcswidth_step()`
+(`kitty/wcswidth.c`) is a stateful **UAX #29 segmenting** stepper: it runs
+`grapheme_segmentation_step()` per codepoint, contributes 0 cells for
+anything with `add_to_current_cell` (which per GB11 includes the emoji after
+a ZWJ), and applies dynamic variation-selector correction — VS16 on a 1-cell
+emoji-presentation base returns `+1`, VS15 on a 2-cell base returns `-1`.
+Read: kitty most likely joined the clustering camp after that test was
+published. Treat the camp table as a snapshot with a date, not a standing
+fact — and specifically **do not** extend `disable_zwj` to kitty on the
+strength of it (see issue [54](../issues/54-width-correction-beyond-vte.md)).
+
+Conversely **Alacritty**'s membership is now confirmed from architecture, not
+inference: `related/Alacritty.md §4.2` documents that Alacritty performs no
+grapheme segmentation at all, storing `U+200D` in the preceding cell's
+`zerowidth: Vec<char>` and advancing 2 cells for the next emoji — ZWJ
+sequences "break apart into separate individual emojis … across up to 8
+cells". `§4.1` documents the *opposite-direction* defect on the same
+terminal: a VS16 pair gets **1** cell from `unicode-width` while FreeType
+rasterizes a 2-cell colour bitmap that clips into the neighbour.
+
+### The fourth approach the three-tier plan is missing
+
+Issues 53 / 54 / 55 read as three tiers: static override → detection table →
+measure at runtime. fontwidth surfaces a distinct **tier 1.5: normalize the
+width policy of every terminal we spawn ourselves**, at spawn time, via that
+terminal's own config flags — which is what issue 53 did for *foot alone*,
+generalized. Collected knobs: Ghostty `grapheme-width-method`
+(`related/Ghostty.md §3.4`); WezTerm `cell_widths` (a per-codepoint override
+`HashMap`), `treat_east_asian_ambiguous_width_as_wide`, and a configurable
+`UnicodeVersion` (`related/WezTerm.md §3.1-3.3`); foot
+`grapheme-width-method`; xterm.js/VS Code `unicodeVersion` +
+`ambiguousIsFullWidth` (`related/XtermJS.md §3.2-3.3`); VTE's ambiguous-width
+code `3` resolved from `vte_terminal_set_cjk_ambiguous_width()`
+(`related/VTE.md §5`, API-only — no CLI knob, so VTE stays a
+correction-table case). Since `spec/host.yaml` already holds per-terminal
+argv templates, this tier is *spec data, not Zig code*, and it covers the
+`--gui` path (`docs/EnvironmentDetection.md §1.A`) where emojig chooses the
+terminal. It should outrank issue 54: same class of fix as the already-landed
+53, no runtime detection, no regression risk for users on terminals that
+render correctly.
+
+Note the boundary honestly: it does **nothing** for Path B
+(`EnvironmentDetection.md §1.B` — emojig running inside a terminal the user
+launched). Tiers 2 and 3 exist for Path B only.
+
+### Re-scoring implications
+
+- **Issue 54 (detection table)**: evidence is now split rather than
+  supportive — strong for alacritty, contrary for kitty, absent for xterm.
+  Its bigger problem is structural: every terminal above exposes a
+  user-settable width knob, so a table keyed on `TERM`/`TERM_PROGRAM` can
+  only encode *defaults* and is silently wrong for anyone who tuned theirs.
+  Keep P2, but scope it to defaults, and key its rows by **quirk**
+  (`zwj_sums_per_codepoint`, `vs16_not_promoted`, `ambiguous_is_wide`) rather
+  than by terminal, so alacritty's VS16 under-allocation is expressible at
+  all.
+- **Issue 55 (measure at runtime)**: gains a cheaper first probe. Mode 2027
+  is *queryable* — `CSI ? 2027 $ p` (`related/Ghostty.md §3.4`) — one
+  round-trip, nothing printed, and it answers the width-*model* question
+  directly instead of inferring it from a probe glyph's column delta; same
+  cost class as `src/term.zig`'s existing OSC 11 query. Implemented by
+  Ghostty, Contour, foot, WezTerm (three in `spec/host.yaml`'s `detection`
+  list), with `CSI 6n` print-and-measure as the fallback beneath it. kitty's
+  Text Sizing Protocol (`related/Kitty.md §7`) offers an even more direct
+  width *query*, but kitty-only. Stays P3; becomes P2 if 54's measurements
+  show the observed width tracks the user's config rather than the terminal's
+  identity.
+- **Hard ceiling on computing it ourselves**:
+  `../fontwidth/canaries/canary_width_compare.zig`'s header records that
+  `libfcft` alone reports `cols=1` for `☺️` (VS16, Twemoji), and that
+  `grapheme-width-method` exists only in *foot's own* source — no
+  `grapheme_width` symbol in `fcft.h`'s public API. Even dlopen'ing the exact
+  shaping library a terminal uses does not predict that terminal's grid
+  decision. This is the strongest single argument in favour of tiers 1.5 and
+  3 over tier 2.
+
+### Incidental notes worth keeping
+
+- **Cell width is derived differently per terminal**, which matters for
+  `--gui`'s `--window-size-chars` sizing: VTE takes the *maximum* logical
+  extent over `U+0021..U+007E` measured individually
+  (`FontInfo::measure_font()`, `related/VTE.md §7`) precisely to stop glyphs
+  bleeding out of cells, whereas Alacritty uses the primary font's
+  `average_advance`/`max_advance` (`related/Alacritty.md §2`) — so the same
+  font and point size can yield different cell widths across hosts.
+- **Procedural box drawing is near-universal** (Alacritty's
+  `builtin_box_drawing`, kitty's `render_box_cell()`, VTE's `Minifont`,
+  WezTerm, xterm.js — `TerminalWidthArchitecture.md §1.D`): U+2500–U+259F is
+  intercepted before the font rasterizer to avoid 1-px hairline gaps. Good
+  news for emojig's `b:` box-art entries — that range is the one place where
+  width and rendering are *most* consistent across terminals, so
+  `isBoxArt`'s codepoint range (`SearchEngine.md`) is aligned with what every
+  terminal special-cases anyway.
+- **Grapheme-cluster width is capped at 2 cells** by every clustering
+  terminal (WezTerm `.min(2)`, `related/WezTerm.md §3.3`; Ghostty clamps
+  triple-width glyphs like U+2E3B to 2, `related/Ghostty.md §3.2`) — a useful
+  invariant if a correction layer ever needs an upper bound.
+- **The headless harness for future width proofs already exists in
+  fontwidth**: `canaries/canary_font_width.go` (own headless sway,
+  `WLR_BACKENDS=headless`, `grim` screenshot, per-colour-row right-edge
+  comparison) plus `../fontwidth/issues/002-png-verification-spec.md`
+  Phase 3's declarative bounding-box `width_px`/`width_tolerance` checks and
+  `colors_present`/`colors_absent` shade matching, driven from
+  `spec/config.yaml` `env_sets` (which already include a `VTE_VERSION=7002`
+  set). It is currently **foot-only**; kitty/alacritty should extend onto the
+  same Wayland harness, but xterm would additionally need XWayland/Xvfb.
+  Prefer extending that over building a new emojig-side canary.
 
 ## Retracted issue 57
 
