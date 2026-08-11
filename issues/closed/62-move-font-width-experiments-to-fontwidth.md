@@ -14,7 +14,7 @@ already flagged as needing a different home)
 (`canary_width_compare.zig`) → moved to `../fontwidth/canaries/`. Group C
 (`zig_unsetenv_bug_repro.zig`, `docs/Zig.md` §8, issue 58) → stayed in
 emojig. See "Mechanics" below for what was actually done (the numbered
-steps there are now a completed record, not a plan); `../fontwidth/issues/002-ported-emojig-font-canaries.md`
+steps there are now a completed record, not a plan); `../fontwidth/issues/003-ported-emojig-font-canaries.md`
 covers the porting-side details.
 
 ## Summary

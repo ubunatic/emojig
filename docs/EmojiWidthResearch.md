@@ -262,7 +262,7 @@ moved to the dedicated sibling project `../fontwidth`
 (`canaries/canary_font.go`, `canaries/canary_font.zig`,
 `canaries/canary_width_compare.zig` there — see
 [issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md) for
-the move decision, and `../fontwidth/issues/002-ported-emojig-font-canaries.md`
+the move decision, and `../fontwidth/issues/003-ported-emojig-font-canaries.md`
 for what changed in the port).
 
 `scripts/vte_canary/`'s 4×4 color-grid canary (issue 51) stays here — it

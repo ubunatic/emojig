@@ -11,7 +11,7 @@ fixed here first. The tools themselves (`canary_font.zig`/`.go`,
 `canary_width_compare.zig`) have since moved to `../fontwidth` per
 [issue 62](62-move-font-width-experiments-to-fontwidth.md); the remaining
 "not yet fixed" gaps (3-10) travel with them and are now tracked in
-`../fontwidth/issues/002-ported-emojig-font-canaries.md` rather than here.
+`../fontwidth/issues/003-ported-emojig-font-canaries.md` rather than here.
 Kept closed (not deleted) for the historical record of what was found and
 fixed while the tools still lived in this repo.
 

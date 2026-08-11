@@ -182,3 +182,12 @@ detection-table scope narrowed to defaults only.
 - `../fontwidth/canaries/canary_width_compare.zig` (header comment) —
   measured `libfcft` `cols=1` for `☺️`, and the finding that foot's
   `grapheme-width-method` lives above `fcft.h`'s public API.
+- `../fontwidth/issues/007-mvp-width-paths-demo.md` — in-progress MVP
+  canary that renders the static-model camps this issue's calibration
+  fallback would need to override; its `-report-libs` diagnostic is the
+  same "say what actually ran, don't assume it" instinct this issue's
+  measure-don't-compute premise is built on.
+- `../fontwidth/issues/008-app-render-graph-spec.md` — unrelated to the
+  measurement mechanism itself, but shows the same "make the actual
+  pipeline visible instead of assumed" principle applied to fontwidth's
+  own web UI.

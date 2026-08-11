@@ -145,7 +145,7 @@ discrepancy above was found in the first place. The spec file is for
 ## If this proposal is accepted
 
 Moot in emojig now that the tools it would have extended live in
-`../fontwidth` — see that project's own `issues/002-ported-emojig-font-canaries.md`
+`../fontwidth` — see that project's own `issues/003-ported-emojig-font-canaries.md`
 and `issues/001-web-runner-setup.md` for the equivalent forward-looking
 plan there instead.
 
@@ -180,12 +180,46 @@ plan there instead.
   and the thing being measured share an unusual environment (nested
   compositor, software rendering) that the real usage doesn't.
 
+## Epilogue: the migration completed, and it's paying off (2026-08-11)
+
+The move proposed above happened in full, plus one extra straggler:
+`canary_font_width.go` (a fourth research tool, already orphaned — no
+Makefile target, no issue ever referenced it — found in a follow-up audit
+of `scripts/`) also moved to `../fontwidth`. The same audit turned up two
+genuinely dead scratch files unrelated to font-width at all
+(`scripts/test_posix.zig`, `scripts/gen_wayland_spec.go` — issue
+[63](../issues/closed/63-orphaned-scratch-scripts.md)), deleted outright
+rather than moved, since neither had any research value left to preserve.
+
+More importantly, the sibling project is now producing findings emojig
+didn't have to re-derive itself: `../fontwidth` grew per-terminal
+*source-inspection* deep-dives (`docs/related/*.md`) that corrected a
+stale claim already in `docs/EmojiWidthResearch.md` (kitty's camp
+assignment, based on Hashimoto's black-box test, turns out to be outdated
+— its current shaper does UAX #29 segmentation) and fed directly into
+issues 54 and 55 (see their own "Findings from ../fontwidth research"
+sections). That's the payoff this migration was for: a research thread
+that would have kept accumulating inside emojig's own `scripts/`/`docs/`
+instead grew independently, and periodically hands back sharper evidence
+than emojig started with. `../fontwidth/issues/007-mvp-width-paths-demo.md`
+(an MVP canary implementing the four width-decision models issue 54 names,
+each through its *authentic* library stack — not a shared Pango layout, a
+design flaw caught during issue review before any code was written) is the
+next expected delivery in that direction.
+
 ## Related
 
 - `docs/EmojiWidthResearch.md` — the font-rendering findings themselves
-  (env vars, terminal camps, the canaries' own discovered bugs).
+  (env vars, terminal camps, the canaries' own discovered bugs, and the
+  "fontwidth follow-on findings" section documenting the epilogue above).
 - `docs/Spec.md`, `docs/Canary.md` — the existing conventions this
   proposal extends rather than replaces.
 - `issues/57-tilix-monochrome-mixed-row-length.md`, `issues/58-zig-unsetenv-environ-desync.md`,
-  `issues/59-canary-font-research-gaps.md` — the concrete issues this
+  `issues/closed/59-canary-font-research-gaps.md` — the concrete issues this
   session's work and detours produced.
+- `issues/closed/62-move-font-width-experiments-to-fontwidth.md`,
+  `issues/closed/63-orphaned-scratch-scripts.md` — the completed migration
+  and the follow-up dead-code cleanup it surfaced.
+- `issues/54-width-correction-beyond-vte.md`,
+  `issues/55-cursor-query-width-measurement.md` — the open issues now
+  citing `../fontwidth`'s findings directly.

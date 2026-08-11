@@ -196,6 +196,14 @@ concrete instance of why library-level or name-level prediction is fragile.
       Phase 3 bounding-box measurement) over building a new emojig canary —
       it already does headless-sway + `grim` + per-row right-edge
       comparison; it just needs terminals beyond foot.
+- [ ] Check `../fontwidth/issues/007-mvp-width-paths-demo.md` before
+      reproducing step 1 by hand: it's building exactly this evidence —
+      a Go canary implementing `naive-sum`/`uax29-cluster`/`vs-dynamic`/
+      `ambiguous-negotiated` each through its own authentic library stack
+      (raw FreeType for the Alacritty camp, HarfBuzz+FreeType for the
+      Kitty/WezTerm camp) and rendering the result to a PNG. If that lands
+      first, its output may already answer "does kitty/alacritty/xterm
+      reproduce this" without a separate emojig-side reproduction.
 - [ ] Re-key the eventual correction table by *quirk*
       (`zwj_sums_per_codepoint`, `vs16_not_promoted`, `ambiguous_is_wide`)
       rather than by terminal name, so alacritty's VS16 under-allocation
@@ -212,6 +220,9 @@ concrete instance of why library-level or name-level prediction is fragile.
   "measure, don't guess" alternative to a per-terminal detection table.
 - Issue [51](51-vte-canary.md) — the PNG-pixel-proof pattern to reuse for
   step 1's reproduction.
+- `../fontwidth/issues/007-mvp-width-paths-demo.md` — the in-progress MVP
+  canary that implements these four models against their authentic
+  library stacks; likely the fastest path to step 1's evidence.
 - `../fontwidth/docs/related/Alacritty.md` §4.1/§4.2,
   `../fontwidth/docs/related/Kitty.md` §5.3,
   `../fontwidth/docs/related/Ghostty.md` §3.4,
