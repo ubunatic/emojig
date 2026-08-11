@@ -27,7 +27,7 @@ This document details the architectural decisions, coding standards, and safety 
 * Make sure --tui close behavour is safe!
 * **Before touching search, emoji data, or ranking:** read [`docs/SearchEngine.md`](docs/SearchEngine.md) — documents non-obvious pitfalls (word-order trap, `isBoxArt` codepoint range, synonym-vs-tag tradeoffs, greedy-matcher behaviour) that are easy to re-derive incorrectly from scratch.
 * **Before touching theme/palette fields:** read [`docs/SpecDrivenConfig.md §13`](docs/SpecDrivenConfig.md) — documents the null-color "punch-through" contract, cap vs. sep fallback distinction, and field tables. Changing fallback chains without reading it can reintroduce the near-black separator bug.
-* **Before writing any Zig subprocess, pipe, fd, or process-spawn code:** read [`docs/Zig.md`](docs/Zig.md) — documents non-obvious Zig 0.16 API shapes (`pipe2`, `StdIo.file`, `posix.system.close`, `mem.trim` constness, etc.) that cause hard-to-diagnose compile errors.
+* **Before writing any Zig subprocess, pipe, fd, or process-spawn code — or any `dlopen`'d C-library binding:** read [`docs/Zig.md`](docs/Zig.md) — documents non-obvious Zig 0.16 API shapes (`pipe2`, `StdIo.file`, `posix.system.close`, `mem.trim` constness, etc.) that cause hard-to-diagnose compile errors, plus (§9) when a C library's public structs need the *real* header transcribed exactly (e.g. `libfcft`) versus when an opaque-pointer API (Cairo/Pango) makes guessing safe.
 
 ## Assumptions for Agentic Work
 * Assume all tools you need are installed (ffmpeg, go, zig, terminal emulators).
@@ -230,7 +230,16 @@ All diagnostics, simulations, and unit tests must reside in-tree:
 
 ## 9. Execution & Launch Modes
 
-> **Before touching mode/theme/terminal auto-detection:** read [`docs/EnvironmentDetection.md`](docs/EnvironmentDetection.md) — documents exactly what environment is present in the two real launch paths (raw desktop-shell spawn vs. run inside an already-open terminal) versus what the source actually reads at each decision point, source-line by source-line.
+> **Before touching mode/theme/terminal auto-detection, or writing *any new*
+> terminal/environment-sniffing code** (including in `scripts/`, e.g. a
+> canary's own `detectTerminalName()`-style helper): read
+> [`docs/EnvironmentDetection.md`](docs/EnvironmentDetection.md) — documents
+> exactly what environment is present in the two real launch paths (raw
+> desktop-shell spawn vs. run inside an already-open terminal) versus what
+> the source actually reads at each decision point, source-line by
+> source-line. Re-deriving this from scratch instead of reading it first has
+> already happened once (a research canary's own terminal-detection helper,
+> 2026-08-11).
 
 To ensure seamless operation across CLI environments, graphical desktops, and custom keybind triggers, `emojig` supports three distinct launch modes:
 

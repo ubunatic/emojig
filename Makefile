@@ -379,6 +379,7 @@ install-verbose: gen-spec ⚙️  # install with verbose compilation output
 preflight: gen-spec ⚙️  # run license check, unit tests, and code formatting (Go code is auto-formatted, not checked)
 	reuse --no-multiprocessing lint
 	go run ./scripts/check_synonyms/
+	go run ./scripts/check_docs_index/
 	zig build test -Doptimize=ReleaseSafe -Dllvm=false
 	@echo "Note: 'failed command' message above is OK (Zig test runner info, all tests pass)"
 	zig fmt --check src/
