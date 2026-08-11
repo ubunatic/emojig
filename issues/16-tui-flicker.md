@@ -57,14 +57,45 @@ if (!skip_render and (exit_preview or !should_copy_and_exit)) { ... }
 ```
 First render and exit-preview animation are never skipped.
 
-### B — Remove redundant pre-clearing (pending)
+### B — Remove redundant pre-clearing (still pending)
 
-Remove `\x1b[2K\r` at the start of drawing each row (lines ~1337, ~1342, ~1365,
-~1373 in `src/main.zig`). Rely entirely on `\x1b[K` in `RowWriter.endRow()` to
-erase trailing columns. Because the new row text overwrites old text
-character-by-character, there is no blank-frame state between clear and draw.
-Ensure `\r` is emitted at row start (already present via `\x1b[B\r` from the
-previous `endRow`).
+**Reference refresh 2026-08-11** — the behavior is unchanged, but the code
+moved twice since this was written, so the original pointers no longer
+resolve:
+
+- The raw `"\x1b[2K\r"` literal is gone from `src/main.zig`. It is now the
+  named constant `term_lib.CLEAR_LINE_CR` (defined `src/term.zig:234`, as
+  `CLEAR_LINE ++ "\r"`) — a rename from issue
+  [45](closed/45-ansi-escape-consolidation.md)'s ANSI consolidation, not a
+  fix. Grep for `CLEAR_LINE_CR`, not for the escape bytes.
+- The cited lines `~1337, ~1342, ~1365, ~1373` are stale. The row-start
+  pre-clear writes now sit at roughly `src/main.zig:1605, 1613, 1635, 1641,
+  1648, 1677, 1684, 1787, 1807` (nine sites, not four), plus
+  `src/tui_draw.zig:738` and `:791` after the pane extraction of issue
+  [44](44-main-zig-decomposition.md).
+- Two sites are **not** candidates for removal and must be excluded from any
+  such change: `src/main.zig:1075` (the exit `defer`'s hidden-mode row
+  clear) and `clearTuiRows`' `CR_CLEAR_LINE` loop (`src/main.zig:228`),
+  which are exit-path *cleanup*, not redraw. Deleting those would regress
+  issue [12](12-tui-line-cleanup-and-terminal-restoration.md), whose whole
+  invariant is per-row `\x1b[2K` erasure on exit.
+- Note also `src/tui_draw.zig:961`, which *counts* `CLEAR_LINE_CR`
+  occurrences in rendered output (`std.mem.count`) to identify spacer rows —
+  a test/assertion that would need updating alongside any removal.
+
+Remove the redraw-path pre-clears only, and rely entirely on `\x1b[K` in
+`RowWriter.endRow()` to erase trailing columns. Because the new row text
+overwrites old text character-by-character, there is no blank-frame state
+between clear and draw. Ensure `\r` is emitted at row start (already present
+via `\x1b[B\r` from the previous `endRow`).
+
+⚠️ Interacts with issue [45](closed/45-ansi-escape-consolidation.md)'s
+`endRowFull` distinction: full-width rows deliberately skip `\x1b[K` (it
+fires from the pending-wrap position and erases the last column in
+exact-width GUI windows — see closed issue 32). Those rows therefore cannot
+rely on a trailing clear at all, so dropping their leading clear as well
+would leave them with no erasure path. Any fix must handle
+`endRow`-vs-`endRowFull` rows differently rather than uniformly.
 
 ## Affected Files
 * [src/main.zig](file:///home/uwe/projects/emojig/src/main.zig)

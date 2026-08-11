@@ -51,6 +51,32 @@ issue, plus a list of smaller, real gaps left open for later.
    both `-help` outputs, and `docs/EmojiWidthResearch.md` — this canary's
    scope is the Pango stack only, not foot, not terminal grids.
 
+   **Superseded by an actual capability (2026-08-11 audit).** The
+   documentation-only fix above has since been overtaken by a real tool that
+   closes the substantive half of this gap:
+   **`scripts/canary_width_compare.zig`** (`make canary-width
+   WIDTH_TEXT="..." FONT="..."`, added in commits `b81763e` / `483dcf5`)
+   compares four width models side by side over one mixed text+emoji run —
+   (1) Pango/HarfBuzz shaping, (2) deliberately naive per-codepoint
+   `wcwidth()`-style summation matching the VTE/Alacritty/kitty/tmux/xterm
+   camp, (3) raw `hb-shape` against the resolved font file, and
+   (4) **foot's own `libfcft`, dlopen'd directly and driven through
+   `fcft_rasterize_text_run_utf32`**, reporting both fcft's own `.cols`
+   decision and the actual `.advance.x` pixel advance per glyph.
+   Column 4 is precisely the "wrong stack" complaint above: it is foot's
+   real shaping code, called offscreen with no terminal, no compositor and
+   no wayreel involved — so this research thread is no longer blind to
+   foot, and no longer has to infer foot's behavior from a screenshot.
+
+   What remains genuinely out of reach (so this gap is narrowed, not
+   eliminated): **no terminal's grid-layout logic is exercised by any of
+   these canaries.** `libfcft` answers "how does foot shape and advance
+   this run", not "how does foot assign it to grid cells", which is
+   separate code in foot itself. Anything needing the latter still requires
+   capturing the real terminal — the route issue
+   [57](57-tilix-monochrome-mixed-row-length.md) took, and whose headless
+   trustworthiness is that issue's remaining open question.
+
 ## Not yet fixed (tracked here)
 
 Ranked by how much each could still mislead a conclusion, most important

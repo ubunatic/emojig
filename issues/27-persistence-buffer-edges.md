@@ -31,9 +31,22 @@ behavior at the fixed-size boundary", just with a larger threshold than before.
 
 ## Evidence
 
-- `src/config.zig:62` — `if (len == file_buf.len) return cfg;`
-- `src/mru.zig:31-32` — 4 KB buffer + single read, but no full-buffer check
+Line numbers refreshed 2026-08-11 (both behaviors re-confirmed unchanged;
+only the line numbers had drifted):
+
+- `src/config.zig:89` — `if (len == file_buf.len) return cfg;`
+  (was cited as `:62` when this issue was filed)
+- `src/mru.zig:42-43` — `var file_buf: [4096]u8 = undefined;` +
+  `const len = std.posix.read(fd, &file_buf) catch return;` — 4 KB buffer
+  and a single read, still with **no** full-buffer check
+  (was cited as `:31-32`)
 - `issues/closed/01-config-file-silent-truncation.md:4` — old issue explicitly documents the earlier version of this same class of problem
+
+Reproduced 2026-08-11 via `go run ./scripts/review_audit persistence-buffer-edges`,
+which still reports **FAIL** and cites exactly the two sites above. Unlike the
+`xfce-host-detect` check (see issue [60](60-review-audit-xfce-check-false-pass.md)),
+this check's string matchers are all still accurate against the current
+sources, so its FAIL is trustworthy.
 
 ## Reproduction
 

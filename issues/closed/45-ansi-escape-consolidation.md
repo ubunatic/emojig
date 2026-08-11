@@ -7,9 +7,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 status: done
 ---
 
-# ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences
+# 45 — ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences
 
-**Priority: P2**
+**Status: Closed (Implemented)** — see "Resolution (2026-07-02)" below.
+Re-verified 2026-08-11: `src/term.zig` carries the named
+constant/formatter block, and the raw `\x1b[` literal count in
+`src/main.zig` is now **32** — below the 42 the resolution reported, so the
+consolidation has held and drifted further in the right direction, not back.
+
+**Priority: P2** (historic)
 
 ## Summary
 
@@ -46,7 +52,7 @@ Concrete violations found:
   already exist for the *end* of a row.
 - **Scrollbar column jump**: `\x1b[{d}G` constructed ad hoc at 6
   duplicated call sites (same sites as the scrollbar duplication in
-  [issue 44](44-main-zig-decomposition.md)) rather than via a shared
+  [issue 44](../44-main-zig-decomposition.md)) rather than via a shared
   `moveToCol(col)` helper.
 - One legitimate one-off: `\x1b[6n` (cursor-position report query, ~1247)
   is raw but commented and genuinely single-use — not a violation.
@@ -66,7 +72,7 @@ to be about terminal *state* rather than *escape building*) with:
   toggle strings currently inlined at ~1340–1356 and ~1118–1123.
 
 This is best tackled *together* with the `main.zig` decomposition in
-[issue 44](44-main-zig-decomposition.md) — several of the raw-escape sites
+[issue 44](../44-main-zig-decomposition.md) — several of the raw-escape sites
 (scrollbar rendering, row clearing) are inside the same code being
 extracted to `src/panes.zig`/`src/tui_draw.zig` there, so doing the ANSI
 cleanup as part of that extraction avoids touching the same lines twice.

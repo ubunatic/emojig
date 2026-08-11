@@ -5,6 +5,57 @@ priority: p1
 
 # TUI Line Cleanup & Terminal Restoration
 
+## Update 2026-08-11 — audit pass: most of this is implemented; Bug 4's hypothesis is wrong
+
+Source audit only (no manual terminal verification, which is why this stays
+open — most remaining acceptance criteria are inherently visual). What the
+current tree actually shows:
+
+**Confirmed implemented:**
+
+- The 2026-06-10 `RESTORE` / `RESTORE_ALT` split is in place
+  (`src/term.zig:318-319`), selected via `global_alt_screen` through
+  `restoreSeq()` (`src/main.zig:143,153`). DECAWM is correctly `\x1b[?7h`
+  in both, not the no-op ANSI mode 7.
+- Per-row erasure exists and uses **only** `\x1b[2K`, never ED:
+  `clearTuiRows` (`src/main.zig:212`) jumps to `global_tui_start_row`
+  absolutely, then walks `height` rows emitting `CR_CLEAR_LINE`
+  (`\r\x1b[2K`) + `CURSOR_DOWN_CR`, and returns the cursor to TUI row 0.
+- **Exit-path wiring, corrected understanding**: `clearTuiRows` is called
+  from the `panic` override (`src/main.zig:292`). The normal *and* signal
+  exit path is the `defer` block at `src/main.zig:1027`, which does its own
+  equivalent absolute-jump + per-row `CLEAR_LINE` loop (~1072-1100) after
+  the CPR handshake. `sigHandler` (`src/main.zig:276`) deliberately does
+  **not** clear rows — it is documented in-source as a "V1 legacy handler"
+  reachable only *before* the TUI block installs its self-pipe (e.g.
+  spec-load or TTY-open failure), where no TUI rows have been drawn yet.
+  So "rows erased on SIGINT/SIGTERM" is satisfied by the self-pipe → defer
+  route, not by `sigHandler`; do not "fix" `sigHandler` to clear rows —
+  terminal I/O in signal context is exactly what §2 forbids.
+
+**Bug 4 is based on a false premise — do not chase it as written.**
+There is **no DECSTBM anywhere in `src/`**: a grep for `\x1b[...r` /
+`DECSTBM` / scroll-region setting across all of `src/*.zig` returns
+nothing. Emojig never sets a restricted scroll region, so it cannot leak
+one, and the "Scroll region reset to full-screen (`\x1b[r]`) on every exit
+path" acceptance criterion below is **moot** — there is nothing to reset.
+If the reported symptom (shell output scrolling to the top after emojig
+runs) is still reproducible, its cause is something else entirely and needs
+re-diagnosing from scratch; `make termstate` reporting scroll region
+`1;50r` in the Bug 5 transcript is just the terminal's own full-height
+default, not evidence emojig set it.
+
+**Where `\x1b[J`/`\x1b[2J` still appear** — three sites in `src/main.zig`,
+all in the *redraw* path, none in exit cleanup:
+`term_lib.CLEAR_SCREEN` at 1542 (altscreen mode only, on resize — safe, the
+alt screen has its own buffer and never contributes to scrollback), and
+`term_lib.CLEAR_BELOW` at 1554 and 1559 (inline mode, on the
+hidden↔visible transition). The last two do erase from the TUI's first row
+downward and are the only remaining tension with this issue's strict
+"per-row `\x1b[2K`, nothing more" invariant; they are a plausible
+suspect for Bug 5 if it still reproduces, and are worth re-checking before
+anyone re-audits `clearTuiRows` (which is already correct).
+
 ## Update 2026-06-10 — residual "extra lines on close" root-caused (VTE terminals)
 
 After the per-row cleanup landed, the TUI still closed with blank lines between
@@ -185,8 +236,10 @@ The row count to clear depends on layout mode:
 - [ ] All TUI rows erased on panic
 - [ ] Selected emoji glyph cleared as part of the fade (not left floating)
 - [ ] Cursor restored to pre-launch position on every exit path
-- [ ] Scroll region reset to full-screen (`\x1b[r]`) on every exit path
-- [ ] Shell output scrolls normally after emojig exits (no scroll region leak)
+- [x] ~~Scroll region reset to full-screen (`\x1b[r]`) on every exit path~~ —
+      **moot**, emojig never sets DECSTBM (see 2026-08-11 audit above)
+- [ ] Shell output scrolls normally after emojig exits — needs re-diagnosis;
+      the "scroll region leak" explanation is ruled out
 - [ ] Terminal content above the TUI is fully preserved after exit
 - [ ] `foot` scrollback buffer retains pre-TUI history (run `make termstate`, then emojig, then scroll up — history must be present)
 - [ ] No `\x1b[J` or `\x1b[2J` used in the cleanup path — only per-row `\x1b[2K`

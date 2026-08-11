@@ -302,6 +302,6 @@ win, least behavioral risk (pure refactor, no logic change).
   quiescence-based (`collectScreenBytes`: 100 ms idle, 3 s cap), so new
   PTY tests should not add `time.Sleep` sync hacks.
 
-See also [issue 45](45-ansi-escape-consolidation.md) (raw ANSI escapes in
+See also [issue 45](closed/45-ansi-escape-consolidation.md) (raw ANSI escapes in
 this same code, found during the same review) and
 [issue 46](46-spec-yaml-reorg-and-test-as-spec.md) (spec/ organization).

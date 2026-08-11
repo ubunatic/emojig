@@ -59,7 +59,7 @@ Done. Filed four follow-up issues with concrete file:line findings:
   the duplicated 6× scrollbar-math block. Small fix applied directly: two
   hand-duplicated `theme_str` switches replaced with the existing
   `themeName()` helper.
-- [45 — ANSI escape consolidation](45-ansi-escape-consolidation.md): 145
+- [45 — ANSI escape consolidation](closed/45-ansi-escape-consolidation.md): 145
   raw `\x1b[` literals in `main.zig`; cursor-move/clear/mode-toggle
   sequences are hand-rolled in many places despite `term.zig`/`color.zig`
   already existing for this purpose. Proposed `clearLine()`/`moveTo()`/
@@ -73,7 +73,7 @@ Done. Filed four follow-up issues with concrete file:line findings:
   "prose invariant → spec-as-code" conversions (ranking regression list,
   theme punch-through contract, host argv golden tests, etc).
   Proposal-only, not applied.
-- [47 — search hot-path synonym scan](47-search-hot-path-synonym-scan.md):
+- [47 — search hot-path synonym scan](closed/47-search-hot-path-synonym-scan.md):
   **P1.** `matchTerm` in `src/search.zig` does an unconditional linear scan
   of the full synonym table (~350 entries) per query term per DB entry,
   with no early exit. Confirmed via the project's own (currently

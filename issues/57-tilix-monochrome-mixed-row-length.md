@@ -341,8 +341,57 @@ upstream to `../wayreel` if confirmed), not an emojig bug.
       check going forward, given it produced a confident, repeatable,
       confound-tested false positive here.
 
+## New tooling available for the remaining question (added 2026-08-11)
+
+The one open checkbox above ("root-cause why the headless capture shows a
+defect the real desktop doesn't") now has a **pixel-free** instrument that
+did not exist when this issue was written:
+**`scripts/canary_width_compare.zig`** (`make canary-width
+WIDTH_TEXT="😗  ☺️  ☺︎   😚"`, commits `b81763e` / `483dcf5`). It reports the
+width of a mixed text+emoji run under four models — Pango/HarfBuzz shaping,
+naive per-codepoint `wcwidth()` summation, raw `hb-shape` on the resolved
+font, and **foot's own `libfcft`** via `fcft_rasterize_text_run_utf32`
+(returning both fcft's `.cols` decision and the real `.advance.x`).
+
+Why this matters for *this* issue specifically: it runs **entirely
+offscreen — no terminal, no compositor, no nested sway, no wayreel**, and
+therefore sidesteps the exact capture environment this issue's final section
+identifies as the leading suspect. It gives an independent answer to
+"what width does foot's own shaping code assign to `☺️`?" that cannot be
+contaminated by `WLR_RENDERER=pixman` software rendering or wayreel's
+fixed-geometry window resizing.
+
+Concretely, this should be the **next step before** investigating
+`../wayreel`, because it can discriminate the two live hypotheses cheaply:
+
+- If `libfcft` reports `.cols = 2` for `☺️` (agreeing with
+  `getEmojiWidth()`), then foot's shaping is fine, `getEmojiWidth()` is
+  fine, and the headless capture's FAILED result is confirmed to be a
+  capture-environment artifact — closing out the retraction with positive
+  evidence rather than only the (entirely valid) user confirmation.
+- If `libfcft` reports `.cols = 1`, then foot's own library disagrees with
+  `getEmojiWidth()`'s blanket VS16⇒width-2 rule after all, and the
+  "Root cause confirmed" section's reasoning deserves a second look —
+  in which case the real-desktop screenshot and the canary would need
+  reconciling some other way (e.g. foot's grid layer compensating for what
+  its shaping layer reports).
+
+Either outcome also feeds the last checkbox ("decide whether
+`-verify-rows`' pixel technique should be trusted for any headless
+VS16/grapheme-width check"), since it provides a non-pixel ground truth to
+calibrate that technique against.
+
+Caveat, per issue [59](59-canary-font-research-gaps.md): `libfcft` answers
+how foot *shapes and advances* a run, **not** how foot assigns it to grid
+cells — those are separate code paths in foot. So this tool can exonerate or
+implicate foot's shaping, but it cannot fully replace a real-terminal
+capture for grid-level questions.
+
 ## Related
 
+- Issue [59](59-canary-font-research-gaps.md) — the font-canary research
+  gaps thread; its "gap 2" (these canaries can't speak to foot at all) is
+  what `canary_width_compare`'s libfcft column above addresses.
 - Issue [51](51-vte-canary.md) — the existing VTE canary infra
   (`scripts/vte_canary`, `-verify-rows`) this issue exercised; its pixel
   measurement technique produced a false positive here, worth keeping in

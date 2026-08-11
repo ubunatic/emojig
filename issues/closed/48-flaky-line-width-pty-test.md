@@ -7,9 +7,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 status: done
 ---
 
-# Flaky PTY test: TestTUIRenderedLineWidthsAreEqual fails ~50% on main
+# 48 — Flaky PTY test: TestTUIRenderedLineWidthsAreEqual fails ~50% on main
 
-**Priority: P2** (test reliability — fails `make preflight` intermittently)
+**Status: Closed (Fixed)** — see "Resolution (2026-07-02)" and the
+follow-up "Open observations — resolved 2026-07-02" section below; both the
+harness root cause (non-quiescent `collectScreenBytes`) and the two real app
+bugs it had been masking were fixed, and the named flakes went 8/8 green.
+
+This file was already marked `status: done` in its front matter but had
+never been moved out of the open-issue directory or delisted from
+`issues/README.md`; filed under `closed/` on 2026-08-11 as part of a tracker
+audit. Re-verified that day: `zig build test -Doptimize=ReleaseSafe
+-Dllvm=false`, `CGO_ENABLED=1 go build ./...` and `CGO_ENABLED=1 go vet
+./...` all exit 0.
+
+**Priority: P2** (historic — test reliability)
 
 ## Summary
 

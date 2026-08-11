@@ -16,8 +16,22 @@ this as an issue rather than closing outright because (a) the second
 symptom (`std.process.spawn` after `unsetenv()`) has **no known
 workaround**, only avoidance, and (b) this looks like a genuine upstream
 Zig 0.16 stdlib defect worth reporting to
-[ziglang/zig](https://github.com/ziglang/zig), not something to silently
-route around forever.
+[codeberg.org/ziglang/zig/issues](https://codeberg.org/ziglang/zig/issues),
+not something to silently route around forever.
+
+> **Tracker note (corrected 2026-08-11):** this line previously pointed at
+> `github.com/ziglang/zig`, contradicting this issue's own "Independent
+> review § Correction 3" and its "Next steps", both of which establish that
+> new-issue creation is restricted on GitHub and that the active tracker is
+> Codeberg. Codeberg is correct; the GitHub link was stale.
+>
+> **Upstream report status: not yet filed.** Verified 2026-08-11 — no
+> reference to an upstream issue number, URL, or submission exists anywhere
+> in this repository (`git log`, `docs/Zig.md` §8, or this file). The first
+> "Next steps" checkbox remains correctly unchecked, and it is gated on
+> completing the "Manual verification plan" below first. This issue stays
+> **open** for that reason, not because anything about the diagnosis is in
+> doubt.
 
 ## Summary
 

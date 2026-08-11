@@ -46,7 +46,7 @@ Extracted CLI flag iteration, env-var resolution (`EMOJIG_THEME`, `EMOJIG_COLS`,
 Extracted `SgrMouseEvent` / `nextSgrMouseEvent` (SGR parser) and `decodeEscapeKeySpec`
 into `src/input.zig`. Critically, the hardcoded sequence table was **deleted entirely**
 and replaced with a spec-table loaded from `spec/input.yaml` at startup — see
-[SpecDrivenConfig.md §4](SpecDrivenConfig.md) and [KeyDispatch.md §2](KeyDispatch.md).
+[SpecDrivenConfig.md §4](../../docs/SpecDrivenConfig.md) and [KeyDispatch.md §2](../../docs/KeyDispatch.md).
 `pub const KeySeq` is defined here and re-exported from `spec.zig`.
 
 ### 3. Canvas Layout & Screen Renderers (`src/render.zig`) — **DONE**

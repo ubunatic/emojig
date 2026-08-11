@@ -7,10 +7,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 status: done
 ---
 
-# Search hot path: unconditional synonym scan costs ~4-5ms per keystroke
+# 47 — Search hot path: unconditional synonym scan costs ~4-5ms per keystroke
 
-**Priority: P1** (directly affects perceived typing latency, and it's easy
-to fix without touching the zero-allocation invariant)
+**Status: Closed (Fixed)** — see "Resolution (2026-07-02)" below.
+Re-verified 2026-08-11 by re-running the benchmark and re-reading the code:
+`synonymOrder()`/`synonymLowerBound()` (binary search over a lazily-sorted
+static index) are present in `src/search.zig`, and the regression guard in
+`src/ranking_test.zig` asserts an upper bound of
+`@max(2_000_000, 50 * ns_empty)` ns/search on every release-mode test run.
+Fresh `zig build test -Doptimize=ReleaseSafe -Dllvm=false` numbers
+(2533 emojis) confirm the fix still holds — empty query 44µs, `a` 516µs,
+`fire` 655µs, `red heart` 528µs, `hearts` 524µs, `xyzxyz` 367µs: all
+non-empty queries remain comfortably under the 1ms target and roughly an
+order of magnitude below the 4-5.5ms this issue was filed for.
+
+**Priority: P1** (historic)
 
 ## Summary
 
