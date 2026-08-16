@@ -3,7 +3,7 @@ title: Rust Conventions
 weight: 65
 ---
 
-<!-- claudeconfig:bundled -->
+<!-- harnez:bundled -->
 # Rust Conventions
 
 ## Tooling

@@ -3,7 +3,7 @@ title: Git Conventions
 weight: 63
 ---
 
-<!-- claudeconfig:bundled -->
+<!-- harnez:bundled -->
 # Git conventions
 
 Applies unless overridden by a project's own AGENTS.md.

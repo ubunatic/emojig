@@ -3,7 +3,7 @@ title: Markdown Conventions
 weight: 64
 ---
 
-<!-- claudeconfig:bundled -->
+<!-- harnez:bundled -->
 # Markdown Conventions
 
 ## File naming

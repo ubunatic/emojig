@@ -3,8 +3,19 @@ title: Make Conventions
 weight: 62
 ---
 
-<!-- claudeconfig:bundled -->
-# Make conventions
+<!-- harnez:bundled -->
+# Make Conventions
+
+> **Who this is for** — anyone adding a target to a project Makefile. Reference material: grep it, don't read it.
+>
+> **Read this if** — you need the `⚙️` sentinel or the self-documenting `help` recipe.
+>
+> **Takeaways**
+> 1. `help` is the first target; bare `make` prints usage.
+> 2. The `⚙️` sentinel (and `🤖` for managed targets) replaces per-target `.PHONY` bookkeeping.
+> 3. Express order as dependencies, and always run the locally built binary (`./$(BINARY)`).
+
+---
 
 Default language assumed: Go.
 Apply to other languages accordingly.
@@ -20,7 +31,7 @@ Apply to other languages accordingly.
 Example:
 
 ```makefile
-BINARY  := claudeconfig        # output binary name
+BINARY  := harnez              # output binary name
 CONFIG  := config.yaml         # default config file
 TARGET  := $(HOME)/.claude     # installation target dir
 PROJECT := .                   # project root (passed to tool as -p)
@@ -29,8 +40,8 @@ PREFIX  ?= /usr/local          # overridable install prefix
 export MYAPP_SOME_FEATURE=1
 ```
 
-- Use  `:=` for immediate assignment (most vars)
-- Use  `?=` for env-overridable vars (`PREFIX`)
+- Use `:=` for immediate assignment (most vars)
+- Use `?=` for env-overridable vars (`PREFIX`)
 - Align `=` signs for readability
 
 ## Phony declaration — `⚙️ 🤖` sentinels
@@ -41,8 +52,8 @@ export MYAPP_SOME_FEATURE=1
 
 Adding one of the sentinels as a prerequisite on every target (e.g. `build: ⚙️  # ...` or `help: 🤖  # ...`) causes Make to treat all targets as phony without listing each name twice.
 
-- `🤖` represents targets actively **managed** (reconciled/updated) by `claudeconfig` (like `help`).
-- `⚙️` represents targets **manually** defined or generated once (like `build`, `test`, `release`), which `claudeconfig` will not automatically overwrite.
+- `🤖` represents targets actively **managed** (reconciled/updated) by `harnez` (like `help`).
+- `⚙️` represents targets **manually** defined or generated once (like `build`, `test`, `release`), which `harnez` will not automatically overwrite.
 
 ## Self-documenting help target
 
@@ -55,8 +66,7 @@ help: 🤖  # show this help
 	awk 'BEGIN {FS = ":.*#+ "}; {printf "    $(_prim)%-15s$(_rst) %s\n", $$1, $$2}'
 ```
 
-Every target that should appear in help gets a `  # description` comment on the
-same line as the rule header.  `help` scrapes them automatically.
+Every target that should appear in help gets a `  # description` comment on the same line as the rule header. `help` scrapes them automatically.
 
 ## Build dependency pattern
 
@@ -71,10 +81,8 @@ apply: ⚙️ build  # apply config.yaml to the Claude Code config directory
 ```
 
 - `build` rebuilds only when sources change (Make's normal rules apply)
-- Action targets invoke `./$(BINARY)` — the locally-built binary, not the one
-  on `$PATH`.
-  If needed, the user can override this rule if develoment is close to his system.
-
+- Action targets invoke `./$(BINARY)` — the locally-built binary, not the one on `$PATH`.
+  If needed, the user can override this rule if development is close to his system.
 
 ## Install target (Go)
 
@@ -99,4 +107,5 @@ test: ⚙️  # run linter and tests
 ```
 
 Always run `go vet` before `go test`; vet catches issues tests may not exercise.
+
 
