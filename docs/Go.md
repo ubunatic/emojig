@@ -42,10 +42,12 @@ weight: 60
 - Embed `spec/` into the Go binary (`//go:embed`); it **IS** part of the code!
 - Write compiler/unit test assertions to verify Go structs match specs.
 
-## CLI
+## CLI & Releases
 - Use Cobra; one `*cobra.Command` per verb, flags defined on that command.
 - Use `RunE` instead of `Run` — return errors, don't `os.Exit` inside commands.
 - Set `SilenceUsage: true` on commands where error is not a usage mistake.
+- **Version Wiring**: Keep `var Version = "..."` in `version.go` (synced automatically by `harnez release` from `version.yaml`) and wire `rootCmd.Version = Version`.
+- **Releases**: Provide a thin `release: check ⚙️` recipe that delegates to `harnez release`. See `@docs/GoRelease.md`.
 
 ## State Management
 - **No package-level mutable variables**: Pass state explicitly via function arguments or state structs (e.g. `type App struct { client *http.Client }`). Mutable global state creates hidden coupling and breaks tests.

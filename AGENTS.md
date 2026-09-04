@@ -284,6 +284,9 @@ Adhere to the following conventions.
 
 Docs in `./docs/` are managed by harnez. <!-- harnez:bundled -->
 
+- Website Building Rules @docs/Website.md,
+  no GitHub assumptions/octocats, match sibling website/ dirs or ask, honest/proven claims only,
+  Why section required, relative links (subpage-hosted), static/no-CDN, opt-in JS demos only
 - Go/Golang @docs/Go.md,
   Modern Go, avoid deps but use Cobra, add tests
 - Bash/Shell @docs/Bash.md,
@@ -298,7 +301,7 @@ Docs in `./docs/` are managed by harnez. <!-- harnez:bundled -->
 - Zig @docs/Zig.md,
   Explicit allocation, ReleaseSmall for CLI/utilities, Zig 0.16.0 conventions
 - Markdown @docs/Markdown.md,
-  PascalCase for evergreens, kebab-case for ephemeral docs
+  PascalCase for evergreens, kebab-case for ephemeral docs; ASCII art in chat, Mermaid only in docs/
 - Git @docs/Git.md,
   conventional commits, work on the default branch, don't push unless asked
 - Canary-first development @docs/Canary.md,
