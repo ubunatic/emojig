@@ -45,11 +45,11 @@ Three separate problems, in descending order of importance:
    `gi.require_version("Gtk", "4.0")`) — a runtime dependency stack that
    appears nowhere in the project's documented tooling assumptions, and that
    `make help` gives no warning about.
-3. **License inconsistency.** Its header declares
-   `SPDX-License-Identifier: MIT`, while the project is
-   `AGPL-3.0-or-later` (`LICENSES/`, README). `reuse lint` passes because the
-   header is *present and valid*, so `make preflight` will never flag the
-   mismatch — but MIT is not one of the licenses this repo otherwise ships.
+3. **License inconsistency.** Its header declares an SPDX license identifier
+   of `MIT`, while the project is `AGPL-3.0-or-later` (`LICENSES/`, README).
+   `reuse lint` passes because the header is *present and valid*, so
+   `make preflight` will never flag the mismatch — but MIT is not one of the
+   licenses this repo otherwise ships.
 
 Issue [archive/063](archive/063-orphaned-scratch-scripts.md) swept
 `scripts/` for exactly this class of file and deleted two of them. This one
