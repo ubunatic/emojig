@@ -4,14 +4,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-title: "emojig update fails on systems that reject writes to a still-open binary"
-status: open
-priority: p2
+status: done
 ---
 
 # 064 — `emojig update` fails on systems that reject writes to a still-open binary
 
-**Status**: Open
+**Status**: Closed — resolved in 00b6287 (scripts/install.sh now writes the new binary to a same-directory temp file, chmods it, then `mv`s it into place — rename() semantics, safe while the old binary is still executing; see the new `install-atomic-write` regression check in scripts/review_audit)
 **Priority**: P2 (Medium)
 **Severity**: Major
 **Category**: Bug
