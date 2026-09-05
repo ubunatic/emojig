@@ -65,8 +65,10 @@ INSTALL_DIR="${HOME}/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
 info "Installing binary to $INSTALL_DIR/emojig..."
-cp "$TMP_DIR/emojig" "$INSTALL_DIR/emojig"
-chmod +x "$INSTALL_DIR/emojig"
+TMP_BIN="$INSTALL_DIR/.emojig.new.$$"
+cp "$TMP_DIR/emojig" "$TMP_BIN"
+chmod +x "$TMP_BIN"
+mv "$TMP_BIN" "$INSTALL_DIR/emojig"
 
 ok "Emojig successfully installed!"
 

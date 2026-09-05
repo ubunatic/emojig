@@ -36,6 +36,7 @@ func main() {
 			reproduceXfceHostDetect(root),
 			reproduceInstallIntegrityGap(root),
 			reproducePersistenceBufferEdges(root),
+			reproduceInstallInPlaceOverwrite(root),
 		}
 	case "xfce-host-detect":
 		findings = []finding{reproduceXfceHostDetect(root)}
@@ -43,9 +44,11 @@ func main() {
 		findings = []finding{reproduceInstallIntegrityGap(root)}
 	case "persistence-buffer-edges":
 		findings = []finding{reproducePersistenceBufferEdges(root)}
+	case "install-atomic-write":
+		findings = []finding{reproduceInstallInPlaceOverwrite(root)}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown check %q\n", check)
-		fmt.Fprintf(os.Stderr, "valid checks: all, xfce-host-detect, install-update-integrity, persistence-buffer-edges\n")
+		fmt.Fprintf(os.Stderr, "valid checks: all, xfce-host-detect, install-update-integrity, persistence-buffer-edges, install-atomic-write\n")
 		os.Exit(2)
 	}
 
@@ -139,6 +142,35 @@ func reproducePersistenceBufferEdges(root string) finding {
 			excerpt(mruPath, `var file_buf: [4096]u8 = undefined;`),
 			excerpt(mruPath, `const len = std.posix.read(fd, &file_buf) catch return;`),
 			excerpt(closed01Path, "fixed-size buffer limitation"),
+		},
+	}
+}
+
+// reproduceInstallInPlaceOverwrite is a regression guard (issue 064): it
+// FAILS if scripts/install.sh ever goes back to overwriting the live
+// install target in place (`cp ... "$INSTALL_DIR/emojig"` immediately
+// followed by `chmod +x "$INSTALL_DIR/emojig"`), which can hit ETXTBSY-style
+// "text file busy" failures while `emojig` is still running and
+// self-updating. The fix writes to a temp file in the same directory, then
+// `mv`s it into place (rename() semantics, safe on a running binary).
+func reproduceInstallInPlaceOverwrite(root string) finding {
+	installPath := filepath.Join(root, "scripts", "install.sh")
+
+	installText := mustRead(installPath)
+
+	hasDirectOverwrite := strings.Contains(installText, `cp "$TMP_DIR/emojig" "$INSTALL_DIR/emojig"`)
+	hasTempFileWrite := strings.Contains(installText, `cp "$TMP_DIR/emojig" "$TMP_BIN"`)
+	hasAtomicRename := strings.Contains(installText, `mv "$TMP_BIN" "$INSTALL_DIR/emojig"`)
+
+	return finding{
+		name: "install-atomic-write",
+		hit:  hasDirectOverwrite || !hasTempFileWrite || !hasAtomicRename,
+		details: []string{
+			"scripts/install.sh must write the new binary to a temp file in " +
+				"INSTALL_DIR, chmod it, then mv it into place — never overwrite " +
+				"the live executable's inode directly (ETXTBSY risk, see issue 064).",
+			excerpt(installPath, `cp "$TMP_DIR/emojig" "$TMP_BIN"`),
+			excerpt(installPath, `mv "$TMP_BIN" "$INSTALL_DIR/emojig"`),
 		},
 	}
 }
