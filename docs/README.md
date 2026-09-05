@@ -44,6 +44,12 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 * [**Web Sandbox**](WebSandbox.md): Sandbox configurations and security restrictions for browser-based components.
 * [**Website**](Website.md): Structure, static assets, and build setup for Emojig's website.
 
+## 🗺️ Planning & Process
+
+* [**Roadmap**](Roadmap.md): Product-manager-style sequencing of the open issue backlog by value axis (Now/Next/Later), regenerated from `issues/`.
+* [**Agentic Loop Practices**](AgenticLoop.md): The 5-phase agentic sprint loop and lean fresh-handoff pattern, parallel-read/sequential-write and other coordination invariants for agents working in this repo.
+* [**Issue Tracking Practices**](IssueTracking.md): Canonical ticket metadata schema, priority/severity definitions, and `issues/README.md`/archive conventions enforced by `harnez status`.
+
 ## 🧪 Testing & Diagnostics
 
 * [**Canary-First Development**](Canary.md): The isolate-observe-document-then-build pattern for validating an external mechanism before writing feature code on top of it.
