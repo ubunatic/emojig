@@ -12,7 +12,7 @@ or `--height N%` → a fixed inline region below the prompt.
 
 Implementation lives in `internal/term/term.go`, `internal/tui/{tui,input}.go`,
 and `cmd/mojigo/main.go`; rationale and file map in
-[`issues/15-mojigo-inline-height-mode.md`](../issues/15-mojigo-inline-height-mode.md).
+[`issues/015-mojigo-inline-height-mode.md`](../issues/015-mojigo-inline-height-mode.md).
 
 ---
 

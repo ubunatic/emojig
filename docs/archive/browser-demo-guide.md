@@ -14,7 +14,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Emojig Browser Demo Guide
 
 > [!NOTE]
-> **Status: Experimental.** The browser demo (Docker/ttyd + WASM modes) is work in progress. Scripts and generated files are untracked. See `issues/09-wasm-build-rootless-mknod.md` for known blockers.
+> **Status: Experimental.** The browser demo (Docker/ttyd + WASM modes) is work in progress. Scripts and generated files are untracked. See `issues/009-wasm-build-rootless-mknod.md` for known blockers.
 
 ## Overview
 

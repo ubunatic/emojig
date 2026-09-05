@@ -69,7 +69,7 @@ func main() {
 
 func reproduceXfceHostDetect(root string) finding {
 	hostPath := filepath.Join(root, "src", "host.zig")
-	issue02Path := filepath.Join(root, "issues", "02-distribution-and-release.md")
+	issue02Path := filepath.Join(root, "issues", "002-distribution-and-release.md")
 
 	hostText := mustRead(hostPath)
 	issue02Text := mustRead(issue02Path)
@@ -94,7 +94,7 @@ func reproduceXfceHostDetect(root string) finding {
 func reproduceInstallIntegrityGap(root string) finding {
 	installPath := filepath.Join(root, "scripts", "install.sh")
 	integrationPath := filepath.Join(root, "src", "integration.zig")
-	issue02Path := filepath.Join(root, "issues", "02-distribution-and-release.md")
+	issue02Path := filepath.Join(root, "issues", "002-distribution-and-release.md")
 
 	installText := strings.ToLower(mustRead(installPath))
 	integrationText := mustRead(integrationPath)
@@ -120,7 +120,7 @@ func reproduceInstallIntegrityGap(root string) finding {
 func reproducePersistenceBufferEdges(root string) finding {
 	configPath := filepath.Join(root, "src", "config.zig")
 	mruPath := filepath.Join(root, "src", "mru.zig")
-	closed01Path := filepath.Join(root, "issues", "closed", "01-config-file-silent-truncation.md")
+	closed01Path := filepath.Join(root, "issues", "archive", "001-config-file-silent-truncation.md")
 
 	configText := mustRead(configPath)
 	mruText := mustRead(mruPath)

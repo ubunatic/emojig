@@ -179,7 +179,7 @@ honored, plus absolute-addressed cursor positioning in alt-screen mode. This
 is the more durable fix — it protects against *any* GUI host/compositor that
 under-sizes the window, not just this recording sandbox. The wayreel
 `app_width`/`app_height` override above is still useful to avoid the *cosmetic*
-extra-column padding (see `issues/41-width-fit-and-cosmetic-recorder-gap.md`
+extra-column padding (see `issues/041-width-fit-and-cosmetic-recorder-gap.md`
 for that separate, lower-priority follow-up).
 
 ### Wayland runtime plumbing
@@ -242,7 +242,7 @@ The run is non-interactive; all activity occurs on the virtual display `:99`.
 - **Different editor:** swap `gedit` for another GTK app; update the
   `app_id` used in `swaymsg` focus criteria and the middle-click coordinates.
 
-See also `issues/14-gui-desktop-scenario-recording.md` for the original
+See also `issues/014-gui-desktop-scenario-recording.md` for the original
 problem/decision record, and `docs/archive/DemoRecording.md` for the historical
 x11grab-only pipeline.
 
@@ -318,4 +318,4 @@ foot and other native Wayland terminals do not need this fix — they ignore
 **ptyxis (GTK4/libadwaita) is not covered by this fix** — the `DISPLAY`/
 `DBUS_SESSION_BUS_ADDRESS` env line above is confirmed for GTK3 apps only.
 `canary-ptyxis.reel` currently captures a blank frame (just the sway
-background) even at long startup delays; see `issues/52-ptyxis-headless-blank-capture.md`.
+background) even at long startup delays; see `issues/052-ptyxis-headless-blank-capture.md`.

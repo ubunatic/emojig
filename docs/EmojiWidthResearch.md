@@ -10,7 +10,7 @@ grid across `foot`, VTE-based terminals, and bare Linux VT consoles. Kept
 here to re-read before touching width/grapheme logic, alongside
 [`SearchEngine.md`](SearchEngine.md) (box-art/braille width classes) and
 [`EnvironmentDetection.md`](EnvironmentDetection.md) (terminal
-self-detection). Filed as issue [53](../issues/closed/53-foot-grapheme-width-tweak.md)
+self-detection). Filed as issue [53](../issues/archive/053-foot-grapheme-width-tweak.md)
 for the one directly actionable finding (foot's `grapheme-width-method`).
 
 ## TL;DR
@@ -105,7 +105,7 @@ with the wider per-codepoint-summation camp.
   `--gui`, this is a config *we* control via `spec/host.yaml`'s foot `args:`
   list — currently unset there, meaning behavior silently depends on
   whatever the launching user's own `foot.ini` happens to contain. Filed as
-  [issue 53](../issues/closed/53-foot-grapheme-width-tweak.md).
+  [issue 53](../issues/archive/053-foot-grapheme-width-tweak.md).
 - Links: [foot #1258](https://codeberg.org/dnkl/foot/issues/1258),
   [foot #782](https://codeberg.org/dnkl/foot/issues/782)
 
@@ -237,7 +237,7 @@ width-handling documentation to extract anything from.
   (not `double-width` unless the user's `foot.ini` opts in) means emojig's
   VS16-width assumptions may currently depend on the *user's* config for
   the `--gui` foot window we spawn ourselves — filed as
-  [issue 53](../issues/closed/53-foot-grapheme-width-tweak.md).
+  [issue 53](../issues/archive/053-foot-grapheme-width-tweak.md).
 - **Longer-term idea, not urgent**: Mode 2027 (Ghostty/Contour/foot/WezTerm)
   and kitty/VTM's "declare geometry explicitly" family point toward
   terminal-queried or app-declared width instead of static heuristics —
@@ -261,7 +261,7 @@ Pango/HarfBuzz/fcft questions, not anything emojig-specific, so they've
 moved to the dedicated sibling project `../fontwidth`
 (`canaries/canary_font.go`, `canaries/canary_font.zig`,
 `canaries/canary_width_compare.zig` there — see
-[issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md) for
+[issue 62](../issues/archive/062-move-font-width-experiments-to-fontwidth.md) for
 the move decision, and `../fontwidth/issues/003-ported-emojig-font-canaries.md`
 for what changed in the port).
 
@@ -293,7 +293,7 @@ emoji-presentation base returns `+1`, VS15 on a 2-cell base returns `-1`.
 Read: kitty most likely joined the clustering camp after that test was
 published. Treat the camp table as a snapshot with a date, not a standing
 fact — and specifically **do not** extend `disable_zwj` to kitty on the
-strength of it (see issue [54](../issues/54-width-correction-beyond-vte.md)).
+strength of it (see issue [54](../issues/054-width-correction-beyond-vte.md)).
 
 Conversely **Alacritty**'s membership is now confirmed from architecture, not
 inference: `related/Alacritty.md §4.2` documents that Alacritty performs no
@@ -395,7 +395,7 @@ launched). Tiers 2 and 3 exist for Path B only.
 ## Retracted issue 57
 
 Issue 57's investigation (see the "Retracted" section in
-[`../issues/57-tilix-monochrome-mixed-row-length.md`](../issues/57-tilix-monochrome-mixed-row-length.md))
+[`../issues/057-tilix-monochrome-mixed-row-length.md`](../issues/057-tilix-monochrome-mixed-row-length.md))
 found a VS16 row-length defect that reproduced reliably in wayreel's headless
 nested-sway/Xvfb capture harness but did **not** reproduce on the real
 desktop, once the user checked directly — most likely an artifact of the

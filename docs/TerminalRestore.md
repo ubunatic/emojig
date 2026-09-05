@@ -16,7 +16,7 @@ Reference for anyone touching the TUI startup/teardown escape sequences in
 we actually hit, and how to test a change — so the next "closes with extra
 lines" bug doesn't take another archaeology session.
 
-History: [`issues/12-tui-line-cleanup-and-terminal-restoration.md`](../issues/12-tui-line-cleanup-and-terminal-restoration.md)
+History: [`issues/012-tui-line-cleanup-and-terminal-restoration.md`](../issues/012-tui-line-cleanup-and-terminal-restoration.md)
 (per-row cleanup + the VTE `?1049l` root cause),
 [`SkimInlineTui.md`](./SkimInlineTui.md) (inline region mechanics),
 [`MojigoInlineHeight.md`](./MojigoInlineHeight.md) (the Go port — the

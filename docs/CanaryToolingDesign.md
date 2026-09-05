@@ -87,7 +87,7 @@ proposes a different shape for this kind of tool going forward.
 > **Superseded (2026-08-11).** The tools this section proposed extending
 > (`canary_font.zig`/`.go`, `canary_width_compare.zig`) moved to the
 > dedicated sibling project `../fontwidth`
-> (see [issue 62](../issues/closed/62-move-font-width-experiments-to-fontwidth.md)),
+> (see [issue 62](../issues/archive/062-move-font-width-experiments-to-fontwidth.md)),
 > which already has a superset of this idea in its own
 > `issues/001-web-runner-setup.md` (a web UI running these canaries with
 > env-var toggles and result visualization — a "spec" in the form of
@@ -188,7 +188,7 @@ Makefile target, no issue ever referenced it — found in a follow-up audit
 of `scripts/`) also moved to `../fontwidth`. The same audit turned up two
 genuinely dead scratch files unrelated to font-width at all
 (`scripts/test_posix.zig`, `scripts/gen_wayland_spec.go` — issue
-[63](../issues/closed/63-orphaned-scratch-scripts.md)), deleted outright
+[63](../issues/archive/063-orphaned-scratch-scripts.md)), deleted outright
 rather than moved, since neither had any research value left to preserve.
 
 More importantly, the sibling project is now producing findings emojig
@@ -214,12 +214,12 @@ next expected delivery in that direction.
   "fontwidth follow-on findings" section documenting the epilogue above).
 - `docs/Spec.md`, `docs/Canary.md` — the existing conventions this
   proposal extends rather than replaces.
-- `issues/57-tilix-monochrome-mixed-row-length.md`, `issues/58-zig-unsetenv-environ-desync.md`,
-  `issues/closed/59-canary-font-research-gaps.md` — the concrete issues this
+- `issues/057-tilix-monochrome-mixed-row-length.md`, `issues/058-zig-unsetenv-environ-desync.md`,
+  `issues/archive/059-canary-font-research-gaps.md` — the concrete issues this
   session's work and detours produced.
-- `issues/closed/62-move-font-width-experiments-to-fontwidth.md`,
-  `issues/closed/63-orphaned-scratch-scripts.md` — the completed migration
+- `issues/archive/062-move-font-width-experiments-to-fontwidth.md`,
+  `issues/archive/063-orphaned-scratch-scripts.md` — the completed migration
   and the follow-up dead-code cleanup it surfaced.
-- `issues/54-width-correction-beyond-vte.md`,
-  `issues/55-cursor-query-width-measurement.md` — the open issues now
+- `issues/054-width-correction-beyond-vte.md`,
+  `issues/055-cursor-query-width-measurement.md` — the open issues now
   citing `../fontwidth`'s findings directly.

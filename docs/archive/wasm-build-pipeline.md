@@ -17,7 +17,7 @@ How `scripts/browser_demo.go` compiles the emojig container to WebAssembly so th
 TUI runs fully client-side in a browser (the **W**ASM mode of the demo, alongside
 the **D**ocker/ttyd live mode). This captures the hard-won learnings from getting
 [container2wasm (c2w)](https://github.com/ktock/container2wasm) to work under
-rootless podman. See also `issues/09-wasm-build-rootless-mknod.md`.
+rootless podman. See also `issues/009-wasm-build-rootless-mknod.md`.
 
 > TL;DR of the gotchas, in order of discovery:
 > 1. Rootless podman **cannot `mknod`** (user namespace) → the c2w build must run **rootfully** (`sudo podman`).

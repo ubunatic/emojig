@@ -97,7 +97,7 @@ runs no daemon.
 
 ### 2.1 The documented vs. actual release process (the core finding)
 
-`issues/02-distribution-and-release.md` is a detailed, ambitious plan. **Most of it
+`issues/002-distribution-and-release.md` is a detailed, ambitious plan. **Most of it
 is not implemented**, and the doc contradicts itself in places. Reconciliation:
 
 | Documented in `issues/02` | Actual state in repo |
@@ -224,6 +224,6 @@ in GUI polish that competes head-on with rofimoji and Emote on their turf.
 
 ## 6. Related Documents
 
-- [`issues/02-distribution-and-release.md`](../issues/02-distribution-and-release.md) — distribution plan (treat as roadmap; see §2.1).
+- [`issues/002-distribution-and-release.md`](../issues/002-distribution-and-release.md) — distribution plan (treat as roadmap; see §2.1).
 - [`docs/Release.md`](Release.md) — the *actual* release runbook.
 - [`docs/PlatformSupport.md`](PlatformSupport.md), [`docs/GuiToTuiAdoption.md`](GuiToTuiAdoption.md) — adjacent assessments.

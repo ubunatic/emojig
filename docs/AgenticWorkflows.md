@@ -73,7 +73,7 @@ See **[`docs/Zig.md`](Zig.md)** for the full reference. Key pitfalls:
 
 ### Recovery from Context Compaction
 When an agent experiences memory/context compaction, it loses fine-grained history.
-* **Self-Documentation**: Before context compaction, saving the current state, compiler errors, resolved decisions, and planned tasks in a dedicated tracker file (e.g., [issues/17-custom-commands-and-screens.md](file:///home/uwe/projects/emojig/issues/17-custom-commands-and-screens.md)) ensures the next turn or new agent can resume immediately without duplicate investigation.
+* **Self-Documentation**: Before context compaction, saving the current state, compiler errors, resolved decisions, and planned tasks in a dedicated tracker file (e.g., [issues/archive/066-custom-commands-and-screens.md](file:///home/uwe/projects/emojig/issues/archive/066-custom-commands-and-screens.md)) ensures the next turn or new agent can resume immediately without duplicate investigation.
 * **Preflight Hygiene**: Always run `make preflight` (or license lint, unit tests, and code formatting lints) before concluding tasks to ensure standard repository constraints are preserved.
 
 ---
@@ -174,10 +174,10 @@ replace" an explicit question, not an afterthought.
 
 **The harness gap this exposed.** The bug-fix session that produced issue #50 was
 already committed before this recap, but the issue file was left with `status: fixed`
-sitting in `issues/` (not `issues/closed/`) and was never added to `issues/README.md`
+sitting in `issues/` (not `issues/archive/`) and was never added to `issues/README.md`
 at all — so it was invisible to both the open and closed issue tables. Nothing enforces
 this move; it depends on a human or agent noticing. **When closing an issue in a commit,
-move the file to `issues/closed/` and add its README row in the same commit** — don't
+move the file to `issues/archive/` and add its README row in the same commit** — don't
 defer index hygiene to a later `/evergreen` pass, since by then the "why" has to be
 reconstructed from the issue body instead of being fresh in context.
 

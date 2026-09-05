@@ -37,3 +37,6 @@ scripts/wasm-out/
 
 /target
 /screenshot
+
+# harnez tracker lock files
+issues/*.lock

@@ -35,7 +35,7 @@ The repository separates high-level reference documentation from point-in-time i
 ### A. Semantic Context at a Glance
 By utilizing distinct naming styles, developers scanning the repository or reading markdown links immediately gain visual context:
 * A link to `docs/InlineTui.md` indicates a permanent, authoritative design manual.
-* A link to `issues/06-vt-copy-paste-and-output-modes.md` indicates a specific technical exploration or historical issue resolution.
+* A link to `issues/006-vt-copy-paste-and-output-modes.md` indicates a specific technical exploration or historical issue resolution.
 
 ### B. Directory-Specific Optimization
 * **PascalCase in `docs/`** aligns with clean structural documentation, presenting the files as formal, high-level modules of the project's permanent library.

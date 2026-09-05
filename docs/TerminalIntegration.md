@@ -36,7 +36,7 @@ When invoked from a desktop hotkey or launcher shortcut, standard input is non-i
 * **Decorated GUI Option** (`--decorated` / `--window-decorations`): Keeps the terminal's normal title bar/window decorations so the picker can be dragged by the window manager. This is equivalent to `--borderless=false`.
 * **Title Size** (`--title-size N`): Sets the foot CSD title bar height in pixels. Default (0) auto-detects from the GNOME system font size and text-scaling-factor via `gsettings` (formula: `pt × scale × 2.5`).
 * **Window Title**: foot window always shows `😀 Emojig` (passed via `--override=title=...`).
-* **Placement**: On Wayland, exact caret-relative popup placement is not a stable cross-desktop primitive. Focused-window placement should be compositor-specific and best-effort; see `issues/40-wayland-focused-window-placement.md`.
+* **Placement**: On Wayland, exact caret-relative popup placement is not a stable cross-desktop primitive. Focused-window placement should be compositor-specific and best-effort; see `issues/040-wayland-focused-window-placement.md`.
 * **Auto-Dismiss**: Once an emoji is chosen, the terminal helper exits, auto-closing the popup instantly.
 
 ---

@@ -66,7 +66,7 @@ spelling `--borderless=false` is equivalent.
 On Wayland, generic apps cannot reliably inspect another app's text caret
 position or force an arbitrary top-level window position. Emojig therefore lets
 the compositor place `--gui` today. Best-effort focused-window placement for
-wlroots compositors is tracked in [issue 40](../issues/40-wayland-focused-window-placement.md).
+wlroots compositors is tracked in [issue 40](../issues/040-wayland-focused-window-placement.md).
 
 ### Single-instance toggle
 

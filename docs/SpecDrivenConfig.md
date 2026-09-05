@@ -273,7 +273,7 @@ exit-fade animation plays, independently for TUI and GUI:
 ## 7. Verifying spec adoption without a human
 
 The TUI renders on `/dev/tty` (the selected emoji goes to stdout — see
-`issues/closed/06-vt-copy-paste-and-output-modes.md`), so a piped/redirected stdout
+`issues/archive/006-vt-copy-paste-and-output-modes.md`), so a piped/redirected stdout
 capture is empty by design. Drive it with **tmux** instead:
 
 ```sh

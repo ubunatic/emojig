@@ -3,7 +3,7 @@
 
 //! Minimal, standalone reproduction of a Zig 0.16 stdlib bug found while
 //! building scripts/canary_font.zig's `-unset=` flag — see
-//! issues/58-zig-unsetenv-environ-desync.md for the full writeup.
+//! issues/058-zig-unsetenv-environ-desync.md for the full writeup.
 //! No application code, no C libraries: this is std.debug.print,
 //! std.process.spawn, and libc's unsetenv() only.
 //!

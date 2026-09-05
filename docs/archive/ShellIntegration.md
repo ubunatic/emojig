@@ -183,4 +183,4 @@ Reload your shell (`exec zsh` / `exec bash`) then press **Ctrl+E** at any prompt
 
 The "inside another TUI" case would require either the host app to integrate with
 an external picker API (like vim's fzf plugin), or emojig to run as a PTY wrapper
-(mc-style) — a much larger scope discussed in `issues/06-vt-copy-paste-and-output-modes.md`.
+(mc-style) — a much larger scope discussed in `issues/006-vt-copy-paste-and-output-modes.md`.
