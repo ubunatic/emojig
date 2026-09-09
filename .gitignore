@@ -40,3 +40,4 @@ scripts/wasm-out/
 
 # harnez tracker lock files
 issues/*.lock
+*.lock
