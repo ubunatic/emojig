@@ -306,13 +306,16 @@ pub fn stripVariationSelectors(emoji: []const u8, out_buf: []u8) []const u8 {
     return out_buf[0..out_idx];
 }
 
-/// True for box-drawing and block-element glyphs (U+2500–U+259F), the
-/// entries from spec/boxart.yaml. Used by the b: filter and ranking.
+/// True for box-drawing and block-element glyphs (U+2500–U+259F) and the
+/// sextant blocks (U+1FB00–U+1FB3B), the entries from spec/boxart.yaml.
+/// Used by the b: filter and ranking. Keyboard symbols in the same spec
+/// file fall outside both ranges and are intentionally exempt (see
+/// docs/SearchEngine.md).
 pub fn isBoxArt(emoji: []const u8) bool {
     const view = std.unicode.Utf8View.init(emoji) catch return false;
     var iterator = view.iterator();
     const cp = iterator.nextCodepoint() orelse return false;
-    return cp >= 0x2500 and cp <= 0x259F;
+    return (cp >= 0x2500 and cp <= 0x259F) or (cp >= 0x1FB00 and cp <= 0x1FB3B);
 }
 
 /// True for Braille pattern glyphs (U+2800–U+28FF), the entries from
@@ -381,6 +384,13 @@ pub fn getEmojiWidth(emoji: []const u8) usize {
     const view = std.unicode.Utf8View.init(emoji) catch return 2;
     var iterator = view.iterator();
     const cp = iterator.nextCodepoint() orelse return 2;
+
+    // Sextant block glyphs (U+1FB00-U+1FB3B, spec/boxart.yaml) are single
+    // terminal-cell box art despite living above U+1F000 like real emoji —
+    // must be checked before the double-width rule below.
+    if (cp >= 0x1FB00 and cp <= 0x1FB3B) {
+        return 1;
+    }
 
     // Check if it's in a range of double-width characters:
     // 1. Emojis starting from U+1F000

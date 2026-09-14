@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 ---
-description: "Fuzzy search: subsequence scoring, plural/stem fallbacks, word-order trap, isBoxArt range, synonym-vs-tag tradeoffs, synonym `to` pitfalls, test assertion traps"
+description: "Fuzzy search: subsequence scoring, plural/stem fallbacks, word-order trap, isBoxArt range, synonym-vs-tag tradeoffs, synonym `to` pitfalls, test assertion traps, half-vs-quadrant block naming"
 ---
 
 # Search Engine: Filters, Synonyms, and Discoverability
@@ -349,18 +349,21 @@ Whenever the header layout changes:
 
 ---
 
-## 11. Keyboard key symbols in `spec/boxart.yaml`
+## 11. Keyboard key symbols and superscript digits in `spec/boxart.yaml`
 
 ### What they are and why they don't get the box-art penalty
 
 `spec/boxart.yaml` is not limited to U+2500–U+259F box-drawing characters.  It also
 holds keyboard-key glyphs in scattered Unicode ranges (Miscellaneous Technical,
-Combining Diacritical Marks for Symbols, …).  The `isBoxArt(emoji)` codepoint
-predicate only checks **U+2500–U+259F**.  Keyboard symbols like ↵ (U+21B5), ⭾
-(U+2BBE), ⇥ (U+21E5), ⌫ (U+232B), ⎋ (U+238B) etc. are **not** in that range, so
-they incur **zero** box-art penalty (`−150`) in general searches.  They rank on
-their fuzzy score alone — which means a well-chosen name produces rank #1 for the
-exact query.
+Combining Diacritical Marks for Symbols, …) and the ten superscript digits (Latin-1
+Supplement U+00B9/B2/B3 plus Superscripts and Subscripts U+2070/U+2074–U+2079). The
+`isBoxArt(emoji)` codepoint predicate only checks **U+2500–U+259F** and, since the
+sextant-block addition, **U+1FB00–U+1FB3B** (see the "must stay a set of tight
+bands" note below). Keyboard symbols like ↵ (U+21B5), ⭾ (U+2BBE), ⇥ (U+21E5), ⌫
+(U+232B), ⎋ (U+238B) and the superscript digits ⁰¹²³⁴⁵⁶⁷⁸⁹ are **not** in either
+range, so they incur **zero** box-art penalty (`−150`) in general searches and are
+**not** matched by the `b:` filter. They rank on their fuzzy score alone — which
+means a well-chosen name produces rank #1 for the exact query.
 
 The entries added as of June 2026:
 
@@ -382,6 +385,22 @@ The entries added as of June 2026:
 | ⇟ | U+21DF | `page down` | `page down` |
 | ⇱ | U+21F1 | `home` | `home key` |
 | ⇲ | U+21F2 | `end` | `end key` |
+
+The ten superscript digits added as of September 2026 (`spec/boxart.yaml`, tags
+`superscript`, `number`, `digit`, `exponent`):
+
+| Char | Codepoint | Name in boxart.json |
+|------|-----------|---------------------|
+| ⁰ | U+2070 | `superscript zero` |
+| ¹ | U+00B9 | `superscript one` |
+| ² | U+00B2 | `superscript two` |
+| ³ | U+00B3 | `superscript three` |
+| ⁴ | U+2074 | `superscript four` |
+| ⁵ | U+2075 | `superscript five` |
+| ⁶ | U+2076 | `superscript six` |
+| ⁷ | U+2077 | `superscript seven` |
+| ⁸ | U+2078 | `superscript eight` |
+| ⁹ | U+2079 | `superscript nine` |
 
 ### The greedy-matcher word-order trap
 
@@ -450,6 +469,83 @@ When a user queried `"sparkling"`, the search engine matched `"sparkling"` again
 3. Because the match was split across words, it broke the consecutive-run bonus for the first character `'s'`, degrading the match score significantly.
 
 **Fix**: Place `"sparkling"` before `"glass"` in the aliases list, or move `"glass"` to tags entirely, ensuring `"sparkling"` can match cleanly as a single consecutive sequence from its first letter.
+
+### "Half block" and "quadrant block" are different glyph families — don't conflate them
+
+`spec/boxart.yaml` has two distinct groups of Unicode block-element glyphs that
+are easy to mix up because both get colloquially called "quads" or "blocks":
+
+- **Half blocks** (▀▄▌▐, U+2580/U+2584/U+258C/U+2590): a single straight
+  dividing line splits the cell in two. Unicode's own names are literally
+  `UPPER/LOWER/LEFT/RIGHT HALF BLOCK` — the correct query word is `half`, not
+  `quad`.
+- **Quadrant blocks** (▘▝▖▗▚▞▙▛▜▟, U+2596–U+259F): the cell is split into a
+  2×2 grid of sub-pixels, used for higher-resolution terminal pixel art.
+  Unicode's names all start with `QUADRANT` — the correct query word is `quad`
+  or `quadrant`.
+
+Tagging the half blocks with `quad`/`quadrant` (an easy first guess when a user
+says "I want to search for quads like ▀▄") is wrong: it's the *half* blocks
+that were being pointed at, but the *word* "quad" belongs on the quadrant set.
+Keep `name`/`tags` aligned with the actual Unicode block name so `b:half` and
+`b:quad` each resolve to their own, non-overlapping glyph set (see
+`root_test.zig`, test `"'quad' finds the ten quadrant-block glyphs, 'half'
+finds the four half-block glyphs"`).
+
+### Plain (unprefixed) fuzzy queries can't be asserted "exclusive" — only "present"
+
+Because `matchTermDirect` matches a query as a loose subsequence across the
+*entire* concatenated name+tags string, a short common word can accidentally
+subsequence-match an unrelated multi-word name. Example: querying `"half"`
+(h-a-l-f) against the entry named `"quadrant upper right and lower left"`
+succeeds, because `h` (of "right"), `a` (of "and"), `l` (of "lower"/"left"), `f`
+(of "left") appear in that left-to-right order — even though the entry has
+nothing to do with half blocks.
+
+This is expected general-search noise, not a bug to fix by hardening the
+matcher. When writing a ranking test for a plain (no `b:`/`e:`/`t:` prefix)
+query, only assert the target glyphs are *present* in the top-N results — don't
+assert other glyph families are *absent*. Save the "must not appear" exclusion
+checks for the `b:`-prefixed variant, which is scored purely against the
+restricted box-art set and stays cleanly separated.
+
+### Adding box-art glyphs above U+1F000 breaks the "codepoint >= 0x1F000 => double-width" assumption
+
+`getEmojiWidth` (`src/search.zig`, mirrored in `website/simulator.js`) uses
+`cp >= 0x1F000 => width 2` as a fast-path heuristic, because essentially all
+real double-width pictograph emoji live above that codepoint. This heuristic
+silently breaks the moment a spec adds a *single-width* glyph above
+U+1F000 — which the sextant block glyphs (U+1FB00–U+1FB3B, added to
+`spec/boxart.yaml` alongside the quadrant blocks) do. Without an explicit
+carve-out checked *before* the `>= 0x1F000` rule, every sextant glyph gets
+misclassified as double-width, breaking TUI grid column alignment (§3) and
+making `t:`/`e:` width filters return wrong results for them.
+
+Any future addition of a box-art/symbol glyph living outside the
+U+2500–U+259F BMP range needs the same treatment: add an explicit
+range-check exception in `getEmojiWidth` *before* the `>= 0x1F000` branch,
+and mirror it in `website/simulator.js`'s copy of the same function — the
+two are not shared code and silently drift apart otherwise.
+
+### `isBoxArt`'s codepoint range must stay a set of tight bands, never one min/max span
+
+`isBoxArt` (Zig) checks explicit disjoint bands (`0x2500-0x259F`,
+`0x1FB00-0x1FB3B`) rather than one contiguous span — this matters because
+the website's JS simulator (`website/simulator.js`) and its generator
+(`scripts/gen_web_spec/main.go`) compute the `b:`/box-art codepoint range
+*dynamically* from `spec/boxart.yaml`'s actual entries via `rangeSpec`.
+Naively taking `min(codepoints)`/`max(codepoints)` across all entries
+produces a single span — and once entries exist on two different Unicode
+planes (box-drawing near U+2500, sextants near U+1FB00), that single span
+swallows the *entire* U+1F300–U+1FAFF pictograph emoji range in between,
+making the website misclassify nearly all real emoji as box art (both for
+the `b:` filter and the general-search box-art penalty). `rangeSpec` fixes
+this by emitting a list of disjoint `[min, max]` intervals (merging
+codepoints only within a small gap of each other), and
+`simulator.js`'s `isBoxArt`/`isBraille` check membership across all of
+them instead of one span. Any new glyph spec whose entries could span
+widely separated codepoints needs this same disjoint-range treatment, not
+a single min/max.
 
 ---
 

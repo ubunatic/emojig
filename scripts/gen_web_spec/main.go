@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 type LayoutSpec struct {
@@ -129,10 +130,11 @@ type WebFilterSpec struct {
 }
 
 type WebRangeFilterSpec struct {
-	MinCodepoint int `json:"min_codepoint"`
-	MaxCodepoint int `json:"max_codepoint"`
-	Penalty      int `json:"penalty"`
-	Count        int `json:"count"`
+	MinCodepoint int      `json:"min_codepoint"`
+	MaxCodepoint int      `json:"max_codepoint"`
+	Ranges       [][2]int `json:"ranges"`
+	Penalty      int      `json:"penalty"`
+	Count        int      `json:"count"`
 }
 
 func main() {
@@ -228,24 +230,43 @@ func mustReadJSON[T any](path string) T {
 	return value
 }
 
+// rangeSpec computes the disjoint codepoint intervals spanned by spec's
+// entries, merging codepoints within maxGap of each other into one interval.
+// A single min/max span is wrong once entries live on unrelated Unicode
+// planes (e.g. box-drawing glyphs near U+2500 plus sextant blocks near
+// U+1FB00): a naive min/max would swallow the entire emoji range in between
+// and misclassify real emoji as box art on the website. See
+// docs/SearchEngine.md for the isBoxArt range pitfall this guards against.
 func rangeSpec(spec GlyphSpec, penalty int) WebRangeFilterSpec {
-	out := WebRangeFilterSpec{
-		MinCodepoint: 0,
-		MaxCodepoint: 0,
-		Penalty:      penalty,
-		Count:        len(spec.Entries),
-	}
+	const maxGap = 256
+	cps := make([]int, 0, len(spec.Entries))
 	for _, entry := range spec.Entries {
 		for _, r := range entry.Char {
-			cp := int(r)
-			if out.MinCodepoint == 0 || cp < out.MinCodepoint {
-				out.MinCodepoint = cp
-			}
-			if cp > out.MaxCodepoint {
-				out.MaxCodepoint = cp
-			}
+			cps = append(cps, int(r))
 			break
 		}
+	}
+	sort.Ints(cps)
+
+	var ranges [][2]int
+	for _, cp := range cps {
+		if len(ranges) > 0 && cp <= ranges[len(ranges)-1][1]+maxGap {
+			if cp > ranges[len(ranges)-1][1] {
+				ranges[len(ranges)-1][1] = cp
+			}
+			continue
+		}
+		ranges = append(ranges, [2]int{cp, cp})
+	}
+
+	out := WebRangeFilterSpec{
+		Ranges:  ranges,
+		Penalty: penalty,
+		Count:   len(spec.Entries),
+	}
+	if len(cps) > 0 {
+		out.MinCodepoint = cps[0]
+		out.MaxCodepoint = cps[len(cps)-1]
 	}
 	return out
 }

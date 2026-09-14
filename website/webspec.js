@@ -1,6 +1,8 @@
 /*
+ * REUSE-IgnoreStart
  * SPDX-FileCopyrightText: 2026 Uwe Jugel
  * SPDX-License-Identifier: AGPL-3.0-or-later
+ * REUSE-IgnoreEnd
  */
 
 // generated from the spec YAML sources (via spec/.gen/*.json) by scripts/gen_web_spec; do not edit by hand
@@ -429,14 +431,50 @@ const EMOJIG_WEB_SPEC = {
   ],
   "filters": {
     "box_art": {
-      "min_codepoint": 8629,
-      "max_codepoint": 11134,
+      "min_codepoint": 178,
+      "max_codepoint": 129851,
+      "ranges": [
+        [
+          178,
+          185
+        ],
+        [
+          8304,
+          8313
+        ],
+        [
+          8629,
+          8690
+        ],
+        [
+          8963,
+          9141
+        ],
+        [
+          9472,
+          9631
+        ],
+        [
+          11134,
+          11134
+        ],
+        [
+          129792,
+          129851
+        ]
+      ],
       "penalty": 150,
-      "count": 96
+      "count": 176
     },
     "braille": {
       "min_codepoint": 10240,
       "max_codepoint": 10495,
+      "ranges": [
+        [
+          10240,
+          10495
+        ]
+      ],
       "penalty": 150,
       "count": 256
     }

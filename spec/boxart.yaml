@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Uwe Jugel
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-description: Box-drawing and block-element characters (U+2500–U+259F) added to the picker database. Names follow a systematic '<position> [style] border' scheme so queries like 'top left double border' or 'bottom border round' hit exactly one glyph. The packer and the Go loader append 'box ascii art' keywords to every entry and rank box art below emojis in general searches; the 'b:' query prefix filters to these entries only. The rarely used mixed single/double forms (U+2552–U+256C subset) are intentionally omitted.
+description: Box-drawing and block-element characters (U+2500–U+259F), plus the quadrant blocks (U+2596–U+259F) and sextant blocks (U+1FB00–U+1FB3B), added to the picker database. Names follow a systematic '<position> [style] border' scheme so queries like 'top left double border' or 'bottom border round' hit exactly one glyph; quadrant/sextant names spell out which sub-cells are filled (e.g. 'quadrant upper left', 'sextant upper left and middle right'). The packer and the Go loader append 'box ascii art' keywords to every entry and rank box art below emojis in general searches; the 'b:' query prefix filters to these entries only. The rarely used mixed single/double forms (U+2552–U+256C subset) are intentionally omitted.
 entries:
     - char: ─
       name: horizontal border
@@ -509,6 +509,438 @@ entries:
         - level
         - fill
         - step
+    - char: ▘
+      name: quadrant upper left
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▝
+      name: quadrant upper right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▖
+      name: quadrant lower left
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▗
+      name: quadrant lower right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▚
+      name: quadrant upper left and lower right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+        - diagonal
+    - char: ▞
+      name: quadrant upper right and lower left
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+        - diagonal
+    - char: ▙
+      name: quadrant upper left and lower left and lower right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▛
+      name: quadrant upper left and upper right and lower left
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▜
+      name: quadrant upper left and upper right and lower right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: ▟
+      name: quadrant upper right and lower left and lower right
+      tags:
+        - quad
+        - quadrant
+        - pixel
+        - dot
+    - char: 🬀
+      name: sextant upper left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬁
+      name: sextant upper right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬂
+      name: sextant upper left and upper right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬃
+      name: sextant middle left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬄
+      name: sextant upper left and middle left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬅
+      name: sextant upper right and middle left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬆
+      name: sextant upper left and upper right and middle left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬇
+      name: sextant middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬈
+      name: sextant upper left and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬉
+      name: sextant upper right and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬊
+      name: sextant upper left and upper right and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬋
+      name: sextant middle left and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬌
+      name: sextant upper left and middle left and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬍
+      name: sextant upper right and middle left and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬎
+      name: sextant upper left and upper right and middle left and middle right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬏
+      name: sextant lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬐
+      name: sextant upper left and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬑
+      name: sextant upper right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬒
+      name: sextant upper left and upper right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬓
+      name: sextant middle left and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬔
+      name: sextant upper right and middle left and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬕
+      name: sextant upper left and upper right and middle left and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬖
+      name: sextant middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬗
+      name: sextant upper left and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬘
+      name: sextant upper right and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬙
+      name: sextant upper left and upper right and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬚
+      name: sextant middle left and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬛
+      name: sextant upper left and middle left and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬜
+      name: sextant upper right and middle left and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬝
+      name: sextant upper left and upper right and middle left and middle right and lower left
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬞
+      name: sextant lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬟
+      name: sextant upper left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬠
+      name: sextant upper right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬡
+      name: sextant upper left and upper right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬢
+      name: sextant middle left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬣
+      name: sextant upper left and middle left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬤
+      name: sextant upper right and middle left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬥
+      name: sextant upper left and upper right and middle left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬦
+      name: sextant middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬧
+      name: sextant upper left and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬨
+      name: sextant upper left and upper right and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬩
+      name: sextant middle left and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬪
+      name: sextant upper left and middle left and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬫
+      name: sextant upper right and middle left and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬬
+      name: sextant upper left and upper right and middle left and middle right and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬭
+      name: sextant lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬮
+      name: sextant upper left and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬯
+      name: sextant upper right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬰
+      name: sextant upper left and upper right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬱
+      name: sextant middle left and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬲
+      name: sextant upper left and middle left and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬳
+      name: sextant upper right and middle left and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬴
+      name: sextant upper left and upper right and middle left and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬵
+      name: sextant middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬶
+      name: sextant upper left and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬷
+      name: sextant upper right and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬸
+      name: sextant upper left and upper right and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬹
+      name: sextant middle left and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬺
+      name: sextant upper left and middle left and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
+    - char: 🬻
+      name: sextant upper right and middle left and middle right and lower left and lower right
+      tags:
+        - sextant
+        - pixel
+        - dot
     - char: ░
       name: light shade
       tags:
@@ -626,3 +1058,75 @@ entries:
       tags:
         - keyboard
         - key
+    - char: ⁰
+      name: superscript zero
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ¹
+      name: superscript one
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ²
+      name: superscript two
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+        - squared
+    - char: ³
+      name: superscript three
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+        - cubed
+    - char: ⁴
+      name: superscript four
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ⁵
+      name: superscript five
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ⁶
+      name: superscript six
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ⁷
+      name: superscript seven
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ⁸
+      name: superscript eight
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent
+    - char: ⁹
+      name: superscript nine
+      tags:
+        - superscript
+        - number
+        - digit
+        - exponent

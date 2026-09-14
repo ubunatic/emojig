@@ -281,6 +281,153 @@ test "box art entries: b: filter, names, and low rank" {
     try std.testing.expect(!isBoxArt(EmojiDb.getEntry(top_matches[0].index).emoji));
 }
 
+test "'quad' finds the ten quadrant-block glyphs, 'half' finds the four half-block glyphs" {
+    var top_matches: [64]Match = undefined;
+    var top_count: usize = 0;
+
+    // Quadrant blocks (U+2596-U+259F): each cell split into four sub-pixels.
+    const quad_glyphs = [_][]const u8{ "▘", "▝", "▖", "▗", "▚", "▞", "▙", "▛", "▜", "▟" };
+    // Half blocks: a single dividing line, not a 2x2 quadrant split.
+    const half_glyphs = [_][]const u8{ "▀", "▄", "▌", "▐" };
+
+    // Plain queries: fuzzy subsequence matching can pull in unrelated noise
+    // (e.g. "half" as h-a-l-f inside "...right and lower left"), so only
+    // require the target family to be present - not that it's exclusive.
+    inline for (.{ "quad", "half" }) |query| {
+        top_count = 0;
+        _ = search(query, &top_matches, &top_count, 64);
+        const glyphs = if (std.mem.eql(u8, query, "quad")) &quad_glyphs else &half_glyphs;
+        for (glyphs) |glyph| {
+            var found = false;
+            for (top_matches[0..top_count]) |m| {
+                if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                    found = true;
+                    break;
+                }
+            }
+            try std.testing.expect(found);
+        }
+    }
+
+    // b:-prefixed queries are restricted to box art and rank on name/tag
+    // relevance, so here the two glyph families must stay cleanly separated.
+    top_count = 0;
+    _ = search("b:quad", &top_matches, &top_count, 64);
+    try std.testing.expect(top_count >= quad_glyphs.len);
+    for (quad_glyphs) |glyph| {
+        var found = false;
+        for (top_matches[0..top_count]) |m| {
+            if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+    for (half_glyphs) |glyph| {
+        for (top_matches[0..top_count]) |m| {
+            try std.testing.expect(!std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph));
+        }
+    }
+
+    top_count = 0;
+    _ = search("b:half", &top_matches, &top_count, 64);
+    try std.testing.expect(top_count >= half_glyphs.len);
+    for (half_glyphs) |glyph| {
+        var found = false;
+        for (top_matches[0..top_count]) |m| {
+            if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+}
+
+test "'sextant' finds the sextant-block glyphs, all single-width and box-art classified" {
+    var top_matches: [64]Match = undefined;
+    var top_count: usize = 0;
+
+    // A sample spanning the fill count range (1..5 of the 6 sub-cells), not
+    // all 60 - just enough to catch a systematic mapping/width mistake.
+    const sextant_glyphs = [_][]const u8{ "🬀", "🬁", "🬂", "🬏", "🬞", "🬭", "🬻" };
+
+    for (sextant_glyphs) |glyph| {
+        // U+1FB00-U+1FB3B sits above U+1F000 like real emoji, but these are
+        // single terminal-cell box art, not double-width pictographs - a
+        // naive width check would misclassify them (see docs/SearchEngine.md).
+        try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(glyph));
+        try std.testing.expect(isBoxArt(glyph));
+    }
+
+    top_count = 0;
+    _ = search("sextant", &top_matches, &top_count, 64);
+    for (sextant_glyphs) |glyph| {
+        var found = false;
+        for (top_matches[0..top_count]) |m| {
+            if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+
+    // b:sextant is restricted to box art and must not leak quadrant/half glyphs.
+    top_count = 0;
+    _ = search("b:sextant", &top_matches, &top_count, 64);
+    for (sextant_glyphs) |glyph| {
+        var found = false;
+        for (top_matches[0..top_count]) |m| {
+            if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+    const non_sextant_glyphs = [_][]const u8{ "▘", "▀", "▌" };
+    for (non_sextant_glyphs) |glyph| {
+        for (top_matches[0..top_count]) |m| {
+            try std.testing.expect(!std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph));
+        }
+    }
+}
+
+test "'superscript' finds the ten superscript digits, single-width and exempt from b: (like keyboard symbols)" {
+    var top_matches: [64]Match = undefined;
+    var top_count: usize = 0;
+
+    const superscript_glyphs = [_][]const u8{ "⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹" };
+
+    for (superscript_glyphs) |glyph| {
+        try std.testing.expectEqual(@as(usize, 1), getEmojiWidth(glyph));
+        // Scattered outside U+2500-U+259F and U+1FB00-U+1FB3B, like keyboard
+        // symbols - not classified as box art (see docs/SearchEngine.md §11).
+        try std.testing.expect(!isBoxArt(glyph));
+    }
+
+    top_count = 0;
+    _ = search("superscript", &top_matches, &top_count, 64);
+    for (superscript_glyphs) |glyph| {
+        var found = false;
+        for (top_matches[0..top_count]) |m| {
+            if (std.mem.eql(u8, EmojiDb.getEntry(m.index).emoji, glyph)) {
+                found = true;
+                break;
+            }
+        }
+        try std.testing.expect(found);
+    }
+
+    // b: filters to isBoxArt-classified glyphs only, so superscript digits
+    // (exempt, same as keyboard symbols) must not appear here.
+    top_count = 0;
+    _ = search("b:superscript", &top_matches, &top_count, 64);
+    try std.testing.expectEqual(@as(usize, 0), top_count);
+}
+
 test "braille entries: br: filter, dot-count shorthand, and ascending dot order" {
     var top_matches: [300]Match = undefined;
     var top_count: usize = 0;

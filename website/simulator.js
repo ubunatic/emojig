@@ -265,29 +265,35 @@ class EmojigSimulator {
 
   // --- Search Logic ---
 
+  // Ranges are disjoint [min, max] codepoint intervals (see
+  // scripts/gen_web_spec/main.go rangeSpec) rather than one min/max span:
+  // spec entries can live on unrelated Unicode planes (box-drawing near
+  // U+2500 plus sextant blocks near U+1FB00), and a single span would
+  // swallow the entire emoji range in between.
   rangeFilter(name, fallbackMin, fallbackMax, fallbackPenalty) {
     const spec = this.webSpec?.filters?.[name] ?? null;
     return {
-      min: spec?.min_codepoint ?? fallbackMin,
-      max: spec?.max_codepoint ?? fallbackMax,
+      ranges: spec?.ranges ?? [[fallbackMin, fallbackMax]],
       penalty: spec?.penalty ?? fallbackPenalty,
     };
+  }
+
+  inAnyRange(cp, ranges) {
+    return ranges.some(([min, max]) => cp >= min && cp <= max);
   }
 
   // Box-drawing / block-element glyphs generated from spec/boxart.yaml.
   isBoxArt(emoji) {
     if (!emoji) return false;
     const range = this.rangeFilter("box_art", 0x2500, 0x259f, 150);
-    const cp = emoji.codePointAt(0);
-    return cp >= range.min && cp <= range.max;
+    return this.inAnyRange(emoji.codePointAt(0), range.ranges);
   }
 
   // Braille pattern glyphs generated from spec/braille.yaml.
   isBraille(emoji) {
     if (!emoji) return false;
     const range = this.rangeFilter("braille", 0x2800, 0x28ff, 150);
-    const cp = emoji.codePointAt(0);
-    return cp >= range.min && cp <= range.max;
+    return this.inAnyRange(emoji.codePointAt(0), range.ranges);
   }
 
   // Number of raised dots (0-8) encoded by a Braille pattern codepoint.
@@ -313,6 +319,11 @@ class EmojigSimulator {
       return 2;
     }
     const cp = emoji.codePointAt(0);
+    // Sextant block glyphs (U+1FB00-U+1FB3B, spec/boxart.yaml) are single
+    // terminal-cell box art despite living above U+1F000 like real emoji.
+    if (cp >= 0x1fb00 && cp <= 0x1fb3b) {
+      return 1;
+    }
     if (cp >= 0x1f000) {
       return 2;
     }
