@@ -3,7 +3,7 @@
 
 [package]
 name = "emojig-inline-demo"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 publish = false
 description = "Skim-style inline TUI demo: a fixed `--height` viewport rendered the way skim does"
