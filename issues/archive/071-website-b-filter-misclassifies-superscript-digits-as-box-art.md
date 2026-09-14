@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # 071 — Website b: filter misclassifies superscript digits as box art
 
-**Status**: Open
+**Status**: Closed — resolved in 96e62ec, 658cb7e, and 2ffabfc
 **Priority**: P2 (Medium)
 **Severity**: Moderate
 **Category**: Bug
@@ -27,3 +27,7 @@ Commit 264bcfe added ten superscript digits to `spec/boxart.yaml`. The Zig app i
 ## 3. Implementation & Verification Plan
 
 Make the generated website classification mirror the Zig predicate, while preserving the disjoint range handling needed for sextants. Do not derive the classification bands from every entry in the mixed-purpose spec file. Add a website regression check that verifies `b:superscript` yields no digits and ordinary superscript results receive no box-art penalty; also check that actual box drawing and sextant glyphs remain classified. Regenerate `website/webspec.js` and run the relevant website and Zig tests.
+
+## Resolution (2026-09-14)
+
+The generator now exports the same two box-art bands as Zig; generated website data excludes superscripts and keyboard symbols. Node regressions assert the filter, score, and band boundaries, and run through Go tests. The Go test cache tracks the JavaScript inputs. `make preflight` and `make install` passed.
