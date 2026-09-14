@@ -63,14 +63,19 @@ pub const WaylandLib = struct {
 
         return .{
             .handle = h,
-            .wl_display_connect = @ptrCast(std.c.dlsym(h, "wl_display_connect") orelse return error.SymbolNotFound),
-            .wl_display_disconnect = @ptrCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound),
-            .wl_display_dispatch = @ptrCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound),
-            .wl_display_roundtrip = @ptrCast(std.c.dlsym(h, "wl_display_roundtrip") orelse return error.SymbolNotFound),
-            .wl_display_flush = @ptrCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound),
-            .wl_proxy_marshal_array_constructor_versioned = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_array_constructor_versioned") orelse return error.SymbolNotFound),
-            .wl_proxy_marshal_flags = @ptrCast(std.c.dlsym(h, "wl_proxy_marshal_flags") orelse return error.SymbolNotFound),
-            .wl_proxy_add_listener = @ptrCast(std.c.dlsym(h, "wl_proxy_add_listener") orelse return error.SymbolNotFound),
+            // Function pointers need @alignCast too, not just @ptrCast: dlsym
+            // returns ?*anyopaque (align 1), but on aarch64 function pointers
+            // require align 4 (ARM instructions are 4-byte aligned) - a bare
+            // @ptrCast only happened to compile on x86_64, where function
+            // pointer alignment is 1.
+            .wl_display_connect = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_connect") orelse return error.SymbolNotFound)),
+            .wl_display_disconnect = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_disconnect") orelse return error.SymbolNotFound)),
+            .wl_display_dispatch = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_dispatch") orelse return error.SymbolNotFound)),
+            .wl_display_roundtrip = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_roundtrip") orelse return error.SymbolNotFound)),
+            .wl_display_flush = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_flush") orelse return error.SymbolNotFound)),
+            .wl_proxy_marshal_array_constructor_versioned = @ptrCast(@alignCast(std.c.dlsym(h, "wl_proxy_marshal_array_constructor_versioned") orelse return error.SymbolNotFound)),
+            .wl_proxy_marshal_flags = @ptrCast(@alignCast(std.c.dlsym(h, "wl_proxy_marshal_flags") orelse return error.SymbolNotFound)),
+            .wl_proxy_add_listener = @ptrCast(@alignCast(std.c.dlsym(h, "wl_proxy_add_listener") orelse return error.SymbolNotFound)),
             .wl_display_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_display_interface") orelse return error.SymbolNotFound)),
             .wl_registry_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_registry_interface") orelse return error.SymbolNotFound)),
             .wl_compositor_interface = @ptrCast(@alignCast(std.c.dlsym(h, "wl_compositor_interface") orelse return error.SymbolNotFound)),
