@@ -181,4 +181,53 @@ move the file to `issues/archive/` and add its README row in the same commit** �
 defer index hygiene to a later `/evergreen` pass, since by then the "why" has to be
 reconstructed from the issue body instead of being fresh in context.
 
+---
+
+## 13. Reach for the simplest fix before instrumenting the environment to find a smarter one
+
+Debugging the false "Picker unfocused" startup banner (issue 069) went through two
+rounds. The first fix kept the existing 200ms focus-report probe but changed only its
+*timeout* branch to default to focused instead of unfocused — a plausible, narrowly
+targeted change, backed by real measurement (a synthetic Wayland test window, built and
+run live in this session, showing the `O`/`I` report pair can itself take >100ms to
+arrive). It shipped, and the user reported it did not fix their actual case: the real
+trace on their machine was a different branch of the same probe (a stray `CSI O` with
+no timely follow-up `CSI I`), which the first fix never touched.
+
+The user's own suggested fix — "just assume it's focused when started via `--gui`" —
+deleted the probe outright and was both simpler and *actually correct*, because it
+routes around every failure mode of the class (silence, stray-out, late-in) at once
+instead of patching the one that a single test run happened to reproduce. The live
+focus-report handling already running in the main loop was sufficient to catch real,
+persistent focus loss; the startup-only probe was solving a problem (skip the initial
+"unfocused" flash while GNOME is deciding) that the relaunch-via-`gtk-launch` workaround
+(`src/main.zig:618–706`, see [EnvironmentDetection.md](EnvironmentDetection.md)) had
+already made unnecessary to solve at all.
+
+**Lesson**: when a heuristic over an external, only-partially-observable signal (window
+manager focus timing, in this case) has more than one plausible failure mode, don't fix
+the mode you can currently reproduce and call it done — ask whether the heuristic can be
+removed instead of refined. A live/ongoing signal handler that already exists is often
+strictly better than a one-shot startup guess, however well-measured. Building a
+throwaway empirical probe (as this session did, twice, with real `foot`/Wayland test
+windows) is good practice for *understanding* a system, but understanding it well
+enough to describe three distinct failure modes was itself the signal to stop patching
+branches and remove the guess.
+
+## 14. Cross-target compile errors hide behind a release-only build step
+
+Issue 070 (`aarch64-linux-musl` `@ptrCast` alignment failure in `src/gui/wl_dyn.zig`)
+was invisible for the entire session: `zig build test`, `make preflight`, and every
+`make install` all ran clean, because they all build only the native `x86_64` target.
+It surfaced solely because `/release` cross-compiles `aarch64-linux-musl` as part of
+`goreleaser`/`harnez release` — the *only* place in this project's workflow that target
+gets built at all. See [Zig.md §10](Zig.md) for the underlying pitfall
+(`@alignCast` needed on a `dlsym`'d function pointer, target-dependent because function
+pointer alignment differs between `x86_64` and `aarch64`).
+
+**Lesson**: a project that ships more than one compile target has a real gap if only
+one of them is exercised before release time. This was flagged as a process follow-up
+in issue 070 rather than fixed here (see that ticket, §4) — worth sizing properly in a
+future session rather than bolted on reactively.
+
 

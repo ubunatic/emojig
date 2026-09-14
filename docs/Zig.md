@@ -109,3 +109,8 @@ const scale10 = int_part * 10 + frac; // e.g. 11 for 1.1
 ### 9. dlopen'd C Libraries with Struct Fields
 - When writing `extern struct` bindings for dynamic libraries (e.g. font shaping), if the API exposes public struct fields (e.g. `.cols`, `.advance.x`), transcribe the exact layout from the real C header rather than treating handles as `?*anyopaque`.
 - For opaque-pointer C APIs, `?*anyopaque` is safe and eliminates header dependencies.
+
+### 10. `@ptrCast`ing a `dlsym` result to a function pointer needs `@alignCast`, and only fails on some targets
+`std.c.dlsym` returns `?*anyopaque`, alignment 1. Casting that straight to a function-pointer field type (`@ptrCast(dlsym(...) orelse ...)`, no `@alignCast`) compiles fine on `x86_64` (function pointers there have alignment 1) but fails with `error: @ptrCast increases pointer alignment` on `aarch64` (function pointers need alignment 4 — ARM instructions are 4-byte aligned). Found in `src/gui/wl_dyn.zig` (issue 070) only when `harnez release` cross-compiled the `aarch64-linux-musl` target — every native `zig build test`/`make preflight` run on `x86_64` stayed green.
+- Always `@ptrCast(@alignCast(dlsym(...) orelse ...))` for a dlsym'd **function** pointer, the same as you would for a dlsym'd struct/interface pointer field.
+- Native-target-only testing cannot catch this class of bug. If a project ships more than one target, cross-compiling every target (even just a compile, no run) belongs in `make preflight` or CI — not only in the release pipeline.
