@@ -119,7 +119,7 @@ docs: [WebSandbox.md](WebSandbox.md) (WASM demo), [HeadlessRecording.md](Headles
 | `website/index.html` | The live site. Hand-written single file (style + markup + tiny inline JS). |
 | `website/simulator.js` / `simulator.css` | Interactive shell + picker simulator (see §3). |
 | `website/emojis.js` | Generated emoji DB for the simulator (mirror of the packed binary DB). |
-| `website/jsdemo.js` | **Generated** from `spec/jsdemo.yaml` via `make jsdemo` — do not edit by hand. |
+| `website/jsdemo.js` | **Generated** from `spec/web/jsdemo.yaml` via `make jsdemo` — do not edit by hand. |
 | `website/webspec.js` | **Generated** from `spec/layout.yaml`, `spec/strings/en.yaml`, `spec/categories.yaml`, `spec/boxart.yaml`, and `spec/braille.yaml` via `make jsdemo` — do not edit by hand. |
 | `website/*.webm`, `*.png` | Shared recordings/screenshots, written by the reel pipeline. |
 | `website/reels/` | Output directory for the newer `.reel`-scripted recordings. |
@@ -155,6 +155,11 @@ filters, category auto-detect, paged `?` / `??` help mirroring
 `spec/strings/en.yaml`). Spec-owned web data comes from `website/webspec.js`;
 regenerate it with `make jsdemo` instead of hand-editing simulator constants.
 
+Box-art classification mirrors the two Unicode bands in `src/search.zig`:
+U+2500–U+259F and U+1FB00–U+1FB3B. The generator exports these explicitly;
+membership in `spec/boxart.yaml` does not imply box-art classification, because
+that file also contains keyboard symbols and superscripts.
+
 Required element (boot throws without it):
 
 * `#sim-screen` — the terminal render target.
@@ -172,6 +177,10 @@ Optional elements (feature-detected):
 ## 4. Headless verification recipes
 
 JS sanity: `node --check website/*.js`.
+
+Search regressions: `node --test scripts/gen_web_spec/simulator_test.js`.
+These also run through `go test ./...` and `make preflight` (Node is required),
+checking box-art boundaries, `b:` filtering, and unpenalized superscript scores.
 
 Render checks use headless chromium. Three gotchas cost real time once —
 remember them:
