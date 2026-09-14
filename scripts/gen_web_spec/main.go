@@ -183,7 +183,7 @@ func main() {
 		},
 		Categories: categories.Categories,
 		Filters: WebFilterSpec{
-			BoxArt:  rangeSpec(boxart, searchSpec.Penalties.BoxArt),
+			BoxArt:  boxArtSpec(boxart, searchSpec.Penalties.BoxArt),
 			Braille: rangeSpec(braille, searchSpec.Penalties.Braille),
 		},
 		Scoring: searchSpec.Scoring,
@@ -228,6 +228,30 @@ func mustReadJSON[T any](path string) T {
 		fatalf("parse %s: %v", path, err)
 	}
 	return value
+}
+
+// boxArtSpec mirrors src/search.zig's isBoxArt bands. boxart.yaml also holds
+// keyboard symbols and superscripts: list membership is not classification.
+// See docs/SearchEngine.md §11.
+func boxArtSpec(spec GlyphSpec, penalty int) WebRangeFilterSpec {
+	out := WebRangeFilterSpec{
+		MinCodepoint: 0x2500,
+		MaxCodepoint: 0x1FB3B,
+		Ranges:       [][2]int{{0x2500, 0x259F}, {0x1FB00, 0x1FB3B}},
+		Penalty:      penalty,
+	}
+	for _, entry := range spec.Entries {
+		for _, r := range entry.Char {
+			for _, band := range out.Ranges {
+				if int(r) >= band[0] && int(r) <= band[1] {
+					out.Count++
+					break
+				}
+			}
+			break
+		}
+	}
+	return out
 }
 
 // rangeSpec computes the disjoint codepoint intervals spanned by spec's

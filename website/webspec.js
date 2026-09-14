@@ -431,32 +431,12 @@ const EMOJIG_WEB_SPEC = {
   ],
   "filters": {
     "box_art": {
-      "min_codepoint": 178,
+      "min_codepoint": 9472,
       "max_codepoint": 129851,
       "ranges": [
         [
-          178,
-          185
-        ],
-        [
-          8304,
-          8313
-        ],
-        [
-          8629,
-          8690
-        ],
-        [
-          8963,
-          9141
-        ],
-        [
           9472,
           9631
-        ],
-        [
-          11134,
-          11134
         ],
         [
           129792,
@@ -464,7 +444,7 @@ const EMOJIG_WEB_SPEC = {
         ]
       ],
       "penalty": 150,
-      "count": 176
+      "count": 150
     },
     "braille": {
       "min_codepoint": 10240,
