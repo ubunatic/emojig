@@ -905,41 +905,21 @@ pub fn main(init: std.process.Init) !void {
         // under the CSD title bar, before the first real frame is drawn.
         try writeAll(stdout_fd, term_lib.CURSOR_HIDE);
 
-        // Check for startup focus if spawned inside a GUI terminal window.
+        // Enable focus reporting for a GUI-spawned window, but do not probe
+        // for the startup state: a freshly-mapped window is unreliable to
+        // read here. Terminals only emit CSI I / CSI O on a focus
+        // *transition*, so a window already focused by the time FOCUS_ON is
+        // enabled can send nothing, a stray CSI O from the split-second
+        // before the compositor hands over input focus, or the real CSI I
+        // grant delayed past any read timeout we pick. All three were
+        // observed producing a false "Picker unfocused" banner on a window
+        // that visibly had focus instantly (Fedora 44/GNOME) — see
+        // docs/EnvironmentDetection.md. Just assume `--gui` launches start
+        // focused (has_focus's declared default, above); a real, persistent
+        // focus loss is still caught by the live focus-report handling in
+        // the run loop (`src/main.zig:2917`).
         if (gui_spawned) {
-            // Enable focus reporting
             try writeAll(stdout_fd, term_lib.FOCUS_ON);
-
-            // Read focus reports from stdin with a 200ms timeout.
-            var focus_raw = raw;
-            focus_raw.cc[@intFromEnum(system.V.MIN)] = 0;
-            focus_raw.cc[@intFromEnum(system.V.TIME)] = 2;
-            try std.posix.tcsetattr(stdin_fd, .NOW, focus_raw);
-
-            var focus_buf: [128]u8 = undefined;
-            const n = std.posix.read(stdin_fd, &focus_buf) catch 0;
-
-            // Restore standard TUI raw mode
-            try std.posix.tcsetattr(stdin_fd, .NOW, raw);
-
-            if (n > 0) {
-                const last_in = std.mem.lastIndexOf(u8, focus_buf[0..n], "\x1b[I");
-                const last_out = std.mem.lastIndexOf(u8, focus_buf[0..n], "\x1b[O");
-                if (last_out) |out_idx| {
-                    if (last_in) |in_idx| {
-                        if (out_idx > in_idx) {
-                            has_focus = false;
-                            started_unfocused = true;
-                        }
-                    } else {
-                        has_focus = false;
-                        started_unfocused = true;
-                    }
-                }
-            } else {
-                has_focus = false;
-                started_unfocused = true;
-            }
         }
 
         const cols: usize = base_cols;

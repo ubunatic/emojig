@@ -111,6 +111,29 @@ grants the new foot window focus instead of stealing-focus-preventing it. A
 looping. **This is already the auto-fix for exactly the "spawned directly by
 GNOME/Mutter" case** — not something missing.
 
+### No startup focus probe — trust `--gui` starts focused — `src/main.zig:908–922`
+
+The `--tui` child (when `gui_spawned`) used to enable focus reporting
+(`\x1b[?1004h`) and then read stdin for up to 200ms, trying to guess the
+*startup* focus state from whatever `\x1b[I`/`\x1b[O` showed up. This was
+unreliable in three different ways, all confirmed to produce a real, visible
+false "Picker unfocused" banner on a window that in fact had focus
+instantly (reported on Fedora 44/GNOME):
+- A terminal only emits `CSI I`/`CSI O` on a focus *transition*, not the
+  current state — a window already focused when `FOCUS_ON` is enabled can
+  send nothing at all.
+- A stray `CSI O` can arrive for the split-second before the compositor
+  hands over input focus, with no timely follow-up `CSI I` inside the read
+  window.
+- Even the real `CSI I` grant can simply land after whatever timeout is
+  picked (measured on this machine's foot 1.27.0, real Wayland session: the
+  first `O`/`I` pair can take over 100ms).
+No fixed timeout or event-ordering heuristic over this probe held up across
+retries. The fix removes the probe entirely: `--gui` launches just keep
+`has_focus`'s declared default of `true`. Genuine, persistent focus loss is
+still caught by the live focus-report handling in the run loop
+(`src/main.zig:2917`), which does not have this startup race.
+
 ### Grid size / GUI font — `EMOJIG_COLS`/`EMOJIG_ROWS`/`EMOJIG_GUI_FONT_SIZE`
 
 Resolution order (`src/main.zig:718–743`, `src/cli.zig:401–427`): env →
