@@ -56,3 +56,12 @@ This directory contains the evergreen documentation for the **Emojig** zero-allo
 * [**Headless Recording**](HeadlessRecording.md): Setting up headless PTY recording via `wf-recorder` or `x11grab` for visual verification and testing; wayreel `crop_colors` pixel-coverage verification; GTK3-vs-GTK4 headless isolation gotcha.
 * [**Emoji Width Research**](EmojiWidthResearch.md): Survey of how other terminals/TUIs/width libraries handle emoji-width determinism, the `disable_zwj` VTE workaround, and follow-on source-inspection findings from the sibling `../fontwidth` project (a proposed fourth robustness tier, a corrected stale claim about kitty's clustering behavior).
 * [**Canary Tooling Design**](CanaryToolingDesign.md): Retrospective on the font-width canaries' iterative build (why it felt like circling), the since-superseded declarative pixel/measurement-spec proposal, and an epilogue on the completed migration to `../fontwidth` and the findings now flowing back from it.
+
+## 📚 Case Studies
+
+**`docs/studies/`** — case studies, indexed by `harnez index`.
+
+| File | Topic |
+|------|-------|
+
+Study files are the source of truth for this table.
