@@ -232,6 +232,11 @@ pub const FOCUS_ON = "\x1b[?1004h"; // focus-report events; MOUSE_OFF disables
 // Line clearing / row stepping.
 pub const CLEAR_LINE = "\x1b[2K"; // clear whole line, cursor stays
 pub const CLEAR_LINE_CR = CLEAR_LINE ++ "\r";
+// Synchronized output (DEC private mode 2026): the terminal holds presentation
+// until SYNC_END, so the per-row clear-then-redraw never shows a blank line
+// (issue 16). Terminals without support ignore both sequences.
+pub const SYNC_BEGIN = "\x1b[?2026h";
+pub const SYNC_END = "\x1b[?2026l";
 pub const CR_CLEAR_LINE = "\r" ++ CLEAR_LINE;
 pub const CLEAR_BELOW = "\x1b[J";
 pub const CLEAR_SCREEN = "\x1b[2J";
@@ -293,6 +298,8 @@ test "ansi constants: exact bytes" {
     try std.testing.expectEqualStrings("\x1b[?1049h\x1b[?7l", ALT_SCREEN_ON ++ WRAP_OFF);
     try std.testing.expectEqualStrings("\x1b[?1004h", FOCUS_ON);
     try std.testing.expectEqualStrings("\x1b[2K\r", CLEAR_LINE_CR);
+    try std.testing.expectEqualStrings("\x1b[?2026h", SYNC_BEGIN);
+    try std.testing.expectEqualStrings("\x1b[?2026l", SYNC_END);
     try std.testing.expectEqualStrings("\r\x1b[2K", CR_CLEAR_LINE);
     try std.testing.expectEqualStrings("\x1b[B\r", CURSOR_DOWN_CR);
     try std.testing.expectEqualStrings("\x1b[1m", BOLD);

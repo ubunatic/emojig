@@ -1515,6 +1515,8 @@ pub fn main(init: std.process.Init) !void {
                 const height_changed = (current_h != last_h);
                 const resized = (current_w != last_w or height_changed);
 
+                // Present the whole frame atomically (issue 16).
+                try writeAll(stdout_fd, term_lib.SYNC_BEGIN);
                 if (!is_first_render) {
                     var move_buf: [48]u8 = undefined;
                     if (resize_mode == .altscreen) {
@@ -2739,6 +2741,7 @@ pub fn main(init: std.process.Init) !void {
                     };
                     try writeAll(stdout_fd, cursor_seq);
                 }
+                try writeAll(stdout_fd, term_lib.SYNC_END);
 
                 rctx.was_hidden = rctx.is_hidden;
             }

@@ -105,3 +105,25 @@ would leave them with no erasure path. Any fix must handle
 
 ## Affected Files
 * [src/main.zig](file:///home/uwe/projects/emojig/src/main.zig)
+
+---
+
+## Outcome (2026-09-19)
+
+Fixed at the presentation layer instead of touching the ~28 row-start
+pre-clears: each render frame in `src/main.zig` is now wrapped in synchronized
+output (`term.SYNC_BEGIN` / `term.SYNC_END`, DEC mode 2026), the same approach
+Loom uses (loom issues 072/073). The terminal holds the frame until
+`SYNC_END`, so the `\x1b[2K` ... redraw ... `\x1b[K` sequence can no longer
+show a blank line. Terminals without mode 2026 ignore the sequences and keep
+the old behavior.
+
+Approach B (removing the redraw-path pre-clears) is deliberately **not** done:
+it needs a per-site `endRow`/`endRowFull` analysis, the exit-cleanup clears
+must stay (issue 12), and the `spacer_count` assertion in `tui_draw.zig` would
+need rework, all for a benefit that only applies to terminals without mode
+2026. Reopen as a separate ticket if a real terminal still flashes.
+
+Verified: a PTY run of the built binary emits both markers around a frame; the
+`term.zig` constants have a unit test. `make test` shows two Zig test-command
+failures that also occur without this change (pre-existing, unrelated).
