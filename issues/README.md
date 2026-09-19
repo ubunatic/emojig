@@ -17,7 +17,7 @@
 | 013 | [archive/013-terminal-state-diagnostic-tool.md](archive/013-terminal-state-diagnostic-tool.md) | Terminal State Diagnostic Tool | Closed — resolved (`scripts/termstate.sh` implemented; reports per-mode `OK`/`⚠ LEAKED`/unknown states via DECRQM/DECRQSS queries against `/dev/tty`) |
 | 014 | [014-gui-desktop-scenario-recording.md](014-gui-desktop-scenario-recording.md) | GUI Desktop Scenario Recording | Closed — resolved (implemented and verified end-to-end via `make record`) |
 | 015 | [015-mojigo-inline-height-mode.md](015-mojigo-inline-height-mode.md) | Issue 015 — mojigo inline `--height` mode (skim-style) + `/dev/tty` I/O | Closed — resolved (implemented, verified via `make test`) |
-| 016 | [016-tui-flicker.md](016-tui-flicker.md) | Issue 016 — Zig TUI flickering during rapid redraws | Open |
+| 016 | [016-tui-flicker.md](016-tui-flicker.md) | Issue 016 — Zig TUI flickering during rapid redraws | Closed — frames presented atomically via synchronized output (mode 2026); pre-clear removal deferred |
 | 017 | [archive/017-screenshot-keys-and-go-fd-blocking.md](archive/017-screenshot-keys-and-go-fd-blocking.md) | Issue 017 — Screenshot harness: typed keys + Go `Fd()` blocking gotcha | Closed — resolved |
 | 018 | [018-update-rpm-mode.md](018-update-rpm-mode.md) | Issue 018 — `:update` command: RPM install mode | Open |
 | 019 | [019-update-brew-mode.md](019-update-brew-mode.md) | Issue 019 — `:update` command: Homebrew install mode | Blocked — brew tap not yet set up (see issue 02) |

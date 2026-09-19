@@ -11,7 +11,7 @@ priority: p2
 
 # Issue 016 — Zig TUI flickering during rapid redraws
 
-**Status**: Open
+**Status**: Closed — frames presented atomically via synchronized output (mode 2026); pre-clear removal deferred
 **Priority**: P2 (Medium)
 **Severity**: Minor
 **Category**: Bug
