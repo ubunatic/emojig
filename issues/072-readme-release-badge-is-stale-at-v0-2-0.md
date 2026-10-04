@@ -1,6 +1,6 @@
 # 072 — README release badge is stale at v0.2.0
 
-**Status**: Open
+**Status**: Closed — Updated the README release badge to v0.2.2, matching build.zig.zon; make test and make install passed
 **Priority**: P2 (Medium)
 **Severity**: Minor
 **Category**: Bug
