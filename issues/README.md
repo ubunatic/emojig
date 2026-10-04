@@ -3,32 +3,32 @@
 | # | File | Title | Status |
 |---|------|-------|--------|
 | 001 | [archive/001-config-file-silent-truncation.md](archive/001-config-file-silent-truncation.md) | Issue: Silent config file truncation and partial reads due to fixed stack buffers | Closed — resolved (buffers upgraded to 4KB with a POSIX read loop to prevent silent truncation and handle partial reads) |
-| 002 | [002-distribution-and-release.md](002-distribution-and-release.md) | Emojig: Distribution & Release Plan | Open |
+| 002 | [002-distribution-and-release.md](002-distribution-and-release.md) | Emojig: Distribution & Release Plan | open |
 | 003 | [archive/003-mouse-tracking-enable-ordering.md](archive/003-mouse-tracking-enable-ordering.md) | Issue: Mouse tracking enabled before raw-mode setup is complete | Closed — resolved (terminal sequence emission reordered so mouse tracking enables only after raw mode is active and the restoration `defer` is registered) |
 | 004 | [archive/004-plain-terminal-support.md](archive/004-plain-terminal-support.md) | Implementation Plan: Plain Terminal & Self-Sustained Window Management | Closed — resolved (standalone subprocess execution modes and fzf-like auto-detection implemented) |
 | 005 | [archive/005-virtual-console-emoji-support.md](archive/005-virtual-console-emoji-support.md) | Issue: Emoji rendering fails in Linux virtual console (VT) | Closed — resolved (TERM=linux detection and diagnostic warning implemented; fbterm auto-spawn dropped by design to preserve zero-dependency architecture) |
 | 006 | [archive/006-vt-copy-paste-and-output-modes.md](archive/006-vt-copy-paste-and-output-modes.md) | Issue: Copy/paste and output delivery in VT and non-GUI environments | Closed — resolved (clean stdout piping on `/dev/tty` and tmux clipboard fallback implemented) |
 | 007 | [archive/007-xterm-emoji-support.md](archive/007-xterm-emoji-support.md) | Issue: Emoji rendering fails in xterm | Closed — resolved (documented xterm core font limitations, width sequence overrides, and monochrome fontconfig rules) |
 | 008 | [archive/008-install-destination-binary.md](archive/008-install-destination-binary.md) | Issue: `--install` copies binary to `~/.local/bin` even when running from system-wide paths | Closed — resolved (fixed via `isSystemPath()` auto-detection in `modeInstallLocal`, plus new `--install-shell`/`--install-system`/`--install-check` flags) |
-| 009 | [009-wasm-build-rootless-mknod.md](009-wasm-build-rootless-mknod.md) | Issue 009 — WASM (c2w) build fails under rootless podman: `mknod` blocked in user namespace | In Progress |
+| 009 | [009-wasm-build-rootless-mknod.md](009-wasm-build-rootless-mknod.md) | Issue 009 — WASM (c2w) build fails under rootless podman: `mknod` blocked in user namespace | in-progress |
 | 010 | [archive/010-synonym-search-ranking.md](archive/010-synonym-search-ranking.md) | Synonym Support for Better Search Ranking | Closed — resolved (spec/synonyms.json implemented and asserted by both test suites) |
-| 011 | [011-german-search-pferd-fails.md](011-german-search-pferd-fails.md) | Issue: German Search "pferd" Does Not Find the Horse Emoji | Open |
-| 012 | [012-tui-line-cleanup-and-terminal-restoration.md](012-tui-line-cleanup-and-terminal-restoration.md) | TUI Line Cleanup & Terminal Restoration | Open |
+| 011 | [011-german-search-pferd-fails.md](011-german-search-pferd-fails.md) | Issue: German Search "pferd" Does Not Find the Horse Emoji | open |
+| 012 | [012-tui-line-cleanup-and-terminal-restoration.md](012-tui-line-cleanup-and-terminal-restoration.md) | TUI Line Cleanup & Terminal Restoration | open |
 | 013 | [archive/013-terminal-state-diagnostic-tool.md](archive/013-terminal-state-diagnostic-tool.md) | Terminal State Diagnostic Tool | Closed — resolved (`scripts/termstate.sh` implemented; reports per-mode `OK`/`⚠ LEAKED`/unknown states via DECRQM/DECRQSS queries against `/dev/tty`) |
-| 014 | [014-gui-desktop-scenario-recording.md](014-gui-desktop-scenario-recording.md) | GUI Desktop Scenario Recording | Closed — resolved (implemented and verified end-to-end via `make record`) |
-| 015 | [015-mojigo-inline-height-mode.md](015-mojigo-inline-height-mode.md) | Issue 015 — mojigo inline `--height` mode (skim-style) + `/dev/tty` I/O | Closed — resolved (implemented, verified via `make test`) |
-| 016 | [016-tui-flicker.md](016-tui-flicker.md) | Issue 016 — Zig TUI flickering during rapid redraws | Closed — frames presented atomically via synchronized output (mode 2026); pre-clear removal deferred |
+| 014 | [014-gui-desktop-scenario-recording.md](014-gui-desktop-scenario-recording.md) | GUI Desktop Scenario Recording | open |
+| 015 | [015-mojigo-inline-height-mode.md](015-mojigo-inline-height-mode.md) | Issue 015 — mojigo inline `--height` mode (skim-style) + `/dev/tty` I/O | open |
+| 016 | [016-tui-flicker.md](016-tui-flicker.md) | Issue 016 — Zig TUI flickering during rapid redraws | open |
 | 017 | [archive/017-screenshot-keys-and-go-fd-blocking.md](archive/017-screenshot-keys-and-go-fd-blocking.md) | Issue 017 — Screenshot harness: typed keys + Go `Fd()` blocking gotcha | Closed — resolved |
-| 018 | [018-update-rpm-mode.md](018-update-rpm-mode.md) | Issue 018 — `:update` command: RPM install mode | Open |
-| 019 | [019-update-brew-mode.md](019-update-brew-mode.md) | Issue 019 — `:update` command: Homebrew install mode | Blocked — brew tap not yet set up (see issue 02) |
-| 020 | [020-wl-clipboard-opens-as-desk-app.md](020-wl-clipboard-opens-as-desk-app.md) | Fast Multi-Select calls wl-clipboard as visible desktop app | Open |
-| 021 | [archive/021-color-system-simplification.md](archive/021-color-system-simplification.md) | Color System Simplification & Single Source of Truth | Closed — resolved (all three "Proposed Improvements" landed; verified 2026-08-11 by reading the current generator and spec sources) |
+| 018 | [018-update-rpm-mode.md](018-update-rpm-mode.md) | Issue 018 — `:update` command: RPM install mode | open |
+| 019 | [019-update-brew-mode.md](019-update-brew-mode.md) | Issue 019 — `:update` command: Homebrew install mode | blocked |
+| 020 | [020-wl-clipboard-opens-as-desk-app.md](020-wl-clipboard-opens-as-desk-app.md) | Fast Multi-Select calls wl-clipboard as visible desktop app | open |
+| 021 | [archive/021-color-system-simplification.md](archive/021-color-system-simplification.md) | Color System Simplification & Single Source of Truth | done |
 | 022 | [archive/022-category-switcher.md](archive/022-category-switcher.md) | Issue 022 — Category Switcher UI | Closed — resolved (implemented 2026-06-23) |
 | 023 | [archive/023-picker-timeout-fires-during-drag.md](archive/023-picker-timeout-fires-during-drag.md) | Picker Timeout Fires During Scrollbar Drag | Closed — resolved (timeout now tracks time since last input event, not a per-poll-call deadline) |
-| 024 | [024-ux-and-resilience-review-2026-06.md](024-ux-and-resilience-review-2026-06.md) | UX & Resilience Review — 2026-06-21 | Closed — resolved (review complete; findings filed as issues 25, 26, 27) |
-| 025 | [025-xfce4-terminal-autodetect-gap.md](025-xfce4-terminal-autodetect-gap.md) | GUI auto-mode misses `xfce4-terminal` despite built-in host support | Open |
-| 026 | [026-install-and-update-integrity-gap.md](026-install-and-update-integrity-gap.md) | `install.sh` and self-update still skip artifact verification | Open |
-| 027 | [027-persistence-buffer-edges.md](027-persistence-buffer-edges.md) | Config and MRU persistence still have silent 4 KB edge behavior | Open |
+| 024 | [024-ux-and-resilience-review-2026-06.md](024-ux-and-resilience-review-2026-06.md) | UX & Resilience Review — 2026-06-21 | report |
+| 025 | [025-xfce4-terminal-autodetect-gap.md](025-xfce4-terminal-autodetect-gap.md) | GUI auto-mode misses `xfce4-terminal` despite built-in host support | open |
+| 026 | [026-install-and-update-integrity-gap.md](026-install-and-update-integrity-gap.md) | `install.sh` and self-update still skip artifact verification | open |
+| 027 | [027-persistence-buffer-edges.md](027-persistence-buffer-edges.md) | Config and MRU persistence still have silent 4 KB edge behavior | open |
 | 028 | [archive/028-keyboard-key-symbol-discoverability.md](archive/028-keyboard-key-symbol-discoverability.md) | Issue 028 — Keyboard Key Symbol Discoverability | Closed — resolved (implemented 2026-06-23) |
 | 029 | [archive/029-category-synonym-search-ranking.md](archive/029-category-synonym-search-ranking.md) | Issue 029 — Category Synonym Search Ranking Confuses Results | Closed — resolved (fixed 2026-06-23) |
 | 030 | [archive/030-compact-grid-mode.md](archive/030-compact-grid-mode.md) | Issue 030 — Compact Grid Mode (EMOJIG_COMPACT=1) | Closed — resolved (implemented 2026-06-23) |
@@ -41,17 +41,17 @@
 | 037 | [archive/037-codebase-modularization.md](archive/037-codebase-modularization.md) | Codebase Modularization & Refactoring | Closed — resolved |
 | 038 | [038-more-common-search-tests.md](038-more-common-search-tests.md) | Tests for Common Searches | Closed — resolved (phases 1-3 complete, 2026-06-30) |
 | 039 | [039-group-search.md](039-group-search.md) | Group Search Test Coverage | Open |
-| 040 | [040-wayland-focused-window-placement.md](040-wayland-focused-window-placement.md) | Wayland focused-window placement for GUI picker | Open |
-| 041 | [041-width-fit-and-cosmetic-recorder-gap.md](041-width-fit-and-cosmetic-recorder-gap.md) | Prove GUI character-grid geometry independent of legacy font-size assumptions | Open |
-| 042 | [042-report-command-open-issue-url.md](042-report-command-open-issue-url.md) | `:report` command — file a bug/problem via prefilled Codeberg issue URL | Open |
-| 043 | [043-arch-spec-review-2026-07.md](043-arch-spec-review-2026-07.md) | Architecture, spec/, and readability review — 2026-07-02 | Closed — resolved (review complete; filed issues 44, 45, 46, 47) |
-| 044 | [044-main-zig-decomposition.md](044-main-zig-decomposition.md) | `main.zig` decomposition: it regrew into one 4098-line function | In Progress |
-| 045 | [archive/045-ansi-escape-consolidation.md](archive/045-ansi-escape-consolidation.md) | ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences | Closed — resolved (implemented; see "Resolution (2026-07-02)" below. |
-| 046 | [046-spec-yaml-reorg-and-test-as-spec.md](046-spec-yaml-reorg-and-test-as-spec.md) | spec/: reorganize a few files, and move "what to test" from prose to data | In Progress |
-| 047 | [archive/047-search-hot-path-synonym-scan.md](archive/047-search-hot-path-synonym-scan.md) | Search hot path: unconditional synonym scan costs ~4-5ms per keystroke | Closed — resolved (fixed; see "Resolution (2026-07-02)" below) |
-| 048 | [archive/048-flaky-line-width-pty-test.md](archive/048-flaky-line-width-pty-test.md) | Flaky PTY test: TestTUIRenderedLineWidthsAreEqual fails ~50% on main | Closed — resolved (fixed) |
-| 049 | [049-native-gui-engine-foot-ghostty.md](049-native-gui-engine-foot-ghostty.md) | Issue #049: Native GUI Engine — Adopt foot/Ghostty Code & Architecture to Roll Our Own Windowing Layer | Open |
-| 050 | [050-bg-color-leaking-in-gui.md](050-bg-color-leaking-in-gui.md) | BG color leaking in GUI grid and category bar | Open — reopened 2026-08-08 (known implementation defects were fixed, but closed without an automated proof over the real rendered GUI) |
+| 040 | [040-wayland-focused-window-placement.md](040-wayland-focused-window-placement.md) | Wayland focused-window placement for GUI picker | open |
+| 041 | [041-width-fit-and-cosmetic-recorder-gap.md](041-width-fit-and-cosmetic-recorder-gap.md) | Prove GUI character-grid geometry independent of legacy font-size assumptions | open |
+| 042 | [042-report-command-open-issue-url.md](042-report-command-open-issue-url.md) | `:report` command — file a bug/problem via prefilled Codeberg issue URL | open |
+| 043 | [043-arch-spec-review-2026-07.md](043-arch-spec-review-2026-07.md) | Architecture, spec/, and readability review — 2026-07-02 | done |
+| 044 | [044-main-zig-decomposition.md](044-main-zig-decomposition.md) | `main.zig` decomposition: it regrew into one 4098-line function | in-progress |
+| 045 | [archive/045-ansi-escape-consolidation.md](archive/045-ansi-escape-consolidation.md) | ANSI escapes: `main.zig` still hand-rolls cursor/clear/mode sequences | done |
+| 046 | [046-spec-yaml-reorg-and-test-as-spec.md](046-spec-yaml-reorg-and-test-as-spec.md) | spec/: reorganize a few files, and move "what to test" from prose to data | in-progress |
+| 047 | [archive/047-search-hot-path-synonym-scan.md](archive/047-search-hot-path-synonym-scan.md) | Search hot path: unconditional synonym scan costs ~4-5ms per keystroke | done |
+| 048 | [archive/048-flaky-line-width-pty-test.md](archive/048-flaky-line-width-pty-test.md) | Flaky PTY test: TestTUIRenderedLineWidthsAreEqual fails ~50% on main | done |
+| 049 | [049-native-gui-engine-foot-ghostty.md](049-native-gui-engine-foot-ghostty.md) | Issue #049: Native GUI Engine — Adopt foot/Ghostty Code & Architecture to Roll Our Own Windowing Layer | open |
+| 050 | [050-bg-color-leaking-in-gui.md](050-bg-color-leaking-in-gui.md) | BG color leaking in GUI grid and category bar | open |
 | 051 | [051-vte-canary.md](051-vte-canary.md) | VTE canary: headless color-grid screenshots per terminal | Open — implemented (initial), open for extension |
 | 052 | [052-ptyxis-headless-blank-capture.md](052-ptyxis-headless-blank-capture.md) | ptyxis renders blank in headless wayreel capture | Open |
 | 053 | [archive/053-foot-grapheme-width-tweak.md](archive/053-foot-grapheme-width-tweak.md) | foot may need `tweak.grapheme-width-method=double-width` set explicitly | Closed — resolved (fixed) |
@@ -65,11 +65,12 @@
 | 061 | [archive/061-canary-shot-artifacts-not-gitignored.md](archive/061-canary-shot-artifacts-not-gitignored.md) | canary shot artifacts land untracked in `git status` with no ignore rule or commit policy | Closed — resolved (moot as of 2026-08-11; `scripts/canary_font/` moved to `../fontwidth` per issue 62, so there is nothing here to gitignore) |
 | 062 | [archive/062-move-font-width-experiments-to-fontwidth.md](archive/062-move-font-width-experiments-to-fontwidth.md) | move font-width research experiments out of `emojig`, into `../fontwidth` | Closed — resolved (decided and executed 2026-08-11) |
 | 063 | [archive/063-orphaned-scratch-scripts.md](archive/063-orphaned-scratch-scripts.md) | two orphaned scratch scripts in `scripts/`: `test_posix.zig` and `gen_wayland_spec.go` | Closed — resolved (deleted 2026-08-11) |
-| 064 | [archive/064-update-fails-when-binary-still-open.md](archive/064-update-fails-when-binary-still-open.md) | `emojig update` fails on systems that reject writes to a still-open binary | Closed — resolved in 00b6287 (scripts/install.sh now writes the new binary to a same-directory temp file, chmods it, then `mv`s it into place — rename() semantics, safe while the old binary is still executing; see the new `install-atomic-write` regression check in scripts/review_audit) |
-| 065 | [065-hyprland-force-centered-window.md](065-hyprland-force-centered-window.md) | Way to force a centered GUI window on Hyprland | Open |
+| 064 | [archive/064-update-fails-when-binary-still-open.md](archive/064-update-fails-when-binary-still-open.md) | `emojig update` fails on systems that reject writes to a still-open binary | done |
+| 065 | [065-hyprland-force-centered-window.md](065-hyprland-force-centered-window.md) | Way to force a centered GUI window on Hyprland | open |
 | 066 | [archive/066-custom-commands-and-screens.md](archive/066-custom-commands-and-screens.md) | Issue #066 — Custom Commands and Interactive Screens | Closed — resolved (implemented) |
-| 067 | [067-no-automated-regression-proof-for-terminal-restore-on-the-three-exit-paths.md](067-no-automated-regression-proof-for-terminal-restore-on-the-three-exit-paths.md) | No automated regression proof for terminal restore on the three exit paths | Open |
-| 068 | [068-explore-gtk-emoji-py-violates-the-no-python-rule-and-is-wired-into-make-gtkdemo.md](068-explore-gtk-emoji-py-violates-the-no-python-rule-and-is-wired-into-make-gtkdemo.md) | `explore_gtk_emoji.py` violates the no-Python rule and is wired into `make gtkdemo` | Open |
-| 069 | [archive/069-gui-startup-focus-probe-produced-false-picker-unfocused-banner.md](archive/069-gui-startup-focus-probe-produced-false-picker-unfocused-banner.md) | GUI startup focus probe produced false 'Picker unfocused' banner | Closed — resolved in b2da470, released v0.2.1 |
-| 070 | [archive/070-aarch64-release-build-fails-dlsym-function-pointers-need-aligncast.md](archive/070-aarch64-release-build-fails-dlsym-function-pointers-need-aligncast.md) | aarch64 release build fails: dlsym function pointers need @alignCast | Closed — resolved in 0dad63d, released v0.2.1 |
+| 067 | [067-no-automated-regression-proof-for-terminal-restore-on-the-three-exit-paths.md](067-no-automated-regression-proof-for-terminal-restore-on-the-three-exit-paths.md) | No automated regression proof for terminal restore on the three exit paths | open |
+| 068 | [068-explore-gtk-emoji-py-violates-the-no-python-rule-and-is-wired-into-make-gtkdemo.md](068-explore-gtk-emoji-py-violates-the-no-python-rule-and-is-wired-into-make-gtkdemo.md) | `explore_gtk_emoji.py` violates the no-Python rule and is wired into `make gtkdemo` | open |
+| 069 | [archive/069-gui-startup-focus-probe-produced-false-picker-unfocused-banner.md](archive/069-gui-startup-focus-probe-produced-false-picker-unfocused-banner.md) | GUI startup focus probe produced false 'Picker unfocused' banner | done |
+| 070 | [archive/070-aarch64-release-build-fails-dlsym-function-pointers-need-aligncast.md](archive/070-aarch64-release-build-fails-dlsym-function-pointers-need-aligncast.md) | aarch64 release build fails: dlsym function pointers need @alignCast | done |
 | 071 | [archive/071-website-b-filter-misclassifies-superscript-digits-as-box-art.md](archive/071-website-b-filter-misclassifies-superscript-digits-as-box-art.md) | Website b: filter misclassifies superscript digits as box art | Closed — resolved in 96e62ec, 658cb7e, and 2ffabfc |
+| 072 | [072-readme-release-badge-is-stale-at-v0-2-0.md](072-readme-release-badge-is-stale-at-v0-2-0.md) | README release badge is stale at v0.2.0 | open |
