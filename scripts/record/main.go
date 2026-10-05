@@ -72,9 +72,9 @@ func (s recordSpec) tuiOutputPath() string {
 		return s.TUIOutput
 	}
 	if s.TUITheme == "light" {
-		return "website/emojig-tui-light.webm"
+		return "website/assets/emojig-tui-light.webm"
 	}
-	return "website/emojig-tui-dark.webm"
+	return "website/assets/emojig-tui-dark.webm"
 }
 
 func loadRecordSpec() recordSpec {

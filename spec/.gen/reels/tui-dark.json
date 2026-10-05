@@ -15,7 +15,7 @@
   "app_height": 400,
   "theme": "dark",
   "font_size": 12,
-  "output": "website/emojig-tui-dark.webm",
+  "output": "website/assets/emojig-tui-dark.webm",
   "title": "emojig demo",
   "prompt": [
     {

@@ -209,7 +209,7 @@ func main() {
 	out.Write(bytes.TrimSpace(jsonBuf.Bytes()))
 	out.WriteString(";\n")
 
-	outPath := "website/webspec.js"
+	outPath := "website/demo/simulator/webspec.js"
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		fatalf("mkdir %s: %v", filepath.Dir(outPath), err)
 	}

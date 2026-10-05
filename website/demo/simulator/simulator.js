@@ -1987,8 +1987,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Route DOM focus to the right element based on current sim mode.
   function syncFocus() {
     if (!sim.isFocused) return;
-    if (sim.mode === "tui") { if (inputEl) inputEl.focus(); }
-    else                    { pasteEl.focus(); }
+    if (sim.mode === "tui") { if (inputEl) inputEl.focus({ preventScroll: true }); }
+    else                    { pasteEl.focus({ preventScroll: true }); }
   }
 
   // Seed the shell and open the picker inline — demonstrating the inline TUI USP.
@@ -2003,7 +2003,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // (covers Esc/Enter closing the TUI without a click).
   if (inputEl) {
     inputEl.addEventListener("blur", () => {
-      setTimeout(() => { if (sim.isFocused && sim.mode === "shell") pasteEl.focus(); }, 0);
+      setTimeout(() => { if (sim.isFocused && sim.mode === "shell") pasteEl.focus({ preventScroll: true }); }, 0);
     });
   }
 
@@ -2099,7 +2099,7 @@ document.addEventListener("DOMContentLoaded", () => {
   screenEl.addEventListener("mousedown", (e) => {
     if (e.button !== 1 || !sim.isFocused || sim.mode !== "shell") return;
     pasteEl.value = "";
-    pasteEl.focus();
+    pasteEl.focus({ preventScroll: true });
   });
 
   pasteEl.addEventListener("input", () => {

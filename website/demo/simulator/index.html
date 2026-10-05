@@ -1,0 +1,122 @@
+<!doctype html>
+<!--
+SPDX-FileCopyrightText: 2026 Uwe Jugel
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>emojig interactive simulator</title>
+    <link rel="icon" href="../../assets/emojig-icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="simulator.css" />
+    <style>
+        :root {
+            color-scheme: dark;
+            --page-bg: #0a0e14;
+            --card-bg: #0e131c;
+            --card-border: #2c3a52;
+            --text-main: #c9d4e3;
+            --text-muted: #788599;
+            --accent-primary: #59c2ff;
+            --accent-secondary: #d2a6ff;
+            --accent-glow: rgba(89, 194, 255, 0.3);
+        }
+        * { box-sizing: border-box; }
+        body {
+            min-width: 320px;
+            margin: 0;
+            padding: clamp(12px, 3vw, 28px);
+            background: var(--page-bg);
+            color: var(--text-main);
+            font: 15px/1.55 ui-monospace, "Fira Code", "DejaVu Sans Mono", monospace, "Noto Color Emoji";
+        }
+        .demo-shell { max-width: 1120px; margin: 0 auto; }
+        .demo-heading { margin: 0 0 18px; }
+        .demo-heading p { margin: 0; color: var(--text-muted); }
+        .demo-heading h1 { margin: 2px 0 6px; color: var(--accent-primary); font-size: clamp(1.3rem, 3vw, 2rem); }
+        .demo-kicker { color: var(--accent-secondary) !important; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; }
+        .sim-container {
+            display: grid;
+            grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+            align-items: start;
+            gap: clamp(12px, 3vw, 30px);
+            padding: clamp(12px, 3vw, 24px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            background: var(--card-bg);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        .sim-panel { min-width: 0; }
+        .sim-panel-title { margin: 0 0 4px; color: var(--text-main); font-size: 1.15rem; }
+        .sim-panel-desc { margin: 0; color: var(--text-muted); font-size: 0.86rem; }
+        .sim-panel-desc code { color: #a7f3d0; }
+        .sim-input-group { margin-top: 12px; }
+        .sim-label { display: block; margin-bottom: 5px; color: var(--accent-secondary); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+        .sim-search-input { width: 100%; min-height: 40px; border: 1px solid var(--card-border); border-radius: 8px; background: #0a0e14; color: var(--text-main); font: inherit; padding: 8px 10px; }
+        .sim-search-input:focus-visible, .sim-dpad-btn:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+        .sim-focus-badge { margin: 12px 0; }
+        .sim-dpad { margin-top: 12px; }
+        .sim-dpad-btn { border: 1px solid var(--card-border); color: var(--text-main); }
+        .sim-window { min-width: 0; }
+        .sim-screen { min-height: 416px; font-size: clamp(11px, 1.5vw, 14.5px); }
+        @media (max-width: 760px) {
+            .sim-container { grid-template-columns: minmax(0, 1fr); }
+            .sim-screen { min-height: 310px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+        }
+    </style>
+</head>
+<body>
+    <main class="demo-shell">
+        <header class="demo-heading">
+            <p class="demo-kicker">Interactive demo</p>
+            <h1>emojig shell widget</h1>
+            <p>Type a command, then press Ctrl+E to open the picker. Use the search field or keyboard to explore.</p>
+        </header>
+        <section class="sim-container" aria-label="Interactive emojig simulator">
+            <div class="sim-panel" id="sim-panel">
+                <div>
+                    <h2 class="sim-panel-title">Playground controls</h2>
+                    <p class="sim-panel-desc">Type <code>echo </code> at the prompt and press <strong>Ctrl+E</strong>. Search, move with arrows, and press Enter to insert. Try <strong>?</strong> and <strong>??</strong> for help. Tab cycles themes; Esc closes the picker.</p>
+                </div>
+                <div class="sim-focus-badge inactive" id="sim-focus-badge" role="status"><span class="sim-dot-indicator"></span> Click terminal to focus keys</div>
+                <div class="sim-input-group">
+                    <label class="sim-label" for="sim-query-input">Fuzzy search</label>
+                    <input class="sim-search-input" id="sim-query-input" type="text" placeholder="Try: racing, fire truck, t:arrow, ??" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="sim-input-group">
+                    <label class="sim-label" for="sim-opt-theme">Simulator theme</label>
+                    <select class="sim-search-input" id="sim-opt-theme">
+                        <option value="dark">Dark theme</option>
+                        <option value="light">Light theme</option>
+                        <option value="system">System (auto)</option>
+                    </select>
+                </div>
+                <div class="sim-dpad" aria-label="On-screen arrow keys">
+                    <button class="sim-dpad-btn up" aria-label="Up">▲</button>
+                    <button class="sim-dpad-btn left" aria-label="Left">◀</button>
+                    <button class="sim-dpad-btn ok" aria-label="Select">⏎</button>
+                    <button class="sim-dpad-btn right" aria-label="Right">▶</button>
+                    <button class="sim-dpad-btn down" aria-label="Down">▼</button>
+                </div>
+            </div>
+            <div class="sim-window">
+                <div class="sim-header">
+                    <div class="sim-buttons" aria-hidden="true"><span class="sim-dot close"></span><span class="sim-dot minimize"></span><span class="sim-dot expand"></span></div>
+                    <span class="sim-title">zsh — emojig widget</span>
+                    <span class="sim-badge">Ctrl+E Shell</span>
+                </div>
+                <div class="sim-screen theme-dark" id="sim-screen" aria-label="Emulated terminal"></div>
+            </div>
+        </section>
+    </main>
+    <script src="emojis.js"></script>
+    <script src="jsdemo.js"></script>
+    <script src="webspec.js"></script>
+    <script src="simulator.js"></script>
+</body>
+</html>

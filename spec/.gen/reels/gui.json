@@ -13,7 +13,7 @@
   "scene_width": 850,
   "scene_height": 480,
   "font_size": 15,
-  "output": "website/emojig-gui-light.webm",
+  "output": "website/assets/emojig-gui-light.webm",
   "app_cmd": [
     "gedit",
     "$demo_file"

@@ -387,8 +387,12 @@ func main() {
 
 	fmt.Printf("Binary generated at %s (%.2f KB).\n", binPath, float64(outBuf.Len())/1024.0)
 
-	// Generate website/emojis.js
-	webJSPath := "website/emojis.js"
+	// Generate the emoji database beside the standalone website simulator.
+	webJSPath := "website/demo/simulator/emojis.js"
+	if err := os.MkdirAll(filepath.Dir(webJSPath), 0o755); err != nil {
+		fmt.Printf("Error creating simulator directory: %v\n", err)
+		os.Exit(1)
+	}
 	var webJSBuilder strings.Builder
 	webJSBuilder.WriteString("/*\n * SPDX-FileCopyrightText: 2026 Uwe Jugel\n * SPDX-License-Identifier: AGPL-3.0-or-later\n */\n\nconst EMOJI_DB = [\n")
 	for _, we := range webEmojis {
@@ -413,7 +417,7 @@ func main() {
 	webJSBuilder.WriteString("};\n")
 
 	if err := os.WriteFile(webJSPath, []byte(webJSBuilder.String()), 0644); err != nil {
-		fmt.Printf("Error writing website/emojis.js: %v\n", err)
+		fmt.Printf("Error writing %s: %v\n", webJSPath, err)
 		os.Exit(1)
 	}
 	fmt.Printf("Website DB generated at %s.\n", webJSPath)

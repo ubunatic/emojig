@@ -11,7 +11,7 @@ import (
 
 func TestWebsiteSearch(t *testing.T) {
 	// Register Node's inputs with Go's test cache so JS-only edits rerun it.
-	for _, path := range []string{"simulator_test.js", "../../website/webspec.js", "../../website/emojis.js", "../../website/simulator.js"} {
+	for _, path := range []string{"simulator_test.js", "../../website/demo/simulator/webspec.js", "../../website/demo/simulator/emojis.js", "../../website/demo/simulator/simulator.js"} {
 		if _, err := os.ReadFile(path); err != nil {
 			t.Fatal(err)
 		}

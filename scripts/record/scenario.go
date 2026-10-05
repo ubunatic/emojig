@@ -37,7 +37,7 @@ import (
 func recordScenarioDemo(binaryPath string, spec recordSpec) error {
 	fmt.Println("🎬 Recording GUI desktop scenario...")
 
-	outputPath := "website/emojig-gui-light.webm"
+	outputPath := "website/assets/emojig-gui-light.webm"
 	_ = os.Remove(outputPath)
 
 	// Per-run Wayland runtime dir for the nested sway compositor.

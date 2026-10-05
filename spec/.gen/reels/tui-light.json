@@ -15,7 +15,7 @@
   "app_height": 400,
   "theme": "light",
   "font_size": 12,
-  "output": "website/emojig-tui-light.webm",
+  "output": "website/assets/emojig-tui-light.webm",
   "title": "emojig terminal",
   "prompt": [
     {

@@ -142,12 +142,12 @@ gui-watch: ⚙️  # tail /tmp/emojig.log live while using the gui picker
 gtkdemo: ⚙️  # open GTK4 text field to explore the built-in emoji picker (Ctrl+.)
 	python3 explore_gtk_emoji.py
 
-jsdemo: gen-spec ⚙️  # regenerate website/jsdemo.js from spec/web/jsdemo.yaml
-	@printf '// generated from spec/web/jsdemo.yaml — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/.gen/jsdemo.json)" > website/jsdemo.js
+jsdemo: gen-spec ⚙️  # regenerate website/demo/simulator/jsdemo.js from spec/web/jsdemo.yaml
+	@printf '// generated from spec/web/jsdemo.yaml — do not edit by hand\nconst jsdemoSpec = %s;\n' "$$(cat spec/.gen/jsdemo.json)" > website/demo/simulator/jsdemo.js
 	go run ./scripts/gen_web_spec/
 
-browse: ⚙️ jsdemo  # open the website homepage in the default web browser
-	@xdg-open website/index.html 2>/dev/null || open website/index.html 2>/dev/null || echo "Please open website/index.html in your browser"
+browse: ⚙️ jsdemo  # open the standalone website simulator in the default web browser
+	@xdg-open website/demo/simulator/index.html 2>/dev/null || open website/demo/simulator/index.html 2>/dev/null || echo "Please open website/demo/simulator/index.html in your browser"
 
 screenshot: gen-spec build  # capture TUI screenshot for agent frame inspection
 	@timeout 10 go run ./scripts/screenshot/ zig-out/bin/emojig
@@ -176,19 +176,19 @@ record: ⚙️ wayreel-install gen-spec  # record all three demos (tui-dark, tui
 	$(WAYREEL) record spec/.gen/reels/tui-dark.json
 	$(WAYREEL) record spec/.gen/reels/tui-light.json
 	$(WAYREEL) record spec/.gen/reels/gui.json
-	open website
+	open website/demo/simulator/index.html
 
 record-dark: ⚙️ wayreel-install gen-spec  # record TUI demo (dark theme)
 	$(WAYREEL) record spec/.gen/reels/tui-dark.json
-	open website/emojig-tui-dark.webm
+	open website/assets/emojig-tui-dark.webm
 
 record-light: ⚙️ wayreel-install gen-spec  # record TUI demo (light theme)
 	$(WAYREEL) record spec/.gen/reels/tui-light.json
-	open website/emojig-tui-light.webm
+	open website/assets/emojig-tui-light.webm
 
 record-gui: ⚙️ wayreel-install gen-spec  # record GUI desktop scenario
 	$(WAYREEL) record spec/.gen/reels/gui.json
-	open website/emojig-gui-light.webm
+	open website/assets/emojig-gui-light.webm
 
 canary-shots: ⚙️ wayreel-install  # capture and verify VTE canary color-grid screenshots for foot, tilix (ptyxis: see issue 51, blank headless capture)
 	@go build -o /tmp/vte_canary_bin scripts/vte_canary/main.go

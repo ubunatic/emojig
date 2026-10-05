@@ -8,7 +8,7 @@ const { test } = require('node:test');
 
 const context = vm.createContext({ document: { addEventListener() {} } });
 for (const file of ['webspec.js', 'emojis.js', 'simulator.js']) {
-  vm.runInContext(fs.readFileSync(`website/${file}`, 'utf8'), context);
+  vm.runInContext(fs.readFileSync(`website/demo/simulator/${file}`, 'utf8'), context);
 }
 const sim = vm.runInContext(`Object.assign(Object.create(EmojigSimulator.prototype), {
   webSpec: EMOJIG_WEB_SPEC, maxResults: EMOJIG_WEB_SPEC.layout.max_results, query: ''

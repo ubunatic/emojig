@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Uwe Jugel
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Content for ubunatic.com/emojig. Assets and demo are copied with website/;
+# make gen-tools renders the site-side emojig/index.html.
+
+title: emojig — a terminal emoji picker that respects your terminal
+title_main: emojig
+kicker: Linux emoji picker
+lead: >-
+  A Linux emoji picker for your terminal or desktop. One Zig binary opens an inline terminal picker
+  or a floating window, with no background service. Try its interactive shell-widget simulator below.
+logo:
+  src: assets/emojig-icon.svg
+  alt: emojig logo
+cta_primary:
+  label: Try the interactive picker
+  href: "#playground"
+cta_secondary:
+  label: Get started
+  href: "#install"
+install: "curl -fsSL https://ubunatic.com/emojig/install.sh | sh"
+effects:
+  cursor_glow:
+    color: "#59c2ff"
+  hero_float: true
+  title_caret: true
+
+sections:
+  - id: why
+    tag: Why emojig
+    title: An emoji picker that stays close to your workflow
+    blocks:
+      - text: >-
+          Desktop emoji pickers usually belong to a particular desktop, while browser based pickers
+          pull you out of the terminal. Emojig is a small Linux app that works inline in your shell
+          or as a floating desktop window, using the same embedded emoji data and search behavior in
+          both modes.
+
+  - id: playground
+    tag: Playground
+    title: Try the interactive simulator
+    blocks:
+      - demo:
+          src: demo/simulator/index.html
+          title: emojig interactive simulator
+          caption: >-
+            Search the emoji set and navigate the simulated shell picker. Type a command and press
+            Ctrl+E to open it; use arrows and Enter to select, or try ? and ?? for the help screens.
+          aspect_ratio: "16 / 10"
+          standalone: true
+
+  - id: capabilities
+    tag: Capabilities
+    title: Designed for terminal and desktop use
+    blocks:
+      - project_features: true
+
+  - id: recordings
+    tag: Recorded demos
+    title: Terminal and desktop picker
+    blocks:
+      - video:
+          chrome: terminal
+          window_title: emojig · dark terminal
+          src: assets/emojig-tui-dark.webm
+          label: emojig terminal picker in a dark theme
+          caption: Open the inline picker, search for an emoji, and insert it into a shell command.
+      - video:
+          chrome: terminal
+          window_title: emojig · light terminal
+          src: assets/emojig-tui-light.webm
+          label: emojig terminal picker in a light theme
+          caption: The same terminal workflow using a light theme.
+      - video:
+          src: assets/emojig-gui-light.webm
+          label: emojig floating desktop picker in a light theme
+          caption: Open the floating picker from a desktop application and paste an emoji.
+
+  - id: screenshot
+    tag: Screenshot
+    title: Search in the terminal
+    blocks:
+      - gallery:
+          - title: emojig running in a terminal
+            images:
+              - src: assets/emojig-screen.png
+                alt: emojig terminal picker showing search results for cat
+
+  - id: install
+    tag: Install
+    title: Get started
+    blocks:
+      - text: "Install the latest Linux release with the project installer:"
+      - shell: "curl -fsSL https://ubunatic.com/emojig/install.sh | sh"
+      - text: >-
+          The installer selects the supported Linux architecture, downloads the current Codeberg
+          release, and installs emojig and its shell completions under your home directory.
