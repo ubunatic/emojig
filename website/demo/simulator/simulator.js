@@ -1974,12 +1974,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const inputEl = document.getElementById("sim-query-input");
   const themeOpt = document.getElementById("sim-opt-theme");
   const focusBadge = document.getElementById("sim-focus-badge");
+  // Opt-in embedding keeps page navigation and browser shortcuts available.
+  const embedded = screenEl.hasAttribute("data-embedded");
+  if (embedded) sim.theme = "system";
 
   // Middle-click paste anchor: a hidden off-screen textarea kept focused in
   // shell mode so Firefox doesn't intercept bare keystrokes (e.g. ' / /) as
   // Quick Find triggers.  Also used as the paste target for X11 PRIMARY paste.
   const pasteEl = document.createElement("textarea");
   pasteEl.setAttribute("aria-hidden", "true");
+  pasteEl.tabIndex = -1;
+  if (embedded) {
+    pasteEl.removeAttribute("aria-hidden");
+    pasteEl.setAttribute("aria-label", "Emojig shell command");
+  }
   pasteEl.style.cssText =
     "position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
   document.body.appendChild(pasteEl);
@@ -1994,10 +2002,26 @@ document.addEventListener("DOMContentLoaded", () => {
   // Seed the shell and open the picker inline — demonstrating the inline TUI USP.
   sim.seedShell();
   sim.openTui();
-  sim.isFocused = true;
-  updateFocusBadge(true);
+  sim.isFocused = !embedded;
+  updateFocusBadge(sim.isFocused);
   sim.updateThemeClass();
   syncFocus();
+
+  if (embedded) {
+    screenEl.tabIndex = 0;
+    screenEl.addEventListener("focus", () => {
+      sim.isFocused = true;
+      sim.updateThemeClass();
+      updateFocusBadge(true);
+    });
+    document.addEventListener("focusin", (e) => {
+      if (e.target !== screenEl && e.target !== inputEl && e.target !== pasteEl) {
+        sim.isFocused = false;
+        sim.updateThemeClass();
+        updateFocusBadge(false);
+      }
+    });
+  }
 
   // When the TUI search input loses focus, hand it to pasteEl if in shell mode
   // (covers Esc/Enter closing the TUI without a click).
@@ -2086,6 +2110,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Bind physical keydown events
   document.addEventListener("keydown", (e) => {
+    if (embedded) {
+      if (e.target !== screenEl && e.target !== inputEl && e.target !== pasteEl) return;
+      if (e.key === "Tab") {
+        sim.isFocused = false;
+        sim.updateThemeClass();
+        updateFocusBadge(false);
+        // The shell's hidden paste target sits at the end of the document.
+        // Start native Tab navigation from the visible terminal instead.
+        if (e.target === pasteEl) screenEl.focus({ preventScroll: true });
+        sim.isFocused = false;
+        return;
+      }
+      if (e.metaKey || e.altKey || (e.ctrlKey && !["e", "c"].includes(e.key.toLowerCase()))) return;
+    }
     // If typing in other inputs not related to simulator, ignore
     if (e.target.tagName === "INPUT" && e.target !== inputEl) {
       return;
