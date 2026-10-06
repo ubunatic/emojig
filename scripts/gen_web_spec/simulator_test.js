@@ -48,3 +48,72 @@ test('box-art classification uses tight Unicode bands', () => {
     assert.equal(sim.isBoxArt(String.fromCodePoint(cp)), false, cp.toString(16));
   }
 });
+
+test('shell commands share completion, dispatch and help in standalone and embedded use', () => {
+  context.window = {matchMedia: () => ({matches: false, addEventListener() {}})};
+  context.document.getElementById = () => null;
+  const shell = vm.runInContext('new EmojigSimulator()', context);
+  shell.render = () => {};
+  const complete = (input) => {
+    shell.setInput(input);
+    shell.handleTabComplete();
+    return shell.shellInput;
+  };
+  assert.equal(complete('l'), 'ls');
+  assert.equal(shell.shellLines.at(-1).text, 'ls  ll');
+  assert.equal(complete('r'), 'rmdir');
+  assert.equal(shell.shellLines.at(-1).text, 'rmdir  rm');
+  assert.equal(complete('e'), 'echo');
+  assert.equal(shell.shellLines.at(-1).text, 'echo  env  emojig');
+  assert.equal(complete('sudo ec'), 'sudo echo');
+  for (const name of shell.getShellCommandNames()) assert.equal(complete(name), name);
+  assert.equal(complete('cat RE'), 'cat README.md');
+  shell.setInput('ec suffix');
+  shell.cursorPos = 2;
+  shell.handleTabComplete();
+  assert.equal(shell.shellInput, 'echo suffix');
+  assert.equal(shell.cursorPos, 4);
+  assert.equal(complete('unknown'), 'unknown');
+  shell.registerShellCommand('launch', function (args) {
+    this.shellLines.push({kind: 'out', text: args.join(' ')});
+  });
+  assert.equal(complete('la'), 'launch');
+  shell.setInput('sudo launch hello registry');
+  shell.executeShell();
+  assert.equal(shell.shellLines.at(-1).text, 'hello registry');
+  assert.equal(shell.shellHistory.at(-1), 'sudo launch hello registry');
+  shell.setInput('help');
+  shell.executeShell();
+  assert.ok(shell.shellLines.at(-2).text.includes('launch'));
+  for (const command of ['emojig', 'sudo emojig']) {
+    shell.mode = 'shell';
+    shell.setInput(command);
+    shell.executeShell();
+    assert.equal(shell.mode, 'tui');
+    assert.equal(shell.shellInput, '');
+    assert.equal(shell.shellHistory.at(-1), command);
+  }
+  shell.mode = 'shell';
+  shell.isFocused = true;
+  shell.setInput('ec');
+  let prevented = false;
+  const tab = {key: 'Tab', preventDefault() { prevented = true; }};
+  shell.handleKeydown({...tab, shiftKey: true});
+  assert.equal(prevented, false);
+  assert.equal(shell.shellInput, 'ec');
+  shell.handleKeydown(tab);
+  assert.equal(prevented, true);
+  assert.equal(shell.shellInput, 'echo');
+});
+
+test('new builtin cases need no separate completion inventory', () => {
+  const source = fs.readFileSync('website/demo/simulator/simulator.js', 'utf8');
+  const extended = source.replace('      case "echo":', '      case "extra-command":\n      case "echo":');
+  const probe = vm.createContext({document: {addEventListener() {}}, window: context.window});
+  vm.runInContext(extended, probe);
+  const shell = vm.runInContext('new EmojigSimulator()', probe);
+  shell.render = () => {};
+  shell.setInput('extra-');
+  shell.handleTabComplete();
+  assert.equal(shell.shellInput, 'extra-command');
+});

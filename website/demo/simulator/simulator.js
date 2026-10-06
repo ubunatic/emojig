@@ -49,6 +49,7 @@ class EmojigSimulator {
     this.shellHistory = []; // executed commands, oldest first
     this.historyIdx = null; // pointer while browsing history; null = editing fresh line
     this.shellDraft = ""; // in-progress line stashed when history browsing begins
+    this.shellCommands = new Map(); // host-added commands share dispatch and completion
     this.maxShellRows = 16; // visible rows before older lines scroll off the top
 
     this.cols = this.webSpec?.layout?.cols ?? 6;
@@ -773,6 +774,7 @@ class EmojigSimulator {
     }
 
     screenEl.innerHTML = html;
+    screenEl.scrollTop = 0;
 
     // Re-bind click handlers for cells inside the screen
     const cells = screenEl.querySelectorAll(".sim-cell");
@@ -1049,6 +1051,7 @@ class EmojigSimulator {
     // Keep only the last N rows so the active prompt is always visible.
     const visible = rows.slice(-this.maxShellRows);
     screenEl.innerHTML = visible.join("");
+    screenEl.scrollTop = screenEl.scrollHeight;
   }
 
   // Render recent shell lines + current input as the inline TUI header.
@@ -1104,8 +1107,34 @@ class EmojigSimulator {
     return pathPrefix + name + (node.type === "dir" ? "/" : "");
   }
 
+  registerShellCommand(name, handler) {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(name) || typeof handler !== "function") {
+      throw new TypeError("Invalid shell command registration");
+    }
+    this.shellCommands.set(name, handler);
+  }
+
+  getShellCommandNames() {
+    // Discover builtins from their dispatcher instead of maintaining a second list.
+    const names = [...EmojigSimulator.prototype.executeShell.toString()
+      .matchAll(/^      case ["']([^"']+)["']:/gm)].map(match => match[1]);
+    if (!names.length) throw new Error("Simulator has no discoverable shell commands");
+    return [...new Set([...names, "sudo", ...this.shellCommands.keys()])];
+  }
+
   handleTabComplete() {
     const arr = Array.from(this.shellInput);
+    const command = /^(\s*(?:sudo\s+)?)([^\s/]*)$/.exec(arr.slice(0, this.cursorPos).join(""));
+    if (command) {
+      const matches = this.getShellCommandNames().filter(name => name.startsWith(command[2]));
+      if (!matches.length) return;
+      if (matches.length > 1) this.shellLines.push({kind: "out", text: matches.join("  ")});
+      const completed = command[1] + (matches.includes(command[2]) ? command[2] : matches[0]);
+      this.shellInput = completed + arr.slice(this.cursorPos).join("");
+      this.cursorPos = Array.from(completed).length;
+      this.render();
+      return;
+    }
     let wordStart = this.cursorPos;
     while (wordStart > 0 && arr[wordStart - 1] !== " ") wordStart--;
     const word = arr.slice(wordStart, this.cursorPos).join("");
@@ -1220,6 +1249,12 @@ class EmojigSimulator {
       args = sp2 === -1 ? "" : args.slice(sp2 + 1);
     }
 
+    const handler = this.shellCommands.get(cmd);
+    if (handler) {
+      handler.call(this, args.trim().split(/\s+/).filter(Boolean));
+      this.render();
+      return;
+    }
     args = this.expandGlobs(args);
 
     switch (cmd) {
@@ -1579,6 +1614,10 @@ class EmojigSimulator {
         }
         break;
 
+      case "emojig":
+        this.openTui();
+        break;
+
       case "neofetch": {
         const neofetchLines = [
           `${this.shellUser}@${this.shellHost} 🔍`, `──────────────────────────────`,
@@ -1662,7 +1701,7 @@ class EmojigSimulator {
       }
 
       case "help":
-        this.shellLines.push({ kind:"out", text:"commands: echo, ls/ll, cd, pwd, tree, cat, mkdir, rmdir, cp, mv, touch, rm, grep, wc, find, which, ps, env, git, neofetch, clear" });
+        this.shellLines.push({ kind:"out", text:"commands: " + this.getShellCommandNames().join(", ") });
         this.shellLines.push({ kind:"out", text:"Ctrl+E → emoji picker  |  Tab → completion  |  ↑↓ → history  |  Ctrl+K → clear" });
         break;
 
@@ -1813,6 +1852,7 @@ class EmojigSimulator {
     if (e.altKey || e.metaKey) return;
 
     if (e.key === "Tab") {
+      if (e.shiftKey) return;
       e.preventDefault();
       this.handleTabComplete();
     } else if (e.key === "Enter") {
@@ -2117,7 +2157,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("keydown", (e) => {
     if (embedded) {
       if (e.target !== screenEl && e.target !== inputEl && e.target !== pasteEl) return;
-      if (e.key === "Tab") {
+      if (e.key === "Tab" && (e.shiftKey || sim.mode !== "shell")) {
         sim.isFocused = false;
         sim.updateThemeClass();
         updateFocusBadge(false);
