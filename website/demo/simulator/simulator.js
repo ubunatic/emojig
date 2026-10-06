@@ -1464,6 +1464,11 @@ class EmojigSimulator {
                 this.shellLines.push({ kind:"out", text: msg });
                 this.render();
                 if (i === boom.length - 1) setTimeout(() => {
+                  if (document.getElementById("sim-screen")?.hasAttribute("data-embedded")) {
+                    this.shellLines.push({ kind: "out", text: "💀 Just a simulation. The page is still here." });
+                    this.render();
+                    return;
+                  }
                   document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-size:50vw;background:#000;margin:0;cursor:pointer" title="refresh to recover" onclick="location.reload()">💀</div>';
                 }, 600);
               }, i * 350);
