@@ -1,6 +1,6 @@
 # 073 — Add missing REUSE license headers so preflight passes
 
-**Status**: Open
+**Status**: Closed — Added REUSE annotations for all seven unlicensed files; make preflight passes with REUSE reporting 477/477 files covered.
 **Priority**: P3 (Low)
 **Severity**: Minor
 **Category**: Chore
