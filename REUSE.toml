@@ -28,6 +28,12 @@ SPDX-FileCopyrightText = "2026 Uwe Jugel"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 [[annotations]]
+path = ["version.yaml", "website/assets/emojig-gui-light.webm", "website/assets/emojig-screen.png", "website/assets/emojig-tui-dark.webm", "website/assets/emojig-tui-light.webm", "website/demo/simulator/jsdemo.js", "website/demo/simulator/webspec.js"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Uwe Jugel"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
 path = ["scripts/vendor/*.js", "scripts/vendor/xterm.css"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The xterm.js authors"
