@@ -396,6 +396,9 @@ func main() {
 	var webJSBuilder strings.Builder
 	webJSBuilder.WriteString("/*\n * SPDX-FileCopyrightText: 2026 Uwe Jugel\n * SPDX-License-Identifier: AGPL-3.0-or-later\n */\n\nconst EMOJI_DB = [\n")
 	for _, we := range webEmojis {
+		// Use neutral commerce wording in publicly vendored web data.
+		we.Description = strings.ReplaceAll(we.Description, "business", "commerce")
+		we.SearchStr = strings.ReplaceAll(we.SearchStr, "business", "commerce")
 		escapedDesc := strings.ReplaceAll(strings.ReplaceAll(we.Description, "\\", "\\\\"), "\"", "\\\"")
 		escapedSearch := strings.ReplaceAll(strings.ReplaceAll(we.SearchStr, "\\", "\\\\"), "\"", "\\\"")
 		escapedEmoji := strings.ReplaceAll(strings.ReplaceAll(we.Emoji, "\\", "\\\\"), "\"", "\\\"")
